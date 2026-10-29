@@ -1,0 +1,54 @@
+# HalfGripOpenWorld
+
+A Half Grip (Steam app 4163270, Unity, Windows) mod: Open World, free roam in a 32 km square world generated from a fixed seed,
+streamed in tiles, with a floating origin. Current release: see `OpenWorld/mod.json`.
+
+## How the mod runs
+
+- It is a **source mod** for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools) (BepInEx 5). At game start the loader compiles
+  `OpenWorld/src/*.cs` with Roslyn (**C# 10**, netstandard2.1) against the game's `Assembly-CSharp.dll`, the Unity DLLs, BepInEx,
+  0Harmony and HalfGripTools. What ships is the `OpenWorld/` folder, installed to `<game>\BepInEx\HalfGripMods\OpenWorld\`.
+- The entry point is `Mod : HalfGripMod` in `src/Mod.cs`. `ctx.PatchAll()` applies the `[HarmonyPatch]` classes in `src/Patches.cs`.
+  The Multiplayer mod is patched by hand in `src/MultiplayerLink.cs` at the first scene load, by name, because its classes are internal.
+- The loader API is in HalfGripTools' `docs/WRITING_MODS.md`; what is known about the game is in its `docs/GAME_NOTES.md`. The Highway mod
+  in [HalfGripMods](https://github.com/4l3x4nd3r0/HalfGripMods) is the model for building a map inside the Stadium scene.
+- Game DLLs and scene dumps are in the private `htubdawg/HalfGripRefs` repo. Decompile with
+  `ilspycmd -p -o <dir> <HalfGripRefs>/game/HalfGrip_Data/Managed/Assembly-CSharp.dll` (set `DOTNET_ROLL_FORWARD=Major` on a newer .NET).
+
+## Layout of OpenWorld/src/
+
+| File | Role |
+|---|---|
+| `Mod.cs` | Config, scene-load hook |
+| `MapEntry.cs` | Adds the OpenWorld map to `RunConfig.maps` as a copy of StadiumAsh with its own track index (30) |
+| `Patches.cs` | Harmony: track index, TestMode, kept out of run map draws, no laps, no solo AI, reset in place, fell-under-ground |
+| `WorldScene.cs` | Builds the world in the Stadium scene: hides the Stadium, grid on the spawn pad, token track loop |
+| `WorldGen.cs`, `Noise.cs` | The world's height function (deterministic) |
+| `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay |
+| `Origin.cs` | The floating origin: moves the scene, particles and trails |
+| `GameCaches.cs` | World positions the game keeps in fields, moved on each shift |
+| `MultiplayerLink.cs` | Positions over the network in world coordinates; stand-in cars moved on each shift |
+
+## Rules that matter
+
+- **Determinism.** Every player in a room must get the identical ground. `WorldGen.Height` is a pure function of world x, z: only
+  integer hashing, `+ - * /`, `Math.Floor`, `Math.Sqrt`, `Math.Abs`. Never `System.Random`, `UnityEngine.Random`, `Math.Sin`/`Exp`/`Pow`,
+  or a config value. A change to it changes the world, so everyone in a room needs the same version (the Multiplayer mod enforces that).
+- **Origin.** Anything that keeps a world position outside a transform must be moved on `Origin.Shifted` (or listed in `GameCaches`).
+  Positions sent over the network are world coordinates. Only x and z shift; heights never change.
+- Bump `version` in `mod.json` with each release and keep `README.md` in step.
+- C# 10 and netstandard2.1 APIs only.
+- Match the style: tabs, `///` summaries that explain *why*, `Mod.Info(...)` for verbose logging, `Mod.Log.LogWarning` and a try/catch
+  around risky scene work.
+- Do not invent an `ObjectiveKind` (a saved run with one is deleted).
+
+## Checking changes
+
+- `tools/check.sh <game folder> <HalfGripTools.dll>` compiles the mod (see README). Run it before every push.
+- `dotnet run -c Release --project tools/preview` checks the generator (range, slopes, repeatability, tile time) and draws the world.
+- In game: see the test checklist in README.
+
+## Working with the owner
+
+- The owner merges pull requests; work on a branch and open a PR.
+- If you lack access to something (a repo, a host, a tool, game files), ask the owner for it. Do not try workarounds.
