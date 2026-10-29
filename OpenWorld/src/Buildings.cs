@@ -214,7 +214,8 @@ namespace HalfGripOpenWorld
 					return;
 				}
 				// Pitched: the ridge runs along the width, over the middle, a little past the walls.
-				float rise = Mathf.Min(d * 0.45f, 9f);
+				// About 48 degrees, a usual pitch: shallower, and from the street the near slope hides behind the front wall's top.
+				float rise = Mathf.Min(d * 0.55f, 16f);
 				Vector3 eave = Vector3.up * h, ridge = Vector3.up * (h + rise);
 				Vector3 over = across * 1.2f, end = along * 0.8f;
 				Vector3 r0 = c - a - end + ridge, r1 = c + a + end + ridge;

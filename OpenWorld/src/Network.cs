@@ -108,12 +108,18 @@ namespace HalfGripOpenWorld
 
 		internal static readonly List<Portal> Portals = new List<Portal>();
 
-		/// <summary>Where the player starts: on the trunk road near the main town, in the inner lane, heading east.</summary>
+		/// <summary>
+		/// Where the player starts: on the main town's road in, just outside the town, facing its middle (or, if the town has no such
+		/// road, on the trunk road near it).
+		/// </summary>
 		internal static double SpawnX;
 		internal static double SpawnZ;
 		internal static double SpawnY;
 		internal static double SpawnDirX = 1.0;
 		internal static double SpawnDirZ;
+
+		/// <summary>Sideways offset (to the right of the way the grid faces) of the second car of each pair on the grid: the other lane.</summary>
+		internal static double SpawnPair = 11.0;
 
 		/// <summary>
 		/// Added to every height for the scene, so the road at the spawn is at 0.5: the Multiplayer mod puts every car at height 1 on
@@ -175,9 +181,14 @@ namespace HalfGripOpenWorld
 				trunk = Extend(trunk, false);
 				Spawn(trunk, towns.Count > 0 ? towns[0] : null);
 			}
-			foreach (Places.Place town in towns)
+			for (int t = 0; t < towns.Count; t++)
 			{
-				RouteToNetwork(RoadKind.Primary, town.Name + " link", town.X, town.Z, RoadKind.Trunk);
+				List<Road> link = RouteToNetwork(RoadKind.Primary, towns[t].Name + " link", towns[t].X, towns[t].Z, RoadKind.Trunk);
+				// The spawn: on the main town's road in, just outside the town, facing its middle (levelled now, before anything joins it).
+				if (t == 0 && link.Count > 0)
+				{
+					SpawnOnLink(link[0], towns[0]);
+				}
 			}
 
 			// 2. Main roads: the Gabriel graph of towns and villages (and the north gate), strongest links first.
@@ -987,6 +998,54 @@ namespace HalfGripOpenWorld
 				r = DetMath.Pi - r;
 			}
 			return y < 0.0 ? -r : r;
+		}
+
+		/// <summary>
+		/// The spawn on the town's road in (which runs from the town's middle out to the trunk road): the sample about the town's radius
+		/// out, clear of bridges, in the right-hand lane facing the middle; the stretch round it is levelled for the grid.
+		/// </summary>
+		private static void SpawnOnLink(Road link, Places.Place town)
+		{
+			int best = -1;
+			double bestOff = double.MaxValue;
+			for (int k = 14; k < link.Count - 24; k++)
+			{
+				bool clear = true;
+				for (int j = k - 14; j <= k + 22 && clear; j++)
+				{
+					clear = !link.Bridge[j];
+				}
+				double dx = link.X[k] - town.X, dz = link.Z[k] - town.Z;
+				double off = Math.Abs(Math.Sqrt(dx * dx + dz * dz) - town.Radius * 1.05);
+				if (clear && off < bestOff)
+				{
+					bestOff = off;
+					best = k;
+				}
+			}
+			if (best < 0)
+			{
+				return;
+			}
+			int i = best;
+			// Towards the middle is towards the road's start.
+			double dirX = link.X[i - 1] - link.X[i + 1], dirZ = link.Z[i - 1] - link.Z[i + 1];
+			double d = Math.Sqrt(dirX * dirX + dirZ * dirZ);
+			SpawnDirX = dirX / d;
+			SpawnDirZ = dirZ / d;
+			// Level from 12 samples ahead (towards the town) to 20 behind: the grid, the spawn and the start lights.
+			int a = Math.Max(0, i - 12), b = Math.Min(link.Count - 1, i + 20);
+			double level = link.Y[i];
+			for (int k = a; k <= b; k++)
+			{
+				link.Y[k] = level;
+			}
+			Hold(link, Classes[(int)RoadKind.Primary].Grade, 0, link.Count - 1);
+			// The right-hand lane's centre is 7 right of the middle; the other car of each pair goes in the other lane, 14 to the left.
+			SpawnX = link.X[i] + SpawnDirZ * 7.0;
+			SpawnZ = link.Z[i] - SpawnDirX * 7.0;
+			SpawnY = level;
+			SpawnPair = -14.0;
 		}
 
 		/// <summary>The spawn: on the trunk road where it passes closest to the main town, in the inner eastbound lane, on a level stretch.</summary>
