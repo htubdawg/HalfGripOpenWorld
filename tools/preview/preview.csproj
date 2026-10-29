@@ -10,8 +10,12 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
-    <Compile Include="../../OpenWorld/src/WorldGen.cs" />
-    <Compile Include="../../OpenWorld/src/Network.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
+    <Compile Include="../../OpenWorld/src/Heap.cs" />
+    <Compile Include="../../OpenWorld/src/WorldGen.cs" />
+    <Compile Include="../../OpenWorld/src/Rivers.cs" />
+    <Compile Include="../../OpenWorld/src/Places.cs" />
+    <Compile Include="../../OpenWorld/src/Network.cs" />
+    <Compile Include="../../OpenWorld/src/LandUse.cs" />
   </ItemGroup>
 </Project>

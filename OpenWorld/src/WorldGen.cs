@@ -4,12 +4,13 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// The shape of the world: ground height as a pure function of world coordinates (x east, z north, in game units). Nothing here keeps
-	/// state but the road network, which is built once from the seed and never changes, so a tile can be built at any time, in any order,
-	/// on any thread, and comes out the same on every machine.
+	/// state but the rivers, places and roads, which are built once from the seed and never change, so a tile can be built at any time,
+	/// in any order, on any thread, and comes out the same on every machine.
 	///
-	/// Three layers, each built on the one before:
-	///   <see cref="Natural"/>  the land: lowland, mountain ranges, hills, bumps, and a wall of mountains at the edge;
-	///   <see cref="Base"/>     the land with a flat plateau under each town and village;
+	/// Layers, each built on the one before:
+	///   <see cref="Natural"/>  the land: sea and coastal plain in the south, uplands and mountain ranges in the north, edge walls;
+	///   <see cref="Land"/>     with the rivers' channels, floodplains and banks cut in (<see cref="Rivers"/>);
+	///   <see cref="Base"/>     softened under each place (<see cref="Places"/>), rivers cut again;
 	///   <see cref="Height"/>   the ground as driven on: Base with every road's bed cut or filled into it (<see cref="Network"/>).
 	/// </summary>
 	internal static class WorldGen
@@ -34,63 +35,85 @@ namespace HalfGripOpenWorld
 		private static readonly ulong SaltWarpX = Noise.Mix(Seed + 6);
 		private static readonly ulong SaltWarpZ = Noise.Mix(Seed + 7);
 
-		/// <summary>How much of the mountain ranges is at (x, z), 0 to 1. Towns and villages are put where this is 0.</summary>
-		internal static double MountainMask(double x, double z)
+		private static readonly ulong SaltCoast = Noise.Mix(Seed + 8);
+
+		/// <summary>Sea level, before the world's lift (<see cref="Network.Lift"/>).</summary>
+		internal const double SeaLevel = 0.0;
+
+		/// <summary>
+		/// How far north of the coast (x, z) is, in units: negative out at sea. The coast runs east-west about 5 km in from the south edge,
+		/// wandering by up to 2 km.
+		/// </summary>
+		internal static double Inland(double x, double z)
 		{
-			return Noise.Step(0.0, 0.5, Noise.Gradient(SaltMask, x, z, 9000.0));
+			double coastZ = -Half + 5000.0 + Noise.Fbm(SaltCoast, x, 0.0, 7000.0, 3, 0.5) * 2200.0;
+			return z - coastZ;
 		}
 
-		/// <summary>The land before anything is built on it.</summary>
+		/// <summary>How much of the mountain ranges is at (x, z), 0 to 1: mostly in the north, none near the coast.</summary>
+		internal static double MountainMask(double x, double z)
+		{
+			double north = Inland(x, z) / 20000.0;
+			return Noise.Step(0.0, 0.5, Noise.Gradient(SaltMask, x, z, 9000.0) + 1.1 * north - 0.9);
+		}
+
+		/// <summary>
+		/// The land before anything is built on it or cut by rivers: a coastal plain and the sea to the south, the ground rising to uplands
+		/// and mountain ranges to the north, and a wall of mountains along the north, west and east edges (the south edge is open sea).
+		/// </summary>
 		internal static double Natural(double x, double z)
 		{
-			// Rolling lowland: long, gentle swells.
-			double h = Noise.Fbm(SaltLow, x, z, 4000.0, 4, 0.45) * 90.0;
+			double inland = Inland(x, z);
+			// 0 out at sea, 1 inland: the sea floor shelves down over 2.5 km off the coast.
+			double shelf = Noise.Step(-2500.0, 1200.0, inland);
+			double rise = 230.0 * Noise.Step(0.0, 22000.0, inland);
 
-			// Mountain ranges where a very slow mask allows them, so the world has open country and high country. The ridges are sampled
-			// through a warp (the point pushed about by slower noise), which bends them into ranges rather than a regular pattern.
+			// The swells grow inland, so the coastal plain is low and gentle and does not dip under the sea behind the shore.
+			double swell = 70.0 * (0.3 + 0.7 * Noise.Step(0.0, 9000.0, inland));
+			double h = Noise.Fbm(SaltLow, x, z, 4000.0, 4, 0.45) * swell + rise + 14.0;
+
 			double mask = MountainMask(x, z);
 			if (mask > 0.0)
 			{
 				double wx = x + Noise.Fbm(SaltWarpX, x, z, 3000.0, 2, 0.5) * 900.0;
 				double wz = z + Noise.Fbm(SaltWarpZ, x, z, 3000.0, 2, 0.5) * 900.0;
-				h += Noise.Ridged(SaltRidge, wx, wz, 2600.0, 5, 0.5) * 520.0 * mask;
+				h += Noise.Ridged(SaltRidge, wx, wz, 2600.0, 5, 0.5) * 560.0 * mask;
 			}
-
-			// Hills a few hundred metres across, and bumps that make the ground feel driven on.
-			h += Noise.Fbm(SaltHills, x, z, 600.0, 3, 0.5) * 22.0;
+			h += Noise.Fbm(SaltHills, x, z, 600.0, 3, 0.5) * 22.0 * (0.3 + 0.7 * shelf);
 			h += Noise.Gradient(SaltFine, x, z, 70.0) * 1.2;
+			h = h * shelf - 45.0 * (1.0 - shelf);
 
-			// The edge: a wall of mountains that rises steeply over the last WallDepth metres.
-			double edge = Math.Max(Math.Abs(x), Math.Abs(z));
+			// The wall: north, west and east edges.
+			double edge = Math.Max(Math.Abs(x), z);
 			double wall = Noise.Step(Half - WallDepth, Half, edge);
 			h += wall * wall * 700.0;
 			return h;
 		}
 
-		/// <summary>The land with a flat plateau at each town and village, blending out into the country round it (and the world's lift).</summary>
-		internal static double Base(double x, double z)
+		/// <summary>The land with the rivers cut into it (what places are chosen on).</summary>
+		internal static double Land(double x, double z)
 		{
-			double h = Natural(x, z) + Network.Lift;
-			foreach (Network.Site site in Network.Sites)
-			{
-				double dx = x - site.X;
-				double dz = z - site.Z;
-				double reach = site.Radius + site.Blend;
-				if (dx * dx + dz * dz >= reach * reach)
-				{
-					continue;
-				}
-				double t = Noise.Step(site.Radius, reach, Math.Sqrt(dx * dx + dz * dz));
-				h = site.Y + (h - site.Y) * t;
-			}
-			return h;
+			return Rivers.Cut(x, z, Natural(x, z));
 		}
 
-		/// <summary>Ground height at world point (x, z): the land with the road beds in it. The road surfaces sit just above this.</summary>
+		/// <summary>
+		/// The land as roads are laid on it: softened under each town, village and farm (<see cref="Places.Soften"/>), then the rivers cut
+		/// in again, so a river keeps its channel and floodplain through a town.
+		/// </summary>
+		internal static double Base(double x, double z)
+		{
+			return Rivers.Cut(x, z, Places.Soften(x, z, Natural(x, z)));
+		}
+
+		/// <summary>
+		/// Ground height at world point (x, z) in the scene: the land with the road beds in it, plus the world's lift (everything inside
+		/// the generator is measured from sea level; the scene is lifted so the road at the spawn is at 0.5). Road surfaces sit just
+		/// above this.
+		/// </summary>
 		internal static double Height(double x, double z)
 		{
 			Network.Ensure();
-			return Network.Ground(x, z, Base(x, z));
+			return Network.Ground(x, z, Base(x, z)) + Network.Lift;
 		}
 
 		/// <summary>True when (x, z) is inside the world square, where tiles are built.</summary>

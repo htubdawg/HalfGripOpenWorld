@@ -132,7 +132,7 @@ namespace HalfGripOpenWorld
 
 	/// <summary>
 	/// A reset (holding R, or the Multiplayer mod's respawn after a wreck) puts the car back on its wheels where it is, on the ground,
-	/// facing the way it was going. The game's own reset would carry it back to the token loop at the spawn, kilometres away.
+	/// facing the way it was going (or on the nearest road, if it is in water). The game's own reset would carry it back to the token loop at the spawn, kilometres away.
 	/// </summary>
 	[HarmonyPatch(typeof(PlayerResetLogic), nameof(PlayerResetLogic.ResetOnTrack))]
 	internal static class ResetInPlace
@@ -152,8 +152,16 @@ namespace HalfGripOpenWorld
 			{
 				heading = Vector3.forward;
 			}
-			streamer.BuildAround(x, z, 1);
-			streamer.Place(x, z, Quaternion.LookRotation(heading.normalized, Vector3.up));
+			if (Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level)
+			{
+				// In a river, a lake or the sea: back on the nearest road instead.
+				streamer.ToRoad(x, z);
+			}
+			else
+			{
+				streamer.BuildAround(x, z, 1);
+				streamer.Place(x, z, Quaternion.LookRotation(heading.normalized, Vector3.up));
+			}
 			TextController.EnqueueRandomText(1f, "Reset.");
 			return false;
 		}

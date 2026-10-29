@@ -119,7 +119,7 @@ namespace HalfGripOpenWorld
 			}
 
 			Network.Ensure();
-			Mod.Log.LogInfo("World layout: " + Network.Sites.Length + " towns and villages, " + Network.Roads.Count + " roads, " + Network.BuildMs.ToString("0") + " ms");
+			Mod.Log.LogInfo("World layout: " + Rivers.All.Count + " rivers, " + Rivers.LakeCount + " lakes, " + Places.All.Count + " towns, villages and farms, " + Network.Roads.Count + " roads, " + Network.BuildMs.ToString("0") + " ms");
 
 			// The scene's 0,0 is put at the spawn, so the start is as precise as anywhere else.
 			Origin.Reset(true);
@@ -133,9 +133,10 @@ namespace HalfGripOpenWorld
 			root = new GameObject("OpenWorld");
 			SceneManager.MoveGameObjectToScene(root, scene);
 			Streamer streamer = root.AddComponent<Streamer>();
-			streamer.Setup(tm.playerCarController, GroundMaterial(lit), groundLayer >= 0 ? groundLayer : 0, RoadMesh.Materials(lit), 0);
+			streamer.Setup(tm.playerCarController, GroundMaterial(lit), groundLayer >= 0 ? groundLayer : 0, RoadMesh.Materials(lit), RoadMesh.TrackMaterial(lit), WaterMaterial(lit), 0);
 
 			PlaceGrid(tm, env, out Vector3 forward);
+			Tunnels(lit);
 			Rewire(tm, forward);
 			streamer.BuildAround(Network.SpawnX, Network.SpawnZ, 2);
 			RaiseCameras();
@@ -173,11 +174,11 @@ namespace HalfGripOpenWorld
 			return Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Sprites/Default");
 		}
 
-		/// <summary>The ground's material: plain grass for now (step 2 textures it by zone and slope).</summary>
+		/// <summary>The ground's material: white, each tile's own land-use texture is set on its renderer.</summary>
 		private static Material GroundMaterial(Shader shader)
 		{
 			Material m = new Material(shader);
-			Color grass = new Color(0.36f, 0.45f, 0.24f);
+			Color grass = Color.white;
 			if (m.HasProperty("_BaseColor"))
 			{
 				m.SetColor("_BaseColor", grass);
@@ -200,8 +201,70 @@ namespace HalfGripOpenWorld
 			return m;
 		}
 
+		/// <summary>Rivers, lakes and the sea: a deep, slightly glossy blue.</summary>
+		private static Material WaterMaterial(Shader shader)
+		{
+			Material m = new Material(shader) { name = "OpenWorld Water", hideFlags = HideFlags.HideAndDontSave };
+			Color water = new Color(0.17f, 0.31f, 0.47f);
+			if (m.HasProperty("_BaseColor"))
+			{
+				m.SetColor("_BaseColor", water);
+			}
+			if (m.HasProperty("_Color"))
+			{
+				m.SetColor("_Color", water);
+			}
+			if (m.HasProperty("_Smoothness"))
+			{
+				m.SetFloat("_Smoothness", 0.75f);
+			}
+			return m;
+		}
+
 		/// <summary>
-		/// The grid on the highway just outside the first town, facing the second: the player in the inner lane, the other slots in pairs
+		/// A tunnel mouth where each road leaves the world: a concrete portal in the cutting at the road's end, dark inside, with a solid
+		/// block behind the dark so nobody drives in.
+		/// </summary>
+		private static void Tunnels(Shader shader)
+		{
+			Material concrete = RoadMesh.Materials(shader)[RoadMesh.Concrete];
+			Material dark = new Material(shader) { name = "OpenWorld Tunnel", hideFlags = HideFlags.HideAndDontSave };
+			if (dark.HasProperty("_BaseColor"))
+			{
+				dark.SetColor("_BaseColor", new Color(0.02f, 0.02f, 0.03f));
+			}
+			if (dark.HasProperty("_Color"))
+			{
+				dark.SetColor("_Color", new Color(0.02f, 0.02f, 0.03f));
+			}
+			foreach (Network.Portal p in Network.Portals)
+			{
+				GameObject portal = new GameObject("Tunnel");
+				portal.transform.SetParent(root.transform, false);
+				Vector3 outward = new Vector3((float)p.DirX, 0f, (float)p.DirZ);
+				portal.transform.SetPositionAndRotation(Origin.Local(p.X, (float)(p.Y + Network.Lift), p.Z), Quaternion.LookRotation(outward, Vector3.up));
+				float width = (float)p.Half * 2f + 8f;
+				const float height = 22f;
+				Block(portal.transform, concrete, new Vector3(-width / 2f - 3f, height / 2f, 0f), new Vector3(6f, height + 4f, 6f));
+				Block(portal.transform, concrete, new Vector3(width / 2f + 3f, height / 2f, 0f), new Vector3(6f, height + 4f, 6f));
+				Block(portal.transform, concrete, new Vector3(0f, height + 4f, 0f), new Vector3(width + 12f, 8f, 6f));
+				Block(portal.transform, dark, new Vector3(0f, height / 2f, 6f), new Vector3(width, height, 6f));
+			}
+			Mod.Info("Tunnel mouths: " + Network.Portals.Count);
+		}
+
+		private static void Block(Transform parent, Material material, Vector3 at, Vector3 size)
+		{
+			GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
+			block.name = "Portal";
+			block.transform.SetParent(parent, false);
+			block.transform.localPosition = at;
+			block.transform.localScale = size;
+			block.GetComponent<MeshRenderer>().sharedMaterial = material;
+		}
+
+		/// <summary>
+		/// The grid on the trunk road near the main town: the player in the inner lane, the other slots in pairs
 		/// behind (the Multiplayer mod puts the other players on these).
 		/// </summary>
 		private static void PlaceGrid(TrackManager tm, GameObject env, out Vector3 forward)
