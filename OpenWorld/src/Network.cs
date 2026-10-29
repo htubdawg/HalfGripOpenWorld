@@ -571,24 +571,29 @@ namespace HalfGripOpenWorld
 				int b = Math.Min(n - 1, i + window);
 				y[i] = (raw[b + 1] - raw[a]) / (b - a + 1);
 			}
-			double rise = grade * Step;
 			for (int round = 0; round < 3; round++)
 			{
 				Pin(y, pins);
-				Hold(y, rise, 0, n - 1);
+				Hold(road, grade, 0, n - 1);
 			}
 			Pin(y, pins);
 		}
 
-		/// <summary>Holds the heights from <paramref name="a"/> to <paramref name="b"/> to a rise of at most <paramref name="rise"/> per sample, both ways.</summary>
-		private static void Hold(double[] y, double rise, int a, int b)
+		/// <summary>
+		/// Holds the road's heights from sample <paramref name="a"/> to <paramref name="b"/> to <paramref name="grade"/>, both ways, by
+		/// each segment's real length (the last one of a road can be much shorter than the rest).
+		/// </summary>
+		private static void Hold(Road road, double grade, int a, int b)
 		{
+			double[] y = road.Y;
 			for (int i = a + 1; i <= b; i++)
 			{
+				double rise = grade * (road.S[i] - road.S[i - 1]);
 				y[i] = Math.Max(y[i - 1] - rise, Math.Min(y[i - 1] + rise, y[i]));
 			}
 			for (int i = b - 1; i >= a; i--)
 			{
+				double rise = grade * (road.S[i + 1] - road.S[i]);
 				y[i] = Math.Max(y[i + 1] - rise, Math.Min(y[i + 1] + rise, y[i]));
 			}
 		}
@@ -649,7 +654,7 @@ namespace HalfGripOpenWorld
 					road.Y[k] = deck;
 					road.Bridge[k] = true;
 				}
-				Hold(road.Y, grade * Step, 0, n - 1);
+				Hold(road, grade, 0, n - 1);
 			}
 		}
 
@@ -657,7 +662,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Streets grown out from the roads of a town or village, the way Parish and Müller grow city streets: along each road in the place,
-		/// side streets branch off every so often (more often near the centre), each a short random walk; each step obeys local rules: a
+		/// side streets branch off every 60 to 120 m (more often near the centre), each a short random walk; each step obeys local rules: a
 		/// street that would cross another stops there (a junction), one that comes near another joins it, one near an existing junction
 		/// snaps to it, and one that leaves the place, reaches water or gets too steep stops. Streets then branch again, less often. The
 		/// result is the denser-in-the-middle, T-junction-rich network real towns have, never a grid.
@@ -694,7 +699,8 @@ namespace HalfGripOpenWorld
 			{
 				(int r, int depth) = queue.Dequeue();
 				Road parent = Roads[r];
-				double gap = rng.Range(0.6, 1.2) * (town ? 95.0 : 130.0);
+				// Side streets 60 to 120 m apart in a town (200 to 400 units), so the blocks between them hold houses with gardens.
+				double gap = rng.Range(0.7, 1.3) * (town ? 260.0 : 300.0);
 				for (int i = 2; i < parent.Count - 2; i++)
 				{
 					if (parent.S[i] < gap)
@@ -707,7 +713,7 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					gap = parent.S[i] + rng.Range(0.6, 1.2) * (town ? 95.0 : 130.0) * (1.0 + from);
+					gap = parent.S[i] + rng.Range(0.7, 1.3) * (town ? 260.0 : 300.0) * (1.0 + 0.6 * from);
 					for (int side = -1; side <= 1; side += 2)
 					{
 						double chance = (town ? 0.92 : 0.7) * (1.0 - from * from) * (depth <= 1 ? 1.0 : 0.85 / depth);
@@ -715,7 +721,7 @@ namespace HalfGripOpenWorld
 						{
 							continue;
 						}
-						double length = rng.Range(140.0, town ? 520.0 : 300.0) * (1.0 - 0.4 * from);
+						double length = rng.Range(250.0, town ? 900.0 : 500.0) * (1.0 - 0.4 * from);
 						Road street = Branch(rng, parent, r, i, side, length, place, RoadKind.Street);
 						if (street != null)
 						{
@@ -829,7 +835,7 @@ namespace HalfGripOpenWorld
 					}
 				}
 				// Near a road (not the one it left, at first): join it.
-				if (!first && segments.Snap(nx, nz, 26.0, -1, out double sx, out double sz, out double sy))
+				if (!first && segments.Snap(nx, nz, 40.0, -1, out double sx, out double sz, out double sy))
 				{
 					pts.Add((sx, sz));
 					endPin = sy;
@@ -931,7 +937,7 @@ namespace HalfGripOpenWorld
 				trunk.Y[k] = level;
 				trunk.Bridge[k] = false;
 			}
-			Hold(trunk.Y, Classes[0].Grade * Step, 0, trunk.Count - 1);
+			Hold(trunk, Classes[0].Grade, 0, trunk.Count - 1);
 			// Right of the direction of travel: (dz, -dx). The inner lane's centre is the median (5) plus its shoulder (2) plus half a lane.
 			const double lane = 5.0 + 2.0 + 5.5;
 			SpawnX = trunk.X[i] + SpawnDirZ * lane;
@@ -1070,6 +1076,84 @@ namespace HalfGripOpenWorld
 				best = Math.Min(best, d);
 			}
 			return best;
+		}
+
+		/// <summary>
+		/// For each of a tile's <paramref name="pixels"/> x <paramref name="pixels"/> pixels, how far its centre is from the nearest road's
+		/// edge (up to 20; negative on a road), from the road pieces of the tile and its neighbours. For keeping trees and grass off the
+		/// roads without asking every pixel.
+		/// </summary>
+		internal static float[] Clearance(int tx, int tz, float tileSize, int pixels)
+		{
+			float[] clear = new float[pixels * pixels];
+			for (int k = 0; k < clear.Length; k++)
+			{
+				clear[k] = 20f;
+			}
+			double ox = tx * (double)tileSize, oz = tz * (double)tileSize;
+			double size = tileSize / (double)pixels;
+			for (int j = tz - 1; j <= tz + 1; j++)
+			{
+				for (int i = tx - 1; i <= tx + 1; i++)
+				{
+					List<long> list = PiecesIn(i, j, tileSize);
+					if (list == null)
+					{
+						continue;
+					}
+					foreach (long piece in list)
+					{
+						Road road = Roads[(int)(piece >> 32)];
+						int k = (int)(uint)piece;
+						double reach = road.Half + 20.0;
+						int p0 = Math.Max(0, (int)Math.Floor((Math.Min(road.X[k], road.X[k + 1]) - reach - ox) / size));
+						int p1 = Math.Min(pixels - 1, (int)Math.Floor((Math.Max(road.X[k], road.X[k + 1]) + reach - ox) / size));
+						int q0 = Math.Max(0, (int)Math.Floor((Math.Min(road.Z[k], road.Z[k + 1]) - reach - oz) / size));
+						int q1 = Math.Min(pixels - 1, (int)Math.Floor((Math.Max(road.Z[k], road.Z[k + 1]) + reach - oz) / size));
+						for (int q = q0; q <= q1; q++)
+						{
+							for (int p = p0; p <= p1; p++)
+							{
+								Lines.Project(road.X, road.Z, k, ox + (p + 0.5) * size, oz + (q + 0.5) * size, out double _, out double d);
+								float edge = (float)(d - road.Half);
+								if (edge < clear[q * pixels + p])
+								{
+									clear[q * pixels + p] = edge;
+								}
+							}
+						}
+					}
+				}
+			}
+			return clear;
+		}
+
+		/// <summary>
+		/// Whether (x, z) may be built on for road <paramref name="own"/> (-1: for no road): at least <paramref name="margin"/> off every
+		/// road's edge, and no other road's edge nearer than <paramref name="ownEdge"/> (its distance from its own road's edge), so each
+		/// road builds only on its own side of a block.
+		/// </summary>
+		internal static bool Claims(double x, double z, int own, double ownEdge, double margin)
+		{
+			if (cellStart == null)
+			{
+				return true;
+			}
+			int c = CellOf(z) * Cells + CellOf(x);
+			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
+			{
+				long item = cellItems[k];
+				int r = (int)(item >> 32);
+				Road road = Roads[r];
+				int i = (int)(uint)item;
+				Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
+				double edge = d - road.Half;
+				if (edge < margin || (own >= 0 && r != own && edge < ownEdge - 0.5))
+				{
+					return false;
+				}
+			}
+			return true;
 		}
 
 		/// <summary>

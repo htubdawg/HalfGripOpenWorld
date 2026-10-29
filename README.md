@@ -15,19 +15,24 @@ generated from a fixed seed, the same every time and for every player, the way r
   meets the roads it crosses level. Roads that leave the world go into tunnels in the edge walls.
 - **Ground:** a pixel-art texture per tile from what the land is used for: fields in parcels of different crops with hedges, woods,
   wet meadows along the rivers, built-up streets and gardens in towns, farmyards, beaches, rock and snow.
+- **Buildings:** houses along the streets of every town and village, terraced and up to six storeys in a town's middle, detached and
+  set back further out, in brick, render, white and stone with tiled, slate or flat roofs; a farmhouse, barn and shed at every farm.
+  Each house is on its own street's side of the block, so none overlap. Solid.
+- **Trees and grass:** the Forest map's own pines in the woods, along hedges and in gardens (with trunks you can hit), and grass
+  tufts on lawns, meadows, pasture and moor, with ripe wheat in the wheat fields, drawn near the car.
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.3.0**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.0**, made for game version 0.418.
 
-**Work in progress.** Buildings, trees and signs come next (see [docs/DESIGN.md](docs/DESIGN.md)).
+**Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Install
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.3.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -50,6 +55,7 @@ the same ground.
 |---|---|---|---|
 | Map | `TestMode` | false | Every race you start is in the Open World. |
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
+| World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | Lets `TeleportKey` (F7) jump the car `TeleportDistance` (5000 m) ahead. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
@@ -65,8 +71,10 @@ the same ground.
   distance.
 - **Roads** (`Network.cs`): routed by A* over the land, costed by grade per class, with bridges dear and road-sharing cheap; built in
   order of importance; town streets grown with local rules (stop at a crossing, join a road nearby). See [docs/DESIGN.md](docs/DESIGN.md).
-- **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`): each tile draws its roads, tracks, water and ground texture, all worked out
-  on worker threads.
+- **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, tracks, water, buildings and
+  ground texture, all worked out on worker threads.
+- **Trees and grass** (`Foliage.cs`): scattered from each tile's ground pixels and drawn GPU-instanced; the pines are captured from
+  the main menu (as the Highway mod does), with simple pines made in code as a fallback.
 - **Floating origin** (`Origin.cs`, `GameCaches.cs`): past `ShiftDistance`, every root object in the scene moves back by whole tiles,
   along with world-space particles and trails and the positions the game keeps in fields; the cockpit stays where it is.
 - **Multiplayer** (`MultiplayerLink.cs`): positions go over the network in world coordinates; the Multiplayer mod's packet writer and
@@ -101,13 +109,16 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
    or seams between tiles, and the road does not flicker where roads meet. Try a lane to a farm and a farm track (looser grip).
 3. Cross a river on a bridge (concrete sides and parapets); drive into a river or the sea and check you are put back on a road.
-4. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+4. In Kingsbridge: houses line the streets, none stand on a road, you cannot drive through them. In the country: woods of pines (you
+   hit their trunks), grass round the car, wheat in the wheat fields. The log has `Forest trees captured: ...` (if it says simple pines
+   stand in, the main menu's trees were not found).
+5. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-5. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+6. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-6. Hold R far out: the car is put back on its wheels where it was.
-7. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-8. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+7. Hold R far out: the car is put back on its wheels where it was.
+8. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+9. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-9. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-10. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+10. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+11. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).

@@ -36,6 +36,7 @@ namespace HalfGripOpenWorld
 		private static readonly ulong SaltWarpZ = Noise.Mix(Seed + 7);
 
 		private static readonly ulong SaltCoast = Noise.Mix(Seed + 8);
+		private static readonly ulong SaltRolling = Noise.Mix(Seed + 9);
 
 		/// <summary>Sea level, before the world's lift (<see cref="Network.Lift"/>).</summary>
 		internal const double SeaLevel = 0.0;
@@ -69,7 +70,7 @@ namespace HalfGripOpenWorld
 			double rise = 230.0 * Noise.Step(0.0, 22000.0, inland);
 
 			// The swells grow inland, so the coastal plain is low and gentle and does not dip under the sea behind the shore.
-			double swell = 70.0 * (0.3 + 0.7 * Noise.Step(0.0, 9000.0, inland));
+			double swell = 100.0 * (0.3 + 0.7 * Noise.Step(0.0, 9000.0, inland));
 			double h = Noise.Fbm(SaltLow, x, z, 4000.0, 4, 0.45) * swell + rise + 14.0;
 
 			double mask = MountainMask(x, z);
@@ -79,8 +80,18 @@ namespace HalfGripOpenWorld
 				double wz = z + Noise.Fbm(SaltWarpZ, x, z, 3000.0, 2, 0.5) * 900.0;
 				h += Noise.Ridged(SaltRidge, wx, wz, 2600.0, 5, 0.5) * 560.0 * mask;
 			}
-			h += Noise.Fbm(SaltHills, x, z, 600.0, 3, 0.5) * 22.0 * (0.3 + 0.7 * shelf);
+			// Rolling hills a kilometre or two across, and smaller hills on them: the lowland is never flat for long.
+			h += Noise.Fbm(SaltRolling, x, z, 1600.0, 2, 0.5) * 45.0 * Noise.Step(-500.0, 3000.0, inland);
+			h += Noise.Fbm(SaltHills, x, z, 600.0, 3, 0.5) * 40.0 * (0.3 + 0.7 * shelf);
 			h += Noise.Gradient(SaltFine, x, z, 70.0) * 1.2;
+			// Inland, the land does not sink under the sea: its hollows are squeezed into shallow basins just above sea level (where the
+			// lakes form), fading in over the first 2.5 km from the coast.
+			const double floor = 3.0;
+			if (h < floor)
+			{
+				double squeeze = Noise.Step(500.0, 2500.0, inland);
+				h = h + (floor + (h - floor) * 0.12 - h) * squeeze;
+			}
 			h = h * shelf - 45.0 * (1.0 - shelf);
 
 			// The wall: north, west and east edges.

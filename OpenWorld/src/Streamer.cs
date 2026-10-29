@@ -46,6 +46,8 @@ namespace HalfGripOpenWorld
 		private Material[] roadMaterials;
 		private Material trackMaterial;
 		private Material waterMaterial;
+		private Material[] buildingMaterials;
+		private Foliage foliage;
 		private int layer;
 		private int roadLayer;
 		private MaterialPropertyBlock block;
@@ -66,14 +68,19 @@ namespace HalfGripOpenWorld
 			internal int Tz;
 			internal float[] H;
 			internal Color32[] Ground;
+			internal Buildings.Data Buildings;
+			internal Plant[] Trees;
+			internal Plant[] Grass;
 			internal RoadMeshData Road;
 			internal RoadMeshData Tracks;
 			internal RoadMeshData Water;
 			internal string Error;
 		}
 
-		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material tracks, Material water, int roadsLayer)
+		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material tracks, Material water, int roadsLayer, Material[] buildings, Foliage plants)
 		{
+			buildingMaterials = buildings;
+			foliage = plants;
 			Instance = this;
 			player = car;
 			material = ground;
@@ -175,6 +182,7 @@ namespace HalfGripOpenWorld
 			int cx = TileOf(x);
 			int cz = TileOf(z);
 			int radius = Mod.TileRadius.Value;
+			foliage?.Follow(cx, cz);
 
 			// Far tiles go (with some slack, so a car driving along a tile edge does not make and drop the same row over and over).
 			float keep = (radius + 1.5f) * (radius + 1.5f);
@@ -193,6 +201,7 @@ namespace HalfGripOpenWorld
 				{
 					Destroy(tiles[key]);
 					tiles.Remove(key);
+					foliage?.Remove(key);
 				}
 			}
 
@@ -274,12 +283,18 @@ namespace HalfGripOpenWorld
 					h[j * side + i] = (float)WorldGen.Height(x0 + i * step, z0 + j * step);
 				}
 			}
+			Color32[] colours = Colours(tx, tz, h, out Cover[] covers);
+			Buildings.Data buildings = HalfGripOpenWorld.Buildings.Build(tx, tz, TileSize);
+			Foliage.Scatter(tx, tz, TileSize, Pixels, covers, Network.Clearance(tx, tz, TileSize, Pixels), h, side, (float)step, buildings.Footprints, out Plant[] trees, out Plant[] grass);
 			return new Heights
 			{
 				Tx = tx,
 				Tz = tz,
 				H = h,
-				Ground = Colours(tx, tz, h),
+				Ground = colours,
+				Buildings = buildings,
+				Trees = trees,
+				Grass = grass,
 				Road = RoadMesh.Build(tx, tz, TileSize, false),
 				Tracks = RoadMesh.Build(tx, tz, TileSize, true),
 				Water = WaterMesh.Build(tx, tz, TileSize),
@@ -290,8 +305,9 @@ namespace HalfGripOpenWorld
 		/// The tile's ground texture: each pixel's colour from <see cref="LandUse"/>, at the pixel's centre, with the height and slope
 		/// taken from the tile's own height samples (so the colours follow exactly the ground that is drawn).
 		/// </summary>
-		private static Color32[] Colours(int tx, int tz, float[] h)
+		private static Color32[] Colours(int tx, int tz, float[] h, out Cover[] covers)
 		{
+			covers = new Cover[Pixels * Pixels];
 			int side = Quads + 3;
 			float step = TileSize / Quads;
 			float pixel = TileSize / Pixels;
@@ -309,7 +325,10 @@ namespace HalfGripOpenWorld
 					float a = h[j * side + i], b = h[j * side + i + 1], c = h[(j + 1) * side + i], d = h[(j + 1) * side + i + 1];
 					float height = (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
 					float sx = ((b - a) + (d - c)) * 0.5f / step, sz = ((c - a) + (d - b)) * 0.5f / step;
-					LandUse.Rgb rgb = LandUse.At(tx * (double)TileSize + lx, tz * (double)TileSize + lz, height - lift, Math.Sqrt(sx * sx + sz * sz));
+					double wx = tx * (double)TileSize + lx, wz = tz * (double)TileSize + lz;
+					Cover cover = LandUse.Classify(wx, wz, height - lift, Math.Sqrt(sx * sx + sz * sz), out int crop);
+					LandUse.Rgb rgb = LandUse.Colour(cover, crop, wx, wz);
+					covers[pj * Pixels + pi] = cover;
 					colours[pj * Pixels + pi] = new Color32(rgb.R, rgb.G, rgb.B, 255);
 				}
 			}
@@ -388,13 +407,35 @@ namespace HalfGripOpenWorld
 			Part(go.transform, "Roads", data, data.Road, roadMaterials, true, 1f, 1f);
 			Part(go.transform, "Tracks", data, data.Tracks, new[] { trackMaterial }, true, TrackGrip, TrackDrag);
 			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
+			Part(go.transform, "Buildings", data, data.Buildings?.Mesh, buildingMaterials, true, 1f, 1f);
+			Trunks(go.transform, data.Trees);
 			tiles[Key(data.Tx, data.Tz)] = go;
+			foliage?.Add(Key(data.Tx, data.Tz), go.transform, data.Tx, data.Tz, data.Trees, data.Grass);
 
 			buildMs += (Time.realtimeSinceStartup - started) * 1000f;
 			built++;
 			if (built % 50 == 0)
 			{
 				Mod.Info("Tiles: " + built + " built, " + (buildMs / built).ToString("0.0") + " ms each on the main thread, " + tiles.Count + " loaded");
+			}
+		}
+
+		/// <summary>A collider round each tree's trunk (the trees themselves are drawn instanced, with no objects of their own).</summary>
+		private void Trunks(Transform tile, Plant[] trees)
+		{
+			if (trees == null || trees.Length == 0)
+			{
+				return;
+			}
+			GameObject go = new GameObject("Trunks") { layer = layer };
+			go.transform.SetParent(tile, false);
+			foreach (Plant p in trees)
+			{
+				float tall = Foliage.Tall(p);
+				CapsuleCollider c = go.AddComponent<CapsuleCollider>();
+				c.center = p.Pos + Vector3.up * (tall * 0.3f);
+				c.radius = 0.9f + 0.4f * p.Scale;
+				c.height = tall * 0.6f;
 			}
 		}
 
