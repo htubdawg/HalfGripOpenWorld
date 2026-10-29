@@ -140,7 +140,7 @@ drainage; and central place theory and rank-size for settlements.
    back 6 to 14), counted from the road's start so each plot is decided once and the same everywhere; built if every corner is off
    every road and nearer its own road's edge than any other road's (so each road builds on its own side of a block and houses on
    different streets never overlap), out of the water, and on ground falling less than 6 across. Boxes with gable roofs (or flat, 4
-   storeys up) in five wall and four roof materials, pixel-art textures with a window to a bay and storey. A farmhouse, barn and shed
+   storeys up; pitched at about 48 degrees, so the near slope shows from the street) in five wall and four roof materials, pixel-art textures with a window to a bay and storey. A farmhouse, barn and shed
    round each farm's yard. A tile's buildings are one mesh with one collider.
 9. **Trees and grass** (`Foliage`): one try per ground pixel, with a chance by cover (woods 12%, hedges 6%, gardens 2.5%, the odd one
    in the open; grass on most lawn, meadow, pasture and moor, wheat in wheat fields), placed by hashing the pixel's position; none
@@ -150,8 +150,9 @@ drainage; and central place theory and rank-size for settlements.
    Positions are kept relative to their tile; the draw lists are rebuilt when tiles come and go, the car changes tile, or the origin
    shifts.
 
-The world is lifted so the road at the spawn is at 0.5 (the Multiplayer mod puts cars at height 1 on the grid); the spawn stretch of
-the trunk road is dead level.
+The spawn is on the main town's road in (it runs from the town's middle out to the trunk road), about the town's radius out, in the
+right-hand lane facing the middle; that stretch is levelled as soon as the road is built, before anything joins it. The world is
+lifted so the road at the spawn is at 0.5 (the Multiplayer mod puts cars at height 1 on the grid).
 
 ### Figures from `tools/preview` (this seed)
 

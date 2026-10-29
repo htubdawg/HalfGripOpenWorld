@@ -267,8 +267,8 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The grid on the trunk road near the main town: the player in the inner lane, the other slots in pairs
-		/// behind (the Multiplayer mod puts the other players on these).
+		/// The grid on the main town's road in, just outside the town and facing its middle (<see cref="Network.SpawnOnLink"/>): the
+		/// player in the right-hand lane, the other slots in pairs behind (the Multiplayer mod puts the other players on these).
 		/// </summary>
 		private static void PlaceGrid(TrackManager tm, GameObject env, out Vector3 forward)
 		{
@@ -296,8 +296,8 @@ namespace HalfGripOpenWorld
 						slot.position = spawn;
 						continue;
 					}
-					// Pairs behind: the inner lane and the outer lane (one lane, 11 units, further right).
-					Vector3 at = spawn - forward * (18f * (n / 2 + 1)) + right * (n % 2 == 0 ? 0f : 11f);
+					// Pairs behind: the spawn's lane and the other lane beside it.
+					Vector3 at = spawn - forward * (18f * (n / 2 + 1)) + right * (n % 2 == 0 ? 0f : (float)Network.SpawnPair);
 					Origin.World(at, out double wx, out double wz);
 					slot.position = OnRoad(wx, wz);
 					n++;

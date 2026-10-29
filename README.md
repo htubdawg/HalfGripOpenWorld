@@ -24,7 +24,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.1**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.2**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -32,7 +32,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.1` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.2` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -41,7 +41,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 - **Multiplayer:** with the [Multiplayer mod](https://github.com/4l3x4nd3r0/HalfGripMods), the host picks **OpenWorld** in the room's
   map list. Everyone needs this mod at the same version (the Multiplayer mod checks that every player has the same mods). The
   Multiplayer mod itself is not changed: this mod converts the positions it sends (see below). The host ends the race from the pause menu.
-- You start on the trunk road near Kingsbridge, the main town, heading east; the turning into town is just ahead.
+- You start on the road into Kingsbridge, the main town, just outside it and facing its middle.
 - **Reset** (hold R) puts the car back on its wheels where it is, not back at the spawn. A car that ends up in a river, a lake or the
   sea is put back on the nearest road.
 - **Weather** is drawn from all the game's weathers each race (in a Multiplayer room from the room's seed, so everyone gets the same).
@@ -105,7 +105,7 @@ dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000  
 
 Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and `VerboseLog`, then:
 
-1. The race loads on the trunk road near Kingsbridge, heading east; none of Tokyo's arena, city or train is left.
+1. The race loads on the road into Kingsbridge, just outside the town, facing it; none of Tokyo's arena, city or train is left.
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
    or seams between tiles, and the road does not flicker where roads meet. Try a lane to a farm and a farm track (looser grip).
 3. Cross a river on a bridge (concrete sides and parapets); drive into a river or the sea and check you are put back on a road.
