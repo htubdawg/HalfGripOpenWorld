@@ -45,6 +45,13 @@ namespace HalfGripOpenWorld
 			paused.Clear();
 		}
 
+		/// <summary>Starts the scene with its 0,0 at world (x, z), rounded to whole tiles, so the player can start anywhere in the world near 0,0.</summary>
+		internal static void Begin(double x, double z, float step)
+		{
+			X = Math.Round(x / step) * step;
+			Z = Math.Round(z / step) * step;
+		}
+
 		internal static Vector3 ToWorld(Vector3 local)
 		{
 			return new Vector3((float)(local.x + X), local.y, (float)(local.z + Z));

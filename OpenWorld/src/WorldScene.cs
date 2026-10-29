@@ -8,17 +8,21 @@ using UnityEngine.SceneManagement;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// Turns the Stadium scene into the Open World when an Open World race loads. Runs on <c>sceneLoaded</c>: after every Awake and before
+	/// Turns the Tokyo scene into the Open World when an Open World race loads. Runs on <c>sceneLoaded</c>: after every Awake and before
 	/// any Start, so the lap counter, the grid and the reset logic all find the new layout.
 	///
-	/// The Stadium's own ground, track and decoration are hidden. The game still needs a track line (the lap counter, the reset logic and
-	/// the Multiplayer mod's grid all read it), so a small loop round the spawn pad is made; lap counting and resets are then taken over
-	/// in <see cref="Patches"/>, since a free-roam race has no lap.
+	/// Tokyo is the host because its city pieces (buildings, lamps, barriers) are what the towns will be furnished with; the Forest's
+	/// trees, fences and grass come from the main menu, which is loaded with every scene. Tokyo's own arena, ground, city and train are
+	/// hidden. The game still needs a track line (the lap counter, the reset logic and the Multiplayer mod's grid all read it), so a small
+	/// loop round the spawn is made; lap counting and resets are then taken over in <see cref="Patches"/>, since a free-roam race has no lap.
 	/// </summary>
 	internal static class WorldScene
 	{
-		/// <summary>Radius of the token track loop round the spawn pad.</summary>
+		/// <summary>Radius of the token track loop round the spawn.</summary>
 		private const float LoopRadius = 120f;
+
+		/// <summary>Tokyo's own pieces under ENVIROMENT that are hidden: the arena, its ground, the city, the train, the lane dividers.</summary>
+		private static readonly string[] HiddenParts = { "TrackArena5", "Terrain", "Decoration", "TrainAssembly", "LaneDelimiter" };
 
 		private static GameObject root;
 		private static readonly List<GameObject> hidden = new List<GameObject>();
@@ -92,21 +96,18 @@ namespace HalfGripOpenWorld
 			GameObject env = scene.GetRootGameObjects().FirstOrDefault(g => g.name == "ENVIROMENT");
 			if (env == null)
 			{
-				throw new InvalidOperationException("this scene has no ENVIROMENT object, so it is not the Stadium scene");
+				throw new InvalidOperationException("this scene has no ENVIROMENT object, so it is not the Tokyo scene");
 			}
+			Shader lit = LitShader(scene);
 
-			Transform ground = env.transform.Find("Ground");
-			int layer = ground != null ? ground.gameObject.layer : 0;
-			Material source = ground != null && ground.TryGetComponent(out MeshRenderer groundRenderer) ? groundRenderer.sharedMaterial : null;
-
-			foreach (string name in new[] { "Ground", "Track", "Decoration" })
+			foreach (string name in HiddenParts)
 			{
 				Hide(env.transform.Find(name));
 			}
-			// The Stadium's hazard spots, scattered props and chicken sounds all sit on the old lap.
+			// Tokyo's hazard spots and scattered props sit on the old lap.
 			foreach (GameObject go in scene.GetRootGameObjects())
 			{
-				if (go.name == "HazardsSpawner" || go.name == "Scattered" || go.name.StartsWith("Looping_3D_Sound_Chicken", StringComparison.Ordinal))
+				if (go.name == "HazardsSpawner" || go.name == "Scattered")
 				{
 					Hide(go.transform);
 				}
@@ -117,20 +118,26 @@ namespace HalfGripOpenWorld
 				rainPlane.enabled = false;
 			}
 
+			Network.Ensure();
+			Mod.Log.LogInfo("World layout: " + Network.Sites.Length + " towns and villages, " + Network.Roads.Count + " roads, " + Network.BuildMs.ToString("0") + " ms");
+
+			// The scene's 0,0 is put at the spawn, so the start is as precise as anywhere else.
 			Origin.Reset(true);
+			Origin.Begin(Network.SpawnX, Network.SpawnZ, Streamer.TileSize);
 			// Free roam: no "Hold R to reset" when far from the token loop, no "Wrong way".
 			PlayerResetLogic.noHints = true;
 			PlayerResetLogic.noWrongWay = true;
 			hintsChanged = true;
 
+			int groundLayer = LayerMask.NameToLayer("Floor");
 			root = new GameObject("OpenWorld");
 			SceneManager.MoveGameObjectToScene(root, scene);
 			Streamer streamer = root.AddComponent<Streamer>();
-			streamer.Setup(tm.playerCarController, GroundMaterial(source), layer);
+			streamer.Setup(tm.playerCarController, GroundMaterial(lit), groundLayer >= 0 ? groundLayer : 0, RoadMesh.Materials(lit), 0);
 
-			Vector3 forward = PlaceGrid(tm, env);
+			PlaceGrid(tm, env, out Vector3 forward);
 			Rewire(tm, forward);
-			streamer.BuildAround(0.0, 0.0, 2);
+			streamer.BuildAround(Network.SpawnX, Network.SpawnZ, 2);
 			RaiseCameras();
 
 			Mod.Log.LogInfo("Open World built: " + (WorldGen.Half * 2.0 / 1000.0).ToString("0") + " km square, seed " + WorldGen.Seed.ToString("X") + ", " + streamer.Loaded + " tiles at the spawn, "
@@ -146,16 +153,30 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The ground's material: the Stadium ground's shader in a grass colour.</summary>
-		private static Material GroundMaterial(Material source)
+		/// <summary>
+		/// The scene's lit shader, taken from one of its own renderers (a shader no material in the build uses may be stripped from the
+		/// game, so Shader.Find is only the fallback).
+		/// </summary>
+		private static Shader LitShader(Scene scene)
 		{
-			Shader shader = source != null ? source.shader : null;
-			Material m = shader != null ? new Material(shader) : null;
-			if (m == null || (!m.HasProperty("_BaseColor") && !m.HasProperty("_Color")))
+			foreach (GameObject go in scene.GetRootGameObjects())
 			{
-				shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Sprites/Default");
-				m = new Material(shader);
+				foreach (MeshRenderer r in go.GetComponentsInChildren<MeshRenderer>(true))
+				{
+					Material m = r.sharedMaterial;
+					if (m != null && m.shader != null && m.shader.name == "Universal Render Pipeline/Lit")
+					{
+						return m.shader;
+					}
+				}
 			}
+			return Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Sprites/Default");
+		}
+
+		/// <summary>The ground's material: plain grass for now (step 2 textures it by zone and slope).</summary>
+		private static Material GroundMaterial(Shader shader)
+		{
+			Material m = new Material(shader);
 			Color grass = new Color(0.36f, 0.45f, 0.24f);
 			if (m.HasProperty("_BaseColor"))
 			{
@@ -180,10 +201,10 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The grid on the spawn pad at 0,0: the player's slot at the middle, the others in pairs behind it (the Multiplayer mod puts the
-		/// other players on these). Returns the way the grid faces.
+		/// The grid on the highway just outside the first town, facing the second: the player in the inner lane, the other slots in pairs
+		/// behind (the Multiplayer mod puts the other players on these).
 		/// </summary>
-		private static Vector3 PlaceGrid(TrackManager tm, GameObject env)
+		private static void PlaceGrid(TrackManager tm, GameObject env, out Vector3 forward)
 		{
 			CarControllerNew car = tm.playerCarController;
 			Transform container = tm.startingPositionsContainer != null ? tm.startingPositionsContainer.transform : null;
@@ -193,22 +214,26 @@ namespace HalfGripOpenWorld
 				playerSlot = container.Cast<Transform>().FirstOrDefault(t => t.name == "PlayerPosition");
 			}
 			float lift = playerSlot != null ? car.transform.position.y - playerSlot.position.y : 0.5f;
-			Vector3 forward = car.transform.forward;
-			forward.y = 0f;
-			forward = forward.sqrMagnitude > 1e-4f ? forward.normalized : Vector3.right;
+			forward = new Vector3((float)Network.SpawnDirX, 0f, (float)Network.SpawnDirZ);
 			Vector3 right = Vector3.Cross(Vector3.up, forward);
+			Quaternion heading = Quaternion.LookRotation(forward, Vector3.up);
+			Vector3 spawn = OnRoad(Network.SpawnX, Network.SpawnZ);
 
 			if (container != null)
 			{
 				int n = 0;
 				foreach (Transform slot in container.Cast<Transform>().ToList())
 				{
+					slot.rotation = heading;
 					if (slot.name == "PlayerPosition")
 					{
-						slot.position = Vector3.zero;
+						slot.position = spawn;
 						continue;
 					}
-					slot.position = -forward * (16f * (n / 2 + 1)) + right * (n % 2 == 0 ? -6f : 6f);
+					// Pairs behind: the inner lane and the outer lane (one lane, 11 units, further right).
+					Vector3 at = spawn - forward * (18f * (n / 2 + 1)) + right * (n % 2 == 0 ? 0f : 11f);
+					Origin.World(at, out double wx, out double wz);
+					slot.position = OnRoad(wx, wz);
 					n++;
 				}
 			}
@@ -220,12 +245,13 @@ namespace HalfGripOpenWorld
 			{
 				listener.enabled = false;
 			}
-			Vector3 target = Vector3.up * lift;
-			ct.position = target;
+			Vector3 target = spawn + Vector3.up * lift;
+			ct.SetPositionAndRotation(target, heading);
 			Rigidbody body = car.rb != null ? car.rb : car.GetComponent<Rigidbody>();
 			if (body != null)
 			{
 				body.position = target;
+				body.rotation = heading;
 				body.linearVelocity = Vector3.zero;
 				body.angularVelocity = Vector3.zero;
 			}
@@ -238,13 +264,19 @@ namespace HalfGripOpenWorld
 			Transform semaphore = env.transform.Find("RaceStarterSemaphore");
 			if (semaphore != null)
 			{
-				Vector3 at = forward * 30f + right * 10f;
-				semaphore.position = new Vector3(at.x, semaphore.position.y, at.z);
+				// The start lights hang over the road ahead, as high above it as Tokyo's hang above its own.
+				Vector3 at = spawn + forward * 30f;
+				semaphore.position = new Vector3(at.x, spawn.y + semaphore.position.y, at.z);
 			}
-			return forward;
 		}
 
-		/// <summary>A token loop round the spawn pad, starting at the player's slot and heading the way the grid faces.</summary>
+		/// <summary>The scene point on the road surface (or the ground) at world (x, z).</summary>
+		private static Vector3 OnRoad(double x, double z)
+		{
+			return Origin.Local(x, (float)(WorldGen.Height(x, z) + Network.BedDepth), z);
+		}
+
+		/// <summary>A token loop round the spawn, starting at the player's slot and heading the way the grid faces.</summary>
 		private static void Rewire(TrackManager tm, Vector3 forward)
 		{
 			LapManager lap = tm.lapManager;
@@ -255,7 +287,8 @@ namespace HalfGripOpenWorld
 				UnityEngine.Object.Destroy(child.gameObject);
 			}
 			Vector3 right = Vector3.Cross(Vector3.up, forward);
-			Vector3 centre = right * LoopRadius;
+			Vector3 spawn = OnRoad(Network.SpawnX, Network.SpawnZ);
+			Vector3 centre = spawn + right * LoopRadius;
 			const int points = 16;
 			for (int i = 0; i < points; i++)
 			{
@@ -289,7 +322,7 @@ namespace HalfGripOpenWorld
 			Mod.Info("Token loop: " + line.sampledPoints.Count + " samples, " + line.trackLength.ToString("0") + " m");
 		}
 
-		/// <summary>The cameras draw as far as the tiles reach (the Stadium's draw to about 1.2 km); never lowered.</summary>
+		/// <summary>The cameras draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never lowered.</summary>
 		private static void RaiseCameras()
 		{
 			float needed = (Mod.TileRadius.Value + 0.5f) * Streamer.TileSize;

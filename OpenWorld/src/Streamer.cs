@@ -8,8 +8,9 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// Keeps the ground loaded around the player car: square tiles of TileSize metres, each a mesh with a collider, built from
-	/// <see cref="WorldGen.Height"/>. The heights are worked out on worker threads (pure arithmetic, no Unity calls); the mesh and collider
-	/// are made on the main thread, a few tiles a frame, nearest first. Tiles beyond the radius are destroyed.
+	/// <see cref="WorldGen.Height"/>, with the road surfaces that fall in the tile as a second mesh (<see cref="RoadMesh"/>). Both are
+	/// worked out on worker threads (pure arithmetic, no Unity calls); the meshes and colliders are made on the main thread, a few tiles
+	/// a frame, nearest first. Tiles beyond the radius are destroyed.
 	///
 	/// It also runs the floating origin once a frame (<see cref="Origin.Follow"/>), the debug teleport and the debug overlay.
 	/// </summary>
@@ -35,7 +36,9 @@ namespace HalfGripOpenWorld
 
 		private CarControllerNew player;
 		private Material material;
+		private Material[] roadMaterials;
 		private int layer;
+		private int roadLayer;
 
 		private readonly Dictionary<long, GameObject> tiles = new Dictionary<long, GameObject>();
 		private readonly HashSet<long> working = new HashSet<long>();
@@ -51,15 +54,18 @@ namespace HalfGripOpenWorld
 			internal int Tx;
 			internal int Tz;
 			internal float[] H;
+			internal RoadMeshData Road;
 			internal string Error;
 		}
 
-		internal void Setup(CarControllerNew car, Material ground, int groundLayer)
+		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, int roadsLayer)
 		{
 			Instance = this;
 			player = car;
 			material = ground;
 			layer = groundLayer;
+			roadMaterials = roads;
+			roadLayer = roadsLayer;
 		}
 
 		internal int Loaded => tiles.Count;
@@ -225,7 +231,7 @@ namespace HalfGripOpenWorld
 					h[j * side + i] = (float)WorldGen.Height(x0 + i * step, z0 + j * step);
 				}
 			}
-			return new Heights { Tx = tx, Tz = tz, H = h };
+			return new Heights { Tx = tx, Tz = tz, H = h, Road = RoadMesh.Build(tx, tz, TileSize) };
 		}
 
 		private void Make(Heights data)
@@ -282,6 +288,10 @@ namespace HalfGripOpenWorld
 			handling.resistanceModifier = GroundDrag;
 			handling.background = true;
 			go.AddComponent<TileMesh>().Mesh = mesh;
+			if (data.Road != null)
+			{
+				MakeRoad(go.transform, data);
+			}
 			tiles[Key(data.Tx, data.Tz)] = go;
 
 			buildMs += (Time.realtimeSinceStartup - started) * 1000f;
@@ -290,6 +300,32 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Info("Tiles: " + built + " built, " + (buildMs / built).ToString("0.0") + " ms each on the main thread, " + tiles.Count + " loaded");
 			}
+		}
+
+		/// <summary>The tile's road surfaces: one mesh, a submesh per road kind, with its own collider (plain grip, like tarmac).</summary>
+		private void MakeRoad(Transform tile, Heights data)
+		{
+			RoadMeshData r = data.Road;
+			Mesh mesh = new Mesh { name = "OpenWorld Roads " + data.Tx + "," + data.Tz };
+			if (r.Vertices.Length > 65000)
+			{
+				mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+			}
+			mesh.vertices = r.Vertices;
+			mesh.normals = r.Normals;
+			mesh.uv = r.Uv;
+			mesh.subMeshCount = r.Triangles.Length;
+			for (int k = 0; k < r.Triangles.Length; k++)
+			{
+				mesh.SetTriangles(r.Triangles[k], k);
+			}
+			mesh.RecalculateBounds();
+			GameObject go = new GameObject("Roads") { layer = roadLayer };
+			go.transform.SetParent(tile, false);
+			go.AddComponent<MeshFilter>().sharedMesh = mesh;
+			go.AddComponent<MeshRenderer>().sharedMaterials = roadMaterials;
+			go.AddComponent<MeshCollider>().sharedMesh = mesh;
+			go.AddComponent<TileMesh>().Mesh = mesh;
 		}
 
 		/// <summary>Moves the car <paramref name="distance"/> metres ahead (debug), building the ground there first so it lands on something.</summary>

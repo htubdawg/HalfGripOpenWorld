@@ -19,7 +19,10 @@ namespace HalfGripOpenWorld
 		}
 	}
 
-	/// <summary>TestMode: whatever node the player picked, the race is in the Open World, with no objective.</summary>
+	/// <summary>
+	/// TestMode: whatever node the player picked, the race is in the Open World, with no objective. Then, for any Open World race (TestMode
+	/// or a Multiplayer room), the weather is drawn: BeginRace has just set the map's own as the active weather.
+	/// </summary>
 	[HarmonyPatch(typeof(RunState), nameof(RunState.BeginRace))]
 	internal static class TestModePatch
 	{
@@ -30,6 +33,14 @@ namespace HalfGripOpenWorld
 				RunState.Selected.map = Mod.Map;
 				RunState.Selected.variant = TrackVariant.Normal;
 				RunState.Selected.objective = RaceObjective.None;
+			}
+		}
+
+		private static void Postfix()
+		{
+			if (Mod.Map != null && RunState.ActiveMap == Mod.Map)
+			{
+				Weather.Pick();
 			}
 		}
 	}

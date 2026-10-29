@@ -34,6 +34,19 @@ namespace HalfGripOpenWorld
 		private static FieldInfo remoteAim;
 		private static PropertyInfo readerType;
 		private static FieldInfo roomActive;
+		private static FieldInfo roomSeed;
+
+		/// <summary>The room's seed (the Multiplayer mod's <c>Room.Seed</c>), the same for every player in the room.</summary>
+		internal static bool RoomSeed(out int seed)
+		{
+			seed = 0;
+			if (roomSeed == null || !(roomSeed.GetValue(null) is int value))
+			{
+				return false;
+			}
+			seed = value;
+			return true;
+		}
 
 		/// <summary>True while the Multiplayer mod has a room open (its <c>Room.Active</c>).</summary>
 		internal static bool InRoom => roomActive != null && roomActive.GetValue(null) is bool active && active;
@@ -74,6 +87,7 @@ namespace HalfGripOpenWorld
 				remoteCarType = AccessTools.TypeByName("Multiplayer.RemoteCar");
 				Type room = AccessTools.TypeByName("Multiplayer.Room");
 				roomActive = room != null ? AccessTools.Field(room, "Active") : null;
+				roomSeed = room != null ? AccessTools.Field(room, "Seed") : null;
 				if (writer == null || reader == null || msg == null || remoteCarType == null)
 				{
 					Mod.Info("No Multiplayer mod found: positions are not converted for the network.");
