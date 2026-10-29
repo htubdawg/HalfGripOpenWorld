@@ -24,7 +24,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.0**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.1**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -32,7 +32,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.1` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 

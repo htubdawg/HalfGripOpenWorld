@@ -123,11 +123,17 @@ drainage; and central place theory and rank-size for settlements.
    30-unit steps turning a little; it **stops on a road it would cross** (a junction), **joins a road it comes within 26 of**, and stops
    before leaving the place, reaching water or getting too steep. Streets branch again, less often (3 levels in a town, 2 in a village).
    That gives the dense middle, the radial arms and the T-junctions real towns have, not a grid.
-6. **The ground under the roads** (`Network.Ground`): the bed of the road that claims a point most, fully within half its width plus 4,
-   then a bank back to the land, wider the bigger the cut or fill (1.6 x the height difference + 8, up to the class's limit).
+6. **The ground under the roads** (`Network.Ground`): the bed (0.5 under the surface) of the road that claims a point most, fully
+   within half its width plus 4, then a bank back to the land, wider the bigger the cut or fill (1.6 x the height difference + 8, up to
+   the class's limit). Of a road's segments the nearest one counts (the others' ends are a little higher or lower along a grade), and
+   under any road's paving the ground is held below the lowest such road. Where a new road runs on one already built (at a junction or
+   a crossing), it takes that road's height there (`Seat`), and its grade runs on from the paving's edge; the bigger road's surface is
+   drawn higher (0.20 for the trunk down to 0.02 for tracks), so it is the one seen.
 7. **Land use** (`LandUse`), for each tile's 64 x 64 pixel-art ground texture (about 4 units a pixel): snow on peaks, rock on cliffs,
    sand on the shore, paving along town streets and gardens behind, farmyards, wet meadow on floodplains, fields round places (rotated
    parcels of 150-270 with crops by hash and hedges), woods on slopes and wherever nobody farms, grass or upland moor elsewhere.
+   Whether land is farmed (or wooded) is decided per parcel, at its middle, so farmland ends at a hedge and woods meet fields along
+   field edges; deciding it point by point drew rings round the places.
 
 8. **Buildings** (`Buildings`): plots along every road (not the trunk or tracks) in a town or village, one every 26 units in a
    town's middle (terraced, 2 to 6 storeys, 2 back from the road), 36 further out and 44 in villages (detached, 1 or 2 storeys, set
