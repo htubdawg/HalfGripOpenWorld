@@ -129,6 +129,21 @@ drainage; and central place theory and rank-size for settlements.
    sand on the shore, paving along town streets and gardens behind, farmyards, wet meadow on floodplains, fields round places (rotated
    parcels of 150-270 with crops by hash and hedges), woods on slopes and wherever nobody farms, grass or upland moor elsewhere.
 
+8. **Buildings** (`Buildings`): plots along every road (not the trunk or tracks) in a town or village, one every 26 units in a
+   town's middle (terraced, 2 to 6 storeys, 2 back from the road), 36 further out and 44 in villages (detached, 1 or 2 storeys, set
+   back 6 to 14), counted from the road's start so each plot is decided once and the same everywhere; built if every corner is off
+   every road and nearer its own road's edge than any other road's (so each road builds on its own side of a block and houses on
+   different streets never overlap), out of the water, and on ground falling less than 6 across. Boxes with gable roofs (or flat, 4
+   storeys up) in five wall and four roof materials, pixel-art textures with a window to a bay and storey. A farmhouse, barn and shed
+   round each farm's yard. A tile's buildings are one mesh with one collider.
+9. **Trees and grass** (`Foliage`): one try per ground pixel, with a chance by cover (woods 12%, hedges 6%, gardens 2.5%, the odd one
+   in the open; grass on most lawn, meadow, pasture and moor, wheat in wheat fields), placed by hashing the pixel's position; none
+   within 6 of a road's edge (a per-pixel clearance map rasterised from the road pieces) or on a building. Trees are the Forest's pines
+   (the Highway mod's way of finding and keeping them), drawn GPU-instanced with copies of their materials, all loaded tiles' trees in
+   a few dozen draw calls, with a capsule collider per trunk; grass is a five-blade tuft drawn instanced on the tiles round the car.
+   Positions are kept relative to their tile; the draw lists are rebuilt when tiles come and go, the car changes tile, or the origin
+   shifts.
+
 The world is lifted so the road at the spawn is at 0.5 (the Multiplayer mod puts cars at height 1 on the grid); the spawn stretch of
 the trunk road is dead level.
 
@@ -136,16 +151,17 @@ the trunk road is dead level.
 
 | | |
 |---|---|
-| Layout built | about 1.1 to 2 s (.NET 8; done in the background at game start) |
-| Water | 26 rivers, 5 lakes |
+| Layout built | about 1.4 to 1.8 s (.NET 8; done in the background at game start) |
+| Water | 31 rivers, 8 lakes |
 | Places | 2 towns, 16 villages, 120 farms and hamlets |
-| Roads, real km | trunk 10, main 23, minor 12, streets 41, lanes 48, tracks 7: 140 km |
-| Density | 1.7 km of road per km² of land (rural England about 2, its towns 10 to 20) |
-| Junctions | about 1500 T-junction ends, 110 crossroads, 500 dead ends (farm lanes and tracks) |
-| Steepest | trunk 3%, main 7%, minor 9%, streets 11%, lanes 13%, tracks 14% |
-| A tile on a worker thread | 4 to 12 ms (heights, ground texture, meshes) |
+| Roads, real km | trunk 10, main 18, minor 13, streets 21, lanes 51, tracks 6: 120 km |
+| Density | 1.5 km of road per km² of land (rural England about 2, its towns 10 to 20) |
+| Junctions | about 620 T-junction ends, 50 crossroads, 280 dead ends (farm lanes and tracks) |
+| Steepest | trunk 5%, main 7%, minor 9%, streets 11%, lanes 11%, tracks 14% |
+| Round the main town (225 tiles) | about 600 buildings, 4000 trees, 2200 grass tufts a tile |
+| A tile on a worker thread | 10 to 13 ms (heights, ground, buildings, trees and grass, meshes) |
 
-![A closer look at Kingsbridge: the trunk road bypassing it, the link road, the grown streets, fields and the shore](town.png)
+![Kingsbridge from above: grown streets, houses along them (roofs), gardens with trees behind, fields round the town](town.png)
 
 ## Assets
 
@@ -156,10 +172,8 @@ code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 ## Next steps
 
-1. **Buildings:** houses along the grown streets (Tokyo's buildings and simple ones made in code, facing the street), farm buildings
-   in the yards.
-2. **Trees:** the Forest's pines (from the main menu) in the woods and along hedges; Tokyo's sakura in town.
-3. **Signs and furniture:** place-name signs at the edges of places, direction signs at junctions, street lamps, guardrails on the
-   trunk road.
-4. **Far view:** low-detail mountains and the town past the loaded tiles.
-5. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.
+1. **Signs and furniture:** place-name signs at the edges of places, direction signs at junctions, street lamps (Tokyo's), guardrails
+   on the trunk road.
+2. **Landmarks:** a church or temple in each village's middle, Tokyo's tall buildings as a few landmarks in the town centre.
+3. **Far view:** low-detail mountains and the town past the loaded tiles.
+4. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.

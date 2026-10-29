@@ -30,6 +30,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the ground's road beds |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, track and water meshes and their pixel-art textures |
+| `Buildings.cs` | Per-tile houses along streets and farm buildings (one mesh, one collider), their materials |
+| `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |

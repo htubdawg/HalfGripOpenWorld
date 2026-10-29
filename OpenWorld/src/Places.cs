@@ -229,6 +229,8 @@ namespace HalfGripOpenWorld
 			return Math.Max(sum / n, WorldGen.SeaLevel + 4.0);
 		}
 
+		private static readonly ulong SaltEdge = Noise.Mix(WorldGen.Seed + 501);
+
 		private const double IndexCell = 1000.0;
 		private const int IndexN = 34;
 		private static List<Place>[] index;
@@ -308,7 +310,8 @@ namespace HalfGripOpenWorld
 			foreach (Place p in fieldIndex[j * IndexN + i])
 			{
 				double dx = x - p.X, dz = z - p.Z;
-				double d = Math.Sqrt(dx * dx + dz * dz);
+				// The fields' edge wanders a lot (woods and rough ground come in between), so farmland is not a ring.
+				double d = Math.Sqrt(dx * dx + dz * dz) * (1.0 + Noise.Fbm(SaltEdge, x, z, 900.0, 2, 0.5) * 0.55);
 				double reach = FieldReach(p);
 				if (d < p.Radius + reach)
 				{
@@ -363,7 +366,9 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				double t = Noise.Step(p.Radius * 0.7, reach, Math.Sqrt(d2));
+				// The edge wanders (by up to a third of the radius), so a place does not sit in a circle.
+				double wobble = 1.0 + Noise.Gradient(SaltEdge, x, z, 700.0) * 0.33;
+				double t = Noise.Step(p.Radius * 0.7 * wobble, reach * wobble, Math.Sqrt(d2));
 				double inside = p.Y + (h - p.Y) * p.Relief;
 				h = inside + (h - inside) * t;
 			}

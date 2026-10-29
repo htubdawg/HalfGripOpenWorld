@@ -10,6 +10,26 @@ namespace HalfGripOpenWorld
 	///
 	/// Only looks: nothing here changes the ground's shape. Plain arithmetic and hashing, so it is the same every time.
 	/// </summary>
+	/// <summary>What the ground is, which decides its colour and what grows or stands on it.</summary>
+	internal enum Cover : byte
+	{
+		Snow,
+		Rock,
+		Sand,
+		Paving,
+		Garden,
+		Yard,
+		Meadow,
+		Hedge,
+		Wheat,
+		Crop,
+		Ploughed,
+		Pasture,
+		Forest,
+		Grass,
+		Moor,
+	}
+
 	internal static class LandUse
 	{
 		private static readonly ulong SaltForest = Noise.Mix(WorldGen.Seed + 401);
@@ -56,62 +76,103 @@ namespace HalfGripOpenWorld
 		/// <summary>The ground's colour at world (x, z), whose ground height (from sea level) is <paramref name="h"/> and slope (rise over run) <paramref name="slope"/>.</summary>
 		internal static Rgb At(double x, double z, double h, double slope)
 		{
-			int speckle = (int)(Noise.Mix(SaltSpeckle ^ (ulong)(long)Math.Floor(x / 4.0) * 73856093UL ^ (ulong)(long)Math.Floor(z / 4.0) * 19349663UL) >> 61) - 4;
+			return Colour(Classify(x, z, h, slope, out int crop), crop, x, z);
+		}
 
+		/// <summary>What the ground is at world (x, z) (see the class summary for the rules); <paramref name="crop"/> picks a field's crop colour.</summary>
+		internal static Cover Classify(double x, double z, double h, double slope, out int crop)
+		{
+			crop = 0;
 			if (h > 650.0 + Noise.Gradient(SaltForest, x, z, 400.0) * 60.0 && slope < 0.9)
 			{
-				return Shade(Snow, speckle);
+				return Cover.Snow;
 			}
 			double mountain = WorldGen.MountainMask(x, z);
 			if (slope > 0.62 || (mountain > 0.3 && slope > 0.4) || h > 720.0)
 			{
-				return Shade(Rock, speckle * 2);
+				return Cover.Rock;
 			}
 			if (h < WorldGen.SeaLevel + 5.0 && WorldGen.Inland(x, z) < 600.0)
 			{
-				return Shade(Sand, speckle);
+				return Cover.Sand;
 			}
 
 			Places.Place place = Places.At(x, z);
 			if (place != null)
 			{
-				double dx = x - place.X, dz = z - place.Z;
-				double from = Math.Sqrt(dx * dx + dz * dz) / place.Radius;
 				if (place.Kind == PlaceKind.Hamlet)
 				{
-					return Shade(Yard, speckle);
+					return Cover.Yard;
 				}
-				// Built-up along the streets (yards, house plots), gardens behind, and fewer houses towards the edge.
-				double street = Network.Nearest(x, z, 60.0, RoadKind.Street);
-				double plots = 22.0 + 18.0 * (1.0 - from) + Noise.Gradient(SaltTown, x, z, 40.0) * 10.0;
-				return Shade(street < plots ? Paving : Garden, speckle);
+				// Built-up along the streets (yards and house plots), gardens behind them; away from the streets the country goes on, so a
+				// town is its streets, not a disc.
+				double dx = x - place.X, dz = z - place.Z;
+				double from = Math.Sqrt(dx * dx + dz * dz) / place.Radius;
+				double street = Network.Nearest(x, z, 90.0, RoadKind.Trunk);
+				double plots = 14.0 + 22.0 * (1.0 - from) + Noise.Gradient(SaltTown, x, z, 40.0) * 8.0;
+				if (street < plots)
+				{
+					return Cover.Paving;
+				}
+				if (street < plots + 45.0)
+				{
+					return Cover.Garden;
+				}
 			}
 
 			if (Rivers.Distance(x, z, out double plain) < plain)
 			{
-				return Shade(Meadow, speckle);
+				return Cover.Meadow;
 			}
 
 			double farmed = Places.Farmland(x, z);
 			double wild = Noise.Fbm(SaltForest, x, z, 1800.0, 3, 0.5);
 			if (farmed > 0.0 && slope < 0.14 && h < 420.0 && farmed + wild * 0.6 > 0.3)
 			{
-				return Field(x, z, speckle);
+				return Field(x, z, out crop);
 			}
 			if (wild + slope * 1.6 - farmed * 0.8 + (h > 250.0 ? 0.1 : 0.0) > 0.02)
 			{
-				return Shade(Forest, speckle * 2);
+				return Cover.Forest;
 			}
-			return Shade(h > 280.0 ? Moor : Grass, speckle);
+			return h > 280.0 ? Cover.Moor : Cover.Grass;
+		}
+
+		/// <summary>The colour of a cover, with a little per-pixel speckle.</summary>
+		internal static Rgb Colour(Cover cover, int crop, double x, double z)
+		{
+			int speckle = (int)(Noise.Mix(SaltSpeckle ^ (ulong)(long)Math.Floor(x / 4.0) * 73856093UL ^ (ulong)(long)Math.Floor(z / 4.0) * 19349663UL) >> 61) - 4;
+			switch (cover)
+			{
+				case Cover.Snow: return Shade(Snow, speckle);
+				case Cover.Rock: return Shade(Rock, speckle * 2);
+				case Cover.Sand: return Shade(Sand, speckle);
+				case Cover.Paving: return Shade(Paving, speckle);
+				case Cover.Garden: return Shade(Garden, speckle);
+				case Cover.Yard: return Shade(Yard, speckle);
+				case Cover.Meadow: return Shade(Meadow, speckle);
+				case Cover.Hedge: return Shade(Hedge, speckle);
+				case Cover.Wheat:
+				case Cover.Crop:
+				case Cover.Ploughed:
+				case Cover.Pasture: return Shade(Crops[crop], speckle);
+				case Cover.Forest: return Shade(Forest, speckle * 2);
+				case Cover.Moor: return Shade(Moor, speckle);
+				default: return Shade(Grass, speckle);
+			}
 		}
 
 		/// <summary>
-		/// A field: the land is cut into parcels on a grid turned to a region's own angle (regions of 3 km), parcels of 150 to 260
+		/// A field: the land is cut into parcels on a grid turned to a region's own angle (regions of 3 km), parcels of 150 to 270
 		/// units, each with a crop chosen by hashing it, and a hedge round its edge.
 		/// </summary>
-		private static Rgb Field(double x, double z, int speckle)
+		private static Cover Field(double x, double z, out int crop)
 		{
-			long rx = (long)Math.Floor(x / 3000.0), rz = (long)Math.Floor(z / 3000.0);
+			crop = 0;
+			// Regions with wandering borders (the point is pushed about by slow noise first), so field patterns do not meet in straight seams.
+			double qx = x + Noise.Fbm(SaltParcel + 1, x, z, 2500.0, 2, 0.5) * 900.0;
+			double qz = z + Noise.Fbm(SaltParcel + 2, x, z, 2500.0, 2, 0.5) * 900.0;
+			long rx = (long)Math.Floor(qx / 3000.0), rz = (long)Math.Floor(qz / 3000.0);
 			ulong region = Noise.Mix(SaltParcel ^ (ulong)rx * 0x9E3779B1UL ^ (ulong)rz * 0x85EBCA77UL);
 			double angle = (region >> 40) / (double)(1UL << 24) * DetMath.Pi / 2.0;
 			double c = DetMath.Cos(angle), s = DetMath.Sin(angle);
@@ -121,10 +182,11 @@ namespace HalfGripOpenWorld
 			double fu = u - pu * size, fv = v - pv * size * 1.4;
 			if (fu < 5.0 || fv < 5.0)
 			{
-				return Shade(Hedge, speckle);
+				return Cover.Hedge;
 			}
 			ulong parcel = Noise.Mix(region ^ (ulong)pu * 0x632BE59BUL ^ (ulong)pv * 0x9E3779B97F4A7C15UL);
-			return Shade(Crops[(int)(parcel % (ulong)Crops.Length)], speckle);
+			crop = (int)(parcel % (ulong)Crops.Length);
+			return crop <= 1 ? Cover.Wheat : crop == 2 ? Cover.Crop : crop == 3 ? Cover.Ploughed : Cover.Pasture;
 		}
 
 		private static Rgb Shade(Rgb c, int by)
