@@ -13,6 +13,10 @@ namespace HalfGripOpenWorld
 	///
 	/// Only x and z move. Heights stay as they are, so everything that keeps a height (the track line's lowest point, lanes, the reset
 	/// logic) is still right after a shift.
+	///
+	/// The cockpit does not move. The game draws it as a separate rig that stands still near 0,0 (on the INTERIOR layer, seen by its own
+	/// InteriorCamera) while the car outside drives about; it only shares a root object with the car. Moved along with the world it would
+	/// end up kilometres out, and the hand, gun and shifter would shake with float error. So everything on that layer is left in place.
 	/// </summary>
 	internal static class Origin
 	{
@@ -87,10 +91,12 @@ namespace HalfGripOpenWorld
 			Vector3 delta = new Vector3(-dx, 0f, -dz);
 			float started = Time.realtimeSinceStartup;
 
+			int interior = LayerMask.NameToLayer("INTERIOR");
+
 			// An interpolated body would be drawn sliding the whole way for a frame: switch interpolation off until the physics has stepped.
 			foreach (Rigidbody body in UnityEngine.Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None))
 			{
-				if (body.interpolation != RigidbodyInterpolation.None)
+				if (body.interpolation != RigidbodyInterpolation.None && !InCockpit(body.transform, interior))
 				{
 					paused.Add((body, body.interpolation));
 					body.interpolation = RigidbodyInterpolation.None;
@@ -99,6 +105,7 @@ namespace HalfGripOpenWorld
 			restoreAt = Time.frameCount + 2;
 
 			int roots = 0;
+			HashSet<Transform> moved = new HashSet<Transform>();
 			for (int s = 0; s < SceneManager.sceneCount; s++)
 			{
 				Scene scene = SceneManager.GetSceneAt(s);
@@ -108,19 +115,21 @@ namespace HalfGripOpenWorld
 				}
 				foreach (GameObject go in scene.GetRootGameObjects())
 				{
-					// A screen-space canvas is placed by Unity, not by its transform.
-					if (go.TryGetComponent(out Canvas canvas) && canvas.renderMode != RenderMode.WorldSpace)
+					// A screen-space canvas is placed by Unity, not by its transform; a cockpit root stays.
+					if ((go.TryGetComponent(out Canvas canvas) && canvas.renderMode != RenderMode.WorldSpace) || go.layer == interior)
 					{
 						continue;
 					}
 					go.transform.position += delta;
+					moved.Add(go.transform);
 					roots++;
 				}
 			}
+			int kept = KeepInterior(delta, interior, moved);
 			Physics.SyncTransforms();
 
-			int particles = ShiftParticles(delta);
-			int lines = ShiftLines(delta);
+			int particles = ShiftParticles(delta, interior);
+			int lines = ShiftLines(delta, interior);
 			int caches = GameCaches.Shift(delta);
 
 			X += dx;
@@ -134,7 +143,48 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogWarning("A shift listener failed: " + e.Message);
 			}
-			Mod.Info("Origin shift " + Shifts + ": moved " + roots + " roots, " + particles + " particle systems, " + lines + " lines, " + caches + " cached positions by (" + (-dx).ToString("0") + ", " + (-dz).ToString("0") + "); scene 0,0 is world (" + X.ToString("0") + ", " + Z.ToString("0") + "), " + ((Time.realtimeSinceStartup - started) * 1000f).ToString("0.0") + " ms");
+			Mod.Info("Origin shift " + Shifts + ": moved " + roots + " roots, " + particles + " particle systems, " + lines + " lines, " + caches + " cached positions (" + kept + " cockpit objects kept in place) by (" + (-dx).ToString("0") + ", " + (-dz).ToString("0") + "); scene 0,0 is world (" + X.ToString("0") + ", " + Z.ToString("0") + "), " + ((Time.realtimeSinceStartup - started) * 1000f).ToString("0.0") + " ms");
+		}
+
+		/// <summary>
+		/// Puts back the cockpit: the top of each INTERIOR-layer subtree (an interior object with no interior object above it) whose root
+		/// was moved goes back by -delta, and everything under it with it. Returns how many subtrees were put back.
+		/// </summary>
+		private static int KeepInterior(Vector3 delta, int interior, HashSet<Transform> moved)
+		{
+			if (interior < 0)
+			{
+				Mod.Log.LogWarning("This game has no INTERIOR layer; the cockpit moves with the world.");
+				return 0;
+			}
+			int n = 0;
+			foreach (Transform t in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+			{
+				if (t.gameObject.layer != interior || t.parent == null || !moved.Contains(t.root) || InCockpit(t.parent, interior))
+				{
+					continue;
+				}
+				t.position -= delta;
+				n++;
+			}
+			return n;
+		}
+
+		/// <summary>True if <paramref name="t"/> or anything above it is on the INTERIOR layer: part of the cockpit, which stays put.</summary>
+		private static bool InCockpit(Transform t, int interior)
+		{
+			if (interior < 0)
+			{
+				return false;
+			}
+			for (; t != null; t = t.parent)
+			{
+				if (t.gameObject.layer == interior)
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private static void RestoreInterpolation()
@@ -154,13 +204,13 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Particles simulated in world space (dust, smoke, sparks) stay where they were in the world.</summary>
-		private static int ShiftParticles(Vector3 delta)
+		private static int ShiftParticles(Vector3 delta, int interior)
 		{
 			int n = 0;
 			ParticleSystem.Particle[] buffer = null;
 			foreach (ParticleSystem ps in UnityEngine.Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
 			{
-				if (ps.main.simulationSpace != ParticleSystemSimulationSpace.World || ps.particleCount == 0)
+				if (ps.main.simulationSpace != ParticleSystemSimulationSpace.World || ps.particleCount == 0 || InCockpit(ps.transform, interior))
 				{
 					continue;
 				}
@@ -180,14 +230,14 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Trails (tyre marks, tracers) and world-space lines keep their points in world space.</summary>
-		private static int ShiftLines(Vector3 delta)
+		private static int ShiftLines(Vector3 delta, int interior)
 		{
 			int n = 0;
 			foreach (TrailRenderer trail in UnityEngine.Object.FindObjectsByType<TrailRenderer>(FindObjectsSortMode.None))
 			{
 				// Arrays of exactly positionCount: SetPositions takes the array's length as the number of points.
 				Vector3[] points = new Vector3[trail.positionCount];
-				if (points.Length == 0)
+				if (points.Length == 0 || InCockpit(trail.transform, interior))
 				{
 					continue;
 				}
@@ -201,7 +251,7 @@ namespace HalfGripOpenWorld
 			}
 			foreach (LineRenderer line in UnityEngine.Object.FindObjectsByType<LineRenderer>(FindObjectsSortMode.None))
 			{
-				if (!line.useWorldSpace || line.positionCount == 0)
+				if (!line.useWorldSpace || line.positionCount == 0 || InCockpit(line.transform, interior))
 				{
 					continue;
 				}
