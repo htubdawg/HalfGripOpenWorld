@@ -1,7 +1,8 @@
 # HalfGripOpenWorld
 
-A Half Grip (Steam app 4163270, Unity, Windows) mod: Open World, free roam in a 32 km square world generated from a fixed seed (two
-towns joined by a highway, villages on rural roads), built in the Tokyo scene, streamed in tiles, with a floating origin. Current release: see `OpenWorld/mod.json`.
+A Half Grip (Steam app 4163270, Unity, Windows) mod: Open World, free roam in a 32 km square of country generated from a fixed seed the
+way real country comes about (rivers, settlements, a road hierarchy, land use), built in the Tokyo scene, streamed in tiles, with a
+floating origin. Current release: see `OpenWorld/mod.json`.
 
 ## How the mod runs
 
@@ -22,10 +23,13 @@ towns joined by a highway, villages on rural roads), built in the Tokyo scene, s
 | `Mod.cs` | Config, scene-load hook |
 | `MapEntry.cs` | Adds the OpenWorld map to `RunConfig.maps` as a copy of TokyoNeon with its own track index (30) |
 | `Patches.cs` | Harmony: track index, TestMode and weather draw, kept out of run map draws, no laps, no solo AI, reset in place, fell-under-ground |
-| `WorldScene.cs` | Builds the world in the Tokyo scene: hides Tokyo's arena and city, grid on the highway, token track loop |
-| `WorldGen.cs`, `Noise.cs`, `Rng.cs` | The world's height function and the deterministic randomness under it |
-| `Network.cs` | Towns, villages and roads: placement, A* routing, height profiles, the ground's road beds |
-| `RoadMesh.cs` | Per-tile road meshes and their pixel-art textures |
+| `WorldScene.cs` | Builds the world in the Tokyo scene: hides Tokyo's arena and city, grid on the trunk road, tunnel mouths, token track loop |
+| `WorldGen.cs`, `Noise.cs`, `Rng.cs`, `Heap.cs` | The land's height function (layers) and the deterministic randomness and ordering under it |
+| `Rivers.cs` | Drainage (priority flood), rivers and lakes, and their cut into the land |
+| `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
+| `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the ground's road beds |
+| `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
+| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, track and water meshes and their pixel-art textures |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
@@ -34,8 +38,9 @@ towns joined by a highway, villages on rural roads), built in the Tokyo scene, s
 
 ## Rules that matter
 
-- **Determinism.** Every player in a room must get the identical ground and roads. `WorldGen` and `Network` use only `Rng`, integer
-  hashing, `+ - * /`, `Math.Floor`, `Math.Sqrt`, `Math.Abs` and `DetMath.Sin`/`Cos`. Never `System.Random`, `UnityEngine.Random`,
+- **Determinism.** Every player in a room must get the identical ground and roads. `WorldGen`, `Rivers`, `Places` and `Network` use
+  only `Rng`, integer hashing, `+ - * /`, `Math.Floor`, `Math.Sqrt`, `Math.Abs`, `DetMath.Sin`/`Cos` and `Network.Atan2`, and break
+  every tie (heaps, sorts) by index. Never `System.Random`, `UnityEngine.Random`,
   `Math.Sin`/`Cos`/`Exp`/`Pow`, or a config value. A change to it changes the world, so everyone in a room needs the same version (the Multiplayer mod enforces that).
 - **Origin.** Anything that keeps a world position outside a transform must be moved on `Origin.Shifted` (or listed in `GameCaches`).
   Positions sent over the network are world coordinates. Only x and z shift; heights never change.
@@ -48,8 +53,8 @@ towns joined by a highway, villages on rural roads), built in the Tokyo scene, s
 ## Checking changes
 
 - `tools/check.sh <game folder> <HalfGripTools.dll>` compiles the mod (see README). Run it before every push.
-- `dotnet run -c Release --project tools/preview` checks the generator (layout, road grades, ground meets roads, overlaps,
-  repeatability, tile time) and draws the world with its roads; it fails on overlapping roads or a non-repeatable height.
+- `dotnet run -c Release --project tools/preview -- out.ppm [pixels] [x z span]` checks the generator (layout, road density at real
+  scale, junctions, grades, ground meets roads, repeatability, tile time) and draws a map; look at it after any generator change.
 - In game: see the test checklist in README.
 
 ## Working with the owner

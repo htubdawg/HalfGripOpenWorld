@@ -1,31 +1,59 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using HalfGripOpenWorld;
 
-// Checks the world generator without the game: the layout (towns, villages, roads), road grades, that the ground meets every road's
-// bed, height range and slopes, repeatability, how long a tile's heights take, and a map of the whole world written as a PPM picture
-// (Pillow or most image viewers turn it into a PNG).
-//   dotnet run -c Release --project tools/preview -- [out.ppm] [pixels]
+// Checks the world generator without the game and draws it.
+//   dotnet run -c Release --project tools/preview -- <out.ppm> [pixels] [west x] [north z] [span]
+// Prints the layout (rivers, lakes, places, roads by class), realism figures (road density at real scale, junction types, dead
+// ends), the steepest grade per class, how far the ground is from each road's bed, repeatability and the time a tile takes; then
+// writes a map (land use, hillshade, water, roads by class, bridges in red), the whole world by default, or the square given.
+// Exits 1 if a check fails.
 internal static class Program
 {
+	/// <summary>Game units per real metre (a car is about 14 units and 4.3 m).</summary>
+	private const double PerMetre = 3.3;
+
 	private static int Main(string[] args)
 	{
 		string output = args.Length > 0 ? args[0] : "world.ppm";
 		int size = args.Length > 1 ? int.Parse(args[1]) : 1024;
+		double x0 = args.Length > 2 ? double.Parse(args[2]) : -WorldGen.Half;
+		double z0 = args.Length > 3 ? double.Parse(args[3]) : WorldGen.Half;
+		double span = args.Length > 4 ? double.Parse(args[4]) : WorldGen.Half * 2.0;
 		bool ok = true;
 
 		Network.Ensure();
 		Console.WriteLine("layout built in " + Network.BuildMs.ToString("0") + " ms");
-		foreach (Network.Site s in Network.Sites)
+		Console.WriteLine("  " + Rivers.All.Count + " rivers, " + Rivers.LakeCount + " lakes");
+		int[] places = new int[3];
+		foreach (Places.Place p in Places.All)
 		{
-			Console.WriteLine((s.Town ? "  town    " : "  village ") + s.Name.PadRight(11) + " at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")  height " + s.Y.ToString("0"));
+			places[(int)p.Kind]++;
+			if (p.Kind != PlaceKind.Hamlet)
+			{
+				Console.WriteLine("  " + p.Kind.ToString().ToLower().PadRight(8) + p.Name.PadRight(12) + "(" + p.X.ToString("0") + ", " + p.Z.ToString("0") + ")");
+			}
 		}
-		double[] length = new double[3];
-		int[] count = new int[3];
-		double worstGrade = 0.0;
-		string worstRoad = "";
-		double worstBed = 0.0;
+		Console.WriteLine("  " + places[0] + " towns, " + places[1] + " villages, " + places[2] + " hamlets and farms");
+
+		// Lengths and density per class, at real scale (km of road per km² of land).
+		double landArea = 0.0;
+		for (double z = -WorldGen.Half; z < WorldGen.Half; z += 200.0)
+		{
+			for (double x = -WorldGen.Half; x < WorldGen.Half; x += 200.0)
+			{
+				if (WorldGen.Base(x, z) >= WorldGen.SeaLevel)
+				{
+					landArea += 200.0 * 200.0;
+				}
+			}
+		}
+		double realKm2 = landArea / (PerMetre * 1000.0) / (PerMetre * 1000.0);
+		double[] length = new double[6];
+		int[] count = new int[6];
+		double[] steepest = new double[6];
 		foreach (Network.Road r in Network.Roads)
 		{
 			length[(int)r.Kind] += r.S[r.Count - 1];
@@ -33,102 +61,128 @@ internal static class Program
 			for (int i = 1; i < r.Count; i++)
 			{
 				double g = Math.Abs(r.Y[i] - r.Y[i - 1]) / Math.Max(1e-6, r.S[i] - r.S[i - 1]);
-				if (g > worstGrade && r.Kind != RoadKind.Street)
-				{
-					worstGrade = g;
-					worstRoad = r.Name;
-				}
-			}
-			// The ground at the road's centre must be the road's bed (unless another road's bed claims it: a junction).
-			for (int i = 0; i < r.Count; i += 7)
-			{
-				double off = Math.Abs(WorldGen.Height(r.X[i], r.Z[i]) - (r.Y[i] - Network.BedDepth));
-				worstBed = Math.Max(worstBed, off);
+				steepest[(int)r.Kind] = Math.Max(steepest[(int)r.Kind], g);
 			}
 		}
-		// Rural roads must not run along another road (a crossing is fine): count samples within both roads' widths of another road.
+		Console.WriteLine("land " + realKm2.ToString("0") + " km² at real scale");
+		double total = 0.0;
+		for (int k = 0; k < 6; k++)
+		{
+			double km = length[k] / PerMetre / 1000.0;
+			total += km;
+			Console.WriteLine("  " + ((RoadKind)k).ToString().PadRight(10) + count[k].ToString().PadLeft(4) + " roads " + km.ToString("0.0").PadLeft(6) + " km real   steepest " + (steepest[k] * 100.0).ToString("0") + "%");
+		}
+		Console.WriteLine("  all roads " + total.ToString("0") + " km real, " + (total / realKm2).ToString("0.0") + " km per km² (rural England is about 2, its towns 10 to 20)");
+
+		// Junctions: a road end on another road is a T; roads crossing mid-way a crossroads; an end on nothing a dead end.
+		int tees = 0, deadEnds = 0, crossings = 0;
 		foreach (Network.Road r in Network.Roads)
 		{
-			if (r.Kind != RoadKind.Rural)
+			foreach (int end in new[] { 0, r.Count - 1 })
 			{
-				continue;
-			}
-			int along = 0;
-			foreach (Network.Road o in Network.Roads)
-			{
-				if (o == r || o.Kind == RoadKind.Street)
+				if (OnAnother(r, r.X[end], r.Z[end]))
 				{
-					continue;
+					tees++;
 				}
-				for (int i = 0; i < r.Count; i += 2)
+				else
 				{
-					for (int j = 0; j < o.Count; j += 2)
-					{
-						double dx = r.X[i] - o.X[j], dz = r.Z[i] - o.Z[j];
-						if (dx * dx + dz * dz < (r.Half + o.Half) * (r.Half + o.Half))
-						{
-							along += 2;
-							break;
-						}
-					}
+					deadEnds++;
 				}
-			}
-			if (along * Network.Step > 300.0)
-			{
-				Console.WriteLine("  overlap: " + r.Name + " runs " + (along * Network.Step).ToString("0") + " units on top of other roads");
-				ok = false;
 			}
 		}
-		if (args.Length > 2)
+		foreach (Network.Road r in Network.Roads)
 		{
-			foreach (Network.Road r in Network.Roads)
+			for (int i = 3; i < r.Count - 4; i += 3)
 			{
-				if (r.Kind != RoadKind.Street)
+				if (OnAnother(r, r.X[i], r.Z[i]) && !OnAnother(r, r.X[i - 3], r.Z[i - 3]))
 				{
-					Console.WriteLine("  road " + r.Name + ": " + (r.S[r.Count - 1] / 1000.0).ToString("0.0") + " km from (" + r.X[0].ToString("0") + ", " + r.Z[0].ToString("0") + ") to (" + r.X[r.Count - 1].ToString("0") + ", " + r.Z[r.Count - 1].ToString("0") + ")");
+					crossings++;
 				}
 			}
 		}
-		string[] kinds = { "highway", "rural", "street" };
-		for (int k = 0; k < 3; k++)
-		{
-			Console.WriteLine("  " + kinds[k].PadRight(8) + count[k] + " roads, " + (length[k] / 1000.0).ToString("0.0") + " km");
-		}
-		Console.WriteLine("steepest road grade " + (worstGrade * 100.0).ToString("0.0") + "% (" + worstRoad + ")");
-		Console.WriteLine("largest gap between the ground and a road's bed at its centre: " + worstBed.ToString("0.00") + " (junctions differ by design)");
-		Console.WriteLine("spawn at (" + Network.SpawnX.ToString("0") + ", " + Network.SpawnZ.ToString("0") + "), height " + Network.SpawnY.ToString("0") + ", heading (" + Network.SpawnDirX.ToString("0.00") + ", " + Network.SpawnDirZ.ToString("0.00") + ")");
+		Console.WriteLine("junctions: " + tees + " T-junction ends, about " + crossings / 2 + " crossroads, " + deadEnds + " dead ends");
 
-		// One tile's worth of heights (53 x 53), as the streamer works them out, in a town and in the country.
-		foreach ((string where, double x0, double z0) in new[] { ("town", Network.Sites[0].X - 125.0, Network.Sites[0].Z - 125.0), ("country", 3000.0, -2000.0) })
+		// The ground meets each road's bed at its centre (bridges excepted; junctions may differ a little by design).
+		double worstBed = 0.0;
+		foreach (Network.Road r in Network.Roads)
+		{
+			for (int i = 0; i < r.Count; i += 11)
+			{
+				if (!r.Bridge[i])
+				{
+					worstBed = Math.Max(worstBed, Math.Abs(WorldGen.Height(r.X[i], r.Z[i]) - Network.Lift - (r.Y[i] - Network.BedDepth)));
+				}
+			}
+		}
+		Console.WriteLine("largest gap between the ground and a road's bed at its centre: " + worstBed.ToString("0.00"));
+		Console.WriteLine("spawn (" + Network.SpawnX.ToString("0") + ", " + Network.SpawnZ.ToString("0") + "), " + Network.Portals.Count + " roads leave the world through tunnels");
+
+		bool repeatable = BitConverter.DoubleToInt64Bits(WorldGen.Height(12345.6, -7890.1)) == BitConverter.DoubleToInt64Bits(WorldGen.Height(12345.6, -7890.1));
+		ok &= repeatable;
+		Console.WriteLine("repeatable: " + repeatable + "   sample " + WorldGen.Height(12345.6, -7890.1).ToString("R"));
+
+		// A tile's heights (53 x 53) and its 64 x 64 ground colours, as the streamer works them out, in a town and in the country.
+		foreach ((string where, double tx, double tz) in new[] { ("town", Places.All[0].X, Places.All[0].Z), ("country", 3000.0, -2000.0) })
 		{
 			Stopwatch watch = Stopwatch.StartNew();
-			double sink = 0.0;
-			for (int t = 0; t < 10; t++)
+			for (int t = 0; t < 5; t++)
 			{
 				for (int j = 0; j < 53; j++)
 				{
 					for (int i = 0; i < 53; i++)
 					{
-						sink += WorldGen.Height(x0 + t * 250.0 + i * 5.0, z0 + j * 5.0);
+						WorldGen.Height(tx + t * 250.0 + i * 5.0, tz + j * 5.0);
+					}
+				}
+				for (int j = 0; j < 64; j++)
+				{
+					for (int i = 0; i < 64; i++)
+					{
+						LandUse.At(tx + t * 250.0 + i * 3.9, tz + j * 3.9, 20.0, 0.05);
 					}
 				}
 			}
-			Console.WriteLine("one tile, " + where + ": " + (watch.Elapsed.TotalMilliseconds / 10).ToString("0.0") + " ms" + (sink == 0.123 ? "!" : ""));
+			Console.WriteLine("one tile, " + where + ": " + (watch.Elapsed.TotalMilliseconds / 5).ToString("0.0") + " ms");
 		}
 
-		bool repeatable = BitConverter.DoubleToInt64Bits(WorldGen.Height(12345.6, -7890.1)) == BitConverter.DoubleToInt64Bits(WorldGen.Height(12345.6, -7890.1));
-		ok &= repeatable;
-		Console.WriteLine("repeatable: " + repeatable + "   sample: " + WorldGen.Height(12345.6, -7890.1).ToString("R"));
+		Draw(output, size, x0, z0, span);
+		Console.WriteLine("wrote " + output);
+		return ok ? 0 : 1;
+	}
 
-		// The map: shaded relief tinted by height, roads drawn over it, north up.
-		double span = WorldGen.Half * 2.0;
+	private static bool OnAnother(Network.Road self, double x, double z)
+	{
+		foreach (Network.Road o in Network.Roads)
+		{
+			if (o == self)
+			{
+				continue;
+			}
+			for (int i = 0; i + 1 < o.Count; i++)
+			{
+				if (Math.Abs(o.X[i] - x) > 20.0 || Math.Abs(o.Z[i] - z) > 20.0)
+				{
+					continue;
+				}
+				Lines.Project(o.X, o.Z, i, x, z, out double _, out double d);
+				if (d < 1.0)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static void Draw(string output, int size, double x0, double z0, double span)
+	{
 		double cell = span / size;
 		double[,] h = new double[size, size];
 		for (int j = 0; j < size; j++)
 		{
 			for (int i = 0; i < size; i++)
 			{
-				h[j, i] = WorldGen.Height(-WorldGen.Half + (i + 0.5) * cell, WorldGen.Half - (j + 0.5) * cell);
+				h[j, i] = WorldGen.Height(x0 + (i + 0.5) * cell, z0 - (j + 0.5) * cell) - Network.Lift;
 			}
 		}
 		byte[] rgb = new byte[size * size * 3];
@@ -136,36 +190,49 @@ internal static class Program
 		{
 			for (int i = 0; i < size; i++)
 			{
+				double x = x0 + (i + 0.5) * cell, z = z0 - (j + 0.5) * cell;
 				double dx = h[j, Math.Min(size - 1, i + 1)] - h[j, Math.Max(0, i - 1)];
 				double dz = h[Math.Min(size - 1, j + 1), i] - h[Math.Max(0, j - 1), i];
-				double shade = Math.Max(0.35, Math.Min(1.25, 0.85 + (-dx - dz) / (4.0 * cell) * 2.0));
-				double v = h[j, i];
-				(double r, double g, double b) = v < 60 ? (0.45, 0.62, 0.32) : v < 200 ? (0.55, 0.6, 0.35) : v < 450 ? (0.55, 0.5, 0.4) : (0.92, 0.92, 0.95);
+				double slope = Math.Sqrt(dx * dx + dz * dz) / (2.0 * cell);
+				double shade = Math.Max(0.55, Math.Min(1.2, 0.9 + (-dx - dz) / (4.0 * cell) * 1.5));
+				LandUse.Rgb c = LandUse.At(x, z, h[j, i], slope);
+				double r = c.R * shade, g = c.G * shade, b = c.B * shade;
+				if (Rivers.Water(x, z, out double level) && level > h[j, i])
+				{
+					(r, g, b) = (46, 82, 128);
+				}
 				int o = (j * size + i) * 3;
-				rgb[o] = (byte)Math.Min(255.0, r * shade * 255.0);
-				rgb[o + 1] = (byte)Math.Min(255.0, g * shade * 255.0);
-				rgb[o + 2] = (byte)Math.Min(255.0, b * shade * 255.0);
+				rgb[o] = (byte)Math.Min(255.0, r);
+				rgb[o + 1] = (byte)Math.Min(255.0, g);
+				rgb[o + 2] = (byte)Math.Min(255.0, b);
 			}
 		}
-		foreach (Network.Road r in Network.Roads)
+		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 } };
+		for (int kind = 5; kind >= 0; kind--)
 		{
-			(byte cr, byte cg, byte cb) = r.Kind == RoadKind.Highway ? ((byte)230, (byte)120, (byte)30) : r.Kind == RoadKind.Rural ? ((byte)250, (byte)230, (byte)90) : ((byte)70, (byte)70, (byte)75);
-			int thick = r.Kind == RoadKind.Highway ? 2 : 1;
-			for (int k = 0; k < r.Count; k++)
+			foreach (Network.Road r in Network.Roads)
 			{
-				int pi = (int)((r.X[k] + WorldGen.Half) / cell);
-				int pj = (int)((WorldGen.Half - r.Z[k]) / cell);
-				for (int a = 0; a < thick; a++)
+				if ((int)r.Kind != kind)
 				{
-					for (int b = 0; b < thick; b++)
+					continue;
+				}
+				int radius = (int)(r.Half / cell);
+				for (int k = 0; k < r.Count; k++)
+				{
+					int pi = (int)((r.X[k] - x0) / cell), pj = (int)((z0 - r.Z[k]) / cell);
+					byte[] c = r.Bridge[k] ? new byte[] { 200, 40, 40 } : colours[kind];
+					for (int a = -radius; a <= radius; a++)
 					{
-						int x = pi + a, y = pj + b;
-						if (x >= 0 && y >= 0 && x < size && y < size)
+						for (int b = -radius; b <= radius; b++)
 						{
-							int o = (y * size + x) * 3;
-							rgb[o] = cr;
-							rgb[o + 1] = cg;
-							rgb[o + 2] = cb;
+							int px = pi + a, py = pj + b;
+							if (px >= 0 && py >= 0 && px < size && py < size)
+							{
+								int o = (py * size + px) * 3;
+								rgb[o] = c[0];
+								rgb[o + 1] = c[1];
+								rgb[o + 2] = c[2];
+							}
 						}
 					}
 				}
@@ -177,7 +244,5 @@ internal static class Program
 			f.Write(head, 0, head.Length);
 			f.Write(rgb, 0, rgb.Length);
 		}
-		Console.WriteLine("wrote " + output);
-		return ok ? 0 : 1;
 	}
 }

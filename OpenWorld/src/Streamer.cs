@@ -34,11 +34,22 @@ namespace HalfGripOpenWorld
 
 		internal static Streamer Instance;
 
+		/// <summary>Pixels along a side of a tile's ground texture: about 4 units each, the game's own chunky pixel-art scale.</summary>
+		private const int Pixels = 64;
+
+		/// <summary>Grip and rolling resistance of the farm tracks (loose dirt), as on the Highway mod's dirt roads.</summary>
+		private const float TrackGrip = 0.8f;
+		private const float TrackDrag = 1.6f;
+
 		private CarControllerNew player;
 		private Material material;
 		private Material[] roadMaterials;
+		private Material trackMaterial;
+		private Material waterMaterial;
 		private int layer;
 		private int roadLayer;
+		private MaterialPropertyBlock block;
+		private float underwater;
 
 		private readonly Dictionary<long, GameObject> tiles = new Dictionary<long, GameObject>();
 		private readonly HashSet<long> working = new HashSet<long>();
@@ -54,18 +65,24 @@ namespace HalfGripOpenWorld
 			internal int Tx;
 			internal int Tz;
 			internal float[] H;
+			internal Color32[] Ground;
 			internal RoadMeshData Road;
+			internal RoadMeshData Tracks;
+			internal RoadMeshData Water;
 			internal string Error;
 		}
 
-		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, int roadsLayer)
+		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material tracks, Material water, int roadsLayer)
 		{
 			Instance = this;
 			player = car;
 			material = ground;
 			layer = groundLayer;
 			roadMaterials = roads;
+			trackMaterial = tracks;
+			waterMaterial = water;
 			roadLayer = roadsLayer;
+			block = new MaterialPropertyBlock();
 		}
 
 		internal int Loaded => tiles.Count;
@@ -99,6 +116,32 @@ namespace HalfGripOpenWorld
 			if (Mod.Teleport.Value && GameInput.GetKeyDown(Mod.TeleportKey.Value))
 			{
 				TeleportAhead(Mod.TeleportDistance.Value);
+			}
+			// A car that has gone into a river, a lake or the sea is put back on the nearest road after a moment (nothing here floats).
+			Origin.World(player.transform.position, out double wx, out double wz);
+			if (Rivers.Water(wx, wz, out double level) && player.transform.position.y < level + Network.Lift - 1.0)
+			{
+				underwater += Time.deltaTime;
+				if (underwater > 1.5f)
+				{
+					underwater = 0f;
+					ToRoad(wx, wz);
+					TextController.EnqueueRandomText(1f, "Reset.");
+				}
+			}
+			else
+			{
+				underwater = 0f;
+			}
+		}
+
+		/// <summary>Puts the car on the nearest road to world (x, z), facing along it.</summary>
+		internal void ToRoad(double x, double z)
+		{
+			if (Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz))
+			{
+				BuildAround(rx, rz, 1);
+				Place(rx, rz, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));
 			}
 		}
 
@@ -231,7 +274,46 @@ namespace HalfGripOpenWorld
 					h[j * side + i] = (float)WorldGen.Height(x0 + i * step, z0 + j * step);
 				}
 			}
-			return new Heights { Tx = tx, Tz = tz, H = h, Road = RoadMesh.Build(tx, tz, TileSize) };
+			return new Heights
+			{
+				Tx = tx,
+				Tz = tz,
+				H = h,
+				Ground = Colours(tx, tz, h),
+				Road = RoadMesh.Build(tx, tz, TileSize, false),
+				Tracks = RoadMesh.Build(tx, tz, TileSize, true),
+				Water = WaterMesh.Build(tx, tz, TileSize),
+			};
+		}
+
+		/// <summary>
+		/// The tile's ground texture: each pixel's colour from <see cref="LandUse"/>, at the pixel's centre, with the height and slope
+		/// taken from the tile's own height samples (so the colours follow exactly the ground that is drawn).
+		/// </summary>
+		private static Color32[] Colours(int tx, int tz, float[] h)
+		{
+			int side = Quads + 3;
+			float step = TileSize / Quads;
+			float pixel = TileSize / Pixels;
+			double lift = Network.Lift;
+			Color32[] colours = new Color32[Pixels * Pixels];
+			for (int pj = 0; pj < Pixels; pj++)
+			{
+				for (int pi = 0; pi < Pixels; pi++)
+				{
+					float lx = (pi + 0.5f) * pixel, lz = (pj + 0.5f) * pixel;
+					// Sample grid index (the grid starts one step before the tile).
+					float gx = lx / step + 1f, gz = lz / step + 1f;
+					int i = Math.Min(side - 2, (int)gx), j = Math.Min(side - 2, (int)gz);
+					float fx = gx - i, fz = gz - j;
+					float a = h[j * side + i], b = h[j * side + i + 1], c = h[(j + 1) * side + i], d = h[(j + 1) * side + i + 1];
+					float height = (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
+					float sx = ((b - a) + (d - c)) * 0.5f / step, sz = ((c - a) + (d - b)) * 0.5f / step;
+					LandUse.Rgb rgb = LandUse.At(tx * (double)TileSize + lx, tz * (double)TileSize + lz, height - lift, Math.Sqrt(sx * sx + sz * sz));
+					colours[pj * Pixels + pi] = new Color32(rgb.R, rgb.G, rgb.B, 255);
+				}
+			}
+			return colours;
 		}
 
 		private void Make(Heights data)
@@ -251,8 +333,8 @@ namespace HalfGripOpenWorld
 					int v = j * n + i;
 					vertices[v] = new Vector3(i * step, data.H[s], j * step);
 					normals[v] = new Vector3(data.H[s - 1] - data.H[s + 1], 2f * step, data.H[s - side] - data.H[s + side]).normalized;
-					// Ten metres to one texture repeat, counted from the tile, so it lines up across tiles (TileSize is a multiple of 10).
-					uv[v] = new Vector2(i * step / 10f, j * step / 10f);
+					// The tile's own ground texture covers it once.
+					uv[v] = new Vector2(i / (float)Quads, j / (float)Quads);
 				}
 			}
 			int[] triangles = new int[Quads * Quads * 6];
@@ -280,18 +362,32 @@ namespace HalfGripOpenWorld
 			GameObject go = new GameObject("Tile " + data.Tx + "," + data.Tz) { layer = layer };
 			go.transform.SetParent(transform, false);
 			go.transform.position = Origin.Local(data.Tx * (double)TileSize, 0f, data.Tz * (double)TileSize);
+			Texture2D texture = new Texture2D(Pixels, Pixels, TextureFormat.RGBA32, false)
+			{
+				filterMode = FilterMode.Point,
+				wrapMode = TextureWrapMode.Clamp,
+				name = "OpenWorld Ground " + data.Tx + "," + data.Tz,
+			};
+			texture.SetPixels32(data.Ground);
+			texture.Apply(false, true);
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
-			go.AddComponent<MeshRenderer>().sharedMaterial = material;
+			MeshRenderer renderer = go.AddComponent<MeshRenderer>();
+			renderer.sharedMaterial = material;
+			block.Clear();
+			block.SetTexture("_BaseMap", texture);
+			block.SetTexture("_MainTex", texture);
+			renderer.SetPropertyBlock(block);
 			go.AddComponent<MeshCollider>().sharedMesh = mesh;
 			HandlingModifier handling = go.AddComponent<HandlingModifier>();
 			handling.gripModifier = GroundGrip;
 			handling.resistanceModifier = GroundDrag;
 			handling.background = true;
-			go.AddComponent<TileMesh>().Mesh = mesh;
-			if (data.Road != null)
-			{
-				MakeRoad(go.transform, data);
-			}
+			TileMesh owned = go.AddComponent<TileMesh>();
+			owned.Mesh = mesh;
+			owned.Texture = texture;
+			Part(go.transform, "Roads", data, data.Road, roadMaterials, true, 1f, 1f);
+			Part(go.transform, "Tracks", data, data.Tracks, new[] { trackMaterial }, true, TrackGrip, TrackDrag);
+			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
 			tiles[Key(data.Tx, data.Tz)] = go;
 
 			buildMs += (Time.realtimeSinceStartup - started) * 1000f;
@@ -302,11 +398,17 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The tile's road surfaces: one mesh, a submesh per road kind, with its own collider (plain grip, like tarmac).</summary>
-		private void MakeRoad(Transform tile, Heights data)
+		/// <summary>
+		/// One of the tile's parts (its roads, farm tracks or water): a mesh with a submesh per material, a collider if it is driven on,
+		/// and its own grip if that is not tarmac's.
+		/// </summary>
+		private void Part(Transform tile, string name, Heights data, RoadMeshData r, Material[] materials, bool solid, float grip, float drag)
 		{
-			RoadMeshData r = data.Road;
-			Mesh mesh = new Mesh { name = "OpenWorld Roads " + data.Tx + "," + data.Tz };
+			if (r == null)
+			{
+				return;
+			}
+			Mesh mesh = new Mesh { name = "OpenWorld " + name + " " + data.Tx + "," + data.Tz };
 			if (r.Vertices.Length > 65000)
 			{
 				mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
@@ -320,11 +422,21 @@ namespace HalfGripOpenWorld
 				mesh.SetTriangles(r.Triangles[k], k);
 			}
 			mesh.RecalculateBounds();
-			GameObject go = new GameObject("Roads") { layer = roadLayer };
+			GameObject go = new GameObject(name) { layer = roadLayer };
 			go.transform.SetParent(tile, false);
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
-			go.AddComponent<MeshRenderer>().sharedMaterials = roadMaterials;
-			go.AddComponent<MeshCollider>().sharedMesh = mesh;
+			go.AddComponent<MeshRenderer>().sharedMaterials = materials;
+			if (solid)
+			{
+				go.AddComponent<MeshCollider>().sharedMesh = mesh;
+				if (grip != 1f || drag != 1f)
+				{
+					HandlingModifier handling = go.AddComponent<HandlingModifier>();
+					handling.gripModifier = grip;
+					handling.resistanceModifier = drag;
+					handling.background = true;
+				}
+			}
 			go.AddComponent<TileMesh>().Mesh = mesh;
 		}
 
@@ -416,16 +528,21 @@ namespace HalfGripOpenWorld
 		}
 	}
 
-	/// <summary>Destroys a tile's mesh with the tile (a mesh made in code is not freed with its object).</summary>
+	/// <summary>Destroys a tile's mesh and texture with the tile (ones made in code are not freed with their object).</summary>
 	internal sealed class TileMesh : MonoBehaviour
 	{
 		internal Mesh Mesh;
+		internal Texture2D Texture;
 
 		private void OnDestroy()
 		{
 			if (Mesh != null)
 			{
 				Destroy(Mesh);
+			}
+			if (Texture != null)
+			{
+				Destroy(Texture);
 			}
 		}
 	}

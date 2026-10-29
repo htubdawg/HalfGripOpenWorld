@@ -1,8 +1,8 @@
 {
 	"id": "openworld",
 	"name": "Open World",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"author": "htubdawg",
-	"description": "Free roam in a 32 km (20 mile) square world built from a fixed seed: two towns joined by a highway, villages linked by rural roads, mountain ranges and a mountain wall at the edge, streamed in tiles around the car. Built in the Tokyo scene; the weather is drawn each race. A floating origin keeps the physics precise anywhere in the world. Works in Multiplayer rooms with the Multiplayer mod as it is.",
+	"description": "Free roam in a 32 km (20 mile) square of country generated from a fixed seed the way real country comes about: rivers that drain the land to the sea, a market town, villages and farms where people would settle, and a road network grown in order of importance, from a trunk road down to farm tracks, with organic town streets, bridges and fields. Built in the Tokyo scene; the weather is drawn each race. A floating origin keeps the physics precise anywhere. Works in Multiplayer rooms with the Multiplayer mod as it is.",
 	"gameVersion": "0.418"
 }

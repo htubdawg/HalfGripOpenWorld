@@ -71,37 +71,81 @@ cars are kinematic stand-ins, so one over ground that is not loaded on this mach
 
 ## World
 
-![Map of the whole 32 km world, north up: highway orange, rural roads yellow, town streets grey](world.png)
+![Map of the whole 32 km world, north up: trunk road orange, main roads yellow, minor roads cream, streets grey, lanes white, tracks brown, bridges red](world.png)
 
-Units are game units: a car is about 14 long and a lane 11 (about 3.3 units to a real metre, so the world is about 10 km at car scale,
-8 minutes edge to edge at 120 on the dash).
+Units are game units: a car is about 14 long and a lane 11, about 3.3 units to a real metre, so the world is about 10 km across at car
+scale (80 km² of land) and takes about 8 minutes to cross at 120 on the dash. Everything is sized to that: a real 10 km square of
+lowland country holds about one small market town, a dozen or so villages and a hundred farms and hamlets, and a trunk road passing
+through rather than a motorway between two cities. The generator is built in the order real country forms, each stage on the one
+before, and is checked against real figures with `tools/preview`.
 
-`WorldGen.Natural(x, z)`: rolling lowland (4 km gradient fBm, 90), mountain ranges where a 9 km mask allows (domain-warped ridged
-noise, 520), hills (600, 22), bumps (70, 1.2), and a 700 wall over the last 1.5 km of the edge. Each noise octave is turned 37 degrees so
-no lattice lines up. `Base` adds a flat plateau under each town (radius 1500, blending over 900) and village (180, over 500) at the
-land's average height there. `Height` adds the road beds.
+The ideas come from the procedural-generation literature: Parish and Müller, *Procedural Modeling of Cities* (2001) for growing
+streets under local rules; Galin et al., *Procedural Generation of Roads* (2010) and *Authoring Hierarchical Road Networks* (2011) for
+routing by weighted shortest path, a hierarchy of road classes and roads that share the way; Barnes et al.'s priority flood (2014) for
+drainage; and central place theory and rank-size for settlements.
 
-## Layout (`Network.cs`)
+1. **Land** (`WorldGen.Natural`): a regional trend from the sea in the south (the coast about 5 km in from the edge, wandering) up to
+   uplands in the north; gradient-noise lowland swells (growing inland); domain-warped ridged mountain ranges where a slow mask allows,
+   mostly in the north; hills and bumps; a wall of mountains along the north, west and east edges.
+2. **Rivers and lakes** (`Rivers`): on a 100-unit grid, water is routed over the land plus a gentle noise swell (pure steepest descent
+   on smooth noise runs in straight parallel lines; the swell makes streams wander and gather) by a priority flood from the sea, so every
+   cell drains to the sea and hollows fill to their spill point. Catchments (cells draining through) of 700 or more are streams; each
+   is traced to the sea or to a bigger river, smoothed, given meanders scaled by its size, a width and floodplain from its catchment, and
+   a water level from the real land that only falls downstream; tributaries are joined onto their river. They cut a rounded channel, a
+   floodplain just above the water and 1-in-3 banks into the land (cutting only). Lakes: a second flood over the real land finds the
+   hollows; the eight biggest hold a lake in their deepest part (up to 6 above the floor).
+3. **Places** (`Places`): every spot on a 200-unit grid is scored: flatness, a river within 1.5 km but out of its floodplain, the coast
+   within 4 km, low ground, no mountains. Taken best first: towns (up to 2, 11 km apart, within 75% of the best score), villages (4.2 km
+   apart), then farms and hamlets on their own score (flat, water within reach, height matters little, so they reach the uplands; 1.5
+   km apart). The land under each place is softened towards its level, keeping some relief (45% in a town, none in a farmyard).
+4. **Roads** (`Network`), in order of importance:
+   - the trunk road (dual carriageway, 66 wide, 5%) from the lowest open point on the west edge near the coast to the east, paying to
+     go through a town (so it bypasses them), and carried into tunnels in the edge walls; each town joined to it by a main road;
+   - main and minor roads on the **Gabriel graph** of the towns, villages and a gate on the north edge (the lowest point, a pass): two
+     places are linked if no other place is inside the circle between them, which matches real inter-place networks far better than a
+     tree. Links are taken in order of **gravity** (population x population / distance squared); the strongest third (and the pass
+     road) are main roads (28 wide, 7%), the rest minor (24, 9%);
+   - streets grown in each town and village (below);
+   - a lane (15 wide, single track, 11%) from each farm to the nearest road, and some between neighbouring farms;
+   - farm tracks (9 wide, dirt, 14%) branching off lanes and minor roads.
 
-1. **Towns:** Westhaven in the west band, Eastport in the east, each the flattest open ground (least mountain mask and roughness) of 60
-   seeded tries.
-2. **Villages:** up to 18, on open ground (mountain mask 0), 3.5 km apart and 4 km from the towns.
-3. **Highway:** A* over a 200-unit grid of `Base`, a step costing length x (1 + 6 (grade / 4%)^2); every 5th cell kept, Chaikin x4,
-   resampled every 8. Profile: the land averaged over 45 samples each way, pinned to the towns' heights, held to 5%. Four lanes, 66 wide.
-4. **Rural roads:** a minimum spanning tree over all places plus each place's nearest unjoined neighbour under 7 km (never town to
-   town). A* with grades costed against 7%, extra cost on and beside roads already built (so roads cross rather than run alongside) and
-   through towns (so they meet the ring road). Where one crosses a road already built it is pinned to that road's height there. Held to
-   9%. Two lanes, 24 wide.
-5. **Streets:** each town has a ring road at its edge and a grid every 200 across it, turned to a seeded angle, all at the town's height.
-6. The whole world is lifted so the road at the spawn is at 0.5 (the Multiplayer mod puts cars at height 1 on the grid).
+   Each road is routed by A* (Dijkstra to reach the nearest road) on a 100-unit grid of the softened land. A step costs its length x
+   (1 + steepness x (grade / soft)^2) with the class's own soft grade and steepness; water and the walls are closed; a river crossing
+   costs a bridge (dearer for small roads); **a step along a road of the same class or bigger costs a third**, so a new road shares the
+   way with the network and only its new parts are built: they leave and join the network at T-junctions, snapped onto the existing
+   road. The path is thinned, rounded (Chaikin), and small roads given a slight wander (a lane follows old field edges, a main road
+   barely); then the height profile: the land averaged over the class's window, pinned to the roads it joins and crosses (so junctions
+   are level), held to the class's grade; and bridges where it crosses a river channel (a deck 5 above the water, ramps at the grade,
+   concrete sides and parapets; the ground under it is left alone).
+5. **Grown streets** (Parish and Müller's local rules): first a few old roads radiate from the centre to the place's fields (5 in a
+   town, 2 in a village), between the roads already arriving. Then along every road in the place, side streets branch off at a right
+   angle (give or take 12 degrees) every 60-115 units in a town (further apart towards the edge, and less often), each a walk of
+   30-unit steps turning a little; it **stops on a road it would cross** (a junction), **joins a road it comes within 26 of**, and stops
+   before leaving the place, reaching water or getting too steep. Streets branch again, less often (3 levels in a town, 2 in a village).
+   That gives the dense middle, the radial arms and the T-junctions real towns have, not a grid.
+6. **The ground under the roads** (`Network.Ground`): the bed of the road that claims a point most, fully within half its width plus 4,
+   then a bank back to the land, wider the bigger the cut or fill (1.6 x the height difference + 8, up to the class's limit).
+7. **Land use** (`LandUse`), for each tile's 64 x 64 pixel-art ground texture (about 4 units a pixel): snow on peaks, rock on cliffs,
+   sand on the shore, paving along town streets and gardens behind, farmyards, wet meadow on floodplains, fields round places (rotated
+   parcels of 150-270 with crops by hash and hedges), woods on slopes and wherever nobody farms, grass or upland moor elsewhere.
 
-The ground at a point is the bed (0.3 under the surface) of the road that claims it most: fully within half the width plus 4, then a
-bank back to the land that is wider the bigger the cut or fill (1.6 x the height difference plus 12, up to 150). Segments are found
-through a 128-unit grid. About 2 to 7 ms per tile on a worker thread.
+The world is lifted so the road at the spawn is at 0.5 (the Multiplayer mod puts cars at height 1 on the grid); the spawn stretch of
+the trunk road is dead level.
 
-Road surfaces are per tile: each road piece (between two samples) is drawn by the tile its middle is in, and both ends of a piece come
-from the samples, so pieces meet exactly across tile edges. Highway surfaces sit 0.06 above their line, rural 0.03, streets 0, so where
-two overlap at a junction one is cleanly on top.
+### Figures from `tools/preview` (this seed)
+
+| | |
+|---|---|
+| Layout built | about 1.1 to 2 s (.NET 8; done in the background at game start) |
+| Water | 26 rivers, 5 lakes |
+| Places | 2 towns, 16 villages, 120 farms and hamlets |
+| Roads, real km | trunk 10, main 23, minor 12, streets 41, lanes 48, tracks 7: 140 km |
+| Density | 1.7 km of road per km² of land (rural England about 2, its towns 10 to 20) |
+| Junctions | about 1500 T-junction ends, 110 crossroads, 500 dead ends (farm lanes and tracks) |
+| Steepest | trunk 3%, main 7%, minor 9%, streets 11%, lanes 13%, tracks 14% |
+| A tile on a worker thread | 4 to 12 ms (heights, ground texture, meshes) |
+
+![A closer look at Kingsbridge: the trunk road bypassing it, the link road, the grown streets, fields and the shore](town.png)
 
 ## Assets
 
@@ -112,8 +156,10 @@ code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 ## Next steps
 
-1. **Ground and countryside:** ground textures by zone and slope, trees, fields, fences, farm buildings, village houses.
-2. **Towns:** buildings on the blocks (Tokyo's and generated ones), street lamps and props.
-3. **Highway dressing:** guardrails, median barrier, signs with place names, proper junctions where roads meet it.
-4. **Landmarks and far view:** low-detail skylines and mountains past the loaded tiles.
+1. **Buildings:** houses along the grown streets (Tokyo's buildings and simple ones made in code, facing the street), farm buildings
+   in the yards.
+2. **Trees:** the Forest's pines (from the main menu) in the woods and along hedges; Tokyo's sakura in town.
+3. **Signs and furniture:** place-name signs at the edges of places, direction signs at junctions, street lamps, guardrails on the
+   trunk road.
+4. **Far view:** low-detail mountains and the town past the loaded tiles.
 5. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.
