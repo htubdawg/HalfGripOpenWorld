@@ -11,5 +11,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/WorldGen.cs" />
+    <Compile Include="../../OpenWorld/src/Network.cs" />
+    <Compile Include="../../OpenWorld/src/Rng.cs" />
   </ItemGroup>
 </Project>

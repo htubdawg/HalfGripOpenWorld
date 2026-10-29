@@ -6,8 +6,8 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// A free-roam map, Open World: a 32 km square of generated terrain, streamed in tiles around the car. Like the Highway mod it has no
-	/// scene of its own. It is built from code inside the Stadium scene when an Open World race loads.
+	/// A free-roam map, Open World: a 32 km square of generated land with towns, villages and roads, streamed in tiles around the car. Like
+	/// the Highway mod it has no scene of its own. It is built from code inside the Tokyo scene when an Open World race loads.
 	///
 	/// Two things make the size work. A floating origin (<see cref="Origin"/>) moves the whole scene back near 0,0 whenever the car gets
 	/// far from it, so the physics never runs where float precision is coarse. And the terrain is a pure function of world coordinates
@@ -57,6 +57,19 @@ namespace HalfGripOpenWorld
 			Verbose = ctx.Config.Bind("Debug", "VerboseLog", false, "Write the detailed log (each origin shift, tile timings) to the BepInEx log. Off, only the world's build, warnings and errors are logged.");
 
 			MapEntry.Ensure();
+			// The layout (towns, villages, roads) is pure arithmetic and takes a few hundred milliseconds: worked out in the background
+			// now, so the first Open World race does not wait for it.
+			System.Threading.Tasks.Task.Run(() =>
+			{
+				try
+				{
+					Network.Ensure();
+				}
+				catch (System.Exception e)
+				{
+					Log.LogError("The world layout could not be built: " + e);
+				}
+			});
 			ctx.OnSceneLoaded(scene =>
 			{
 				MapEntry.Ensure();

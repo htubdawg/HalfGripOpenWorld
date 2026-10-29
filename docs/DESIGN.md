@@ -71,16 +71,49 @@ cars are kinematic stand-ins, so one over ground that is not loaded on this mach
 
 ## World
 
-![Relief map of the whole 32 km world, north up, spawn in the middle](world.png)
+![Map of the whole 32 km world, north up: highway orange, rural roads yellow, town streets grey](world.png)
 
-`WorldGen.Height(x, z)`: rolling lowland (4 km gradient fBm, 90 m), mountain ranges where a 9 km mask allows (domain-warped ridged
-noise, 520 m), hills (600 m, 22 m), bumps (70 m, 1.2 m), a flat pad of 250 m radius at the spawn blending out over 1.25 km, and a
-700 m wall over the last 1.5 km of the edge. Each noise octave is turned 37 degrees so no lattice lines up. About 0.8 ms per tile.
+Units are game units: a car is about 14 long and a lane 11 (about 3.3 units to a real metre, so the world is about 10 km at car scale,
+8 minutes edge to edge at 120 on the dash).
+
+`WorldGen.Natural(x, z)`: rolling lowland (4 km gradient fBm, 90), mountain ranges where a 9 km mask allows (domain-warped ridged
+noise, 520), hills (600, 22), bumps (70, 1.2), and a 700 wall over the last 1.5 km of the edge. Each noise octave is turned 37 degrees so
+no lattice lines up. `Base` adds a flat plateau under each town (radius 1500, blending over 900) and village (180, over 500) at the
+land's average height there. `Height` adds the road beds.
+
+## Layout (`Network.cs`)
+
+1. **Towns:** Westhaven in the west band, Eastport in the east, each the flattest open ground (least mountain mask and roughness) of 60
+   seeded tries.
+2. **Villages:** up to 18, on open ground (mountain mask 0), 3.5 km apart and 4 km from the towns.
+3. **Highway:** A* over a 200-unit grid of `Base`, a step costing length x (1 + 6 (grade / 4%)^2); every 5th cell kept, Chaikin x4,
+   resampled every 8. Profile: the land averaged over 45 samples each way, pinned to the towns' heights, held to 5%. Four lanes, 66 wide.
+4. **Rural roads:** a minimum spanning tree over all places plus each place's nearest unjoined neighbour under 7 km (never town to
+   town). A* with grades costed against 7%, extra cost on and beside roads already built (so roads cross rather than run alongside) and
+   through towns (so they meet the ring road). Where one crosses a road already built it is pinned to that road's height there. Held to
+   9%. Two lanes, 24 wide.
+5. **Streets:** each town has a ring road at its edge and a grid every 200 across it, turned to a seeded angle, all at the town's height.
+6. The whole world is lifted so the road at the spawn is at 0.5 (the Multiplayer mod puts cars at height 1 on the grid).
+
+The ground at a point is the bed (0.3 under the surface) of the road that claims it most: fully within half the width plus 4, then a
+bank back to the land that is wider the bigger the cut or fill (1.6 x the height difference plus 12, up to 150). Segments are found
+through a 128-unit grid. About 2 to 7 ms per tile on a worker thread.
+
+Road surfaces are per tile: each road piece (between two samples) is drawn by the tile its middle is in, and both ends of a piece come
+from the samples, so pieces meet exactly across tile edges. Highway surfaces sit 0.06 above their line, rural 0.03, streets 0, so where
+two overlap at a junction one is cleanly on top.
+
+## Assets
+
+Only one race scene is loaded at a time, plus the main menu (always loaded before a race; its objects can be kept alive, as the
+Highway mod does). The world is built in Tokyo, so it can use Tokyo's tall buildings, temples, arch, street lamps, barriers and sakura
+trees; the menu gives the Forest's pine trees, wooden fences, grass and wheat, and its pixel terrain textures. Anything else is made in
+code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 ## Next steps
 
-1. **Roads.** A road graph across the world (generated once from the seed, cheap), cut into or laid on the tiles each tile touches.
-2. **Surface.** Texture or vertex-colour the ground by height and slope (grass, rock, snow), and grip per surface.
-3. **Landmarks and far view.** Low-detail meshes of the mountains past the loaded tiles, so the horizon is not empty in clear weather.
-4. **Events.** Point-to-point sprints or time trials between places in the world, reusing the race flow.
+1. **Ground and countryside:** ground textures by zone and slope, trees, fields, fences, farm buildings, village houses.
+2. **Towns:** buildings on the blocks (Tokyo's and generated ones), street lamps and props.
+3. **Highway dressing:** guardrails, median barrier, signs with place names, proper junctions where roads meet it.
+4. **Landmarks and far view:** low-detail skylines and mountains past the loaded tiles.
 5. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.

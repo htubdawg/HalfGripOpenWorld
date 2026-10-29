@@ -10,10 +10,10 @@ namespace HalfGripOpenWorld
 	/// </summary>
 	internal static class MapEntry
 	{
-		/// <summary>The scene the Open World is built in: Stadium's.</summary>
+		/// <summary>The scene the Open World is built in: Tokyo's.</summary>
 		internal static int HostTrack;
 
-		/// <summary>The index the Open World reports as its track, so its records do not mix with Stadium's. Highway uses 20, ProcTrack 21 to 25.</summary>
+		/// <summary>The index the Open World reports as its track, so its records do not mix with Tokyo's. Highway uses 20, ProcTrack 21 to 25.</summary>
 		private const int TrackId = 30;
 
 		internal static void Ensure()
@@ -27,7 +27,12 @@ namespace HalfGripOpenWorld
 				}
 				if (Mod.Map == null)
 				{
-					MapDefinition source = config.FindMap("StadiumAsh") ?? config.maps.FirstOrDefault(m => m != null);
+					MapDefinition source = config.FindMap("TokyoNeon");
+					if (source == null)
+					{
+						Mod.Log.LogWarning("The run config has no TokyoNeon map (another game version?), the Open World is not added.");
+						return;
+					}
 					if (source == null)
 					{
 						Mod.Log.LogWarning("The run config has no map to copy, the Open World is not added.");
@@ -78,24 +83,7 @@ namespace HalfGripOpenWorld
 			map.timeMid = 0f;
 			map.timeLate = 0f;
 
-			if (source.weather != null)
-			{
-				WeatherProfile weather = UnityEngine.Object.Instantiate(source.weather);
-				weather.hideFlags = HideFlags.HideAndDontSave;
-				// Rain, snow and ash are particle boxes over the old lap; they would not follow the car across the world.
-				weather.rain = false;
-				weather.snow = false;
-				weather.ash = false;
-				weather.headlightsActive = false;
-				weather.gripExponent = 1f;
-				weather.gripMultiplier = 1f;
-				// Fog that ends where the loaded tiles end, so the world fades out rather than stopping at an edge.
-				float reach = Mod.TileRadius.Value * Streamer.TileSize;
-				weather.fogActive = true;
-				weather.fogStart = reach * 0.25f;
-				weather.fogEnd = reach;
-				map.weather = weather;
-			}
+			// The weather is drawn per race (Weather.Pick); this one only shows on the map list.
 			return map;
 		}
 	}
