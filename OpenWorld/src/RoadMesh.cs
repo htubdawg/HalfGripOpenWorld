@@ -31,7 +31,7 @@ namespace HalfGripOpenWorld
 		/// How far each class's surface sits above its road line: bigger roads higher, so where two surfaces overlap at a junction the
 		/// bigger road is cleanly on top (as its markings would be); small enough to drive over.
 		/// </summary>
-		private static readonly float[] Lift = { 0.10f, 0.08f, 0.06f, 0.04f, 0.03f, 0.02f };
+		private static readonly float[] Lift = { 0.20f, 0.16f, 0.12f, 0.08f, 0.05f, 0.02f };
 
 		/// <summary>The tile's paved roads (<paramref name="tracks"/> false) or its farm tracks (true); null if it has none.</summary>
 		internal static RoadMeshData Build(int tx, int tz, float tileSize, bool tracks)

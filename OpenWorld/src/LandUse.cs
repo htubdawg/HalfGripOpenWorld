@@ -102,7 +102,12 @@ namespace HalfGripOpenWorld
 			{
 				if (place.Kind == PlaceKind.Hamlet)
 				{
-					return Cover.Yard;
+					// The yard round the farm buildings: an irregular patch, not the farm's whole circle.
+					double fx = x - place.X, fz = z - place.Z;
+					if (Math.Sqrt(fx * fx + fz * fz) * (1.0 + Noise.Gradient(SaltTown, x, z, 50.0) * 0.4) < 80.0)
+					{
+						return Cover.Yard;
+					}
 				}
 				// Built-up along the streets (yards and house plots), gardens behind them; away from the streets the country goes on, so a
 				// town is its streets, not a disc.
@@ -125,11 +130,19 @@ namespace HalfGripOpenWorld
 				return Cover.Meadow;
 			}
 
-			double farmed = Places.Farmland(x, z);
-			double wild = Noise.Fbm(SaltForest, x, z, 1800.0, 3, 0.5);
+			// Whether land is farmed is decided field by field, at each parcel's middle, so farmland ends at a hedge and woods meet
+			// fields along field edges (deciding it point by point draws rings round the places).
+			Parcel(x, z, out double cx, out double cz, out bool edge, out ulong parcel);
+			double farmed = Places.Farmland(cx, cz);
+			double wild = Noise.Fbm(SaltForest, cx, cz, 1800.0, 3, 0.5);
 			if (farmed > 0.0 && slope < 0.14 && h < 420.0 && farmed + wild * 0.6 > 0.3)
 			{
-				return Field(x, z, out crop);
+				if (edge)
+				{
+					return Cover.Hedge;
+				}
+				crop = (int)(parcel % (ulong)Crops.Length);
+				return crop <= 1 ? Cover.Wheat : crop == 2 ? Cover.Crop : crop == 3 ? Cover.Ploughed : Cover.Pasture;
 			}
 			if (wild + slope * 1.6 - farmed * 0.8 + (h > 250.0 ? 0.1 : 0.0) > 0.02)
 			{
@@ -163,13 +176,12 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// A field: the land is cut into parcels on a grid turned to a region's own angle (regions of 3 km), parcels of 150 to 270
-		/// units, each with a crop chosen by hashing it, and a hedge round its edge.
+		/// The field parcel (x, z) is in: the land is cut into parcels on a grid turned to a region's own angle (regions of about 3 km with
+		/// wandering borders), parcels of 150 to 270 units by 1.4 times that; its middle (cx, cz), whether (x, z) is on its edge (where
+		/// a hedge grows), and a hash of it for its crop.
 		/// </summary>
-		private static Cover Field(double x, double z, out int crop)
+		private static void Parcel(double x, double z, out double cx, out double cz, out bool edge, out ulong parcel)
 		{
-			crop = 0;
-			// Regions with wandering borders (the point is pushed about by slow noise first), so field patterns do not meet in straight seams.
 			double qx = x + Noise.Fbm(SaltParcel + 1, x, z, 2500.0, 2, 0.5) * 900.0;
 			double qz = z + Noise.Fbm(SaltParcel + 2, x, z, 2500.0, 2, 0.5) * 900.0;
 			long rx = (long)Math.Floor(qx / 3000.0), rz = (long)Math.Floor(qz / 3000.0);
@@ -180,13 +192,11 @@ namespace HalfGripOpenWorld
 			double size = 150.0 + (region >> 60) * 8.0;
 			long pu = (long)Math.Floor(u / size), pv = (long)Math.Floor(v / (size * 1.4));
 			double fu = u - pu * size, fv = v - pv * size * 1.4;
-			if (fu < 5.0 || fv < 5.0)
-			{
-				return Cover.Hedge;
-			}
-			ulong parcel = Noise.Mix(region ^ (ulong)pu * 0x632BE59BUL ^ (ulong)pv * 0x9E3779B97F4A7C15UL);
-			crop = (int)(parcel % (ulong)Crops.Length);
-			return crop <= 1 ? Cover.Wheat : crop == 2 ? Cover.Crop : crop == 3 ? Cover.Ploughed : Cover.Pasture;
+			edge = fu < 5.0 || fv < 5.0;
+			double mu = (pu + 0.5) * size, mv = (pv + 0.5) * size * 1.4;
+			cx = mu * c - mv * s;
+			cz = mu * s + mv * c;
+			parcel = Noise.Mix(region ^ (ulong)pu * 0x632BE59BUL ^ (ulong)pv * 0x9E3779B97F4A7C15UL);
 		}
 
 		private static Rgb Shade(Rgb c, int by)

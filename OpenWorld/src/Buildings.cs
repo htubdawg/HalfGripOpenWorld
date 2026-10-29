@@ -210,6 +210,7 @@ namespace HalfGripOpenWorld
 				if (roof == Flat)
 				{
 					Quad(p0 + up, p1 + up, p3 + up, p2 + up, Vector3.up, roof, w / Bay, d / Bay);
+					Quad(p0 + up, p1 + up, p3 + up, p2 + up, Vector3.down, roof, w / Bay, d / Bay);
 					return;
 				}
 				// Pitched: the ridge runs along the width, over the middle, a little past the walls.
@@ -219,10 +220,16 @@ namespace HalfGripOpenWorld
 				Vector3 r0 = c - a - end + ridge, r1 = c + a + end + ridge;
 				Vector3 e0 = p0 - end - over + eave, e1 = p1 + end - over + eave, e2 = p2 + end + over + eave, e3 = p3 - end + over + eave;
 				float slope = Mathf.Sqrt(rise * rise + d * d * 0.25f);
-				Quad(e0, e1, r0, r1, (Vector3.up * (d * 0.5f) - across * rise).normalized, roof, (w + 1.6f) / Bay, slope / Bay);
-				Quad(e3, e2, r0, r1, (Vector3.up * (d * 0.5f) + across * rise).normalized, roof, (w + 1.6f) / Bay, slope / Bay);
+				Vector3 out0 = (Vector3.up * (d * 0.5f) - across * rise).normalized, out1 = (Vector3.up * (d * 0.5f) + across * rise).normalized;
+				Quad(e0, e1, r0, r1, out0, roof, (w + 1.6f) / Bay, slope / Bay);
+				Quad(e3, e2, r0, r1, out1, roof, (w + 1.6f) / Bay, slope / Bay);
+				// The undersides too: the eaves overhang the walls, and a roof drawn one side only is see-through from below.
+				Quad(e0, e1, r0, r1, -out0, roof, (w + 1.6f) / Bay, slope / Bay);
+				Quad(e3, e2, r0, r1, -out1, roof, (w + 1.6f) / Bay, slope / Bay);
 				Triangle(p0 + eave, p3 + eave, c - a + ridge, -along, wall);
 				Triangle(p1 + eave, p2 + eave, c + a + ridge, along, wall);
+				Triangle(p0 + eave, p3 + eave, c - a + ridge, along, wall);
+				Triangle(p1 + eave, p2 + eave, c + a + ridge, -along, wall);
 			}
 
 			/// <summary>A wall from bottom edge (p, q) up <paramref name="h"/>, facing <paramref name="facing"/>; a window to a bay and a storey.</summary>
