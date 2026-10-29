@@ -188,3 +188,24 @@ namespace HalfGripOpenWorld
 		}
 	}
 }
+
+namespace HalfGripOpenWorld
+{
+	/// <summary>
+	/// The way cars face on the grid. The game turns a grid's cars to its layout's heading (east for every map); the Multiplayer mod
+	/// places every player that way too. In the Open World the grid is on a road that runs any way, so the heading is the road's.
+	/// </summary>
+	[HarmonyPatch(typeof(TrackManager), "LayoutHeading")]
+	internal static class GridHeading
+	{
+		private static bool Prefix(ref Quaternion __result)
+		{
+			if (!WorldScene.Loaded)
+			{
+				return true;
+			}
+			__result = Quaternion.LookRotation(new Vector3((float)Network.SpawnDirX, 0f, (float)Network.SpawnDirZ), Vector3.up);
+			return false;
+		}
+	}
+}

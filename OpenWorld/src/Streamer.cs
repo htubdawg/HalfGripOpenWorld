@@ -409,6 +409,13 @@ namespace HalfGripOpenWorld
 			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
 			Part(go.transform, "Buildings", data, data.Buildings?.Mesh, buildingMaterials, true, 1f, 1f);
 			Trunks(go.transform, data.Trees);
+			if (data.Buildings != null)
+			{
+				foreach (Landmarks.Spot spot in data.Buildings.Landmarks)
+				{
+					Landmarks.Spawn(go.transform, data.Tx * (double)TileSize, data.Tz * (double)TileSize, spot);
+				}
+			}
 			tiles[Key(data.Tx, data.Tz)] = go;
 			foliage?.Add(Key(data.Tx, data.Tz), go.transform, data.Tx, data.Tz, data.Trees, data.Grass);
 
