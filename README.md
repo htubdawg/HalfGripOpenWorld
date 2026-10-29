@@ -17,14 +17,15 @@ generated from a fixed seed, the same every time and for every player, the way r
   wet meadows along the rivers, built-up streets and gardens in towns, farmyards, beaches, rock and snow.
 - **Buildings:** houses along the streets of every town and village, terraced and up to six storeys in a town's middle, detached and
   set back further out, in brick, render, white and stone with tiled, slate or flat roofs; a farmhouse, barn and shed at every farm.
-  Each house is on its own street's side of the block, so none overlap. Solid.
+  Each house is on its own street's side of the block, so none overlap. Solid. Tokyo's own tall and station buildings stand here and
+  there in a town's middle as landmarks, and a Tokyo temple near each village's middle.
 - **Trees and grass:** the Forest map's own pines in the woods, along hedges and in gardens (with trunks you can hit), and grass
   tufts on lawns, meadows, pasture and moor, with ripe wheat in the wheat fields, drawn near the car.
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.2**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.3**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -32,7 +33,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.2` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.3` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -111,7 +112,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 3. Cross a river on a bridge (concrete sides and parapets); drive into a river or the sea and check you are put back on a road.
 4. In Kingsbridge: houses line the streets, none stand on a road, you cannot drive through them. In the country: woods of pines (you
    hit their trunks), grass round the car, wheat in the wheat fields. The log has `Forest trees captured: ...` (if it says simple pines
-   stand in, the main menu's trees were not found).
+   stand in, the main menu's trees were not found), and `Tokyo landmarks found: ...` with the kinds it copies.
 5. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
 6. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,

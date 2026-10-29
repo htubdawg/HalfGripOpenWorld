@@ -31,6 +31,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, track and water meshes and their pixel-art textures |
 | `Buildings.cs` | Per-tile houses along streets and farm buildings (one mesh, one collider), their materials |
+| `Landmarks.cs` | Tokyo's tall buildings and temples, found before Tokyo's decoration is hidden, copied into towns and villages |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay |

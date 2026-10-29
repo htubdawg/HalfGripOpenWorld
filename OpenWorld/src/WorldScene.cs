@@ -100,6 +100,8 @@ namespace HalfGripOpenWorld
 			}
 			Shader lit = LitShader(scene);
 
+			// Tokyo's buildings are copied as landmarks: found before their decoration is hidden.
+			Landmarks.Capture(env.transform.Find("Decoration"));
 			foreach (string name in HiddenParts)
 			{
 				Hide(env.transform.Find(name));
@@ -283,6 +285,10 @@ namespace HalfGripOpenWorld
 			forward = new Vector3((float)Network.SpawnDirX, 0f, (float)Network.SpawnDirZ);
 			Vector3 right = Vector3.Cross(Vector3.up, forward);
 			Quaternion heading = Quaternion.LookRotation(forward, Vector3.up);
+			// A slot's grid marking is drawn along the slot's +x (the game's grids face east), a little over the road: the slot is turned
+			// so +x runs along the road, and raised clear of the road's own surface.
+			Quaternion slotTurn = heading * Quaternion.Euler(0f, -90f, 0f);
+			Vector3 raise = Vector3.up * 0.25f;
 			Vector3 spawn = OnRoad(Network.SpawnX, Network.SpawnZ);
 
 			if (container != null)
@@ -290,16 +296,16 @@ namespace HalfGripOpenWorld
 				int n = 0;
 				foreach (Transform slot in container.Cast<Transform>().ToList())
 				{
-					slot.rotation = heading;
+					slot.rotation = slotTurn;
 					if (slot.name == "PlayerPosition")
 					{
-						slot.position = spawn;
+						slot.position = spawn + raise;
 						continue;
 					}
 					// Pairs behind: the spawn's lane and the other lane beside it.
 					Vector3 at = spawn - forward * (18f * (n / 2 + 1)) + right * (n % 2 == 0 ? 0f : (float)Network.SpawnPair);
 					Origin.World(at, out double wx, out double wz);
-					slot.position = OnRoad(wx, wz);
+					slot.position = OnRoad(wx, wz) + raise;
 					n++;
 				}
 			}

@@ -29,6 +29,8 @@ namespace HalfGripOpenWorld
 			internal RoadMeshData Mesh;
 			/// <summary>World x, z and radius of every building, so trees and grass keep off them.</summary>
 			internal List<(double x, double z, double r)> Footprints = new List<(double, double, double)>();
+			/// <summary>Tokyo's buildings to stand in this tile (put in place on the main thread).</summary>
+			internal List<Landmarks.Spot> Landmarks = new List<Landmarks.Spot>();
 		}
 
 		private static readonly ulong Salt = Noise.Mix(WorldGen.Seed + 601);
@@ -53,9 +55,17 @@ namespace HalfGripOpenWorld
 			}
 			foreach (Places.Place p in Places.All)
 			{
-				if (p.Kind == PlaceKind.Hamlet && Math.Floor(p.X / tileSize) == tx && Math.Floor(p.Z / tileSize) == tz)
+				if (Math.Floor(p.X / tileSize) != tx || Math.Floor(p.Z / tileSize) != tz)
+				{
+					continue;
+				}
+				if (p.Kind == PlaceKind.Hamlet)
 				{
 					Farm(b, data, p);
+				}
+				else if (p.Kind == PlaceKind.Village)
+				{
+					Temple(data, p);
 				}
 			}
 			data.Mesh = b.Done();
@@ -93,6 +103,11 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
+					// Now and then in a town's middle, one of Tokyo's tall buildings instead of a terrace house: a landmark to steer by.
+					if (core && from < 0.3 && Unit(h, 7) < 0.04 && Tower(data, r, px, pz, dx * side, dz * side, -dz * side, dx * side, road.Half, h))
+					{
+						continue;
+					}
 					double width = core ? spacing - 0.5 : spacing * (0.55 + 0.25 * Unit(h, 1));
 					double depth = core ? 26.0 + 6.0 * Unit(h, 2) : 20.0 + 8.0 * Unit(h, 2);
 					int floors = core ? 2 + (int)(Unit(h, 3) * (from < 0.2 ? 4.0 : 3.0)) : 1 + (int)(Unit(h, 3) * 2.0);
@@ -105,6 +120,54 @@ namespace HalfGripOpenWorld
 					int roof = floors >= 4 ? Flat : RedTile + (int)(Unit(h, 6) * 2.0);
 					// The house's frame turned so its across axis points away from the road on this side.
 					House(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, floors * Storey + 1.5f, wall, roof);
+				}
+			}
+		}
+
+		/// <summary>A tall Tokyo building on a plot by road <paramref name="r"/> at (px, pz), if one fits (about 46 square, 4 back from the road).</summary>
+		private static bool Tower(Data data, int r, double px, double pz, double dx, double dz, double nx, double nz, double half, ulong h)
+		{
+			int kind = HalfGripOpenWorld.Landmarks.Pick(true, h);
+			if (kind < 0)
+			{
+				return false;
+			}
+			const double side = 46.0, front = 4.0;
+			double off = half + front + side * 0.5;
+			double cx = px + nx * off, cz = pz + nz * off;
+			if (!Fits(r, front, cx, cz, dx, dz, side, side, 2.0, out double lo, out double _))
+			{
+				return false;
+			}
+			// Facing the road: its front (+z of the building) towards the road.
+			double yaw = Network.Atan2(-nx, -nz) * 180.0 / DetMath.Pi;
+			data.Landmarks.Add(new Landmarks.Spot { Kind = kind, X = cx, Z = cz, Y = (float)(lo - 0.3), Yaw = (float)yaw, Side = (float)side });
+			data.Footprints.Add((cx, cz, side * 0.71));
+			return true;
+		}
+
+		/// <summary>A temple near a village's middle: the first spot, ring by ring outwards, where it fits off the roads.</summary>
+		private static void Temple(Data data, Places.Place p)
+		{
+			ulong h = Noise.Mix(Salt ^ 0x7E3D1EUL ^ (ulong)(long)Math.Floor(p.X) * 0x632BE59BUL ^ (ulong)(long)Math.Floor(p.Z));
+			int kind = HalfGripOpenWorld.Landmarks.Pick(false, h);
+			if (kind < 0)
+			{
+				return;
+			}
+			const double side = 50.0;
+			for (double ring = 40.0; ring <= 220.0; ring += 30.0)
+			{
+				for (int k = 0; k < 8; k++)
+				{
+					double a = (k + Unit(h, 1)) * DetMath.Pi / 4.0;
+					double cx = p.X + DetMath.Cos(a) * ring, cz = p.Z + DetMath.Sin(a) * ring;
+					if (Fits(-1, 0.0, cx, cz, 1.0, 0.0, side, side, 4.0, out double lo, out double _))
+					{
+						data.Landmarks.Add(new Landmarks.Spot { Kind = kind, X = cx, Z = cz, Y = (float)(lo - 0.3), Yaw = (float)(Math.Floor(Unit(h, 2) * 4.0) * 90.0), Side = (float)side });
+						data.Footprints.Add((cx, cz, side * 0.71));
+						return;
+					}
 				}
 			}
 		}
@@ -135,33 +198,43 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private static void House(Builder b, Data data, int own, double front, double cx, double cz, double dx, double dz, double w, double d, float height, int wall, int roof)
 		{
-			// Across the house, away from its road.
+			if (!Fits(own, front, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))
+			{
+				return;
+			}
+			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
+			b.Box(cx, cz, (float)(lo - 0.6), dx, dz, (float)w, (float)d, height + (float)(hi - lo), wall, roof);
+		}
+
+		/// <summary>
+		/// Whether a footprint <paramref name="w"/> along (dx, dz) by <paramref name="d"/> across fits (see <see cref="House"/>), keeping
+		/// <paramref name="margin"/> off every road; the lowest and highest ground (scene heights) under its corners and middle.
+		/// </summary>
+		private static bool Fits(int own, double front, double cx, double cz, double dx, double dz, double w, double d, double margin, out double lo, out double hi)
+		{
+			// Across the footprint, away from its road.
 			double nx = -dz, nz = dx;
-			double lo = double.MaxValue, hi = double.MinValue;
+			lo = double.MaxValue;
+			hi = double.MinValue;
 			for (int c = 0; c < 5; c++)
 			{
 				double u = c == 4 ? 0.0 : (c % 2 == 0 ? -0.5 : 0.5) * w;
 				double v = c == 4 ? 0.0 : (c < 2 ? -0.5 : 0.5) * d;
 				double x = cx + dx * u + nx * v, z = cz + dz * u + nz * v;
 				// How far this corner is from its own road's edge: the front corners the setback, the back ones the setback and depth.
-				if (!Network.Claims(x, z, own, front + (v > 0.0 ? d : (v < 0.0 ? 0.0 : d * 0.5)), 1.5))
+				if (!Network.Claims(x, z, own, front + (v > 0.0 ? d : (v < 0.0 ? 0.0 : d * 0.5)), margin))
 				{
-					return;
+					return false;
 				}
 				if (Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 1.0)
 				{
-					return;
+					return false;
 				}
 				double gh = WorldGen.Height(x, z);
 				lo = Math.Min(lo, gh);
 				hi = Math.Max(hi, gh);
 			}
-			if (hi - lo > 6.0)
-			{
-				return;
-			}
-			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
-			b.Box(cx, cz, (float)(lo - 0.6), dx, dz, (float)w, (float)d, height + (float)(hi - lo), wall, roof);
+			return hi - lo <= 6.0;
 		}
 
 		/// <summary>A number from 0 to 1 from hash <paramref name="h"/>, the <paramref name="k"/>th of several.</summary>
@@ -197,8 +270,8 @@ namespace HalfGripOpenWorld
 			/// </summary>
 			internal void Box(double cx, double cz, float y, double dx, double dz, float w, float d, float h, int wall, int roof)
 			{
-				float lift = (float)Network.Lift;
-				Vector3 c = new Vector3((float)(cx - ox), y + lift, (float)(cz - oz));
+				// y is already a scene height (WorldGen.Height includes the world's lift).
+				Vector3 c = new Vector3((float)(cx - ox), y, (float)(cz - oz));
 				Vector3 along = new Vector3((float)dx, 0f, (float)dz);
 				Vector3 across = new Vector3((float)-dz, 0f, (float)dx);
 				Vector3 a = along * (w * 0.5f), b = across * (d * 0.5f), up = Vector3.up * h;
