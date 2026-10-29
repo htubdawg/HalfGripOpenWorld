@@ -20,7 +20,13 @@ like a full-size car at 10 km, and its handling would all need retuning.
 
 ## What moves on a shift
 
-Transforms of every scene root (not screen-space canvases), then `Physics.SyncTransforms`. Interpolated rigidbodies have interpolation
+Transforms of every scene root (not screen-space canvases), then `Physics.SyncTransforms`.
+
+**Except the cockpit.** The game draws the cockpit (dashboard, hand, guns, shifter, mirror) as a separate rig on the `INTERIOR` layer
+that stands still near 0,0 and is seen by its own `InteriorCamera`; only the car outside moves. The rig shares a root (`Player`) with
+the car, so after the roots move, the top of every `INTERIOR` subtree is put back, and the cockpit's particles, trails and bodies are
+left alone. The interior's post-processing volume (`ENVIROMENT/Weather/InteriorVolume`) is on that layer too. 0.1.0 moved the
+cockpit with the world, and after a few shifts the hand and controls shook with float error. Interpolated rigidbodies have interpolation
 switched off for two frames so they do not visibly slide. World-space particles, trail renderers and world-space line renderers are
 moved point by point.
 

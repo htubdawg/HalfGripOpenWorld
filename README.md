@@ -5,7 +5,7 @@ generated from a fixed seed, so the world is the same every time and for every p
 mountains at the edge. It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at
 the spawn.
 
-It is a source mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.1.0**, made for game version 0.418.
+It is a source mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.1.1**, made for game version 0.418.
 
 **This is the first prototype.** It has the world, the streaming, the floating origin and Multiplayer support. It has no roads,
 landmarks or textures yet (see [docs/DESIGN.md](docs/DESIGN.md) for what comes next).
@@ -14,7 +14,7 @@ landmarks or textures yet (see [docs/DESIGN.md](docs/DESIGN.md) for what comes n
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.1.0` and `Open World map made from StadiumAsh`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.1.1` and `Open World map made from StadiumAsh`.
 
 ## Playing it
 
@@ -71,7 +71,7 @@ Check the world generator and draw a relief map of the whole world:
 dotnet run -c Release --project tools/preview -- world.pgm 1024
 ```
 
-## Test checklist for 0.1.0
+## Test checklist
 
 Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and `VerboseLog`, then:
 
@@ -79,7 +79,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 2. Drive off the pad: tiles appear ahead before you reach them, with no gaps or seams between tiles.
 3. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-4. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera.
+4. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+   and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
 5. Hold R far out: the car is put back on its wheels where it was.
 6. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
 7. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the

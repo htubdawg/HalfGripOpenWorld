@@ -1,7 +1,7 @@
 {
 	"id": "openworld",
 	"name": "Open World",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"author": "htubdawg",
 	"description": "Free roam in a 32 km square world built from a fixed seed: rolling hills, mountain ranges and a mountain wall at the edge, streamed in tiles around the car. A floating origin keeps the physics precise anywhere in the world. Works in Multiplayer rooms with the Multiplayer mod as it is.",
 	"gameVersion": "0.418"
