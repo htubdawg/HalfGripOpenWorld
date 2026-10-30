@@ -29,14 +29,19 @@ generated from a fixed seed, the same every time and for every player, the way r
   the middle and a path round it, paths in from the streets on every side and benches along them; a riverside park with a walk beside
   the water where a river runs through Kingsbridge; and footpaths round the lakes, following their shores, with a bench now and then
   looking out over the water.
+- **Race circuit:** a closed tarmac lap of about 2.9 km on flat open country, laid out from the seed like the rest: nine corners
+  both ways, from fast sweepers to a hairpin, red and white kerbs, gravel traps outside the corners (they slow you down), grass
+  run-off and an armco barrier round the outside. The start straight has a grid, a start gantry, a pit wall, a pit lane and a row of
+  garages, with the paddock behind them; three grandstands look on. Its own road leads from the paddock gate to the nearest main
+  road, and no other road crosses it. Free roam only for now: no timing yet.
 - **Trees and grass:** the Forest map's own pines in the woods, along hedges, in gardens and in clumps in the parks (with trunks you
   can hit), and grass tufts on lawns, meadows, pasture and moor, with ripe wheat in the wheat fields, drawn near the car; none in the
   water.
 
-![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
+![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.7.0**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.8.0**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -44,7 +49,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.7.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.8.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -69,7 +74,7 @@ the same ground.
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the retail park, the villages, a filling station and a workshop, the mountain pass, the circuits), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 
@@ -88,6 +93,9 @@ the same ground.
 - **Parks and trails** (`Parks.cs`): a town's blocks are the connected ground left between its roads; a few compact ones near the
   middle become parks (a pond dug in the big ones), and a river's bank through the built-up town another; their paths are footpaths
   added to the network. Each lake's shore is traced and a trail laid a little way up from it.
+- **Circuit** (`Circuit.cs`, `CircuitMesh.cs`): sited before the villages and farms on the flattest open box of ground, clear of
+  towns, rivers, the coast and the mountains; its lap is a chain of corners round a ring squashed to the box, the best of 40 that fit,
+  and its ground is levelled to a plane with banks back to the land. The router keeps every other road out of it.
 - **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, verges, water, buildings and
   ground texture, all worked out on worker threads.
 - **Trees and grass** (`Foliage.cs`): scattered from each tile's ground pixels and drawn GPU-instanced; the pines are captured from
@@ -114,8 +122,9 @@ member name). **Do not rename it or change its members' names or signatures.** A
 | `int Version` | Goes up whenever a tile's map picture is added or removed. |
 
 A tile's map picture is its land use with water and roads painted in, in the colours of `docs/world.png` (trunk orange, primary
-yellow, secondary cream, streets grey, lanes white, tracks brown, footpaths pale tan), roads at least 2 pixels wide, and car parks and yards light grey
-with their buildings dark grey. It is made with the tile on a worker
+yellow, secondary cream, streets grey, lanes white, tracks brown, footpaths pale tan), roads at least 2 pixels wide, car parks and yards light grey
+with their buildings dark grey, and the circuit's track dark grey with red kerbs, sand gravel traps, a mid-grey pit apron and its
+garages and stands dark grey. It is made with the tile on a worker
 thread and kept only while the tile is loaded. Display only: nothing in the world depends on it.
 
 ## Checking a change
@@ -140,7 +149,9 @@ dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000  
 Check the built world against Unity's own types (road surfaces under the terrain, roads poking through each other, grades, bridges
 clear of the water, no road under water drawn over it, river water meeting its banks, verges meeting the ground, track beds, building
 bases, mesh faces, car parks lying on their ground and meeting the verge, track and path ribbons over the ground, sidewalk kerbs, no
-tree or grass in the water, ponds' edges under the ground, no building on a park's lawn); it exits 1 if a check fails:
+tree or grass in the water, ponds' edges under the ground, no building on a park's lawn; the circuit's lap closed and clear of
+itself, its surfaces over the ground, nothing else in its fence, its barrier and stands clear of the track); it exits 1 if a check
+fails:
 
 ```
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
@@ -176,15 +187,20 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    water over it, benches facing the lake. Grass and trees nowhere in a river's bed or a lake's shallows.
 8. The workshops (teleport to `... workshop`): the metal cladding in clear vertical ribs and the roof in rows, no fine pinkish
    stripes or shimmer from near or far; the same on the retail park's walls and the farm barns' roofs.
-9. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
+9. The circuit (teleport to `Circuit (grid)`): drive a lap. The track, kerbs and pit lane lie flat on the ground with no lip at
+   their edges and no ground or grass showing through; the kerbs are red and white blocks, a little raised; the gravel traps slow
+   the car right down; the barrier is solid. The gantry over the start line faces the grid, the garages' doors face the pit lane,
+   and the three grandstands face the track with their seats rising away from it. `Circuit (paddock)`: drive out of the gate onto
+   the circuit road, no step where it leaves the paddock. No trees on the run-off.
+10. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
    low bank above the shore.
-10. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+11. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-11. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+12. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-12. Hold R far out: the car is put back on its wheels where it was.
-13. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-14. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+13. Hold R far out: the car is put back on its wheels where it was.
+14. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+15. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-15. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-16. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+16. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+17. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).

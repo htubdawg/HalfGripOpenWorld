@@ -64,6 +64,21 @@ internal static class Program
 			Console.WriteLine("FAIL: no retail park");
 			ok = false;
 		}
+		Console.WriteLine("  " + Circuit.Report);
+		if (!Circuit.Exists)
+		{
+			Console.WriteLine("FAIL: no circuit");
+			ok = false;
+		}
+		else
+		{
+			Console.WriteLine("  circuit lap " + (Circuit.Length / PerMetre / 1000.0).ToString("0.00") + " km real, start straight " + (Circuit.StraightLength / PerMetre).ToString("0") + " m, tightest left " + (Circuit.MinLeftRadius / PerMetre).ToString("0") + " m, right " + (Circuit.MinRightTurn / PerMetre).ToString("0") + " m radius; ground tilted " + (Math.Sqrt(Circuit.Px * Circuit.Px + Circuit.Pz * Circuit.Pz) * 100.0).ToString("0.0") + "%, worst cut or fill " + (Circuit.Earthwork / PerMetre).ToString("0") + " m; " + Circuit.Stands.Count + " stands; road " + (Network.CircuitRoad == null ? "none" : (Network.CircuitRoad.S[Network.CircuitRoad.Count - 1] / PerMetre).ToString("0") + " m"));
+			if (Network.CircuitRoad == null)
+			{
+				Console.WriteLine("FAIL: no circuit road");
+				ok = false;
+			}
+		}
 
 		// Lengths and density per class, at real scale (km of road per km² of land).
 		double landArea = 0.0;
@@ -235,6 +250,16 @@ internal static class Program
 				if (Rivers.Water(x, z, out double level) && level > h[j, i])
 				{
 					(r, g, b) = (46, 82, 128);
+				}
+				// The circuit: track dark, kerbs red, gravel sand, pits and paddock grey.
+				CircuitSurface cs = Circuit.SurfaceAt(x, z);
+				if (cs != CircuitSurface.None)
+				{
+					(r, g, b) = cs == CircuitSurface.Track ? (60, 60, 64) : cs == CircuitSurface.Kerb ? (200, 50, 50) : cs == CircuitSurface.Gravel ? (205, 190, 150) : (120, 120, 126);
+				}
+				if (Circuit.Building(x, z))
+				{
+					(r, g, b) = (95, 90, 100);
 				}
 				// Lots: their surface grey, their building darker.
 				if (Town.At(x, z, out bool building) != null)

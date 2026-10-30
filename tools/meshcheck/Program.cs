@@ -24,6 +24,9 @@ using UnityEngine;
 //               the road's verge (within 0.25), clear of every other road; a retail park and businesses laid out
 //  13. plants:  no tree or grass tuft standing in water (under a river's, a lake's or the sea's drawn surface), on the tiles along
 //                the rivers and round the lakes
+//  15. circuit: the lap closed and never near itself away along it, its ground tilted at most 2%, its track, kerbs, pit apron, paint
+//                and gravel over the drawn ground everywhere, no road but its own, no place, lot or park in its fence, its barrier
+//                and stands clear of the track, its hairpin's radius; the circuit's road joins it to the network
 //  14. parks:   each pond's drawn water edge under the drawn ground and its middle under water; no building standing on a park's
 //                lawn; every bench clear of the roads and on its ground; every park with a path
 // Exits 1 if a check fails.
@@ -51,6 +54,7 @@ internal static class Program
 		ok &= Sidewalks();
 		ok &= Plants();
 		ok &= ParkChecks();
+		ok &= CircuitChecks();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -735,7 +739,8 @@ internal static class Program
 			for (int tx = -64; tx < 64; tx++)
 			{
 				RoadMeshData road = RoadMesh.Build(tx, tz, 250f, Terrain, out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
-				foreach (RoadMeshData d in new[] { road, verges, sidewalks, tracks, WaterMesh.Build(tx, tz, 250f) })
+				RoadMeshData circuit = CircuitMesh.Build(tx, tz, 250f, out RoadMeshData gravel);
+				foreach (RoadMeshData d in new[] { road, verges, sidewalks, tracks, WaterMesh.Build(tx, tz, 250f), circuit, gravel })
 				{
 					if (d == null)
 					{
@@ -756,7 +761,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track and water meshes; most vertices in one mesh " + most);
+		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track, water and circuit meshes; most vertices in one mesh " + most);
 		return down == 0 && most < 65000;
 	}
 
@@ -891,5 +896,155 @@ internal static class Program
 		}
 		Console.WriteLine("sidewalks: " + sections + " sections; " + floating + " with the ground over their back, " + kerbs + " kerbs not reaching under the ground");
 		return sections > 100 && floating == 0 && kerbs == 0;
+	}
+
+	private static bool CircuitChecks()
+	{
+		if (!Circuit.Exists)
+		{
+			Console.WriteLine("circuit: none");
+			return false;
+		}
+		int n = Circuit.Count;
+		// Closed: the last sample a step from the first; never near itself.
+		double gap = Math.Sqrt((Circuit.X[0] - Circuit.X[n - 1]) * (Circuit.X[0] - Circuit.X[n - 1]) + (Circuit.Z[0] - Circuit.Z[n - 1]) * (Circuit.Z[0] - Circuit.Z[n - 1]));
+		double nearest = double.MaxValue;
+		for (int i = 0; i < n; i += 2)
+		{
+			for (int j = i + 2; j < n; j += 2)
+			{
+				double along = Math.Min(Circuit.S[j] - Circuit.S[i], Circuit.Length - (Circuit.S[j] - Circuit.S[i]));
+				if (along < 700.0)
+				{
+					continue;
+				}
+				double dx = Circuit.X[j] - Circuit.X[i], dz = Circuit.Z[j] - Circuit.Z[i];
+				nearest = Math.Min(nearest, Math.Sqrt(dx * dx + dz * dz));
+			}
+		}
+		double tilt = Math.Sqrt(Circuit.Px * Circuit.Px + Circuit.Pz * Circuit.Pz);
+
+		// Every surface vertex over the drawn ground (the skirts, which run down under it at the edges, aside), and the track across at
+		// every piece's middle.
+		int vertices = 0, under = 0;
+		double worst = 0.0;
+		double minX = double.MaxValue, maxX = double.MinValue, minZ = double.MaxValue, maxZ = double.MinValue;
+		for (int i = 0; i < n; i++)
+		{
+			minX = Math.Min(minX, Circuit.X[i]);
+			maxX = Math.Max(maxX, Circuit.X[i]);
+			minZ = Math.Min(minZ, Circuit.Z[i]);
+			maxZ = Math.Max(maxZ, Circuit.Z[i]);
+		}
+		for (int tz = (int)Math.Floor((minZ - 400.0) / 250.0); tz <= (int)Math.Floor((maxZ + 400.0) / 250.0); tz++)
+		{
+			for (int tx = (int)Math.Floor((minX - 400.0) / 250.0); tx <= (int)Math.Floor((maxX + 400.0) / 250.0); tx++)
+			{
+				RoadMeshData track = CircuitMesh.Build(tx, tz, 250f, out RoadMeshData gravel);
+				foreach (RoadMeshData d in new[] { track, gravel })
+				{
+					if (d == null)
+					{
+						continue;
+					}
+					foreach (Vector3 v in d.Vertices)
+					{
+						double x = v.x + tx * 250.0, z = v.z + tz * 250.0;
+						double over = v.y - (Circuit.PlaneAt(x, z) + Network.Lift);
+						if (over < 0.0)
+						{
+							continue;
+						}
+						vertices++;
+						double g = v.y - Mesh(x, z);
+						if (g < 0.02)
+						{
+							under++;
+							worst = Math.Max(worst, -g);
+						}
+					}
+				}
+			}
+		}
+		for (int i = 0; i < n; i++)
+		{
+			int q = (i + 1) % n;
+			for (double d = -Circuit.Half; d <= Circuit.Half; d += 5.0)
+			{
+				double x = (Circuit.X[i] + Circuit.X[q]) * 0.5 + (Circuit.Rx[i] + Circuit.Rx[q]) * 0.5 * d, z = (Circuit.Z[i] + Circuit.Z[q]) * 0.5 + (Circuit.Rz[i] + Circuit.Rz[q]) * 0.5 * d;
+				vertices++;
+				double g = Circuit.PlaneAt(x, z) + Network.Lift + CircuitMesh.TrackTop - Mesh(x, z);
+				if (g < 0.02)
+				{
+					under++;
+					worst = Math.Max(worst, -g);
+				}
+			}
+		}
+
+		// Nothing in the fence but the circuit's own road (which starts at the paddock's gate, inside it).
+		int roads = 0, places = 0, lots = 0, parks = 0;
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (road == Network.CircuitRoad)
+			{
+				continue;
+			}
+			for (int i = 0; i < road.Count; i++)
+			{
+				if (Circuit.Fenced(road.X[i], road.Z[i], road.Half))
+				{
+					roads++;
+					break;
+				}
+			}
+		}
+		foreach (Places.Place p in Places.All)
+		{
+			places += Circuit.Fenced(p.X, p.Z, p.Radius) ? 1 : 0;
+		}
+		foreach (Town.Lot lot in Town.Lots)
+		{
+			lots += Circuit.Fenced(lot.X, lot.Z, Math.Max(lot.W, lot.D)) ? 1 : 0;
+		}
+		foreach (Parks.Park park in Parks.All)
+		{
+			parks += Circuit.Fenced(park.X, park.Z, 100.0) ? 1 : 0;
+		}
+
+		// The barrier and the stands keep clear of every part of the lap.
+		double barrier = double.MaxValue, stands = double.MaxValue;
+		for (int i = 0; i < n; i++)
+		{
+			if (!Circuit.BarrierAt(Circuit.S[i]))
+			{
+				continue;
+			}
+			double x = Circuit.X[i] + Circuit.Rx[i] * Circuit.Barrier, z = Circuit.Z[i] + Circuit.Rz[i] * Circuit.Barrier;
+			if (Circuit.Nearest(x, z, out int _, out double _, out double dist, out int _))
+			{
+				barrier = Math.Min(barrier, dist);
+			}
+		}
+		foreach (Circuit.Stand st in Circuit.Stands)
+		{
+			// The main stand is in the infield (no barrier there): it keeps 30 back from the track's edge. The others are beyond the barrier.
+			double need = st.Name == "Main stand" ? Circuit.Half + 30.0 : Circuit.Barrier + 5.0;
+			for (int a = -1; a <= 1; a++)
+			{
+				for (int b = -1; b <= 1; b++)
+				{
+					double x = st.X - st.Fz * a * st.Length * 0.5 + st.Fx * b * st.Depth * 0.5, z = st.Z + st.Fx * a * st.Length * 0.5 + st.Fz * b * st.Depth * 0.5;
+					if (Circuit.Nearest(x, z, out int _, out double _, out double dist, out int _))
+					{
+						stands = Math.Min(stands, dist - need);
+					}
+				}
+			}
+		}
+		bool ok = gap < Circuit.Step * 1.5 && nearest >= 260.0 && tilt <= 0.0201 && under == 0 && roads == 0 && places == 0 && lots == 0 && parks == 0
+			&& barrier >= Circuit.GravelOut + 5.0 && stands >= 0.0 && Circuit.MinLeftRadius >= 54.0 && Network.CircuitRoad != null;
+		Console.WriteLine("circuit: lap " + Circuit.Length.ToString("0") + " long, " + Circuit.Corners + " corners, closing gap " + gap.ToString("0.0") + ", nearest itself " + nearest.ToString("0") + ", hairpin radius " + Circuit.MinLeftRadius.ToString("0") + ", ground tilted " + (tilt * 100.0).ToString("0.00") + "%; " + under + " of " + vertices + " surface points with the ground through them (worst " + worst.ToString("0.00") + "); in the fence: " + roads + " roads, " + places + " places, " + lots + " lots, " + parks + " parks; barrier at least " + barrier.ToString("0") + ", stands " + stands.ToString("0") + " beyond the room they need; road " + (Network.CircuitRoad != null ? "joined" : "MISSING"));
+		return ok;
 	}
 }

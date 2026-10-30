@@ -108,9 +108,62 @@ Parks and trails (see DESIGN.md, World 9):
   benches facing the water. Two lakes have none (their low shore runs far out); paths through parks are the parks' own.
 - The debug teleport goes to the parks and lake trails too.
 
-## PR 3: race circuits
+## PR 3: race courses (agreed after 0.7.0)
 
-Two to four closed circuits across the map, each joined to the network by an access road and with a start/finish gantry:
-a **tarmac circuit** on open flat land (about 3-4 km real lap, kerbs, run-off, pit straight and building, grandstands, paddock car
-park; lap shape as ProcTrack's generator: start straight, corners, a hairpin), a **rally loop** on forest tracks in the uplands, and a
-**hill climb** up a mountain road to a pass. Free roam first; lap timing on a circuit later (our own HUD, not the game's race flow).
+Three courses, free roam only: no race mode, no timing (a custom game mode comes later, separately). Each is placed after
+`Places` and before any road is routed: its ground is a layer of the height function and its cells are closed to the router, so
+roads go round it and only its access road joins it. Deterministic like the rest of the layout (`Rng`, `DetMath`, doubles).
+
+### 3a: tarmac circuit (0.8.0)
+
+- **Site:** the 200-unit grid scored for a box of about 4000 x 2500: flat, no river or lake in it (plus a margin), low, 1.5 km
+  real or more from towns and villages, out of the mountains; the best is taken. Measure first with `tools/preview`; if no site
+  fits, a shorter lap (about 2 to 2.5 km real) rather than a bridge.
+- **Lap:** ProcTrack's generator ported to doubles and `DetMath` (start straight, corners, a hairpin), about 3 km real (10,000
+  units), 40 wide; seeds tried in order until it fits the site. Its own `RoadKind.Circuit` (and map colour).
+- **Ground:** levelled to a best-fit plane (at most 2%), banks back to the land.
+
+Status: done on branch `claude/epic-goodall-zas0pe` (0.8.0): compiled, preview and meshcheck clean (a new `circuit` check), not
+yet tested in game.
+
+- **Lap.** A ring squashed to the box is about as long as the lap, so with dents most laps overflowed the box: each lap is now
+  scaled to the target length and then down until it fits (as short as 7600 units, 2.3 km, the plan's fallback). The sine waves
+  over the whole lap faded out near the corners in 200 units and folded kinks into them (most laps failed the radius checks):
+  long straights other than the start straight are bent instead by an offset a sin²(πt) along each, no tighter than a 600 radius.
+  A corner is slow, medium or (3 in 10) a fast sweeper of 300 to 700; right-handers down to a 130 radius (their inside is the
+  outside of the loop, where only the band is). Of up to 40 laps that fit, the one with the most corners both ways is kept
+  (`Character`). This world: 2.88 km, 9 corners (3 right), start straight 422 m, hairpin 18 m radius, ground tilted 0.3%, worst
+  cut or fill 20 m.
+- **Meshes** (`CircuitMesh.cs`): track (white edge lines, a worn racing line), kerbs rising 0.12 to their outer edge, skirts down
+  under the grass, pit lane and paddock in one sheet, paint (start line, grid boxes, pit lane line); gravel traps a mesh of their
+  own with low grip and high drag (0.55, 3.5).
+- **Buildings** (in `Buildings.cs`): armco outside the loop (none along the pits), pit wall, a row of garages with roller doors and a
+  glass floor over them, the start gantry, three grandstands (rows of seats stepping up, back wall, roof on posts). All set into the
+  plane as far as it falls across them.
+- **Land use** `Cover.Circuit` (mown grass, no trees, short grass) over its ground; nothing grows on its surfaces or buildings; the
+  map pictures draw it. The teleport goes to the grid and the paddock.
+- The circuit road is held level for its first 60 units out of the gate (its bed and banks rose through the paddock's edge).
+- Found on the way: a filling station lot beside a road on an embankment sagged at its front (the ground in front of a lot is held
+  0.4 over the roads' ground, which fell away down the bank); lots are no longer placed where that cap would bite.
+- Not done from the list below: a paddock car park behind the pits (the paddock is open tarmac), `RoadKind.Circuit` (not needed: the
+  circuit is not a road).
+
+- **Furniture:** red and white kerbs on the corners, grass and gravel run-off outside the bends (no trees or buildings), pit lane and
+  pit building on the start straight, a start/finish gantry, two or three grandstands, a paddock car park behind the pits.
+- **Access:** a minor road from the paddock gate to the network; nothing else crosses the lap. Teleport to the grid and paddock.
+
+### 3b: rally loop and hill climb (0.9.0)
+
+- **Rally loop:** gravel, about 16 wide, through upland woods, about 5 km real: ring waypoints routed in turn by A* at the rally
+  class's grade (about 12%), its own cells dear so it never crosses itself; built before lanes and tracks so they keep off it,
+  joined to the network by a track. Track ribbon, bed and dirt grip; start and finish arches, a service area, tape or hay bales
+  on the worst corners.
+- **Hill climb:** a new narrow tarmac road (not an existing one) with switchbacks from a valley floor to a col in the northern
+  mountains, about 3 to 4 km real, routed on a finer local grid (about 25) so hairpins have a real radius (about 50); start at the
+  bottom joined to a lane or minor road, finish line and a turning area at the top.
+
+### Checks
+
+`preview` draws the courses and reports site, length, tightest corner, steepest grade. New `meshcheck` checks: lap closed and never
+near itself, circuit grade and cross-fall, nothing in the circuit's fence or run-off, kerbs on the surface, hairpin radii, rally and
+hill-climb grades.

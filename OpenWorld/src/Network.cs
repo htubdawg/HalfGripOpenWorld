@@ -170,6 +170,9 @@ namespace HalfGripOpenWorld
 
 		internal static readonly List<Road> Roads = new List<Road>();
 
+		/// <summary>The circuit's road, from its paddock gate to the network (null if there is no circuit).</summary>
+		internal static Road CircuitRoad;
+
 		/// <summary>Where roads leave the world: the mouth of a tunnel into the edge wall, facing out along (DirX, DirZ).</summary>
 		internal struct Portal
 		{
@@ -299,6 +302,17 @@ namespace HalfGripOpenWorld
 							Extend(r, false);
 						}
 					}
+				}
+			}
+
+			// The circuit's road, from its paddock gate to the nearest main or minor road: routed from a point out beyond the gate (the
+			// cells round the circuit are closed), drawn from the gate itself.
+			if (Circuit.Exists)
+			{
+				List<int> path = router.Find(RoadKind.Secondary, Circuit.GateOutX, Circuit.GateOutZ, 0.0, 0.0, (int)RoadKind.Secondary);
+				if (path != null)
+				{
+					CircuitRoad = Build(RoadKind.Secondary, "Circuit road", path, Circuit.GateX, Circuit.GateZ, double.NaN, 0.0, 60.0).Find(r => r.X[0] == Circuit.GateX && r.Z[0] == Circuit.GateZ);
 				}
 			}
 
@@ -575,9 +589,10 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Turns a routed path into roads: every stretch of the path not on a road already built becomes a road, from where it leaves the
 		/// network (or the start) to where it joins it again (or the end). Ends that join the network are moved onto the nearest point of
-		/// the road there, and pinned to its height.
+		/// the road there, and pinned to its height. With <paramref name="level"/>, the start's height is held that far along (the circuit's
+		/// road leaves its paddock level, or its bed and banks would rise through the paddock's edge).
 		/// </summary>
-		private static List<Road> Build(RoadKind kind, string name, List<int> path, double ax, double az, double bx, double bz)
+		private static List<Road> Build(RoadKind kind, string name, List<int> path, double ax, double az, double bx, double bz, double level = 0.0)
 		{
 			List<Road> made = new List<Road>();
 			int n = path.Count;
@@ -640,6 +655,10 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				pins.Add((0, double.IsNaN(pinStart) ? WorldGen.Base(road.X[0], road.Z[0]) : pinStart));
+				for (int i = 1; s == 0 && i < road.Count - 1 && road.S[i] <= level; i++)
+				{
+					pins.Add((i, pins[0].y));
+				}
 				pins.Add((road.Count - 1, double.IsNaN(pinEnd) ? WorldGen.Base(road.X[road.Count - 1], road.Z[road.Count - 1]) : pinEnd));
 				Add(road, pins);
 				// The cells it was routed through are on it too, though its smoothed line may run through their neighbours: a later
@@ -1770,7 +1789,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 				}
-				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0)
+				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0 || Circuit.Fenced(nx, nz, 40.0))
 				{
 					break;
 				}
@@ -2747,7 +2766,7 @@ namespace HalfGripOpenWorld
 				{
 					double x = X(c), z = Z(c);
 					h[c] = WorldGen.Base(x, z);
-					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z));
+					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z)) || Circuit.Fenced(x, z, 60.0);
 					road[c] = 255;
 					foreach (Places.Place p in Places.All)
 					{

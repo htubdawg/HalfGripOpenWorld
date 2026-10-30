@@ -432,7 +432,7 @@ namespace HalfGripOpenWorld
 					}
 					// Off the roads, their verges and the farm tracks (a tree well off, its crown too; grass anywhere in its pixel, which is
 					// up to 2.8 from the pixel's centre the clearance is measured at), off the buildings, and off the car parks and yards.
-					if (clearance[pj * pixels + pi] < (tree ? 6f : 2.8f) || OnBuilding(wx, wz, buildings) || Town.Taken(wx, wz, tree ? 4.0 : 0.5))
+					if (clearance[pj * pixels + pi] < (tree ? 6f : 2.8f) || OnBuilding(wx, wz, buildings) || Town.Taken(wx, wz, tree ? 4.0 : 0.5) || Circuit.Covered(wx, wz, tree ? 6.0 : 1.0))
 					{
 						continue;
 					}
@@ -499,6 +499,7 @@ namespace HalfGripOpenWorld
 				case Cover.Yard: return 0.15;
 				// Mown short.
 				case Cover.Park: return 0.12;
+				case Cover.Circuit: return 0.1;
 				default: return 0.0;
 			}
 		}

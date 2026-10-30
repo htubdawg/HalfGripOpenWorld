@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the retail park, a filling
+	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the circuit's grid and paddock, the retail park, a filling
 	/// station, a workshop, the parks, the lake trails, the villages and the mountain pass. Each is a point on a road (on its right-hand lane)
 	/// and the road's direction there, so a car put there can drive off at once.
 	/// </summary>
@@ -45,6 +45,14 @@ namespace HalfGripOpenWorld
 				{
 					OnRoad(list, p.Name + " (town centre)", p.X, p.Z);
 				}
+			}
+			if (Circuit.Exists)
+			{
+				// Pole position, facing down the start straight; the paddock behind the garages, facing the same way.
+				Circuit.Slot(0, out double gx, out double gz);
+				list.Add(new Place { Name = "Circuit (grid)", X = gx, Z = gz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
+				Circuit.Straight((Circuit.PaddockA + Circuit.PaddockB) * 0.5, (Circuit.GaragesOut + Circuit.PaddockOut) * 0.5, out double px, out double pz);
+				list.Add(new Place { Name = "Circuit (paddock)", X = px, Z = pz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
 			}
 			bool garage = false, workshop = false;
 			foreach (Town.Lot lot in Town.Lots)
