@@ -22,5 +22,8 @@
     <Compile Include="../../OpenWorld/src/Circuit.cs" />
     <Compile Include="../../OpenWorld/src/Rally.cs" />
     <Compile Include="../../OpenWorld/src/HillClimb.cs" />
+    <Compile Include="../../OpenWorld/src/Names.cs" />
+    <Compile Include="../../OpenWorld/src/Lettering.cs" />
+    <Compile Include="../../OpenWorld/src/Signs.cs" />
   </ItemGroup>
 </Project>

@@ -218,6 +218,32 @@ Status of the hill climb: done on branch `claude/epic-goodall-zas0pe` (0.10.0): 
 - **Furniture:** start and finish arches as the rally's (start 236 up, finish 150 from the top). Map colour pink. Teleport to the
   start and the finish. Adds about a second to the layout.
 
+## 0.11.0: road signs (asked for after 0.10.0)
+
+Legible signs, with names that can be changed without touching the signs. Done on branch `claude/epic-goodall-zas0pe`: compiled,
+preview and meshcheck clean (a new `signs` check), not yet tested in game.
+
+- **Names** (`Names.cs`): every name shown (towns, villages, courses) in one list; the places, signs, teleport and labelled map read
+  it. The north gate's main road is now told apart by index, not by a node named "north", so any name is safe.
+- **Lettering** (`Lettering.cs`): a mixed-case pixel font made in code (caps 7, x-height 5, descenders 2; fractions ¼ ½ ¾), drawn
+  a texel to a pixel into one atlas (`Signs.Atlas`, 1024 x 512 this world), point-filtered with mipmaps: material `Buildings.Board`.
+- **Graph** (`Signs.cs`): junctions where a road's end lies on another road's paving or two roads cross (footpaths and the courses
+  left out, their access roads in), merged within 8; Dijkstra from each town, village and course access end, costing main roads
+  a little less (0.6 trunk to 1.4 lane per unit), so fingers send you along them. This world: 860 junctions, 21 destinations.
+- **Fingerposts** where three ways out are main roads, or on the way to a course (from the first main-road junction its way
+  reaches to its access road): 28 posts, 93 fingers. A finger per way that leads somewhere: the nearest town or village that way
+  and the nearest town (within 16 miles), miles by road; brown fingers for the courses (within 10). The post in the widest angle
+  between the roads, moved back until no finger reaches over a road. A first try counted a main road past a street's end as two
+  main ways: 149 posts, most along town streets.
+- **Name signs** on main and minor roads, streets and lanes (not the trunk road) where they cross a town's or village's radius,
+  on the left of the way in, facing it, behind the verge; moved along the road (up to 64) round junctions and lots: 47 signs.
+- Houses keep off signs (`Buildings.Fits`), trees too (footprints). Sizes: a village's letters 0.22 units a pixel (caps 1.5, about
+  0.5 m), a town's 0.27, a finger's 0.15; boards sized to their words. Adds about 0.25 s to the layout.
+- Found on the way: anything run during the layout must not call `WorldGen.Height` (it waits for the layout, and started it again
+  from inside it); `Signs.Ground` gives the same height.
+- `tools/preview` also writes the map named (`docs/world-labels.png`) and the atlas (`docs/signs.png`); `tools/meshcheck` takes
+  check names to run only those.
+
 ### Checks
 
 `preview` draws the courses and reports site, length, tightest corner, steepest grade. New `meshcheck` checks: lap closed and never

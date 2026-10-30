@@ -251,8 +251,8 @@ code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 ## Next steps
 
-1. **Signs and furniture:** place-name signs at the edges of places, direction signs at junctions, street lamps (Tokyo's), guardrails
-   on the trunk road.
+1. **Furniture:** street lamps (Tokyo's), guardrails on the trunk road. (Place-name signs and fingerposts came in 0.11.0: see
+   `Signs.cs`.)
 2. **Race circuits:** see `docs/PLAN.md`.
 3. **Far view:** low-detail mountains and the town past the loaded tiles.
 4. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.

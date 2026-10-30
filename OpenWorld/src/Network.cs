@@ -321,6 +321,8 @@ namespace HalfGripOpenWorld
 				nodes.Add((p.X, p.Z, p.Population, p.Name));
 			}
 			NorthGate(out double nx, out double nz);
+			// Told apart by its index, not its name, so a village may be given any name (see Names).
+			int north = nodes.Count;
 			nodes.Add((nx, nz, 3000.0, "north"));
 			List<(int a, int b, double g)> links = Gabriel(nodes);
 			links.Sort((p, q) => q.g != p.g ? q.g.CompareTo(p.g) : (p.a * 1000 + p.b).CompareTo(q.a * 1000 + q.b));
@@ -331,14 +333,14 @@ namespace HalfGripOpenWorld
 				for (int k = 0; k < links.Count; k++)
 				{
 					(int a, int b, double _) = links[k];
-					bool main = k < links.Count / 3 || nodes[a].name == "north" || nodes[b].name == "north";
+					bool main = k < links.Count / 3 || a == north || b == north;
 					if (main != (pass == 0))
 					{
 						continue;
 					}
 					foreach (Road r in Route(main ? RoadKind.Primary : RoadKind.Secondary, nodes[a].name + " - " + nodes[b].name, nodes[a].x, nodes[a].z, nodes[b].x, nodes[b].z, false))
 					{
-						if (nodes[b].name == "north" && r.X[r.Count - 1] == nodes[b].x && r.Z[r.Count - 1] == nodes[b].z)
+						if (b == north && r.X[r.Count - 1] == nodes[b].x && r.Z[r.Count - 1] == nodes[b].z)
 						{
 							Extend(r, false);
 						}
@@ -425,6 +427,9 @@ namespace HalfGripOpenWorld
 			// 7. The retail park and businesses on the main roads, now the roads are fixed; then the benches, clear of them.
 			Town.Build();
 			Parks.Furnish();
+
+			// 8. The road signs, last: they keep off the roads, lots and parks.
+			Signs.Build();
 		}
 
 		/// <summary>

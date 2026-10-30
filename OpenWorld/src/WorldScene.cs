@@ -121,6 +121,7 @@ namespace HalfGripOpenWorld
 			Network.Ensure();
 			Mod.Log.LogInfo("World layout: " + Rivers.All.Count + " rivers, " + Rivers.LakeCount + " lakes, " + Places.All.Count + " towns, villages and farms, " + Network.Roads.Count + " roads, " + Network.BuildMs.ToString("0") + " ms");
 			Mod.Log.LogInfo("Courses: " + Circuit.Report + "; " + Rally.Report + "; " + HillClimb.Report);
+			Mod.Log.LogInfo("Road signs: " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts with " + Signs.Fingers + " fingers, lettering " + Signs.AtlasW + " x " + Signs.AtlasH + "; " + Signs.Report);
 
 			// The scene's 0,0 is put at the spawn, so the start is as precise as anywhere else.
 			Origin.Reset(true);

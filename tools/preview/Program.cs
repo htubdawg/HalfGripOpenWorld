@@ -8,7 +8,8 @@ using HalfGripOpenWorld;
 //   dotnet run -c Release --project tools/preview -- <out.ppm> [pixels] [west x] [north z] [span]
 // Prints the layout (rivers, lakes, places, roads by class), realism figures (road density at real scale, junction types, dead
 // ends), the steepest grade per class, how far the ground is from each road's bed, repeatability and the time a tile takes; then
-// writes a map (land use, hillshade, water, roads by class, bridges in red), the whole world by default, or the square given.
+// writes a map (land use, hillshade, water, roads by class, bridges in red), the whole world by default, or the square given; the
+// same map with the places and courses named (<out>-labels.ppm), and every road sign's face as the game draws it (<out>-signs.ppm).
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -133,6 +134,17 @@ internal static class Program
 			}
 		}
 
+		// The road signs: how many, and every board's face drawn out to look at.
+		Console.WriteLine("  signs: " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts with " + Signs.Fingers + " fingers; lettering atlas " + Signs.AtlasW + " x " + Signs.AtlasH + "; " + Signs.Report);
+		if (Signs.NameSigns == 0 || Signs.Fingerposts == 0)
+		{
+			Console.WriteLine("FAIL: no road signs");
+			ok = false;
+		}
+		string signsOut = Path.ChangeExtension(output, null) + "-signs.ppm";
+		Write(signsOut, Signs.AtlasW, Signs.AtlasH, Signs.Atlas, true);
+		Console.WriteLine("wrote " + signsOut);
+
 		// Lengths and density per class, at real scale (km of road per km² of land).
 		double landArea = 0.0;
 		for (double z = -WorldGen.Half; z < WorldGen.Half; z += 200.0)
@@ -248,8 +260,14 @@ internal static class Program
 			Console.WriteLine("one tile, " + where + ": " + (watch.Elapsed.TotalMilliseconds / 5).ToString("0.0") + " ms");
 		}
 
-		Draw(output, size, x0, z0, span);
+		byte[] map = Draw(size, x0, z0, span);
+		Write(output, size, size, map, false);
 		Console.WriteLine("wrote " + output);
+		// The same map with the places and courses named, in the signs' lettering.
+		string labelled = Path.ChangeExtension(output, null) + "-labels.ppm";
+		Label(map, size, x0, z0, span);
+		Write(labelled, size, size, map, false);
+		Console.WriteLine("wrote " + labelled);
 		return ok ? 0 : 1;
 	}
 
@@ -277,7 +295,8 @@ internal static class Program
 		return false;
 	}
 
-	private static void Draw(string output, int size, double x0, double z0, double span)
+	/// <summary>The map as RGBA, rows from the top.</summary>
+	private static byte[] Draw(int size, double x0, double z0, double span)
 	{
 		double cell = span / size;
 		double[,] h = new double[size, size];
@@ -288,7 +307,7 @@ internal static class Program
 				h[j, i] = WorldGen.Height(x0 + (i + 0.5) * cell, z0 - (j + 0.5) * cell) - Network.Lift;
 			}
 		}
-		byte[] rgb = new byte[size * size * 3];
+		byte[] rgb = new byte[size * size * 4];
 		for (int j = 0; j < size; j++)
 		{
 			for (int i = 0; i < size; i++)
@@ -319,10 +338,11 @@ internal static class Program
 				{
 					(r, g, b) = building ? (95, 90, 100) : (150, 150, 155);
 				}
-				int o = (j * size + i) * 3;
+				int o = (j * size + i) * 4;
 				rgb[o] = (byte)Math.Min(255.0, r);
 				rgb[o + 1] = (byte)Math.Min(255.0, g);
 				rgb[o + 2] = (byte)Math.Min(255.0, b);
+				rgb[o + 3] = 255;
 			}
 		}
 		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 }, new byte[] { 196, 180, 150 }, new byte[] { 200, 120, 50 }, new byte[] { 200, 70, 150 } };
@@ -346,7 +366,7 @@ internal static class Program
 							int px = pi + a, py = pj + b;
 							if (px >= 0 && py >= 0 && px < size && py < size)
 							{
-								int o = (py * size + px) * 3;
+								int o = (py * size + px) * 4;
 								rgb[o] = c[0];
 								rgb[o + 1] = c[1];
 								rgb[o + 2] = c[2];
@@ -356,11 +376,140 @@ internal static class Program
 				}
 			}
 		}
+		return rgb;
+	}
+
+	/// <summary>Writes an RGBA buffer as a PPM, its rows from the bottom if <paramref name="up"/>.</summary>
+	private static void Write(string output, int w, int h, byte[] rgba, bool up)
+	{
+		byte[] rgb = new byte[w * h * 3];
+		for (int y = 0; y < h; y++)
+		{
+			int from = up ? h - 1 - y : y;
+			for (int x = 0; x < w; x++)
+			{
+				for (int c = 0; c < 3; c++)
+				{
+					rgb[(y * w + x) * 3 + c] = rgba[(from * w + x) * 4 + c];
+				}
+			}
+		}
 		using (FileStream f = File.Create(output))
 		{
-			byte[] head = System.Text.Encoding.ASCII.GetBytes("P6\n" + size + " " + size + "\n255\n");
+			byte[] head = System.Text.Encoding.ASCII.GetBytes("P6\n" + w + " " + h + "\n255\n");
 			f.Write(head, 0, head.Length);
 			f.Write(rgb, 0, rgb.Length);
+		}
+	}
+
+	/// <summary>
+	/// Names the towns, villages, race courses and the start on the map, in the road signs' lettering with a dark outline, each beside
+	/// a dot where it is, on whichever side of the dot is clear of the names already put down (towns first).
+	/// </summary>
+	private static void Label(byte[] map, int size, double x0, double z0, double span)
+	{
+		double cell = span / size;
+		List<(int x0, int y0, int x1, int y1)> taken = new List<(int, int, int, int)>();
+		List<(string text, double x, double z, int scale, byte[] colour, int dot)> labels = new List<(string, double, double, int, byte[], int)>();
+		byte[] place = { 255, 255, 255 }, course = { 255, 214, 120 };
+		foreach (Places.Place p in Places.All)
+		{
+			if (p.Kind == PlaceKind.Town)
+			{
+				labels.Add((p.Name, p.X, p.Z, 3, place, 4));
+			}
+		}
+		labels.Add(("Start", Network.SpawnX, Network.SpawnZ, 2, new byte[] { 140, 230, 255 }, 3));
+		if (Circuit.Exists)
+		{
+			double cx = 0.0, cz = 0.0;
+			for (int i = 0; i < Circuit.Count; i++)
+			{
+				cx += Circuit.X[i] / Circuit.Count;
+				cz += Circuit.Z[i] / Circuit.Count;
+			}
+			labels.Add((Names.Circuit, cx, cz, 2, course, 3));
+		}
+		if (Rally.Exists)
+		{
+			labels.Add((Names.Rally, Rally.MidX, Rally.MidZ, 2, course, 3));
+		}
+		if (HillClimb.Exists && HillClimb.Road != null)
+		{
+			Network.Road climb = HillClimb.Road;
+			labels.Add((Names.HillClimb, climb.X[climb.Count / 2], climb.Z[climb.Count / 2], 2, course, 3));
+		}
+		foreach (Places.Place p in Places.All)
+		{
+			if (p.Kind == PlaceKind.Village)
+			{
+				labels.Add((p.Name, p.X, p.Z, 2, place, 3));
+			}
+		}
+		// Each dot first (so no name covers another place's dot), then the names.
+		foreach ((string _, double x, double z, int _, byte[] _, int dot) in labels)
+		{
+			int px = (int)((x - x0) / cell), py = (int)((z0 - z) / cell);
+			taken.Add((px - dot - 1, py - dot - 1, px + dot + 1, py + dot + 1));
+			for (int a = -dot - 1; a <= dot + 1; a++)
+			{
+				for (int b = -dot - 1; b <= dot + 1; b++)
+				{
+					bool rim = Math.Abs(a) == dot + 1 || Math.Abs(b) == dot + 1;
+					Pixel(map, size, px + a, py + b, rim ? new byte[] { 20, 20, 24 } : new byte[] { 255, 255, 255 });
+				}
+			}
+		}
+		foreach ((string text, double x, double z, int scale, byte[] colour, int dot) in labels)
+		{
+			int px = (int)((x - x0) / cell), py = (int)((z0 - z) / cell);
+			int w = Lettering.Width(text) * scale, h = Lettering.Rows * scale, cap = Lettering.Cap * scale;
+			int gap = dot + 4;
+			(int x, int y)[] tries = { (px + gap, py - cap / 2), (px - gap - w, py - cap / 2), (px - w / 2, py - gap - h), (px - w / 2, py + gap), (px + gap, py - gap - cap), (px - gap - w, py + gap) };
+			(int x, int y) at = tries[0];
+			foreach ((int tx, int ty) in tries)
+			{
+				if (tx < 6 || ty < 6 || tx + w > size - 8 || ty + h > size - 6)
+				{
+					continue;
+				}
+				bool clash = taken.Exists(r => tx - 2 < r.x1 && tx + w + 2 > r.x0 && ty - 2 < r.y1 && ty + h + 2 > r.y0);
+				at = (tx, ty);
+				if (!clash)
+				{
+					break;
+				}
+			}
+			taken.Add((at.x, at.y, at.x + w, at.y + h));
+			// A dark outline a pixel round every stroke, then the letters.
+			byte[] ink = new byte[size * size * 4];
+			for (int dy = -1; dy <= 1; dy++)
+			{
+				for (int dx = -1; dx <= 1; dx++)
+				{
+					Lettering.Draw(ink, size, size, false, at.x + dx, at.y + dy, text, scale, 20, 20, 24);
+				}
+			}
+			Lettering.Draw(ink, size, size, false, at.x, at.y, text, scale, colour[0], colour[1], colour[2]);
+			for (int k = 0; k < size * size; k++)
+			{
+				if (ink[k * 4 + 3] != 0)
+				{
+					map[k * 4] = ink[k * 4];
+					map[k * 4 + 1] = ink[k * 4 + 1];
+					map[k * 4 + 2] = ink[k * 4 + 2];
+				}
+			}
+		}
+	}
+
+	private static void Pixel(byte[] map, int size, int x, int y, byte[] c)
+	{
+		if (x >= 0 && y >= 0 && x < size && y < size)
+		{
+			map[(y * size + x) * 4] = c[0];
+			map[(y * size + x) * 4 + 1] = c[1];
+			map[(y * size + x) * 4 + 2] = c[2];
 		}
 	}
 }

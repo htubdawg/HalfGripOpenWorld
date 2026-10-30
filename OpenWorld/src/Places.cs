@@ -38,13 +38,6 @@ namespace HalfGripOpenWorld
 
 		internal static readonly List<Place> All = new List<Place>();
 
-		private static readonly string[] TownNames = { "Kingsbridge", "Westhaven" };
-		private static readonly string[] VillageNames =
-		{
-			"Ashby", "Brookfield", "Carrow", "Dunmore", "Elmsted", "Fenwick", "Glenford", "Harrow", "Ivybridge", "Kestrel", "Lowmoor", "Millbrook",
-			"Northcote", "Oakhurst", "Pinewick", "Redford",
-		};
-
 		private const double Grid = 200.0;
 		private const int N = 160;
 		private const double Min = -N * Grid / 2.0;
@@ -80,10 +73,10 @@ namespace HalfGripOpenWorld
 				}
 			}
 			List<int> order = Order(score);
-			Take(rng, order, score, PlaceKind.Town, TownSpacing, best * 0.75, TownNames.Length, TownNames);
+			Take(rng, order, score, PlaceKind.Town, TownSpacing, best * 0.75, Names.Towns.Length, Names.Towns);
 			// The circuit, on open country clear of the towns, before the villages and farms (which keep off it).
 			Circuit.Build();
-			Take(rng, order, score, PlaceKind.Village, VillageSpacing, best * 0.3, VillageNames.Length, VillageNames);
+			Take(rng, order, score, PlaceKind.Village, VillageSpacing, best * 0.3, Names.Villages.Length, Names.Villages);
 			// The rally stage, in the upland woods clear of the towns and villages, before the farms (which keep out of it).
 			Rally.Build();
 			// The hill climb, up to a col in the northern mountains, before the farms (which keep off it).
