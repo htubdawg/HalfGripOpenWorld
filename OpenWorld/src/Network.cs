@@ -404,9 +404,11 @@ namespace HalfGripOpenWorld
 				ClimbAccess = ClimbLane();
 			}
 
-			// 5. Farm tracks off the lanes and minor roads, and footpaths on from the dead ends of streets.
+			// 5. Farm tracks off the lanes and minor roads, and footpaths on from the dead ends of streets; then many of the country's
+			// dead ends carried on to another road.
 			Tracks(new Rng(Noise.Mix(WorldGen.Seed + 9000UL)));
 			Footpaths(new Rng(Noise.Mix(WorldGen.Seed + 9500UL)));
+			Throughs(new Rng(Noise.Mix(WorldGen.Seed + 9700UL)));
 
 			// The junctions, now every road is in, then the samples near bridges.
 			Junctions();
@@ -2013,6 +2015,104 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// Through ways. Country lanes, farm tracks and footpaths ended in nothing too often (the owner's report): real ones mostly run
+		/// on to another road (a lane through a hamlet and out the far side, a track round the fields to the next lane, a path from stile
+		/// to stile), so the small roads make loops. From some of the dead ends outside the towns and villages a way of the same class
+		/// is walked on (<see cref="Walk"/>, steered) towards a point on another road: the nearest, counting a point behind as up to
+		/// three times as far as one ahead; never one back by the road's own start, which would close only a sliver. Kept only if it
+		/// reaches a road it may end on (a lane never on a track or path, a track never on a path); if not, a second point is tried away
+		/// from the first, and if that fails too nothing is built.
+		/// </summary>
+		private static void Throughs(Rng rng)
+		{
+			int count = Roads.Count;
+			for (int r = 0; r < count; r++)
+			{
+				Road road = Roads[r];
+				if ((road.Kind != RoadKind.Lane && road.Kind != RoadKind.Track && road.Kind != RoadKind.Path) || road == RallyAccess || road == ClimbAccess || road.Count < 4)
+				{
+					continue;
+				}
+				// How far ahead to look and how often to carry on: lanes furthest, tracks least (some still end in a field).
+				double reach = road.Kind == RoadKind.Lane ? 1500.0 : road.Kind == RoadKind.Track ? 700.0 : 1000.0;
+				double chance = road.Kind == RoadKind.Track ? 0.55 : road.Kind == RoadKind.Lane ? 0.85 : 0.75;
+				RoadKind smallest = road.Kind == RoadKind.Path ? RoadKind.Path : road.Kind == RoadKind.Track ? RoadKind.Track : RoadKind.Lane;
+				for (int end = 0; end < 2; end++)
+				{
+					int i = end == 0 ? 0 : road.Count - 1, j = end == 0 ? Math.Min(3, road.Count - 1) : Math.Max(0, road.Count - 4);
+					int o = end == 0 ? road.Count - 1 : 0;
+					double x = road.X[i], z = road.Z[i];
+					if (segments.Snap(x, z, road.Half + 12.0, r, out double _, out double _, out double _) || InTown(x, z) || rng.Next() > chance)
+					{
+						continue;
+					}
+					double ahead = Atan2(z - road.Z[j], x - road.X[j]);
+					double ax = DetMath.Cos(ahead), az = DetMath.Sin(ahead);
+					// Two tries: if the way to the best point is blocked (water, a slope too steep), the best point elsewhere.
+					double fx = double.NaN, fz = double.NaN;
+					for (int attempt = 0; attempt < 2; attempt++)
+					{
+						double tx = 0.0, tz = 0.0, best = double.MaxValue, dist = 0.0;
+						foreach (int q in segments.RoadsNear(x, z, reach))
+						{
+							Road other = Roads[q];
+							if (q == r || other.Kind > smallest)
+							{
+								continue;
+							}
+							for (int k = 0; k < other.Count; k += 2)
+							{
+								double cx = other.X[k], cz = other.Z[k];
+								double d = Math.Sqrt((cx - x) * (cx - x) + (cz - z) * (cz - z));
+								if (d < 60.0 || d > reach || (cx - fx) * (cx - fx) + (cz - fz) * (cz - fz) < 300.0 * 300.0)
+								{
+									continue;
+								}
+								// Ahead is cheapest; straight back costs three times the distance.
+								double score = d * (2.0 - ((cx - x) * ax + (cz - z) * az) / d);
+								double back = Math.Sqrt((cx - road.X[o]) * (cx - road.X[o]) + (cz - road.Z[o]) * (cz - road.Z[o]));
+								if (score >= best || back < 250.0 || InTown(cx, cz))
+								{
+									continue;
+								}
+								best = score;
+								dist = d;
+								tx = cx;
+								tz = cz;
+							}
+						}
+						if (best == double.MaxValue)
+						{
+							break;
+						}
+						Road made = Walk(rng, x, z, road.Y[i], ahead, dist * 1.6 + 60.0, null, road.Kind, r, 0.12, tx, tz, smallest);
+						if (made != null)
+						{
+							made.Name = road.Kind == RoadKind.Lane ? road.Name + " on" : made.Name;
+							break;
+						}
+						fx = tx;
+						fz = tz;
+					}
+				}
+			}
+		}
+
+		/// <summary>Whether (x, z) is inside a town or village (not a hamlet or farm).</summary>
+		private static bool InTown(double x, double z)
+		{
+			foreach (Places.Place p in Places.All)
+			{
+				double dx = x - p.X, dz = z - p.Z;
+				if (p.Kind != PlaceKind.Hamlet && dx * dx + dz * dz < p.Radius * p.Radius)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
 		private static bool InPlace(double x, double z)
 		{
 			foreach (Places.Place p in Places.All)
@@ -2043,9 +2143,12 @@ namespace HalfGripOpenWorld
 		/// to <paramref name="wander"/> radians each step, stopped by the local rules (see <see cref="Grow"/>): it ends on a road it would
 		/// cross, joins a road it comes near (not <paramref name="from"/>, the one it left, for its first steps), and stops before leaving
 		/// the place, reaching water, or getting too steep. Added to the network if it came to 50 units or more.
+		/// Steered (<paramref name="tx"/>, <paramref name="tz"/> given): it turns towards that point each step, never ends on the road it
+		/// left, keeps out of towns and villages, and is kept only if it ends on a road of class <paramref name="smallest"/> or bigger.
 		/// </summary>
-		private static Road Walk(Rng rng, double x, double z, double y, double angle, double length, Places.Place place, RoadKind kind, int from, double wander)
+		private static Road Walk(Rng rng, double x, double z, double y, double angle, double length, Places.Place place, RoadKind kind, int from, double wander, double tx = double.NaN, double tz = double.NaN, RoadKind smallest = RoadKind.Path)
 		{
+			bool steered = !double.IsNaN(tx);
 			const double seg = 30.0;
 			List<(double x, double z)> pts = new List<(double x, double z)> { (x, z) };
 			double endPin = double.NaN;
@@ -2054,7 +2157,17 @@ namespace HalfGripOpenWorld
 			while (walked < length)
 			{
 				angle += rng.Range(-wander, wander);
+				if (steered)
+				{
+					double turn = Atan2(tz - z, tx - x) - angle;
+					turn -= 2.0 * DetMath.Pi * Math.Floor((turn + DetMath.Pi) / (2.0 * DetMath.Pi));
+					angle += Math.Max(-0.35, Math.Min(0.35, turn));
+				}
 				double nx = x + DetMath.Cos(angle) * seg, nz = z + DetMath.Sin(angle) * seg;
+				if (steered && InTown(nx, nz))
+				{
+					break;
+				}
 				if (place != null)
 				{
 					double dx = nx - place.X, dz = nz - place.Z;
@@ -2074,7 +2187,7 @@ namespace HalfGripOpenWorld
 				}
 				bool first = pts.Count < 3;
 				// Crossing a road: stop on it.
-				if (segments.Intersect(x, z, nx, nz, first ? from : -1, out double ix, out double iz, out double iy))
+				if (segments.Intersect(x, z, nx, nz, first || steered ? from : -1, out double ix, out double iz, out double iy))
 				{
 					if (!first || from >= 0)
 					{
@@ -2084,7 +2197,7 @@ namespace HalfGripOpenWorld
 					}
 				}
 				// Near a road (not the one it left, at first): join it.
-				if (!first && segments.Snap(nx, nz, 40.0, -1, out double sx, out double sz, out double sy))
+				if (!first && segments.Snap(nx, nz, 40.0, steered ? from : -1, out double sx, out double sz, out double sy))
 				{
 					pts.Add((sx, sz));
 					endPin = sy;
@@ -2100,8 +2213,18 @@ namespace HalfGripOpenWorld
 			{
 				return null;
 			}
+			if (steered && (double.IsNaN(endPin) || Roads[segments.Hit].Kind > smallest))
+			{
+				return null;
+			}
 			Road road = Make(kind, kind == RoadKind.Track ? "Track" : kind == RoadKind.Path ? "Footpath" : (place != null ? place.Name + " street" : "Street"), Lines.Resample(Rounded(pts), Step));
 			if (road.S[road.Count - 1] < 50.0)
+			{
+				return null;
+			}
+			// A steered way pinned at both ends to roads' heights must be able to climb between them at its grade (a short one between a
+			// track in a hollow and a road on a bank was not).
+			if (steered && Math.Abs(endPin - y) > Classes[(int)kind].Grade * 0.8 * road.S[road.Count - 1])
 			{
 				return null;
 			}
@@ -2279,8 +2402,9 @@ namespace HalfGripOpenWorld
 					double reach = Reach(road);
 					for (int i = 0; i + 1 < road.Count; i++)
 					{
-						// Bridges leave the ground alone; so do stretches cut out at a junction, where the other road's bed is the ground.
-						if ((road.Bridge[i] && road.Bridge[i + 1]) || Hidden(road, i))
+						// Stretches cut out at a junction leave the ground alone: the other road's bed is the ground there. Bridges are listed
+						// (they may cut a bank, never fill: see Ground) but other lookups pass over them (Deck).
+						if (Hidden(road, i))
 						{
 							continue;
 						}
@@ -2310,6 +2434,12 @@ namespace HalfGripOpenWorld
 			return Math.Max(0, Math.Min(Cells - 1, (int)Math.Floor((v - Origin0) / Cell)));
 		}
 
+		/// <summary>Whether piece i of the road is on a bridge's deck (both ends): it only ever cuts the ground, and lookups other than <see cref="Ground"/> pass over it.</summary>
+		private static bool Deck(Road road, int i)
+		{
+			return road.Bridge[i] && road.Bridge[i + 1];
+		}
+
 		/// <summary>Whether piece i of the road is wholly in a cut (not drawn at all).</summary>
 		private static bool Hidden(Road road, int i)
 		{
@@ -2328,8 +2458,9 @@ namespace HalfGripOpenWorld
 		/// is, and a bank blending back to the land beside it, wider where the road is far above or below the land (up to the class's
 		/// limit), so cuts and embankments are about 1 in 1.6. Where two roads' banks overlap, the one that claims the point most wins.
 		/// A farm track or footpath presses a shallow bed into the ground, flat a little past its ribbon, with soft edges; where such
-		/// beds overlap the lowest is taken. Bridges leave the ground alone, and the banks by a bridge
-		/// never fill the river's channel under it.
+		/// beds overlap the lowest is taken. A bridge never fills the ground, so the river runs under it, but it cuts a bank that stands
+		/// above its deck (a road in a cutting crossing a river in a gorge: the bank tops stood 3 over the deck's ends at
+		/// (208, -2517)); the banks by a bridge never fill the river's channel under it.
 		/// </summary>
 		internal static double Ground(double x, double z, double land)
 		{
@@ -2391,6 +2522,12 @@ namespace HalfGripOpenWorld
 					near0 = d;
 					y0 = ry;
 					half0 = road.Half;
+				}
+				// A deck over lower ground (the water, the river's banks below it) leaves that ground alone; the paving cap above still
+				// lowers any bank under it that stands higher.
+				if (Deck(road, i) && ry >= land)
+				{
+					continue;
 				}
 				double inner = road.Half + (track ? EdgeOf(road.Kind) + UnpavedFlat : Shoulder);
 				// Where tracks and paths meet, their flat beds overlap: the ground takes the lowest (each road's by its nearest segment),
@@ -2474,7 +2611,7 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				int i = (int)(uint)item;
-				if (Math.Abs(road.X[i] - x) > best + 10.0 || Math.Abs(road.Z[i] - z) > best + 10.0)
+				if (Deck(road, i) || Math.Abs(road.X[i] - x) > best + 10.0 || Math.Abs(road.Z[i] - z) > best + 10.0)
 				{
 					continue;
 				}
@@ -2556,7 +2693,7 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				int i = (int)(uint)item;
-				if (Math.Abs(road.X[i] - x) > road.Half + Flare + 12.0 || Math.Abs(road.Z[i] - z) > road.Half + Flare + 12.0)
+				if (Deck(road, i) || Math.Abs(road.X[i] - x) > road.Half + Flare + 12.0 || Math.Abs(road.Z[i] - z) > road.Half + Flare + 12.0)
 				{
 					continue;
 				}
@@ -2588,6 +2725,10 @@ namespace HalfGripOpenWorld
 				int r = (int)(item >> 32);
 				Road road = Roads[r];
 				int i = (int)(uint)item;
+				if (Deck(road, i))
+				{
+					continue;
+				}
 				Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
 				double edge = d - road.Half;
 				if (edge < margin || (own >= 0 && r != own && r != also && edge < ownEdge - 0.5))
@@ -2696,6 +2837,9 @@ namespace HalfGripOpenWorld
 			private const double Size = 64.0;
 			private readonly Dictionary<long, List<long>> grid = new Dictionary<long, List<long>>();
 
+			/// <summary>The road the last <see cref="Snap"/> or <see cref="Intersect"/> that found one found (for checking its class).</summary>
+			internal int Hit = -1;
+
 			private static long Key(int i, int j)
 			{
 				return ((long)i << 32) | (uint)j;
@@ -2791,6 +2935,7 @@ namespace HalfGripOpenWorld
 								pz = road.Z[k] + (road.Z[k + 1] - road.Z[k]) * t;
 								py = road.Y[k] + (road.Y[k + 1] - road.Y[k]) * t;
 								found = true;
+								Hit = r;
 							}
 						}
 					}
@@ -2963,6 +3108,7 @@ namespace HalfGripOpenWorld
 								ix = ax + (bx - ax) * t;
 								iz = az + (bz - az) * t;
 								iy = road.Y[k] + (road.Y[k + 1] - road.Y[k]) * u;
+								Hit = r;
 							}
 						}
 					}

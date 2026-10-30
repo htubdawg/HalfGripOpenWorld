@@ -189,7 +189,9 @@ internal static class Program
 		Console.WriteLine("  all roads " + total.ToString("0") + " km real, " + (total / realKm2).ToString("0.0") + " km per km² (rural England is about 2, its towns 10 to 20)");
 
 		// Junctions: a road end on another road is a T; roads crossing mid-way a crossroads; an end on nothing a dead end.
+		// Dead ends out in the country (outside every town and village) are counted by class: the through ways keep them down.
 		int tees = 0, deadEnds = 0, crossings = 0;
+		int[] country = new int[9];
 		foreach (Network.Road r in Network.Roads)
 		{
 			foreach (int end in new[] { 0, r.Count - 1 })
@@ -201,6 +203,12 @@ internal static class Program
 				else
 				{
 					deadEnds++;
+					bool town = false;
+					foreach (Places.Place p in Places.All)
+					{
+						town |= p.Kind != PlaceKind.Hamlet && (r.X[end] - p.X) * (r.X[end] - p.X) + (r.Z[end] - p.Z) * (r.Z[end] - p.Z) < p.Radius * p.Radius;
+					}
+					country[(int)r.Kind] += town ? 0 : 1;
 				}
 			}
 		}
@@ -214,7 +222,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("junctions: " + tees + " T-junction ends, about " + crossings / 2 + " crossroads, " + deadEnds + " dead ends");
+		Console.WriteLine("junctions: " + tees + " T-junction ends, about " + crossings / 2 + " crossroads, " + deadEnds + " dead ends; in the country " + country[(int)RoadKind.Lane] + " lanes', " + country[(int)RoadKind.Track] + " tracks', " + country[(int)RoadKind.Path] + " footpaths'");
 
 		// The ground meets each road's bed at its centre (bridges and cuts at junctions excepted; junctions may differ a little by design).
 		double worstBed = 0.0;

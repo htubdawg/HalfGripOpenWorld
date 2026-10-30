@@ -5,7 +5,8 @@ using UnityEngine;
 
 // Checks of the built world that the preview tool cannot make (they need Unity's types and the mesh builders), outside the game:
 //   dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>] [-- check names, e.g. signs, to run only those]
-//   1. clip:    road surfaces under the terrain mesh (sampled across every road, against the 5-unit triangles the game draws)
+//   1. clip:    road surfaces under the terrain mesh (sampled across every road, bridge decks too, against the 5-unit triangles the
+//               game draws)
 //   2. poke:    where two drawn road surfaces overlap (more than half a unit in), the one that should be under (the smaller, or the
 //               later of one class) poking through the other (junctions, crossings), by more than 0.02
 //   3. float:   road centres floating more than 0.5 over the ground
@@ -111,7 +112,7 @@ internal static class Program
 			}
 			for (int i = 0; i + 1 < r.Count; i += 2)
 			{
-				if (r.Bridge[i] || !Drawn(r, i, out double t0, out double _))
+				if (!Drawn(r, i, out double t0, out double _))
 				{
 					continue;
 				}
