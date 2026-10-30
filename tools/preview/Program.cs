@@ -37,6 +37,21 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("  " + places[0] + " towns, " + places[1] + " villages, " + places[2] + " hamlets and farms");
+		int[] lots = new int[4];
+		foreach (Town.Lot lot in Town.Lots)
+		{
+			lots[(int)lot.Kind]++;
+			if (lot.Kind == LotKind.Retail)
+			{
+				Console.WriteLine("  retail park at " + lot.Place + " (" + lot.X.ToString("0") + ", " + lot.Z.ToString("0") + ")");
+			}
+		}
+		Console.WriteLine("  " + lots[1] + " shops, " + lots[2] + " workshops, " + lots[3] + " filling stations on the main roads");
+		if (lots[0] == 0)
+		{
+			Console.WriteLine("FAIL: no retail park");
+			ok = false;
+		}
 
 		// Lengths and density per class, at real scale (km of road per km² of land).
 		double landArea = 0.0;
@@ -208,6 +223,11 @@ internal static class Program
 				if (Rivers.Water(x, z, out double level) && level > h[j, i])
 				{
 					(r, g, b) = (46, 82, 128);
+				}
+				// Lots: their surface grey, their building darker.
+				if (Town.At(x, z, out bool building) != null)
+				{
+					(r, g, b) = building ? (95, 90, 100) : (150, 150, 155);
 				}
 				int o = (j * size + i) * 3;
 				rgb[o] = (byte)Math.Min(255.0, r);

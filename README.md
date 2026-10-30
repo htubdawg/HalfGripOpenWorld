@@ -18,16 +18,19 @@ generated from a fixed seed, the same every time and for every player, the way r
 - **Ground:** a pixel-art texture per tile from what the land is used for: fields in parcels of different crops with hedges, woods,
   wet meadows along the rivers, built-up streets and gardens in towns, farmyards, beaches, rock and snow.
 - **Buildings:** houses along the streets of every town and village, terraced and up to six storeys in a town's middle, detached and
-  set back further out, in brick, render, white and stone with tiled, slate or flat roofs; a farmhouse, barn and shed at every farm.
-  Each house is on its own street's side of the block, so none overlap. Solid. Tokyo's own tall and station buildings stand here and
-  there in a town's middle as landmarks, and a Tokyo temple near each village's middle.
+  set back further out, in brick, render, white and stone with tiled, slate or flat roofs; shops with flats over them along the high
+  street; a cluster of glass towers, 8 to 14 storeys, in the main town's centre; a stone church with a spire in every village; a
+  farmhouse, barn and shed at every farm. Each house is on its own street's side of the block, so none overlap. Solid.
+- **Retail park and businesses:** a shopping centre behind a big car park (marked bays, lamp posts) at the main town's edge, and
+  shops with parking, workshops with yards and filling stations with a canopy over the pumps along the main roads at the edges of
+  towns and villages. Their car parks and forecourts are flat, drivable and grip like tarmac.
 - **Trees and grass:** the Forest map's own pines in the woods, along hedges and in gardens (with trunks you can hit), and grass
   tufts on lawns, meadows, pasture and moor, with ripe wheat in the wheat fields, drawn near the car.
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.6**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.5.0**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -35,7 +38,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.6` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.5.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -102,7 +105,8 @@ member name). **Do not rename it or change its members' names or signatures.** A
 | `int Version` | Goes up whenever a tile's map picture is added or removed. |
 
 A tile's map picture is its land use with water and roads painted in, in the colours of `docs/world.png` (trunk orange, primary
-yellow, secondary cream, streets grey, lanes white, tracks brown), roads at least 2 pixels wide. It is made with the tile on a worker
+yellow, secondary cream, streets grey, lanes white, tracks brown), roads at least 2 pixels wide, and car parks and yards light grey
+with their buildings dark grey. It is made with the tile on a worker
 thread and kept only while the tile is loaded. Display only: nothing in the world depends on it.
 
 ## Checking a change
@@ -125,8 +129,8 @@ dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000  
 ```
 
 Check the built world against Unity's own types (road surfaces under the terrain, roads poking through each other, grades, bridges
-clear of the water, river water meeting its banks, verges meeting the ground, track beds, building bases, mesh faces); it exits 1 if
-a check fails:
+clear of the water, river water meeting its banks, verges meeting the ground, track beds, building bases, mesh faces, car parks lying
+on their ground and meeting the verge); it exits 1 if a check fails:
 
 ```
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
@@ -148,14 +152,18 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    trees on it, looser grip than the grass beside it.
 5. In Kingsbridge: houses line the streets, none stand on a road, you cannot drive through them. In the country: woods of pines (you
    hit their trunks), grass round the car, wheat in the wheat fields. The log has `Forest trees captured: ...` (if it says simple pines
-   stand in, the main menu's trees were not found), and `Tokyo landmarks found: ...` with the kinds it copies.
-6. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+   stand in, the main menu's trees were not found). In Kingsbridge's middle, the glass towers (setbacks, plant on the roofs); along
+   its main roads, shopfronts in four colours; in a village, the church and its spire.
+6. The retail park at Kingsbridge's south-west edge, about 200 m north of the spawn, and a filling station or workshop at a
+   village's edge: drive on and off the car park from the road with no bump at its edge, the bay lines crisp (not blocky), no grass
+   or trees on it, no ground poking through it, no flicker; hit a lamp post and a canopy post (solid).
+7. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-7. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+8. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-8. Hold R far out: the car is put back on its wheels where it was.
-9. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-10. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+9. Hold R far out: the car is put back on its wheels where it was.
+10. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+11. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-11. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-12. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+12. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+13. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).

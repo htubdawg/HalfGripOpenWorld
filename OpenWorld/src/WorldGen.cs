@@ -119,14 +119,14 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Ground height at world point (x, z) in the scene: the land with the road beds in it, plus the world's lift (everything inside
+		/// Ground height at world point (x, z) in the scene: the land with the road beds and the lots' levelled ground in it, plus the world's lift (everything inside
 		/// the generator is measured from sea level; the scene is lifted so the road at the spawn is at 0.5). Road surfaces sit just
 		/// above this.
 		/// </summary>
 		internal static double Height(double x, double z)
 		{
 			Network.Ensure();
-			return Network.Ground(x, z, Base(x, z)) + Network.Lift;
+			return Town.Ground(x, z, Network.Ground(x, z, Base(x, z))) + Network.Lift;
 		}
 
 		/// <summary>True when (x, z) is inside the world square, where tiles are built.</summary>

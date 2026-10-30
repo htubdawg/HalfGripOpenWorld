@@ -383,8 +383,10 @@ namespace HalfGripOpenWorld
 			return colours;
 		}
 
-		/// <summary>Map colours of water and of the roads by class (<see cref="RoadKind"/>), those of the preview's map (docs/world.png).</summary>
+		/// <summary>Map colours of water, lots and their buildings, and of the roads by class (<see cref="RoadKind"/>), those of the preview's map (docs/world.png).</summary>
 		private static readonly Color32 MapWater = new Color32(46, 82, 128, 255);
+		private static readonly Color32 MapLot = new Color32(150, 150, 155, 255);
+		private static readonly Color32 MapBuilding = new Color32(95, 90, 100, 255);
 		private static readonly Color32[] MapRoads =
 		{
 			new Color32(225, 110, 40, 255),   // trunk
@@ -407,9 +409,16 @@ namespace HalfGripOpenWorld
 			double pixel = TileSize / (double)Pixels;
 			for (int k = 0; k < map.Length; k++)
 			{
-				if (Rivers.Water(ox + (k % Pixels + 0.5) * pixel, oz + (k / Pixels + 0.5) * pixel, out double level) && level > ground[k])
+				double x = ox + (k % Pixels + 0.5) * pixel, z = oz + (k / Pixels + 0.5) * pixel;
+				if (Rivers.Water(x, z, out double level) && level > ground[k])
 				{
 					map[k] = MapWater;
+				}
+				// Car parks, yards and forecourts, and their buildings.
+				Town.Lot lot = Town.At(x, z, out bool building);
+				if (lot != null)
+				{
+					map[k] = building ? MapBuilding : MapLot;
 				}
 			}
 			// Pieces are listed by the tile their middle is in, so a road from a neighbouring tile may reach into this one.
@@ -543,13 +552,6 @@ namespace HalfGripOpenWorld
 			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
 			Part(go.transform, "Buildings", data, data.Buildings?.Mesh, buildingMaterials, true, 1f, 1f);
 			Trunks(go.transform, data.Trees);
-			if (data.Buildings != null)
-			{
-				foreach (Landmarks.Spot spot in data.Buildings.Landmarks)
-				{
-					Landmarks.Spawn(go.transform, data.Tx * (double)TileSize, data.Tz * (double)TileSize, spot);
-				}
-			}
 			tiles[Key(data.Tx, data.Tz)] = go;
 			if (data.Map != null)
 			{

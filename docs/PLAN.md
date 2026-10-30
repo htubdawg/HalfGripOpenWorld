@@ -8,7 +8,7 @@ before it goes up, and adds checks for what it fixes.
 Done: `MapView` (public, read by reflection; see README) gives each loaded tile's map picture (land use, water, roads by class) and
 the origin. Display only, outside the plan's order; the world is unchanged.
 
-Status: PR #12 (branch `claude/epic-goodall-zas0pe`), compiled and meshcheck clean, not yet tested in game. Open with the owner:
+Status: merged (PR #12), not yet tested in game. Open with the owner:
 streets are drawn grey and bridges in their road's colour (world.png draws them red); change `Streamer.MapRoads` if asked. The
 picture is made by `Streamer.MapPicture` from `Colours()`'s land use; no tool runs it (it needs `Streamer`), so check it in game.
 
@@ -55,20 +55,27 @@ How it was done, where it differs from the notes below:
 4. **Junctions** (rare road-on-road clipping left): a minor road ends at the major road's edge with a flat apron in the mouth;
    same-class crossings share one height. Check: `meshcheck` poke at 0.
 
-## PR 2: town fabric (the Tokyo landmarks go: they do not fit the look)
+## PR 2a: town buildings (0.5.0)
 
-Everything made in code in the same pixel style, placed from the seed with the own-side-of-the-block rule:
+Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a new `lots` check), not yet tested in game.
 
-- **Centre** (main town): a small cluster of **skyscrapers**, 8 to 14 storeys (about twice today's tallest), stacked setback blocks,
-  glass curtain-wall texture, rooftop plant.
-- **High street**: terraced shops (coloured shopfronts, sign bands) with flats over, along main roads in the core.
-- **Residential**: today's houses.
-- **Retail park** at the main town's edge on a main road: a **shopping centre / plaza** (big low building, glass front, sign band, flat
-  roof) facing a large **car park** (painted bays, lamp posts, kerbs, flat and drivable) with an entrance road.
-- **Small businesses** on main roads at town and village edges: shops, workshops, a garage or filling station, each with a small car park
-  or forecourt.
+- The Tokyo landmarks are gone (`Landmarks.cs` deleted); each village has a stone church with a tower and spire instead.
+- **Centre:** in the main town's middle (within 0.16 of its radius) the plots take glass towers: 8 to 14 storeys, two or three
+  stacked setback blocks, curtain-wall texture, plant rooms and masts on the roofs.
+- **High street:** on the main roads through a town's core or a village's middle, terraces of 2 or more storeys with a shopfront in
+  one of four colours (window, door, sign band) on the ground floor.
+- **Lots** (`Town.cs`): a retail park at Kingsbridge's edge (car park with two double rows of bays, a lamp-post island, a big
+  building with a glass front and a sign) and 34 businesses on the main roads at town and village edges: shops with a row of bays,
+  workshops with a yard, filling stations with a canopy, pumps and a kiosk. A lot's surface is its own mesh with fine textures (the
+  owner found the painted farm tracks too blocky, so nothing new is painted into the ground texture), level across and following
+  the road's grade, its front meeting the foot of the verge; the ground under it is levelled. Tarmac grip.
+- Open: the farm tracks are still painted into the 2-unit ground texture and look blocky; they could become a mesh like the lots.
+
+## PR 2b: town fabric, the rest
+
 - **Parks**: a few town blocks and riverbanks in town: lawn, tree clumps, a pond, benches, footpaths.
-- **Walking trails**: narrow gravel paths painted into the ground like the tracks, looping round lakes and through parks; drivable.
+- **Walking trails**: narrow gravel paths looping round lakes and through parks; drivable. Not painted into the ground texture
+  (too blocky): a thin mesh like the lots', or a finer texture.
 
 ## PR 3: race circuits
 

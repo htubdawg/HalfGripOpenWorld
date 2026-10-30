@@ -100,8 +100,6 @@ namespace HalfGripOpenWorld
 			}
 			Shader lit = LitShader(scene);
 
-			// Tokyo's buildings are copied as landmarks: found before their decoration is hidden.
-			Landmarks.Capture(env.transform.Find("Decoration"));
 			foreach (string name in HiddenParts)
 			{
 				Hide(env.transform.Find(name));
