@@ -5,7 +5,8 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// One tile's water, worked out on a worker thread: the river channels that fall in the tile as ribbons, and the lake and sea
-	/// surfaces as flat squares on their 100-unit cells (and one cell round them, under the shore, so no edge shows), clipped to the tile.
+	/// surfaces as flat squares on their 100-unit cells (and one cell round them, under the shore, so no edge shows), clipped to the tile;
+	/// and the parks' ponds.
 	/// </summary>
 	internal static class WaterMesh
 	{
@@ -105,6 +106,27 @@ namespace HalfGripOpenWorld
 					v.Add(new UnityEngine.Vector3((float)(x1 - ox), y, (float)(z1 - oz)));
 					Up(tris, v, b, b + 1, b + 2);
 					Up(tris, v, b + 2, b + 1, b + 3);
+				}
+			}
+			// The parks' ponds, each whole by the tile its middle is in: a disc drawn a little past the water's edge, under the ground.
+			foreach (Parks.Park park in Parks.All)
+			{
+				if (!park.HasPond || Math.Floor(park.PondX / tileSize) != tx || Math.Floor(park.PondZ / tileSize) != tz)
+				{
+					continue;
+				}
+				float y = (float)park.PondLevel + lift;
+				double r = park.PondR + Parks.PondDrawn;
+				int b = v.Count;
+				v.Add(new UnityEngine.Vector3((float)(park.PondX - ox), y, (float)(park.PondZ - oz)));
+				for (int k = 0; k < 32; k++)
+				{
+					double a = k * DetMath.Pi / 16.0;
+					v.Add(new UnityEngine.Vector3((float)(park.PondX + DetMath.Cos(a) * r - ox), y, (float)(park.PondZ + DetMath.Sin(a) * r - oz)));
+				}
+				for (int k = 0; k < 32; k++)
+				{
+					Up(tris, v, b, b + 1 + k, b + 1 + (k + 1) % 32);
 				}
 			}
 			if (v.Count == 0)

@@ -299,8 +299,8 @@ namespace HalfGripOpenWorld
 					double u = -w * 0.5 - Pad + (w + 2.0 * Pad) * a / nu;
 					double x = lot.X + ax * u + nx * (v - d * 0.5), z = lot.Z + az * u + nz * (v - d * 0.5);
 					bool inside = v <= d && Math.Abs(u) <= w * 0.5;
-					// Its own road's edge is front + v away; every other road's must be further, and 4 clear of the lot.
-					if (!Network.Claims(x, z, r, front + v, inside ? 4.0 : 0.5))
+					// Its own road's edge is front + v away; every other road's must be further, and 4 clear of the lot. Not in a park.
+					if (!Network.Claims(x, z, r, front + v, inside ? 4.0 : 0.5) || Parks.At(x, z))
 					{
 						return null;
 					}

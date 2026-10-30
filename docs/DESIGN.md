@@ -128,7 +128,9 @@ drainage; and central place theory and rank-size for settlements.
    way with the network and only its new parts are built: they leave and join the network at T-junctions, snapped onto the existing
    road. The path is thinned, rounded (Chaikin), and small roads given a slight wander (a lane follows old field edges, a main road
    barely); then the height profile: the land averaged over the class's window, pinned to the roads it joins and crosses (so junctions
-   are level), held to the class's grade; and bridges wherever its paving would be over a river's water, found by intersecting the
+   are level), held to the class's grade, and raised to 1 over any water drawn over its paving (a lake's or the sea's surface is
+   drawn over its cells and the cells round them, and by the coast a road following the land ran up to 4 under it until 0.7.0: it now
+   runs on a low embankment, with ramps at its grade); and bridges wherever its paving would be over a river's water, found by intersecting the
    road's line with the rivers' (a deck 5 above the water from 6 before it to 6 after, at the angle crossed; ramps at the grade, which
    never pull down the part over the water, though the ends over the banks may ramp; concrete sides and parapets; the ground under it
    is left alone, and the banks beside it never fill the channel). Every paved road has a gravel verge 4 wide each side, from its edge
@@ -178,9 +180,36 @@ drainage; and central place theory and rank-size for settlements.
    the verge; the strip between its straight front and the verge's foot where the road bends away is part of it, and a kerb runs
    down under the ground round it. The ground under a lot, its 6-unit pad and the verge in front is levelled 0.12 under the surface
    and blends back over a bank round the sides and back; houses and trees keep off it.
-9. **Trees and grass** (`Foliage`): one try per ground pixel, with a chance by cover (woods 12%, hedges 6%, gardens 2.5%, the odd one
-   in the open; grass on most lawn, meadow, pasture and moor, wheat in wheat fields), placed by hashing the pixel's position; none
-   within 6 of a road's edge (a per-pixel clearance map rasterised from the road pieces) or on a building. Trees are the Forest's pines
+9. **Parks and trails** (`Parks`), laid out once the roads are indexed (a park is found between them), before the lots:
+   - **Block parks:** each town is cut into 8-unit cells inside 0.9 of its radius; a cell is open if it is 5 clear of every road's
+     edge and out of the water. The connected open parts that do not run out to the town's circle are its blocks. Of the compact
+     ones (at least 0.4 of their bounding box) 16,000 to 150,000 square units in size and within 0.75 of the radius, the biggest
+     and most central (by the square root of the area times 1.2 less the distance) are taken, 500 apart: three in the main town,
+     two in the other. No houses are built on them, and their lawn (mown in stripes) reaches from their cells to the back of the
+     sidewalk. One of 40,000 or more has a pond at the cell furthest from its edge, up to 36 across in radius and under half the
+     way to the edge: a bowl dug 1.8 under a flat water surface, its edge just under the water, the ground rising 1 in 2 past it; the
+     level under the lowest land round it and under the bed of the path round it, the surface drawn 7.6 past the edge (a triangle's
+     diagonal past where the ground rises over it). A path runs round the pond 13 out; paths come in from the nearest street on up to
+     four sides (turned by the park's hash) to the pond's path, or to the middle (the first two as one path through it).
+   - **Riverside park:** where a river runs through a town, the cells on its floodplain (or within 70 of it, for a small stream)
+     and within 200 of a street, the biggest part each side of the water; a walk beside the river, 9 past where its water is drawn,
+     along the side and stretch that runs longest through the park, on to a road at each end if one is near.
+   - **Lake trails:** on a 20-unit grid round each lake, the lake's cells and the low ground joined to them (under 1.5 above the
+     water) are its shore; the cells within 2 of that are taken and the outline of what is taken traced (Moore's neighbour tracing),
+     rounded and resampled. The trail is broken where it comes within 14 of a river's channel (no bridges on a path), dips under 1
+     above the lake or gets steeper than a path may, and stops on any road it crosses and starts again past it; pieces 150 or
+     longer are built, and if none meets a road the longest is joined to the network by a path routed as a farm's lane is.
+   - **Benches**, once the lots are laid out: along the park paths every 45 (sides taking turns, facing the path) and on the lake
+     side (the lower) of a trail every 160 (facing the water), 5 out from the path's edge, on ground level within 1.2, clear of
+     roads, water, lots and each other: a wooden seat and back on two metal legs, in the tile's building mesh.
+   The paths are footpaths (`RoadKind.Path`) added to the network after its junctions; they meet roads under the road's surface,
+   as every footpath does.
+10. **Trees and grass** (`Foliage`): one try per ground pixel, with a chance by cover (woods 12%, hedges 6%, gardens 2.5%, the odd one
+   in the open, in a park 14% in clumps (where slow noise is high) and none by a pond; grass on most lawn, meadow, pasture and moor,
+   wheat in wheat fields, little on a park's mown lawn), placed by hashing the pixel's position; none
+   within 6 of a road's edge (a per-pixel clearance map rasterised from the road pieces) or on a building, and none in the water: the
+   land use knows a river's floodplain but not its channel, so until 0.7.0 river beds and lake shallows were full of grass and trees
+   standing in the water; now a tree needs the drawn ground (its triangles) 1 over any water drawn there, a tuft 0.3. Trees are the Forest's pines
    (the Highway mod's way of finding and keeping them), drawn GPU-instanced with copies of their materials, all loaded tiles' trees in
    a few dozen draw calls, with a capsule collider per trunk; grass is a five-blade tuft drawn instanced on the tiles round the car.
    Positions are kept relative to their tile; the draw lists are rebuilt when tiles come and go, the car changes tile, or the origin
@@ -196,13 +225,14 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 
 | | |
 |---|---|
-| Layout built | about 2 to 2.4 s (.NET 8; done in the background at game start) |
+| Layout built | about 2.5 to 3 s (.NET 8; done in the background at game start) |
 | Water | 31 rivers, 8 lakes |
 | Places | 2 towns, 16 villages, 120 farms and hamlets |
-| Roads, real km | trunk 10, main 18, minor 13, streets 23, lanes 53, tracks 6: 124 km |
-| Density | 1.6 km of road per km² of land (rural England about 2, its towns 10 to 20) |
-| Junctions | about 660 T-junction ends, 52 crossroads, 305 dead ends (farm lanes and tracks) |
-| Steepest | trunk 5%, main 11%, minor 14%, streets 19%, lanes 19%, tracks 14% (the extra only in mouths at junctions) |
+| Roads, real km | trunk 10, main 18, minor 13, streets 23, lanes 53, tracks 6, footpaths 16: 140 km |
+| Density | 1.8 km of road per km² of land (rural England about 2, its towns 10 to 20) |
+| Junctions | about 870 T-junction ends, 55 crossroads, 300 dead ends (farm lanes, tracks and paths) |
+| Steepest | trunk 5%, main 11%, minor 14%, streets 19%, lanes 19%, tracks 14%, paths 18% (the extra only in mouths at junctions) |
+| Parks | 6 (Kingsbridge Park, Gardens, Green and Riverside; Westhaven Park and Gardens), 0.3 to 1 ha, 4 with a pond 22 m across; 6 lake trails, 9 km real; 164 benches |
 | Round the main town (225 tiles) | about 600 buildings, 4000 trees, 2200 grass tufts a tile |
 | A tile on a worker thread | 10 to 13 ms (heights, ground, buildings, trees and grass, meshes) |
 
@@ -219,6 +249,6 @@ code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 1. **Signs and furniture:** place-name signs at the edges of places, direction signs at junctions, street lamps (Tokyo's), guardrails
    on the trunk road.
-2. **Town fabric:** see `docs/PLAN.md`.
+2. **Race circuits:** see `docs/PLAN.md`.
 3. **Far view:** low-detail mountains and the town past the loaded tiles.
 4. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.

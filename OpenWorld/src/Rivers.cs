@@ -78,6 +78,9 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static double[] Surface;
 
+		/// <summary>The lakes, biggest first: each one's level and its grid cells (j * <see cref="GridN"/> + i).</summary>
+		internal static readonly List<(double level, List<int> cells)> Lakes = new List<(double, List<int>)>();
+
 		/// <summary>Number of lakes, for the log.</summary>
 		internal static int LakeCount;
 
@@ -316,6 +319,7 @@ namespace HalfGripOpenWorld
 			for (int k = 0; k < Math.Min(8, lakes.Count); k++)
 			{
 				LakeCount++;
+				Lakes.Add((lakes[k].level, lakes[k].cells));
 				foreach (int c in lakes[k].cells)
 				{
 					Surface[c] = lakes[k].level;
@@ -705,9 +709,13 @@ namespace HalfGripOpenWorld
 			return ground;
 		}
 
-		/// <summary>The water surface at (x, z) if (x, z) is in a river's channel, a lake or the sea.</summary>
+		/// <summary>The water surface at (x, z) if (x, z) is in a river's channel, a lake, the sea or a park's pond.</summary>
 		internal static bool Water(double x, double z, out double level)
 		{
+			if (Parks.Pond(x, z, 0.0, out level))
+			{
+				return true;
+			}
 			level = SurfaceAt(x, z);
 			if (!double.IsNaN(level))
 			{
@@ -800,12 +808,55 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				int i = (int)(uint)item;
+				// A segment whose start is further from (x, z) than its length and its drawn water's reach cannot be under it: most of the
+				// cell's list, which holds every segment whose floodplain and banks reach the cell.
+				double reach = Edge(Math.Max(river.Half[i], river.Half[i + 1])) + Math.Abs(river.X[i + 1] - river.X[i]) + Math.Abs(river.Z[i + 1] - river.Z[i]) + 1.0;
+				if (Math.Abs(river.X[i] - x) > reach || Math.Abs(river.Z[i] - z) > reach)
+				{
+					continue;
+				}
 				Lines.Project(river.X, river.Z, i, x, z, out double t, out double d);
 				double half = river.Half[i] + (river.Half[i + 1] - river.Half[i]) * t;
 				if (d < Edge(half))
 				{
 					double w = river.W[i] + (river.W[i + 1] - river.W[i]) * t;
 					best = double.IsNaN(best) ? w : Math.Max(best, w);
+				}
+			}
+			return best;
+		}
+
+		/// <summary>
+		/// The highest water surface drawn over (x, z), or NaN: any river's, out to where its surface is drawn (<see cref="Edge"/>), and
+		/// a lake's or the sea's, which is drawn over its own cells and one cell round them (see <see cref="WaterMesh"/>); and a park's pond's.
+		/// </summary>
+		internal static double DrawnWater(double x, double z)
+		{
+			double best = OtherWater(x, z, null);
+			double pond = Parks.DrawnPond(x, z);
+			if (!double.IsNaN(pond) && (double.IsNaN(best) || pond > best))
+			{
+				best = pond;
+			}
+			if (Surface == null)
+			{
+				return best;
+			}
+			int i = (int)Math.Floor((x - Min) / Size), j = (int)Math.Floor((z - Min) / Size);
+			for (int dj = -1; dj <= 1; dj++)
+			{
+				for (int di = -1; di <= 1; di++)
+				{
+					int a = i + di, b = j + dj;
+					if (a < 0 || b < 0 || a >= N || b >= N)
+					{
+						continue;
+					}
+					double s = Surface[b * N + a];
+					if (!double.IsNaN(s) && (double.IsNaN(best) || s > best))
+					{
+						best = s;
+					}
 				}
 			}
 			return best;

@@ -80,10 +80,33 @@ tested in game.
 - Footpaths (`RoadKind.Path`) on from the dead ends of streets into the country.
 - Sidewalks on town and village streets and main roads.
 
-## PR 2b: town fabric, the rest
+## 0.7.0: fixes after 0.6.0, parks and trails (PR 2b)
 
-- **Parks**: a few town blocks and riverbanks in town: lawn, tree clumps, a pond, benches, footpaths.
-- **Walking trails**: paths looping round lakes and through parks (footpaths out of town are in 0.6.0, as `RoadKind.Path`).
+Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (new `flooded`, `plants` and `parks` checks),
+not yet tested in game.
+
+Fixes the owner reported on 0.6.0:
+
+- **Workshop walls in pinkish pinstripes.** The metal cladding had a rib every pixel (a unit) with no mipmaps, point-filtered: past a
+  few car lengths it broke into moiré stripes (pinkish under the scene's grading). Ribs are now 4 pixels apart (a lit edge, the
+  sheet, a shadow) with mipmaps; the roofs' rows (the workshop's metal roof is big and seen from afar) got mipmaps too. Not
+  checkable outside the game: confirm in game.
+- **Water over the highway.** No river did it (meshcheck's new `flooded` check found no road under a river's water): a lake's or
+  the sea's surface is drawn flat over its cells and the cells round them, and the trunk road along the coast ran up to 4.3 under
+  it (lanes 4.7, main roads 1.1; 11,962 of 1.2 million road surface samples). Every road is now raised to 1 over any water drawn
+  over its paving, ramping at its grade (`Network.Dry`). If the owner meant a spot on a river, the check says there is none: ask
+  for coordinates (`ShowCoords`).
+- **Grass and trees in river beds.** The land use knows the floodplain, not the channel, so 89,686 of 606,633 plants on the
+  tiles along the water stood in it; now none (`plants`).
+
+Parks and trails (see DESIGN.md, World 9):
+
+- **Parks**: whole blocks between streets near the towns' middles (three in Kingsbridge, two in Westhaven): striped lawn to the
+  back of the sidewalk, no houses, tree clumps, a pond in the big ones with a path round it, paths in from the streets, benches.
+  Kingsbridge Riverside: the river's east bank through the town, with a walk along it.
+- **Walking trails**: footpaths round six of the eight lakes, tracing the shore, broken at rivers and roads, joined to the network;
+  benches facing the water. Two lakes have none (their low shore runs far out); paths through parks are the parks' own.
+- The debug teleport goes to the parks and lake trails too.
 
 ## PR 3: race circuits
 

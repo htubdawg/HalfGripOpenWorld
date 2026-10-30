@@ -11,6 +11,8 @@ using UnityEngine;
 //   3. float:   road centres floating more than 0.5 over the ground
 //   4. grades:  drawn road pieces no steeper than their class's grade allows (Network.Leeway near junctions)
 //   5. bridges: every point of a road surface over a river's water at least 4 above the water
+//   5b. flooded: no road surface under any water surface drawn over it (a river's out to where its surface is drawn, a lake's or
+//                the sea's on its cells and the cells round them)
 //   6. verges:  the step from a verge's outer edge to the ground (its inner edge is the road's edge by construction), under 0.1
 //   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
 //   8. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
@@ -20,6 +22,10 @@ using UnityEngine;
 //  12. sidewalks: a sidewalk's back on or over the ground, its kerb's foot under it
 //  10. lots:    car parks, yards and forecourts: the drawn ground just under their surface (0.02 to 0.3), their front at the foot of
 //               the road's verge (within 0.25), clear of every other road; a retail park and businesses laid out
+//  13. plants:  no tree or grass tuft standing in water (under a river's, a lake's or the sea's drawn surface), on the tiles along
+//                the rivers and round the lakes
+//  14. parks:   each pond's drawn water edge under the drawn ground and its middle under water; no building standing on a park's
+//                lawn; every bench clear of the roads and on its ground; every park with a path
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -34,6 +40,7 @@ internal static class Program
 		ok &= Float();
 		ok &= Grades();
 		ok &= Bridges();
+		ok &= Flooded();
 		ok &= Water();
 		ok &= Verges();
 		ok &= Tracks();
@@ -42,6 +49,8 @@ internal static class Program
 		ok &= Lots();
 		ok &= Ribbons();
 		ok &= Sidewalks();
+		ok &= Plants();
+		ok &= ParkChecks();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -316,6 +325,208 @@ internal static class Program
 		}
 		Console.WriteLine("bridges: " + decks + " decks; " + bad + " of " + over + " road points over water less than 4 above it, lowest " + (over > 0 ? worst.ToString("0.0") : "-"));
 		return bad == 0;
+	}
+
+	private static bool Flooded()
+	{
+		int samples = 0, bad = 0;
+		double worst = 0;
+		int[] byKind = new int[7];
+		foreach (Network.Road r in Network.Roads)
+		{
+			bool track = Network.Unpaved(r.Kind);
+			for (int i = 0; i + 1 < r.Count; i++)
+			{
+				Network.Spans(r, i, spans);
+				if (track && spans.Count == 0)
+				{
+					spans.Add((0.0, 1.0));
+				}
+				foreach ((double t0, double t1) in spans)
+				{
+					for (int k = 0; k <= 4; k++)
+					{
+						double t = t0 + (t1 - t0) * k / 4.0;
+						foreach (double f in track ? new[] { 0.0 } : new[] { -1.0, -0.5, 0.0, 0.5, 1.0 })
+						{
+							Network.Point(r, i, t, f, 0.0, out double x, out double z, out double y);
+							samples++;
+							double water = Rivers.DrawnWater(x, z);
+							if (!double.IsNaN(water) && water > y - 0.05)
+							{
+								bad++;
+								byKind[(int)r.Kind]++;
+								worst = Math.Max(worst, water - y);
+							}
+						}
+					}
+				}
+			}
+		}
+		Console.WriteLine("flooded: " + bad + " of " + samples + " road surface samples under a water surface drawn over them, worst " + worst.ToString("0.00") + " (by class " + string.Join(" ", byKind) + ")");
+		return bad == 0;
+	}
+
+	private static bool Plants()
+	{
+		const float tile = 250f;
+		const int quads = 50, pixels = 64;
+		HashSet<long> tiles = new HashSet<long>();
+		foreach (Rivers.River river in Rivers.All)
+		{
+			for (int i = 0; i < river.Count; i += 40)
+			{
+				tiles.Add(((long)(int)Math.Floor(river.X[i] / tile) << 32) | (uint)(int)Math.Floor(river.Z[i] / tile));
+			}
+		}
+		int lakes = 0;
+		for (int c = 0; c < Rivers.GridN * Rivers.GridN && lakes < 60; c += 97)
+		{
+			double x = Rivers.GridMin + (c % Rivers.GridN + 0.5) * Rivers.GridSize, z = Rivers.GridMin + (c / Rivers.GridN + 0.5) * Rivers.GridSize;
+			if (!double.IsNaN(Rivers.Surface[c]) && double.IsNaN(Rivers.SurfaceAt(x + Rivers.GridSize, z)) && Math.Abs(x) < 15000 && Math.Abs(z) < 15000)
+			{
+				tiles.Add(((long)(int)Math.Floor((x + Rivers.GridSize) / tile) << 32) | (uint)(int)Math.Floor(z / tile));
+				lakes++;
+			}
+		}
+		foreach (Parks.Park park in Parks.All)
+		{
+			if (park.HasPond)
+			{
+				tiles.Add(((long)(int)Math.Floor(park.PondX / tile) << 32) | (uint)(int)Math.Floor(park.PondZ / tile));
+			}
+		}
+		List<long> order = new List<long>(tiles);
+		order.Sort();
+		int plants = 0, bad = 0;
+		double worst = 0;
+		int side = quads + 3;
+		double step = tile / quads;
+		float pixel = tile / pixels;
+		foreach (long key in order)
+		{
+			int tx = (int)(key >> 32), tz = (int)(uint)key;
+			double x0 = tx * (double)tile - step, z0 = tz * (double)tile - step;
+			float[] h = new float[side * side];
+			for (int j = 0; j < side; j++)
+			{
+				for (int i = 0; i < side; i++)
+				{
+					h[j * side + i] = (float)WorldGen.Height(x0 + i * step, z0 + j * step);
+				}
+			}
+			// The covers as the streamer works them out (Streamer.Colours).
+			Cover[] covers = new Cover[pixels * pixels];
+			for (int pj = 0; pj < pixels; pj++)
+			{
+				for (int pi = 0; pi < pixels; pi++)
+				{
+					float lx = (pi + 0.5f) * pixel, lz = (pj + 0.5f) * pixel;
+					float gx = lx / (float)step + 1f, gz = lz / (float)step + 1f;
+					int i = Math.Min(side - 2, (int)gx), j = Math.Min(side - 2, (int)gz);
+					float fx = gx - i, fz = gz - j;
+					float a = h[j * side + i], b = h[j * side + i + 1], c = h[(j + 1) * side + i], d = h[(j + 1) * side + i + 1];
+					float height = (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
+					float sx = ((b - a) + (d - c)) * 0.5f / (float)step, sz = ((c - a) + (d - b)) * 0.5f / (float)step;
+					covers[pj * pixels + pi] = LandUse.Classify(tx * (double)tile + lx, tz * (double)tile + lz, height - Network.Lift, Math.Sqrt(sx * sx + sz * sz), out int _);
+				}
+			}
+			Foliage.Scatter(tx, tz, tile, pixels, covers, Network.Clearance(tx, tz, tile, pixels), h, side, (float)step, new List<(double x, double z, double r)>(), out Plant[] trees, out Plant[] grass);
+			TerrainGrid ground = new TerrainGrid(x0, z0, side, h);
+			foreach (Plant[] list in new[] { trees, grass })
+			{
+				foreach (Plant p in list)
+				{
+					double x = tx * (double)tile + p.Pos.x, z = tz * (double)tile + p.Pos.z;
+					double water = Rivers.DrawnWater(x, z);
+					plants++;
+					if (!double.IsNaN(water) && water + Network.Lift > ground.At(x, z) - 0.05)
+					{
+						bad++;
+						worst = Math.Max(worst, water + Network.Lift - ground.At(x, z));
+					}
+				}
+			}
+		}
+		Console.WriteLine("plants:  " + order.Count + " tiles by water; " + bad + " of " + plants + " trees and grass tufts standing in water, deepest " + worst.ToString("0.00"));
+		return bad == 0;
+	}
+
+	private static bool ParkChecks()
+	{
+		int ponds = 0, edges = 0, high = 0, shallow = 0;
+		foreach (Parks.Park park in Parks.All)
+		{
+			if (!park.HasPond)
+			{
+				continue;
+			}
+			ponds++;
+			double level = park.PondLevel + Network.Lift;
+			for (int k = 0; k < 64; k++)
+			{
+				double a = k * DetMath.Pi / 32.0, r = park.PondR + Parks.PondDrawn;
+				edges++;
+				if (Mesh(park.PondX + DetMath.Cos(a) * r, park.PondZ + DetMath.Sin(a) * r) < level + 0.02)
+				{
+					high++;
+				}
+			}
+			if (Mesh(park.PondX, park.PondZ) > level - 1.0)
+			{
+				shallow++;
+			}
+		}
+		// Buildings on the parks' tiles: none standing on a lawn (benches are small, 3.5 across).
+		HashSet<long> tiles = new HashSet<long>();
+		int paths = 0;
+		foreach (Parks.Park park in Parks.All)
+		{
+			for (double z = park.Oz; z <= park.Oz + park.H * Parks.CellSize; z += 125.0)
+			{
+				for (double x = park.Ox; x <= park.Ox + park.W * Parks.CellSize; x += 125.0)
+				{
+					tiles.Add(((long)(int)Math.Floor(x / 250.0) << 32) | (uint)(int)Math.Floor(z / 250.0));
+				}
+			}
+			bool any = false;
+			foreach (Network.Road r in Network.Roads)
+			{
+				any |= r.Name != null && r.Name.StartsWith(park.Name + " ", StringComparison.Ordinal);
+			}
+			paths += any ? 1 : 0;
+		}
+		List<long> order = new List<long>(tiles);
+		order.Sort();
+		int buildings = 0, onLawn = 0;
+		foreach (long key in order)
+		{
+			Buildings.Data d = Buildings.Build((int)(key >> 32), (int)(uint)key, 250f);
+			foreach ((double x, double z, double r) in d.Footprints)
+			{
+				if (r <= 4.0)
+				{
+					continue;
+				}
+				buildings++;
+				if (Parks.At(x, z))
+				{
+					onLawn++;
+				}
+			}
+		}
+		int benchesBad = 0;
+		foreach (Parks.Bench b in Parks.Benches)
+		{
+			double g = Mesh(b.X, b.Z) - Network.Lift;
+			double w = Rivers.DrawnWater(b.X, b.Z);
+			if (!Network.Claims(b.X, b.Z, -1, 0.0, 1.0) || (!double.IsNaN(w) && w > g - 0.5))
+			{
+				benchesBad++;
+			}
+		}
+		Console.WriteLine("parks:   " + Parks.All.Count + " parks, " + paths + " with paths; " + ponds + " ponds, " + high + " of " + edges + " water edges over the ground, " + shallow + " with no water in the middle; " + onLawn + " of " + buildings + " buildings on their tiles on a lawn; " + benchesBad + " of " + Parks.Benches.Count + " benches on a road or in water");
+		return Parks.All.Count > 0 && paths == Parks.All.Count && high == 0 && shallow == 0 && onLawn == 0 && benchesBad == 0;
 	}
 
 	private static bool Water()
