@@ -13,7 +13,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   The Multiplayer mod is patched by hand in `src/MultiplayerLink.cs` at the first scene load, by name, because its classes are internal.
 - The loader API is in HalfGripTools' `docs/WRITING_MODS.md`; what is known about the game is in its `docs/GAME_NOTES.md`. The Highway mod
   in [HalfGripMods](https://github.com/4l3x4nd3r0/HalfGripMods) is the model for building a map inside the Stadium scene.
-- Game DLLs and scene dumps are in the private `htubdawg/HalfGripRefs` repo. Decompile with
+- Game DLLs and scene dumps are in the private `htubdawg/HalfGripRefs` repo (clone it next to this one; `tools/meshcheck` looks for
+  `../halfgriprefs/game` by default). Decompile with
   `ilspycmd -p -o <dir> <HalfGripRefs>/game/HalfGrip_Data/Managed/Assembly-CSharp.dll` (set `DOTNET_ROLL_FORWARD=Major` on a newer .NET).
 
 ## Layout of OpenWorld/src/
@@ -31,7 +32,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, track and water meshes and their pixel-art textures |
 | `Buildings.cs` | Per-tile houses along streets and farm buildings (one mesh, one collider), their materials |
-| `Landmarks.cs` | Tokyo's tall buildings and temples, found before Tokyo's decoration is hidden, copied into towns and villages |
+| `Landmarks.cs` | Tokyo's tall buildings and temples copied into towns and villages (to be removed: see `docs/PLAN.md`) |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay |
@@ -49,6 +50,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   Positions sent over the network are world coordinates. Only x and z shift; heights never change.
 - Bump `version` in `mod.json` with each release and keep `README.md` in step.
 - C# 10 and netstandard2.1 APIs only.
+- Units: game units, about 3.3 to a real metre (a car is about 14 long, a lane 11). Size things at real scale through that.
+- Heights: `WorldGen.Height` is a scene height (includes `Network.Lift`); road `Y`, river `W` and place `Y` are from sea level (add
+  `Network.Lift` for the scene). Mixing the two sank every building once.
 - Match the style: tabs, `///` summaries that explain *why*, `Mod.Info(...)` for verbose logging, `Mod.Log.LogWarning` and a try/catch
   around risky scene work.
 - Do not invent an `ObjectiveKind` (a saved run with one is deleted).
@@ -58,7 +62,14 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - `tools/check.sh <game folder> <HalfGripTools.dll>` compiles the mod (see README). Run it before every push.
 - `dotnet run -c Release --project tools/preview -- out.ppm [pixels] [x z span]` checks the generator (layout, road density at real
   scale, junctions, grades, ground meets roads, repeatability, tile time) and draws a map; look at it after any generator change.
-- In game: see the test checklist in README.
+- `dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]` runs the world against Unity's types: road surfaces under
+  the terrain (clip), smaller roads poking through bigger ones (poke), roads floating (float), building bases (bases), mesh faces
+  (faces); exits 1 on a failure. Keep its `Lift` table in step with `RoadMesh`. Add a check for every bug fixed.
+- In game: see the test checklist in README. The owner tests in game and reports with screenshots and `LogOutput.log`.
+
+## What is next
+
+`docs/PLAN.md` holds the agreed plan (fixes, then town fabric, then race circuits). Work from it and keep it current.
 
 ## Working with the owner
 
