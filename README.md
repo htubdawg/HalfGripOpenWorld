@@ -44,22 +44,31 @@ generated from a fixed seed, the same every time and for every player, the way r
   than 13%). The paddock (a tarmac yard with the competitors' vans and trailers) is beside the start straight at the bottom, with
   the start arch at its end; the finish arch is near the top, with a tarmac turning area beside the road's end to turn and come back
   down. A lane joins its foot to the network, running straight on into it; no other road comes near it. Free roam only.
+- **Road signs:** a white name sign on the nearside of every road into a town or village, at its edge, facing you as you come
+  in; and a fingerpost where main roads meet and on the way to each race course, with a pointed finger along each road that leads
+  somewhere, giving the nearest town or village that way and the nearest town, and the miles to each by road (in quarters under 3
+  miles); brown fingers to the circuit, the rally stage and the hill climb. Black lettering on white, in a pixel font of the game's
+  look, crisp close up. Which way and how far come from the roads themselves (the shortest way by road, along the main roads where
+  it can), and the lettering is drawn from the names when the world is built, so a renamed place's signs change with it (see
+  [Names](#names)).
 - **Trees and grass:** the Forest map's own pines in the woods, along hedges, in gardens and in clumps in the parks (with trunks you
   can hit), and grass tufts on lawns, meadows, pasture and moor, with ripe wheat in the wheat fields, drawn near the car; none in the
   water.
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west, the rally stage (orange) in the north-east, the hill climb (pink) in the mountains north of the middle](docs/world.png)
 
-It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.10.0**, made for game version 0.418.
+![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
-**Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
+It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.11.0**, made for game version 0.418.
+
+**Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Install
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.10.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.11.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -87,6 +96,16 @@ the same ground.
 | Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
+
+## Names
+
+Every name the world shows (towns, villages, the race courses) is in one list, `OpenWorld/src/Names.cs`. Change a name there (the
+mod is compiled when the game starts, so editing the installed file is enough) and its signs, the labelled map, the teleport's list
+and the log all follow: each sign's lettering is drawn from the list when the world is built, and its board is sized to fit. A name
+never moves the land or the roads (the first village name simply goes to the best village site), though a longer name makes longer
+boards, and a house beside one may move, so everyone in a Multiplayer room still needs the same files. Keep the number of names in
+each list as it is (it decides how many villages there are). The lettering has A to Z, a to z, 0 to 9, space and `. , ' - & ( ) / :
+! ?`; accented letters are drawn without their accents.
 
 ## How it works
 
@@ -118,6 +137,10 @@ the same ground.
   never across a river (it has no bridges). It is a road of its own class (`RoadKind.Climb`), paved and surfaced like a lane, made
   before every other road and kept out of the network's junctions; the router keeps other roads out of it, and its lane is routed
   from just behind its foot.
+- **Road signs** (`Signs.cs`, `Lettering.cs`): the roads are turned into a graph of junctions (a road's end on another road, two
+  roads crossing); the shortest way by road from each town, village and course to every junction (main roads counted a little
+  shorter) says which way each finger points and how many miles it gives. Name signs go where a road crosses a place's edge. Every
+  board's face is drawn into one texture from the names, in a pixel font made in code, and each board is sized to its words.
 - **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, verges, water, buildings and
   ground texture, all worked out on worker threads.
 - **Trees and grass** (`Foliage.cs`): scattered from each tile's ground pixels and drawn GPU-instanced; the pines are captured from
@@ -161,7 +184,8 @@ tools/check.sh <game folder> <HalfGripTools>/dist/BepInEx/plugins/HalfGripTools/
 On Windows, HalfGripTools' own `tools\check-mods.ps1 -ModsPath <this repo> -Mod OpenWorld -GameDir <game folder>` does the same.
 
 Check the world generator (layout, road density at real scale, junction types, grades, that the ground meets every road,
-repeatability, tile time) and draw a map, of the whole world or of a square of it:
+repeatability, tile time) and draw a map, of the whole world or of a square of it; it also writes the map with the places and courses
+named (`world-labels.ppm`, as `docs/world-labels.png`) and every sign's face (`world-signs.ppm`, as `docs/signs.png`):
 
 ```
 dotnet run -c Release --project tools/preview -- world.ppm 1024
@@ -174,7 +198,9 @@ bases, mesh faces, car parks lying on their ground and meeting the verge, track 
 tree or grass in the water, ponds' edges under the ground, no building on a park's lawn; the circuit's lap closed and clear of
 itself, its surfaces over the ground, nothing else in its fence, its barrier and stands clear of the track; the rally stage closed,
 clear of itself, held to its grade, nothing else in its fence, its bales off it; the hill climb clear of itself, held to its grade,
-its lane meeting it end to end, nothing else in its fence, its paddock and turning area laid out); it exits 1 if a check fails:
+its lane meeting it end to end, nothing else in its fence, its paddock and turning area laid out; road signs off the roads and out of
+the water, no building on one, their faces inside the lettering texture); it exits 1 if a check fails (name checks after `--` to run
+only those, e.g. `-- signs`):
 
 ```
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
@@ -226,15 +252,21 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    clear of the road; the paddock beside the start straight lies flat with no bump onto the road. Turn round at the bottom and drive
    down the lane: no seam or step where the lane runs into the climb's foot. `Hill climb (finish)`: the finish arch, then the
    turning area beside the end of the road, flat and big enough to turn round on.
-12. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
+12. Road signs: drive into Kingsbridge from the spawn and out to a village. A white name sign stands on the left at the edge of each
+   place, facing you, its name crisp and readable from a few car lengths, not mirrored, its back plain grey; none on the trunk road.
+   At a junction of main roads (teleport to a village and follow its main road out), the fingerpost stands back from the road, each
+   finger pointing along its road, readable from both sides (name at the left, miles at the right), none reaching over the road;
+   brown fingers on the way to the circuit, the rally stage and the hill climb. Follow the fingers to a place: the miles count down.
+   Posts are solid, no house or tree stands in a sign. The log has a `Road signs:` line.
+13. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
    low bank above the shore.
-13. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+14. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-14. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+15. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-15. Hold R far out: the car is put back on its wheels where it was.
-16. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-17. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+16. Hold R far out: the car is put back on its wheels where it was.
+17. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+18. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-18. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-19. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+19. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+20. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).

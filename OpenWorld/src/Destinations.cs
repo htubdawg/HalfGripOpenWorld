@@ -50,21 +50,21 @@ namespace HalfGripOpenWorld
 			{
 				// Pole position, facing down the start straight; the paddock behind the garages, facing the same way.
 				Circuit.Slot(0, out double gx, out double gz);
-				list.Add(new Place { Name = "Circuit (grid)", X = gx, Z = gz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
+				list.Add(new Place { Name = Names.Circuit + " (grid)", X = gx, Z = gz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
 				Circuit.Straight((Circuit.PaddockA + Circuit.PaddockB) * 0.5, (Circuit.GaragesOut + Circuit.PaddockOut) * 0.5, out double px, out double pz);
-				list.Add(new Place { Name = "Circuit (paddock)", X = px, Z = pz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
+				list.Add(new Place { Name = Names.Circuit + " (paddock)", X = px, Z = pz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
 			}
 			if (Rally.Exists && Rally.Road != null)
 			{
 				// Behind the start line, facing along the stage; the service area's yard, facing the same way.
 				Rally.At(Rally.StartS - 20.0, out double sx, out double sz, out double dx, out double dz);
-				list.Add(new Place { Name = "Rally stage (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
+				list.Add(new Place { Name = Names.Rally + " (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
 				foreach (Town.Lot lot in Town.Lots)
 				{
 					if (lot.Kind == LotKind.Service)
 					{
 						Town.World(lot, 0.0, lot.D * 0.4, out double lx, out double lz);
-						list.Add(new Place { Name = "Rally stage (service area)", X = lx, Z = lz, Dx = Rally.DirX, Dz = Rally.DirZ });
+						list.Add(new Place { Name = Names.Rally + " (service area)", X = lx, Z = lz, Dx = Rally.DirX, Dz = Rally.DirZ });
 					}
 				}
 			}
@@ -72,9 +72,9 @@ namespace HalfGripOpenWorld
 			{
 				// Behind the start line, facing up the road; the top, short of the finish line, facing on over the col.
 				HillClimb.At(HillClimb.StartS - 20.0, out double sx, out double sz, out double dx, out double dz);
-				list.Add(new Place { Name = "Hill climb (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
+				list.Add(new Place { Name = Names.HillClimb + " (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
 				HillClimb.At(HillClimb.FinishS - 40.0, out double fx, out double fz, out double ex, out double ez);
-				list.Add(new Place { Name = "Hill climb (finish)", X = fx, Z = fz, Dx = ex, Dz = ez });
+				list.Add(new Place { Name = Names.HillClimb + " (finish)", X = fx, Z = fz, Dx = ex, Dz = ez });
 			}
 			bool garage = false, workshop = false;
 			foreach (Town.Lot lot in Town.Lots)
@@ -134,7 +134,7 @@ namespace HalfGripOpenWorld
 		{
 			foreach (Network.Road road in Network.Roads)
 			{
-				if (road.Name == null || !road.Name.EndsWith("north", StringComparison.Ordinal))
+				if (road.Name == null || !road.Name.EndsWith(" - north", StringComparison.Ordinal))
 				{
 					continue;
 				}

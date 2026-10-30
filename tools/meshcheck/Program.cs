@@ -4,7 +4,7 @@ using HalfGripOpenWorld;
 using UnityEngine;
 
 // Checks of the built world that the preview tool cannot make (they need Unity's types and the mesh builders), outside the game:
-//   dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]
+//   dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>] [-- check names, e.g. signs, to run only those]
 //   1. clip:    road surfaces under the terrain mesh (sampled across every road, against the 5-unit triangles the game draws)
 //   2. poke:    where two drawn road surfaces overlap (more than half a unit in), the one that should be under (the smaller, or the
 //               later of one class) poking through the other (junctions, crossings), by more than 0.02
@@ -35,34 +35,49 @@ using UnityEngine;
 //  17. climb:   the hill climb never near itself (70 apart past 400 along, 42 past 120: a hairpin's legs), no corner tighter than
 //                its limit, no steeper than 13%; its lane meeting its foot end to end (point, height and edges); nothing in its fence but
 //                the lane, its paddock and turning area (both laid out); its arches' posts off the verge
+//  18. signs:   place-name signs and fingerposts laid out; every post and board off the roads' paving (a name sign's off the verge
+//                too), out of the water; no other building's footprint on a sign; every face inside the lettering atlas, none
+//                overlapping another; the boards drawn in their tiles' meshes
 // Exits 1 if a check fails.
 internal static class Program
 {
 	private static readonly TerrainGrid Terrain = new TerrainGrid(0, 0, 0, null);
 
-	private static int Main()
+	private static int Main(string[] args)
 	{
 		Network.Ensure();
 		bool ok = true;
-		ok &= Clip();
-		ok &= Poke();
-		ok &= Float();
-		ok &= Grades();
-		ok &= Bridges();
-		ok &= Flooded();
-		ok &= Water();
-		ok &= Verges();
-		ok &= Tracks();
-		ok &= Bases();
-		ok &= Faces();
-		ok &= Lots();
-		ok &= Ribbons();
-		ok &= Sidewalks();
-		ok &= Plants();
-		ok &= ParkChecks();
-		ok &= CircuitChecks();
-		ok &= RallyChecks();
-		ok &= ClimbChecks();
+		// Every check, or only those named on the command line (by the names they print).
+		(string name, Func<bool> check)[] checks =
+		{
+			("clip", Clip),
+			("poke", Poke),
+			("float", Float),
+			("grades", Grades),
+			("bridges", Bridges),
+			("flooded", Flooded),
+			("water", Water),
+			("verges", Verges),
+			("tracks", Tracks),
+			("bases", Bases),
+			("faces", Faces),
+			("lots", Lots),
+			("ribbons", Ribbons),
+			("sidewalks", Sidewalks),
+			("plants", Plants),
+			("parks", ParkChecks),
+			("circuit", CircuitChecks),
+			("rally", RallyChecks),
+			("climb", ClimbChecks),
+			("signs", SignChecks),
+		};
+		foreach ((string name, Func<bool> check) in checks)
+		{
+			if (args.Length == 0 || Array.IndexOf(args, name) >= 0)
+			{
+				ok &= check();
+			}
+		}
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -1257,5 +1272,80 @@ internal static class Program
 			&& roads == 0 && places == 0 && lots == 0 && parks == 0 && paddock == 1 && turning == 1 && posts == 0 && steepest <= HillClimb.Grade + 0.0001;
 		Console.WriteLine("climb:   road " + HillClimb.Length.ToString("0") + " long, " + ((high - low)).ToString("0") + " from foot to top, " + HillClimb.Hairpins + " hairpins, tightest radius " + HillClimb.TightestRadius.ToString("0") + ", steepest " + (steepest * 100.0).ToString("0.0") + "%, nearest itself " + nearest.ToString("0") + " (a hairpin's legs " + hairpin.ToString("0") + "); lane " + (lane == null ? "MISSING" : "joined " + join.ToString("0.000") + " off") + "; in the fence: " + roads + " roads, " + places + " places, " + lots + " lots, " + parks + " parks; paddock " + paddock + ", turning area " + turning + "; " + posts + " arch posts on the verge");
 		return ok;
+	}
+
+	private static bool SignChecks()
+	{
+		int onRoad = 0, wet = 0, crowded = 0, undrawn = 0;
+		foreach (Signs.Sign sign in Signs.All)
+		{
+			// A name sign stands behind the verge; a finger may reach over a verge (it is over a car's roof) but never over a road.
+			double margin = sign.Finger ? 0.0 : Network.Verge;
+			foreach (Signs.Post p in sign.Posts)
+			{
+				onRoad += Network.Claims(p.X, p.Z, -1, 0.0, Network.Verge) ? 0 : 1;
+				wet += Rivers.Water(p.X, p.Z, out double level) && WorldGen.Height(p.X, p.Z) - Network.Lift < level ? 1 : 0;
+			}
+			foreach (Signs.Board b in sign.Boards)
+			{
+				double ux = -b.Nz, uz = b.Nx;
+				for (double a = -0.5; a <= 0.501; a += 0.1)
+				{
+					onRoad += Network.Claims(b.X + ux * a * b.W, b.Z + uz * a * b.W, -1, 0.0, margin) ? 0 : 1;
+				}
+			}
+			int tx = (int)Math.Floor(sign.X / 250.0), tz = (int)Math.Floor(sign.Z / 250.0);
+			Buildings.Data d = Buildings.Build(tx, tz, 250f);
+			bool own = false;
+			foreach ((double x, double z, double r) in d.Footprints)
+			{
+				if (x == sign.X && z == sign.Z && r == sign.Radius)
+				{
+					own = true;
+					continue;
+				}
+				// Footprints are circles round boxes: only the box's middle being within the sign's reach counts as standing on it.
+				double dist = Math.Sqrt((x - sign.X) * (x - sign.X) + (z - sign.Z) * (z - sign.Z));
+				if (dist < sign.Radius + Math.Min(r, 4.0) && !Signs.All.Exists(o => o != sign && o.X == x && o.Z == z))
+				{
+					crowded++;
+				}
+			}
+			undrawn += own && d.Mesh != null && d.Mesh.Triangles[Buildings.Board].Length > 0 ? 0 : 1;
+		}
+		// The faces: inside the atlas and apart.
+		List<Signs.Face> faces = new List<Signs.Face>();
+		foreach (Signs.Sign sign in Signs.All)
+		{
+			foreach (Signs.Board b in sign.Boards)
+			{
+				faces.Add(b.Front);
+				if (b.Back.W > 0)
+				{
+					faces.Add(b.Back);
+				}
+			}
+		}
+		int outside = 0, overlap = 0;
+		HashSet<(int, int)> seen = new HashSet<(int, int)>();
+		List<Signs.Face> distinct = new List<Signs.Face>();
+		foreach (Signs.Face f in faces)
+		{
+			outside += f.W <= 0 || f.X < 0 || f.Y < 0 || f.X + f.W > Signs.AtlasW || f.Y + f.H > Signs.AtlasH ? 1 : 0;
+			if (seen.Add((f.X, f.Y)))
+			{
+				distinct.Add(f);
+			}
+		}
+		for (int a = 0; a < distinct.Count; a++)
+		{
+			for (int b = a + 1; b < distinct.Count; b++)
+			{
+				Signs.Face p = distinct[a], q = distinct[b];
+				overlap += p.X < q.X + q.W && q.X < p.X + p.W && p.Y < q.Y + q.H && q.Y < p.Y + p.H ? 1 : 0;
+			}
+		}
+		Console.WriteLine("signs:   " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts (" + Signs.Fingers + " fingers): " + onRoad + " points over a road, " + wet + " posts in water, " + crowded + " buildings on a sign, " + undrawn + " not drawn; " + distinct.Count + " faces, " + outside + " outside the atlas, " + overlap + " overlapping");
+		return Signs.NameSigns > 0 && Signs.Fingerposts > 0 && onRoad == 0 && wet == 0 && crowded == 0 && undrawn == 0 && outside == 0 && overlap == 0;
 	}
 }

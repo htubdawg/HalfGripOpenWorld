@@ -22,11 +22,11 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Materials, in submesh order: five walls, three pitched roofs, a flat roof; glass curtain wall, shopfronts, metal cladding,
 		/// signs, a filling station's canopy; the lots' asphalt, parking bays and concrete; the circuit's garage doors and stand seats;
-		/// the rally stage's gravel yard, straw bales and arch banners.
+		/// the rally stage's gravel yard, straw bales and arch banners; the road signs' boards and posts (their lettering atlas).
 		/// </summary>
 		internal const int Brick = 0, Render = 1, White = 2, Stone = 3, Wood = 4, RedTile = 5, Slate = 6, Metal = 7, Flat = 8;
 		internal const int Glass = 9, Shopfront = 10, Cladding = 11, Sign = 12, Canopy = 13, Asphalt = 14, Bays = 15, Concrete = 16, GarageDoor = 17, Seats = 18;
-		internal const int Gravel = 19, Straw = 20, Banner = 21, Count = 22;
+		internal const int Gravel = 19, Straw = 20, Banner = 21, Board = 22, Count = 23;
 
 		/// <summary>No roof (a box drawn with walls only).</summary>
 		private const int None = -1;
@@ -102,6 +102,7 @@ namespace HalfGripOpenWorld
 			CircuitParts(b, data, tx, tz, tileSize);
 			RallyParts(b, data, tx, tz, tileSize);
 			ClimbParts(b, data, tx, tz, tileSize);
+			SignParts(b, data, tx, tz, tileSize);
 			data.Mesh = b.Done();
 			return data;
 		}
@@ -246,6 +247,95 @@ namespace HalfGripOpenWorld
 			}
 			y = (float)(low + Network.Lift) - 0.3f;
 			extra = (float)(high - low) + 0.3f;
+		}
+
+		// ---- road signs -------------------------------------------------------------------------------------------
+
+		/// <summary>
+		/// The road signs (<see cref="Signs"/>), each built by the tile its foot is in: posts from under the ground up, and boards with
+		/// their lettering from the atlas on the front (on both faces of a finger, so it reads from either side; a name sign's back is
+		/// plain), all on the ground at the sign's foot.
+		/// </summary>
+		private static void SignParts(Builder b, Data data, int tx, int tz, float tileSize)
+		{
+			foreach (Signs.Sign sign in Signs.All)
+			{
+				if (Math.Floor(sign.X / tileSize) != tx || Math.Floor(sign.Z / tileSize) != tz)
+				{
+					continue;
+				}
+				float foot = (float)WorldGen.Height(sign.X, sign.Z);
+				Signs.Face post = sign.Finger ? Signs.WhitePatch : Signs.GreyPatch;
+				foreach (Signs.Post p in sign.Posts)
+				{
+					// From a little under the lowest ground round it, so it never stands on air where the verge falls away.
+					float low = Math.Min(foot, (float)WorldGen.Height(p.X, p.Z)) - 0.6f;
+					b.Pole(p.X, p.Z, low, (float)Signs.PostSide, foot + (float)p.Top - low, Board, Middle(post));
+				}
+				foreach (Signs.Board board in sign.Boards)
+				{
+					SignBoard(b, board, foot);
+				}
+				data.Footprints.Add((sign.X, sign.Z, sign.Radius));
+			}
+		}
+
+		/// <summary>The middle of an atlas face, as a texture coordinate (for parts drawn in one plain colour).</summary>
+		private static Vector2 Middle(Signs.Face f)
+		{
+			return new Vector2((f.X + f.W * 0.5f) / Signs.AtlasW, 1f - (f.Y + f.H * 0.5f) / Signs.AtlasH);
+		}
+
+		/// <summary>Texture coordinate (u, v), 0 to 1 across an atlas face from its bottom-left.</summary>
+		private static Vector2 Within(Signs.Face f, float u, float v)
+		{
+			return new Vector2((f.X + u * f.W) / Signs.AtlasW, 1f - (f.Y + (1f - v) * f.H) / Signs.AtlasH);
+		}
+
+		/// <summary>
+		/// One board: its outline (a rectangle, or a finger's pentagon pointed at its front face's left end) as a front and a back face,
+		/// with the edges between them in the board's plain colour.
+		/// </summary>
+		private static void SignBoard(Builder b, Signs.Board board, float foot)
+		{
+			// Across the front face, left to right as seen from in front: the right of the way the viewer looks, (-Nx, -Nz).
+			double ux = -board.Nz, uz = board.Nx;
+			List<(float u, float v)> outline = board.Pointed
+				? new List<(float u, float v)> { (0f, 0.5f), ((float)board.Tip, 0f), (1f, 0f), (1f, 1f), ((float)board.Tip, 1f) }
+				: new List<(float u, float v)> { (0f, 0f), (1f, 0f), (1f, 1f), (0f, 1f) };
+			int n = outline.Count;
+			Vector3 normal = new Vector3((float)board.Nx, 0f, (float)board.Nz);
+			Vector3[] front = new Vector3[n], back = new Vector3[n];
+			Vector2[] fuv = new Vector2[n], buv = new Vector2[n];
+			bool plainBack = board.Back.W == 0;
+			for (int k = 0; k < n; k++)
+			{
+				(float u, float v) = outline[k];
+				double x = board.X + ux * (u - 0.5) * board.W, z = board.Z + uz * (u - 0.5) * board.W;
+				float y = foot + (float)(board.Lift + v * board.H);
+				Vector3 p = b.Local(x, z, y);
+				front[k] = p + normal * (float)(Signs.Thickness * 0.5);
+				back[k] = p - normal * (float)(Signs.Thickness * 0.5);
+				fuv[k] = Within(board.Front, u, v);
+				// Seen from behind, the board runs the other way.
+				buv[k] = plainBack ? Middle(Signs.GreyPatch) : Within(board.Back, 1f - u, v);
+			}
+			b.Fan(front, fuv, normal, Board);
+			b.Fan(back, buv, -normal, Board);
+			Vector2 edge = Middle(board.Back.W == 0 ? Signs.GreyPatch : Signs.WhitePatch);
+			for (int k = 0; k < n; k++)
+			{
+				int q = (k + 1) % n;
+				Vector3 along = front[q] - front[k];
+				Vector3 outward = Vector3.Cross(along, normal).normalized;
+				// The outline runs round anticlockwise as seen from in front; its edge faces away from the board's middle.
+				Vector3 centre = (front[0] + front[n / 2]) * 0.5f;
+				if (Vector3.Dot(outward, (front[k] + front[q]) * 0.5f - centre) < 0f)
+				{
+					outward = -outward;
+				}
+				b.Fan(new[] { front[k], front[q], back[q], back[k] }, new[] { edge, edge, edge, edge }, outward, Board);
+			}
 		}
 
 		// ---- the hill climb ----------------------------------------------------------------------------------------
@@ -549,7 +639,7 @@ namespace HalfGripOpenWorld
 				{
 					return false;
 				}
-				if (Town.Taken(x, z, 2.0) || Parks.At(x, z))
+				if (Town.Taken(x, z, 2.0) || Parks.At(x, z) || (c == 4 && Signs.Near(cx, cz, Math.Sqrt(w * w + d * d) * 0.5 + 1.0)))
 				{
 					return false;
 				}
@@ -860,6 +950,43 @@ namespace HalfGripOpenWorld
 				Quad(p0 + up, p1 + up, p3 + up, p2 + up, Vector3.up, material, w / Bay, d / Bay);
 			}
 
+			/// <summary>World point (x, z) at scene height <paramref name="y"/>, in the tile's frame.</summary>
+			internal Vector3 Local(double x, double z, float y)
+			{
+				return new Vector3((float)(x - ox), y, (float)(z - oz));
+			}
+
+			/// <summary>A flat convex polygon (its points in order round it), facing <paramref name="facing"/>, with a texture coordinate per point.</summary>
+			internal void Fan(Vector3[] points, Vector2[] uvs, Vector3 facing, int material)
+			{
+				int i = v.Count;
+				for (int k = 0; k < points.Length; k++)
+				{
+					v.Add(points[k]);
+					uv.Add(uvs[k]);
+					n.Add(facing);
+				}
+				for (int k = 1; k + 1 < points.Length; k++)
+				{
+					Add(material, i, i + k, i + k + 1, facing);
+				}
+			}
+
+			/// <summary>A square post <paramref name="side"/> across, standing on <paramref name="y"/>, <paramref name="h"/> high, in one plain colour of the atlas.</summary>
+			internal void Pole(double cx, double cz, float y, float side, float h, int material, Vector2 at)
+			{
+				Vector3 c = Local(cx, cz, y);
+				Vector3 a = Vector3.right * (side * 0.5f), b = Vector3.forward * (side * 0.5f), up = Vector3.up * h;
+				Vector3[] p = { c - a - b, c + a - b, c + a + b, c - a + b };
+				Vector3[] facing = { Vector3.back, Vector3.right, Vector3.forward, Vector3.left };
+				Vector2[] same = { at, at, at, at };
+				for (int k = 0; k < 4; k++)
+				{
+					Fan(new[] { p[k], p[(k + 1) % 4], p[(k + 1) % 4] + up, p[k] + up }, same, facing[k], material);
+				}
+				Fan(new[] { p[0] + up, p[1] + up, p[2] + up, p[3] + up }, same, Vector3.up, material);
+			}
+
 			/// <summary>A four-sided spire standing on <paramref name="y"/>, <paramref name="side"/> across its base, <paramref name="h"/> high.</summary>
 			internal void Spire(double cx, double cz, float y, double dx, double dz, float side, float h, int material)
 			{
@@ -1059,7 +1186,7 @@ namespace HalfGripOpenWorld
 			m[Glass] = Make(shader, CurtainWall(), "Glass");
 			m[Shopfront] = Make(shader, Shopfronts(), "Shopfront");
 			m[Cladding] = Make(shader, Ribs(new Color(0.60f, 0.63f, 0.64f)), "Cladding");
-			m[Sign] = Make(shader, Signs(), "Sign");
+			m[Sign] = Make(shader, SignBands(), "Sign");
 			m[Canopy] = Make(shader, CanopyTexture(), "Canopy");
 			m[Asphalt] = Make(shader, Paved(new Color(0.25f, 0.25f, 0.27f), false), "Car Park");
 			m[Bays] = Make(shader, BayTexture(), "Bays");
@@ -1069,6 +1196,7 @@ namespace HalfGripOpenWorld
 			m[Gravel] = Make(shader, GravelTexture(), "Gravel");
 			m[Straw] = Make(shader, StrawTexture(), "Straw");
 			m[Banner] = Make(shader, BannerTexture(), "Banner");
+			m[Board] = Make(shader, SignAtlas(), "Road Signs");
 			return m;
 		}
 
@@ -1097,6 +1225,30 @@ namespace HalfGripOpenWorld
 		private static Texture2D New(int w, int h, bool mips = false)
 		{
 			return new Texture2D(w, h, TextureFormat.RGBA32, mips) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat, hideFlags = HideFlags.HideAndDontSave };
+		}
+
+		/// <summary>
+		/// The road signs' lettering atlas (<see cref="Signs.Atlas"/>), point-filtered so the letters stay crisp pixels close up, with
+		/// mipmaps so they fade rather than shimmer far off.
+		/// </summary>
+		private static Texture2D SignAtlas()
+		{
+			if (Signs.Atlas == null || Signs.AtlasW == 0)
+			{
+				Texture2D blank = New(4, 4);
+				blank.Apply();
+				return blank;
+			}
+			Texture2D t = new Texture2D(Signs.AtlasW, Signs.AtlasH, TextureFormat.RGBA32, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+			Color32[] pixels = new Color32[Signs.AtlasW * Signs.AtlasH];
+			byte[] a = Signs.Atlas;
+			for (int k = 0; k < pixels.Length; k++)
+			{
+				pixels[k] = new Color32(a[k * 4], a[k * 4 + 1], a[k * 4 + 2], 255);
+			}
+			t.SetPixels32(pixels);
+			t.Apply(true);
+			return t;
 		}
 
 		/// <summary>The colours of the four shopfronts and signs.</summary>
@@ -1191,7 +1343,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>A sign board: a band of colour with white lettering, four colours stacked like the shopfronts.</summary>
-		private static Texture2D Signs()
+		private static Texture2D SignBands()
 		{
 			Texture2D t = New(8, 40);
 			for (int k = 0; k < 4; k++)
