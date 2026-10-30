@@ -37,7 +37,7 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("  " + places[0] + " towns, " + places[1] + " villages, " + places[2] + " hamlets and farms");
-		int[] lots = new int[4];
+		int[] lots = new int[5];
 		foreach (Town.Lot lot in Town.Lots)
 		{
 			lots[(int)lot.Kind]++;
@@ -79,6 +79,31 @@ internal static class Program
 				ok = false;
 			}
 		}
+		Console.WriteLine("  " + Rally.Report);
+		if (!Rally.Exists || Rally.Road == null)
+		{
+			Console.WriteLine("FAIL: no rally stage");
+			ok = false;
+		}
+		else
+		{
+			Network.Road stage = Rally.Road;
+			double climb = 0.0, low = double.MaxValue, high = double.MinValue;
+			for (int i = 1; i < stage.Count; i++)
+			{
+				climb += Math.Max(0.0, stage.Y[i] - stage.Y[i - 1]);
+				low = Math.Min(low, stage.Y[i]);
+				high = Math.Max(high, stage.Y[i]);
+			}
+			Console.WriteLine("  rally stage " + (Rally.Length / PerMetre / 1000.0).ToString("0.00") + " km real, tightest corner " + (Rally.TightestRadius / PerMetre).ToString("0") + " m radius, " + (climb / PerMetre).ToString("0") + " m climbed a lap, " + ((high - low) / PerMetre).ToString("0") + " m from lowest to highest; service road " + (Network.RallyAccess == null ? "none" : (Network.RallyAccess.S[Network.RallyAccess.Count - 1] / PerMetre).ToString("0") + " m"));
+			bool service = Town.Lots.Exists(l => l.Kind == LotKind.Service);
+			Console.WriteLine("  rally start straight at (" + Rally.MidX.ToString("0") + ", " + Rally.MidZ.ToString("0") + "), service road ends at (" + (Network.RallyAccess == null ? "-" : Network.RallyAccess.X[Network.RallyAccess.Count - 1].ToString("0") + ", " + Network.RallyAccess.Z[Network.RallyAccess.Count - 1].ToString("0")) + "), service area " + (service ? "laid out" : "MISSING"));
+			if (Network.RallyAccess == null || !service)
+			{
+				Console.WriteLine("FAIL: no rally service road or area");
+				ok = false;
+			}
+		}
 
 		// Lengths and density per class, at real scale (km of road per km² of land).
 		double landArea = 0.0;
@@ -93,9 +118,9 @@ internal static class Program
 			}
 		}
 		double realKm2 = landArea / (PerMetre * 1000.0) / (PerMetre * 1000.0);
-		double[] length = new double[7];
-		int[] count = new int[7];
-		double[] steepest = new double[7];
+		double[] length = new double[8];
+		int[] count = new int[8];
+		double[] steepest = new double[8];
 		List<(double, double)> spans = new List<(double, double)>();
 		foreach (Network.Road r in Network.Roads)
 		{
@@ -115,7 +140,7 @@ internal static class Program
 		}
 		Console.WriteLine("land " + realKm2.ToString("0") + " km² at real scale");
 		double total = 0.0;
-		for (int k = 0; k < 7; k++)
+		for (int k = 0; k < 8; k++)
 		{
 			double km = length[k] / PerMetre / 1000.0;
 			total += km;
@@ -272,8 +297,8 @@ internal static class Program
 				rgb[o + 2] = (byte)Math.Min(255.0, b);
 			}
 		}
-		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 }, new byte[] { 196, 180, 150 } };
-		for (int kind = 6; kind >= 0; kind--)
+		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 }, new byte[] { 196, 180, 150 }, new byte[] { 200, 120, 50 } };
+		for (int kind = 7; kind >= 0; kind--)
 		{
 			foreach (Network.Road r in Network.Roads)
 			{

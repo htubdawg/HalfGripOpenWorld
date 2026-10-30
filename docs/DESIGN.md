@@ -214,6 +214,10 @@ drainage; and central place theory and rank-size for settlements.
    a few dozen draw calls, with a capsule collider per trunk; grass is a five-blade tuft drawn instanced on the tiles round the car.
    Positions are kept relative to their tile; the draw lists are rebuilt when tiles come and go, the car changes tile, or the origin
    shifts.
+11. **Race courses** (see `docs/PLAN.md`, PR 3): the tarmac circuit (`Circuit`), placed after the towns, its ground a layer of the
+   land; and the rally stage (`Rally`), placed after the villages: a loop of gravel road routed by its own A* through the upland,
+   made a road of its own class (`RoadKind.Rally`, unpaved like a track) before every other road, which the router keeps out of its
+   ground; forest round it, a service area (a lot) beside its straight and a track from there to the nearest lane.
 
 The spawn is on the main town's road in (it runs from the town's middle out to the trunk road), about the town's radius out, in the
 right-hand lane facing the middle; that stretch is levelled as soon as the road is built, before anything joins it. The world is
@@ -225,13 +229,13 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 
 | | |
 |---|---|
-| Layout built | about 2.5 to 3 s (.NET 8; done in the background at game start) |
+| Layout built | about 2.5 to 3 s (.NET 8; done in the background at game start); the rally stage's routing adds about a tenth |
 | Water | 31 rivers, 8 lakes |
 | Places | 2 towns, 16 villages, 120 farms and hamlets |
-| Roads, real km | trunk 10, main 18, minor 13, streets 23, lanes 53, tracks 6, footpaths 16: 140 km |
+| Roads, real km | trunk 10, main 18, minor 14, streets 25, lanes 52, tracks 7, footpaths 17, rally stage 5: 148 km |
 | Density | 1.8 km of road per km² of land (rural England about 2, its towns 10 to 20) |
 | Junctions | about 870 T-junction ends, 55 crossroads, 300 dead ends (farm lanes, tracks and paths) |
-| Steepest | trunk 5%, main 11%, minor 14%, streets 19%, lanes 19%, tracks 14%, paths 18% (the extra only in mouths at junctions) |
+| Steepest | trunk 5%, main 11%, minor 14%, streets 19%, lanes 19%, tracks 14%, paths 18%, rally stage 12% (the extra only in mouths at junctions) |
 | Parks | 6 (Kingsbridge Park, Gardens, Green and Riverside; Westhaven Park and Gardens), 0.3 to 1 ha, 4 with a pond 22 m across; 6 lake trails, 9 km real; 164 benches |
 | Round the main town (225 tiles) | about 600 buildings, 4000 trees, 2200 grass tufts a tile |
 | A tile on a worker thread | 10 to 13 ms (heights, ground, buildings, trees and grass, meshes) |

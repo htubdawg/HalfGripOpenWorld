@@ -162,6 +162,31 @@ yet tested in game.
   mountains, about 3 to 4 km real, routed on a finer local grid (about 25) so hairpins have a real radius (about 50); start at the
   bottom joined to a lane or minor road, finish line and a turning area at the top.
 
+Status of the rally loop: done on branch `claude/epic-goodall-zas0pe` (0.9.0): compiled, preview and meshcheck clean (a new `rally`
+check), not yet tested in game. The hill climb is next (its own PR).
+
+- **Site.** Laid out in `Places.Build` after the villages and before the farms (they keep 400 off it and out of its loop), on the
+  open upland whose land's relief is nearest 30 over a disc of 2600 round it: no water, floodplain, mountains (mask 0.6), places
+  or circuit. This world: the north-east plateau at (11200, 11200); half a dozen farms there moved elsewhere.
+- **Loop** (`Rally.cs`): a 400-unit straight on a ring of 2300 radius, then 14 to 18 waypoints round the ring (two in five pulled in
+  to 35-60% of it), routed in turn by A* on a 50-unit grid (grade cost soft 10%, steps over 24% closed, a slow noise multiplying the
+  cost so it winds), each leg's cells and 150 round them closed to the legs after it. Every other cell kept, Chaikin-rounded three
+  times, corners tighter than a 24 radius eased locally (only a fifth of the loops passed the radius check before that). Kept if
+  13,000 to 21,000 long, never within 100 of itself past 500 along (40 for a hairpin's legs), the service area and its track's way
+  out outside it; the most corners and nearest 5 km of up to 30 that pass. This world: 5.0 km, 33 corners, tightest radius 8 m,
+  about 100 m climbed a lap.
+- **Road:** `RoadKind.Rally` (16 wide, unpaved: a ribbon on a pressed bed, gravel texture with two worn lines, track grip; 12%),
+  added first in `Network.Build`, not in the segments or the router's road cells; `Road.Loop` makes its ends meet in place. The
+  router closes its cells (and the loop's inside) within 150; walks (tracks, footpaths) stop 60 off it.
+- **Service area:** a lot (`LotKind.Service`, 150 by 90 gravel, four vans with awnings) beside the straight's middle, outside;
+  `Town.Fit` takes an unpaved road (its surface over the stage's bed) and lets its track run behind it. The track is routed from
+  beyond its back to the nearest lane and ends where its line first meets a road (`Network.RallyTrack`).
+- **Furniture:** straw bales (8 by 4, 4 high, end to end) on the outside of up to ten corners under a 70 radius, 250 apart; finish
+  and start arches (posts and a chequered banner) 56 in from each end of the straight. Forest land use within 400 of the stage and
+  in its loop; no plants on bales or posts. Teleport to the start and the service area.
+- Found on the way: a route reaches a road at the first cell the road has a sample in; a road crossing a cell's corner has none
+  there, so a track built to it ran across the lane and hooked back. Fixed for the rally's track only (the other roads unchanged).
+
 ### Checks
 
 `preview` draws the courses and reports site, length, tightest corner, steepest grade. New `meshcheck` checks: lap closed and never

@@ -13,6 +13,8 @@ namespace HalfGripOpenWorld
 		Workshop = 2,
 		/// <summary>A filling station: a forecourt under a canopy, a kiosk behind.</summary>
 		Garage = 3,
+		/// <summary>The rally stage's service area: a gravel yard beside its straight, with the teams' vans and awnings at the back.</summary>
+		Service = 4,
 	}
 
 	/// <summary>
@@ -76,6 +78,7 @@ namespace HalfGripOpenWorld
 				case LotKind.Retail: w = 220.0; d = 200.0; rough = 9.0; return;
 				case LotKind.Shop: w = 48.0; d = 50.0; rough = 5.0; return;
 				case LotKind.Workshop: w = 56.0; d = 62.0; rough = 5.0; return;
+				case LotKind.Service: w = Rally.ServiceW; d = Rally.ServiceD; rough = 7.0; return;
 				default: w = 64.0; d = 64.0; rough = 5.0; return;
 			}
 		}
@@ -91,6 +94,8 @@ namespace HalfGripOpenWorld
 				case LotKind.Retail: w = 170.0; v0 = 128.0; d = 66.0; return;
 				case LotKind.Shop: w = 34.0; v0 = 26.0; d = 22.0; return;
 				case LotKind.Workshop: w = 42.0; v0 = 26.0; d = 32.0; return;
+				// No building: the yard is open to the back.
+				case LotKind.Service: w = 0.0; v0 = Rally.ServiceD; d = 0.0; return;
 				default: w = 26.0; v0 = 44.0; d = 16.0; return;
 			}
 		}
@@ -147,6 +152,25 @@ namespace HalfGripOpenWorld
 				count.TryGetValue(p, out int n);
 				count[p] = n + 1;
 			});
+			// The rally stage's service area, beside the middle of its straight on the outside of the loop (to the right of the way the
+			// stage runs), its own track leaving from the back.
+			Network.Road stage = Rally.Road;
+			if (stage != null)
+			{
+				int r = Network.Roads.IndexOf(stage);
+				Network.Locate(stage, Rally.ServiceS, out int i, out double t);
+				double px = stage.X[i] + (stage.X[i + 1] - stage.X[i]) * t, pz = stage.Z[i] + (stage.Z[i + 1] - stage.Z[i]) * t;
+				double py = stage.Y[i] + (stage.Y[i + 1] - stage.Y[i]) * t;
+				double len = Math.Max(1e-6, stage.S[i + 1] - stage.S[i]);
+				double dx = (stage.X[i + 1] - stage.X[i]) / len, dz = (stage.Z[i + 1] - stage.Z[i]) / len;
+				int access = Network.RallyAccess != null ? Network.Roads.IndexOf(Network.RallyAccess) : -1;
+				Lot lot = Fit(LotKind.Service, r, stage, Rally.ServiceS, -1, px, pz, py, -dx, -dz, Hash(r, 0, -1), found, access);
+				if (lot != null)
+				{
+					lot.Place = "Rally stage";
+					found.Add(lot);
+				}
+			}
 			Lots.AddRange(found);
 			Index();
 		}
@@ -212,7 +236,7 @@ namespace HalfGripOpenWorld
 		/// clear of every other road (each road keeps its own side of a block, as with houses), out of the water, on ground near the road's
 		/// height, and clear of the lots already laid out.
 		/// </summary>
-		private static Lot Fit(LotKind kind, int r, Network.Road road, double s, int side, double px, double pz, double py, double ax, double az, ulong h, List<Lot> found)
+		private static Lot Fit(LotKind kind, int r, Network.Road road, double s, int side, double px, double pz, double py, double ax, double az, ulong h, List<Lot> found, int also = -1)
 		{
 			Size(kind, out double w, out double d, out double rough);
 			// Away from the road (left of the way the lot runs along it).
@@ -254,7 +278,9 @@ namespace HalfGripOpenWorld
 			{
 				return null;
 			}
-			double front = Network.Verge;
+			// Beside an unpaved road (the rally stage) a hair further out: its edge is exactly the verge's width from the stage's, and
+			// the test that keeps a lot 4 clear of every road's edge failed on rounding there.
+			double front = Network.Unpaved(road.Kind) ? Network.Verge + 0.05 : Network.Verge;
 			double off = most + road.Half + front + d * 0.5;
 			double[] foot = new double[count];
 			for (int k = 0; k < count; k++)
@@ -262,8 +288,9 @@ namespace HalfGripOpenWorld
 				// The verge's foot, in the lot's frame (0 at its front, less in front of it).
 				foot[k] = line[k] - most;
 			}
-			// Its surface a little over the road's shoulder (the road's bed, which the verge comes down to), so it meets the verge's foot.
-			double y = py - Network.BedDepth + 0.1;
+			// Its surface a little over the road's shoulder (the road's bed, which the verge comes down to), so it meets the verge's foot;
+			// beside the rally stage, a little over its pressed bed, which its soft edge comes down to.
+			double y = py - (Network.Unpaved(road.Kind) ? Network.TrackDepth : Network.BedDepth) + 0.1;
 			Lot lot = new Lot { Kind = kind, Road = r, X = px + nx * off, Z = pz + nz * off, Dx = ax, Dz = az, W = w, D = d, Y = y, Hash = h, Foot = foot };
 			// The surface follows the road's grade along its front, so the front stays at the verge's foot all along: the road must run
 			// about straight in height past it (not over a crest or through a dip), and not steeply.
@@ -317,8 +344,9 @@ namespace HalfGripOpenWorld
 					double u = -w * 0.5 - Pad + (w + 2.0 * Pad) * a / nu;
 					double x = lot.X + ax * u + nx * (v - d * 0.5), z = lot.Z + az * u + nz * (v - d * 0.5);
 					bool inside = v <= d && Math.Abs(u) <= w * 0.5;
-					// Its own road's edge is front + v away; every other road's must be further, and 4 clear of the lot. Not in a park.
-					if (!Network.Claims(x, z, r, front + v, inside ? 4.0 : 0.5) || Parks.At(x, z))
+					// Its own road's edge is front + v away; every other road's must be further (but for the road it is let have behind it,
+					// the rally service area's track), and 4 clear of the lot. Not in a park.
+					if (!Network.Claims(x, z, r, front + v, inside ? 4.0 : 0.5, also) || Parks.At(x, z))
 					{
 						return null;
 					}

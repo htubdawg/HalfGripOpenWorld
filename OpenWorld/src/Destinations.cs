@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the circuit's grid and paddock, the retail park, a filling
+	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the retail park, a filling
 	/// station, a workshop, the parks, the lake trails, the villages and the mountain pass. Each is a point on a road (on its right-hand lane)
 	/// and the road's direction there, so a car put there can drive off at once.
 	/// </summary>
@@ -53,6 +53,20 @@ namespace HalfGripOpenWorld
 				list.Add(new Place { Name = "Circuit (grid)", X = gx, Z = gz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
 				Circuit.Straight((Circuit.PaddockA + Circuit.PaddockB) * 0.5, (Circuit.GaragesOut + Circuit.PaddockOut) * 0.5, out double px, out double pz);
 				list.Add(new Place { Name = "Circuit (paddock)", X = px, Z = pz, Dx = Circuit.DirX, Dz = Circuit.DirZ });
+			}
+			if (Rally.Exists && Rally.Road != null)
+			{
+				// Behind the start line, facing along the stage; the service area's yard, facing the same way.
+				Rally.At(Rally.StartS - 20.0, out double sx, out double sz, out double dx, out double dz);
+				list.Add(new Place { Name = "Rally stage (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
+				foreach (Town.Lot lot in Town.Lots)
+				{
+					if (lot.Kind == LotKind.Service)
+					{
+						Town.World(lot, 0.0, lot.D * 0.4, out double lx, out double lz);
+						list.Add(new Place { Name = "Rally stage (service area)", X = lx, Z = lz, Dx = Rally.DirX, Dz = Rally.DirZ });
+					}
+				}
 			}
 			bool garage = false, workshop = false;
 			foreach (Town.Lot lot in Town.Lots)

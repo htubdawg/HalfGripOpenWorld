@@ -14,6 +14,11 @@ namespace HalfGripOpenWorld
 		Track = 5,
 		/// <summary>A gravel footpath, out from the dead ends of streets into the country. Unpaved like a track, and narrower.</summary>
 		Path = 6,
+		/// <summary>
+		/// The rally stage (<see cref="Rally"/>): a closed loop of gravel road through the upland woods, unpaved like a track and wider.
+		/// Smallest of all, so no road follows it; none comes near it either (its ground is closed to the router).
+		/// </summary>
+		Rally = 7,
 	}
 
 	/// <summary>
@@ -68,6 +73,8 @@ namespace HalfGripOpenWorld
 			public double[] To;
 			/// <summary>Per sample: near a bridge, so the bank built for it never fills the river's channel.</summary>
 			public bool[] Abut;
+			/// <summary>A closed loop (the rally stage): its last sample is its first, and its sides are taken round the join.</summary>
+			public bool Loop;
 			public int Count => X.Length;
 		}
 
@@ -95,6 +102,8 @@ namespace HalfGripOpenWorld
 			new Class { Half = 5.0, Grade = 0.14, Window = 3, Keep = 1, Rounds = 2, Soft = 0.12, Steep = 1.5, Bank = 25.0 },
 			// A footpath 1.5 m wide.
 			new Class { Half = 2.5, Grade = 0.18, Window = 3, Keep = 1, Rounds = 2, Soft = 0.15, Steep = 1.5, Bank = 15.0 },
+			// The rally stage, 5 m wide: routed by Rally itself, so only its grade, window and bank are used.
+			new Class { Half = Rally.Half, Grade = 0.12, Window = 4, Keep = 2, Rounds = 3, Soft = 0.10, Steep = 3.0, Bank = 30.0 },
 		};
 
 		internal static double HalfOf(RoadKind kind)
@@ -111,7 +120,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The soft edge each side of a track's or path's ribbon, from the ribbon down to the ground.</summary>
 		internal static double EdgeOf(RoadKind kind)
 		{
-			return kind == RoadKind.Path ? 1.5 : 2.0;
+			return kind == RoadKind.Path ? 1.5 : kind == RoadKind.Rally ? 2.5 : 2.0;
 		}
 
 		/// <summary>
@@ -160,7 +169,7 @@ namespace HalfGripOpenWorld
 		/// pressed bed, so where it meets a road it is under that road's surface and needs no cut; a path's a little under a track's, so
 		/// where one ends on the other they do not flicker.
 		/// </summary>
-		private static readonly double[] Tops = { 0.20, 0.16, 0.12, 0.08, 0.05, UnpavedLift - TrackDepth, UnpavedLift - TrackDepth - 0.02 };
+		private static readonly double[] Tops = { 0.20, 0.16, 0.12, 0.08, 0.05, UnpavedLift - TrackDepth, UnpavedLift - TrackDepth - 0.02, UnpavedLift - TrackDepth };
 
 		/// <summary>How far a road of this class is drawn above its road line (see <see cref="Tops"/>).</summary>
 		internal static double Top(RoadKind kind)
@@ -172,6 +181,9 @@ namespace HalfGripOpenWorld
 
 		/// <summary>The circuit's road, from its paddock gate to the network (null if there is no circuit).</summary>
 		internal static Road CircuitRoad;
+
+		/// <summary>The rally stage's track, from the back of its service area to the network (null if there is no stage).</summary>
+		internal static Road RallyAccess;
 
 		/// <summary>Where roads leave the world: the mouth of a tunnel into the edge wall, facing out along (DirX, DirZ).</summary>
 		internal struct Portal
@@ -240,6 +252,13 @@ namespace HalfGripOpenWorld
 			Places.Build(rng);
 			segments = new Segments();
 			router = new Router();
+			RallyAccess = null;
+
+			// 0. The rally stage, before any other road: they all go round it.
+			if (Rally.Exists)
+			{
+				AddRally();
+			}
 
 			List<Places.Place> towns = Places.All.FindAll(p => p.Kind == PlaceKind.Town);
 			List<Places.Place> villages = Places.All.FindAll(p => p.Kind == PlaceKind.Village);
@@ -350,6 +369,12 @@ namespace HalfGripOpenWorld
 				}
 			}
 
+			// The rally stage's track, from the back of its service area to the nearest lane or bigger road.
+			if (Rally.Exists)
+			{
+				RallyAccess = RallyTrack();
+			}
+
 			// 5. Farm tracks off the lanes and minor roads, and footpaths on from the dead ends of streets.
 			Tracks(new Rng(Noise.Mix(WorldGen.Seed + 9000UL)));
 			Footpaths(new Rng(Noise.Mix(WorldGen.Seed + 9500UL)));
@@ -373,6 +398,102 @@ namespace HalfGripOpenWorld
 			// 7. The retail park and businesses on the main roads, now the roads are fixed; then the benches, clear of them.
 			Town.Build();
 			Parks.Furnish();
+		}
+
+		/// <summary>
+		/// The rally stage as a road: its loop closed (the last sample on the first), its straight held to a straight grade between the
+		/// land at its ends (the service area beside it is level across and follows that grade), the rest given its height as any road's
+		/// is. It is not put in the segments or marked in the router: no road joins or follows it, and its ground is closed to them.
+		/// </summary>
+		private static void AddRally()
+		{
+			List<(double x, double z)> points = new List<(double x, double z)>(Rally.Count + 1);
+			for (int i = 0; i < Rally.Count; i++)
+			{
+				points.Add((Rally.X[i], Rally.Z[i]));
+			}
+			points.Add((Rally.X[0], Rally.Z[0]));
+			Road road = Make(RoadKind.Rally, "Rally stage", points);
+			road.Loop = true;
+			int n = road.Count;
+			int straight = 0;
+			while (straight + 1 < n && road.S[straight + 1] <= Rally.StraightLength)
+			{
+				straight++;
+			}
+			double y0 = WorldGen.Base(road.X[0], road.Z[0]), y1 = WorldGen.Base(road.X[straight], road.Z[straight]);
+			List<(int idx, double y)> pins = new List<(int, double)>();
+			for (int i = 0; i <= straight; i++)
+			{
+				pins.Add((i, y0 + (y1 - y0) * road.S[i] / road.S[straight]));
+			}
+			pins.Add((n - 1, y0));
+			Class cl = Classes[(int)RoadKind.Rally];
+			Profile(road, cl.Grade, cl.Window, pins);
+			Roads.Add(road);
+			Rally.Road = road;
+		}
+
+		/// <summary>
+		/// The rally service area's track to the nearest lane or bigger road: routed from a point out beyond the service area's back
+		/// (the cells round the stage are closed), drawn from the back itself, and ended where its line first meets a road. (A route
+		/// reaches a road at the first cell the road's samples are in; a road can cross a cell's corner with none in it, and a track
+		/// built to the cell's road ran across the road and hooked back to it.) Its first 30 units are held level with the yard.
+		/// </summary>
+		private static Road RallyTrack()
+		{
+			List<int> path = router.Find(RoadKind.Track, Rally.AccessOutX, Rally.AccessOutZ, 0.0, 0.0, (int)RoadKind.Lane);
+			if (path == null)
+			{
+				return null;
+			}
+			List<(double x, double z)> pts = new List<(double x, double z)> { (Rally.AccessX, Rally.AccessZ) };
+			double endY = double.NaN, lx = Rally.AccessX, lz = Rally.AccessZ;
+			foreach (int c in path)
+			{
+				double cx = router.X(c), cz = router.Z(c);
+				if (segments.Intersect(lx, lz, cx, cz, -1, out double ix, out double iz, out double iy))
+				{
+					pts.Add((ix, iz));
+					endY = iy;
+					break;
+				}
+				pts.Add((cx, cz));
+				lx = cx;
+				lz = cz;
+			}
+			if (double.IsNaN(endY))
+			{
+				if (!segments.Snap(lx, lz, 160.0, -1, out double sx, out double sz, out double sy))
+				{
+					return null;
+				}
+				pts.Add((sx, sz));
+				endY = sy;
+			}
+			Class cl = Classes[(int)RoadKind.Track];
+			Road road = Make(RoadKind.Track, "Rally service road", Smooth(pts, cl.Keep, cl.Rounds));
+			if (road.Count < 3)
+			{
+				return null;
+			}
+			// Its bed level with the yard's levelled ground (the stage's height beside it, less the yard's own drop and bed: see Town.Fit
+			// and Town.Ground), so the bank round the yard's back does not rise through its ribbon.
+			Road stage = Rally.Road;
+			Locate(stage, Rally.ServiceS, out int si, out double st);
+			double yard = stage.Y[si] + (stage.Y[si + 1] - stage.Y[si]) * st - TrackDepth + 0.1 - Town.Bed + TrackDepth;
+			List<(int idx, double y)> pins = new List<(int, double)> { (0, yard) };
+			for (int i = 1; i < road.Count - 1 && road.S[i] <= 30.0; i++)
+			{
+				pins.Add((i, pins[0].y));
+			}
+			pins.Add((road.Count - 1, endY));
+			Add(road, pins);
+			foreach (int c in path)
+			{
+				router.Mark(c, RoadKind.Track);
+			}
+			return road;
 		}
 
 		// ---- paths added from outside (parks and trails) ---------------------------------------------------------
@@ -1464,6 +1585,12 @@ namespace HalfGripOpenWorld
 		{
 			int a = Math.Max(0, k - 1);
 			int b = Math.Min(road.Count - 1, k + 1);
+			// Round a loop's join, its first and last samples (the same point) take the same direction, so its two ends meet exactly.
+			if (road.Loop && (k == 0 || k == road.Count - 1))
+			{
+				a = road.Count - 2;
+				b = 1;
+			}
 			double tx = road.X[b] - road.X[a];
 			double tz = road.Z[b] - road.Z[a];
 			double len = Math.Sqrt(tx * tx + tz * tz);
@@ -1789,7 +1916,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 				}
-				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0 || Circuit.Fenced(nx, nz, 40.0))
+				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0 || Circuit.Fenced(nx, nz, 40.0) || Rally.Fenced(nx, nz, 60.0))
 				{
 					break;
 				}
@@ -2299,9 +2426,9 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Whether (x, z) may be built on for road <paramref name="own"/> (-1: for no road): at least <paramref name="margin"/> off every
 		/// road's edge, and no other road's edge nearer than <paramref name="ownEdge"/> (its distance from its own road's edge), so each
-		/// road builds only on its own side of a block.
+		/// road builds only on its own side of a block; road <paramref name="also"/> (-1: none) may be nearer.
 		/// </summary>
-		internal static bool Claims(double x, double z, int own, double ownEdge, double margin)
+		internal static bool Claims(double x, double z, int own, double ownEdge, double margin, int also = -1)
 		{
 			if (cellStart == null)
 			{
@@ -2316,7 +2443,7 @@ namespace HalfGripOpenWorld
 				int i = (int)(uint)item;
 				Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
 				double edge = d - road.Half;
-				if (edge < margin || (own >= 0 && r != own && edge < ownEdge - 0.5))
+				if (edge < margin || (own >= 0 && r != own && r != also && edge < ownEdge - 0.5))
 				{
 					return false;
 				}
@@ -2766,7 +2893,7 @@ namespace HalfGripOpenWorld
 				{
 					double x = X(c), z = Z(c);
 					h[c] = WorldGen.Base(x, z);
-					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z)) || Circuit.Fenced(x, z, 60.0);
+					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z)) || Circuit.Fenced(x, z, 60.0) || Rally.Fenced(x, z, 150.0);
 					road[c] = 255;
 					foreach (Places.Place p in Places.All)
 					{

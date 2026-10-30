@@ -111,6 +111,11 @@ namespace HalfGripOpenWorld
 			{
 				return Cover.Park;
 			}
+			// The rally stage runs through forest: in its loop and for a way round it, whatever the land would be.
+			if (Rally.Woods(x, z))
+			{
+				return Cover.Forest;
+			}
 			Places.Place place = Places.At(x, z);
 			if (place != null)
 			{

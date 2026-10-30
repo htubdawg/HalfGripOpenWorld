@@ -81,8 +81,8 @@ namespace HalfGripOpenWorld
 		/// <summary>Pieces within this distance of a mouth are cut finer (2 units), so the flare's curve is smooth.</summary>
 		private const double Fine = 16.0;
 
-		/// <summary>Materials of the unpaved mesh: farm tracks, then footpaths.</summary>
-		internal const int TrackMaterial = 0, PathMaterial = 1;
+		/// <summary>Materials of the unpaved mesh: farm tracks, footpaths, then the rally stage.</summary>
+		internal const int TrackMaterial = 0, PathMaterial = 1, RallyMaterial = 2;
 
 		/// <summary>The sidewalk's back stands this far over the ground before its kerb goes down under it.</summary>
 		private const double KerbOut = 0.8;
@@ -103,7 +103,7 @@ namespace HalfGripOpenWorld
 			Mesher roads = new Mesher(tx * (double)tileSize, tz * (double)tileSize, Concrete + 1);
 			Mesher sides = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 1);
 			Mesher walks = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 1);
-			Mesher ribbons = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 2);
+			Mesher ribbons = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 3);
 			List<(double t0, double t1)> spans = new List<(double, double)>();
 			List<(double apex, int side, double from, double to)> fans = new List<(double, int, double, double)>();
 			foreach (long piece in pieces)
@@ -176,7 +176,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private static void Ribbon(Mesher m, Network.Road road, int i, TerrainGrid terrain)
 		{
-			int material = road.Kind == RoadKind.Path ? PathMaterial : TrackMaterial;
+			int material = road.Kind == RoadKind.Path ? PathMaterial : road.Kind == RoadKind.Rally ? RallyMaterial : TrackMaterial;
 			double edge = Network.EdgeOf(road.Kind);
 			float across = (float)(road.Half + edge), inner = (float)(edge / (2.0 * across));
 			float va = V(road, i, 0.0), vb = V(road, i, 1.0);
@@ -498,7 +498,8 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// The unpaved ribbons' materials, in submesh order, at 4 pixels a unit across and 2 along (the ground's texture is a pixel to 2
 		/// units, far too coarse for ruts): a farm track (grass at its soft edges, two dirt ruts, a grass strip between them) and a
-		/// footpath (pale gravel, grass at its edges).
+		/// footpath (pale gravel, grass at its edges); the rally stage (loose gravel, two darker lines worn by the cars, loose stones
+		/// thrown to the edges).
 		/// </summary>
 		internal static Material[] TrackMaterials(Shader shader)
 		{
@@ -511,7 +512,16 @@ namespace HalfGripOpenWorld
 				return d < 0.22 ? grass * 0.92f : d < 0.64 ? rut : dirt;
 			});
 			Texture2D path = Unpaved((int)(pathAcross * 8.0), Network.EdgeOf(RoadKind.Path) / (2.0 * pathAcross), grass, (double u) => gravel);
-			return new[] { Make(shader, track, "OpenWorld Farm Track"), Make(shader, path, "OpenWorld Footpath") };
+			double stageAcross = Network.HalfOf(RoadKind.Rally) + Network.EdgeOf(RoadKind.Rally);
+			Color loose = new Color(0.62f, 0.55f, 0.43f), worn = new Color(0.50f, 0.43f, 0.33f), thrown = new Color(0.68f, 0.62f, 0.50f);
+			Texture2D stage = Unpaved((int)(stageAcross * 8.0), Network.EdgeOf(RoadKind.Rally) / (2.0 * stageAcross), grass, (double u) =>
+			{
+				// From the middle out, as a share of the stage's half width: loose gravel, the two lines worn by the cars, gravel, stones
+				// thrown out to the edge.
+				double d = Math.Abs(u - 0.5) * 2.0 * stageAcross / Network.HalfOf(RoadKind.Rally);
+				return d < 0.14 ? loose : d < 0.56 ? worn : d < 0.84 ? loose : thrown;
+			});
+			return new[] { Make(shader, track, "OpenWorld Farm Track"), Make(shader, path, "OpenWorld Footpath"), Make(shader, stage, "OpenWorld Rally Stage") };
 		}
 
 		/// <summary>

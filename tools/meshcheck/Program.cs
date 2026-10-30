@@ -29,6 +29,9 @@ using UnityEngine;
 //                and stands clear of the track, its hairpin's radius; the circuit's road joins it to the network
 //  14. parks:   each pond's drawn water edge under the drawn ground and its middle under water; no building standing on a park's
 //                lawn; every bench clear of the roads and on its ground; every park with a path
+//  16. rally:   the stage a closed loop (its ends meet in place, height and width), never near itself (100 apart past 500 along,
+//                40 past 100: a hairpin's legs), no corner tighter than its limit; nothing in its fence but its service area and
+//                track; every straw bale clear of the stage's edges and standing on the ground; the service area laid out
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -55,6 +58,7 @@ internal static class Program
 		ok &= Plants();
 		ok &= ParkChecks();
 		ok &= CircuitChecks();
+		ok &= RallyChecks();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -259,7 +263,7 @@ internal static class Program
 	}
 
 	/// <summary>Steepest grade each class is held to (as in Network's classes); a road with cuts at junctions has Network.Leeway.</summary>
-	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.18 };
+	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.18, 0.12 };
 
 	private static bool Grades()
 	{
@@ -335,7 +339,7 @@ internal static class Program
 	{
 		int samples = 0, bad = 0;
 		double worst = 0;
-		int[] byKind = new int[7];
+		int[] byKind = new int[8];
 		foreach (Network.Road r in Network.Roads)
 		{
 			bool track = Network.Unpaved(r.Kind);
@@ -794,7 +798,9 @@ internal static class Program
 						over++;
 						worstOver = Math.Max(worstOver, gap);
 					}
-					if (v > 0.0 && !Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0))
+					// The rally service area's own track leaves from its back, as Town.Fit allows.
+					int also = lot.Kind == LotKind.Service && Network.RallyAccess != null ? Network.Roads.IndexOf(Network.RallyAccess) : -1;
+					if (v > 0.0 && !Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0, also))
 					{
 						roads++;
 					}
@@ -1045,6 +1051,110 @@ internal static class Program
 		bool ok = gap < Circuit.Step * 1.5 && nearest >= 260.0 && tilt <= 0.0201 && under == 0 && roads == 0 && places == 0 && lots == 0 && parks == 0
 			&& barrier >= Circuit.GravelOut + 5.0 && stands >= 0.0 && Circuit.MinLeftRadius >= 54.0 && Network.CircuitRoad != null;
 		Console.WriteLine("circuit: lap " + Circuit.Length.ToString("0") + " long, " + Circuit.Corners + " corners, closing gap " + gap.ToString("0.0") + ", nearest itself " + nearest.ToString("0") + ", hairpin radius " + Circuit.MinLeftRadius.ToString("0") + ", ground tilted " + (tilt * 100.0).ToString("0.00") + "%; " + under + " of " + vertices + " surface points with the ground through them (worst " + worst.ToString("0.00") + "); in the fence: " + roads + " roads, " + places + " places, " + lots + " lots, " + parks + " parks; barrier at least " + barrier.ToString("0") + ", stands " + stands.ToString("0") + " beyond the room they need; road " + (Network.CircuitRoad != null ? "joined" : "MISSING"));
+		return ok;
+	}
+
+	private static bool RallyChecks()
+	{
+		Network.Road stage = Rally.Road;
+		if (!Rally.Exists || stage == null)
+		{
+			Console.WriteLine("rally:   none");
+			return false;
+		}
+		int n = stage.Count;
+		// Closed: the two ends the same point at the same height, their edges the same.
+		double gap = Math.Sqrt((stage.X[0] - stage.X[n - 1]) * (stage.X[0] - stage.X[n - 1]) + (stage.Z[0] - stage.Z[n - 1]) * (stage.Z[0] - stage.Z[n - 1])) + Math.Abs(stage.Y[0] - stage.Y[n - 1]);
+		foreach (int side in new[] { -1, 1 })
+		{
+			Network.Point(stage, 0, 0.0, side, 0.0, out double ax, out double az, out double ay);
+			Network.Point(stage, n - 2, 1.0, side, 0.0, out double bx, out double bz, out double by);
+			gap = Math.Max(gap, Math.Abs(ax - bx) + Math.Abs(az - bz) + Math.Abs(ay - by));
+		}
+		double nearest = double.MaxValue, hairpin = double.MaxValue;
+		for (int i = 0; i < Rally.Count; i += 2)
+		{
+			for (int j = i + 2; j < Rally.Count; j += 2)
+			{
+				double along = Math.Min(Rally.S[j] - Rally.S[i], Rally.Length - (Rally.S[j] - Rally.S[i]));
+				double d = Math.Sqrt((Rally.X[j] - Rally.X[i]) * (Rally.X[j] - Rally.X[i]) + (Rally.Z[j] - Rally.Z[i]) * (Rally.Z[j] - Rally.Z[i]));
+				if (along >= 500.0)
+				{
+					nearest = Math.Min(nearest, d);
+				}
+				else if (along >= 100.0)
+				{
+					hairpin = Math.Min(hairpin, d);
+				}
+			}
+		}
+
+		// Nothing in the fence but the stage, its service area and its track (which leaves from the service area's back).
+		int roads = 0, places = 0, lots = 0, parks = 0, service = 0;
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (road == stage || road == Network.RallyAccess)
+			{
+				continue;
+			}
+			for (int i = 0; i < road.Count; i++)
+			{
+				if (Rally.Fenced(road.X[i], road.Z[i], road.Half))
+				{
+					roads++;
+					break;
+				}
+			}
+		}
+		foreach (Places.Place p in Places.All)
+		{
+			places += Rally.Fenced(p.X, p.Z, p.Radius) ? 1 : 0;
+		}
+		foreach (Town.Lot lot in Town.Lots)
+		{
+			if (lot.Kind == LotKind.Service)
+			{
+				service++;
+				continue;
+			}
+			lots += Rally.Fenced(lot.X, lot.Z, Math.Max(lot.W, lot.D)) ? 1 : 0;
+		}
+		foreach (Parks.Park park in Parks.All)
+		{
+			parks += Rally.Fenced(park.X, park.Z, 100.0) ? 1 : 0;
+		}
+
+		// The bales: every corner of every bale clear of the stage's soft edges, its base under the drawn ground there.
+		int bales = 0, onStage = 0, floating = 0;
+		foreach (Rally.Bales row in Rally.Corners)
+		{
+			for (double s = row.S0; s <= row.S1 + 0.01; s += Rally.BaleLength)
+			{
+				Rally.Bale(row, s, out double x, out double z, out double dx, out double dz);
+				bales++;
+				double low = double.MaxValue;
+				bool clear = true;
+				for (int a = -1; a <= 1; a += 2)
+				{
+					for (int c = -1; c <= 1; c += 2)
+					{
+						double px = x + dx * Rally.BaleLength * 0.5 * a - dz * Rally.BaleDepth * 0.5 * c, pz = z + dz * Rally.BaleLength * 0.5 * a + dx * Rally.BaleDepth * 0.5 * c;
+						clear &= Rally.Distance(px, pz) >= Rally.Half + Network.EdgeOf(RoadKind.Rally);
+						low = Math.Min(low, WorldGen.Height(px, pz));
+					}
+				}
+				onStage += clear ? 0 : 1;
+				floating += WorldGen.Height(x, z) - low > 3.0 ? 1 : 0;
+			}
+		}
+		double steepest = 0.0;
+		for (int i = 1; i < n; i++)
+		{
+			steepest = Math.Max(steepest, Math.Abs(stage.Y[i] - stage.Y[i - 1]) / Math.Max(1e-6, stage.S[i] - stage.S[i - 1]));
+		}
+		bool ok = gap < 1e-6 && nearest >= 100.0 && hairpin >= 40.0 && Rally.TightestRadius >= 23.9 && roads == 0 && places == 0 && lots == 0 && parks == 0
+			&& service == 1 && Network.RallyAccess != null && onStage == 0 && floating == 0 && steepest <= 0.1201;
+		Console.WriteLine("rally:   stage " + Rally.Length.ToString("0") + " long, " + Rally.CornerCount + " corners, tightest radius " + Rally.TightestRadius.ToString("0") + ", steepest " + (steepest * 100.0).ToString("0.0") + "%, ends " + gap.ToString("0.000") + " apart, nearest itself " + nearest.ToString("0") + " (a hairpin's legs " + hairpin.ToString("0") + "); in the fence: " + roads + " roads, " + places + " places, " + lots + " lots, " + parks + " parks; service area " + service + ", track " + (Network.RallyAccess != null ? "joined" : "MISSING") + "; " + bales + " bales, " + onStage + " on the stage's edge, " + floating + " on ground falling over 3 across");
 		return ok;
 	}
 }
