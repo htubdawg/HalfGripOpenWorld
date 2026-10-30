@@ -107,7 +107,8 @@ drainage; and central place theory and rank-size for settlements.
      road) are main roads (28 wide, 7%), the rest minor (24, 9%);
    - streets grown in each town and village (below);
    - a lane (15 wide, single track, 11%) from each farm to the nearest road, and some between neighbouring farms;
-   - farm tracks (9 wide, dirt, 14%) branching off lanes and minor roads.
+   - farm tracks (10 wide, dirt, 14%) branching off lanes and minor roads: no mesh, a shallow bed (0.3) pressed into the ground with
+     soft edges, painted on the ground texture (two tyre ruts, a grass strip), with dirt grip looked up from the texture.
 
    Each road is routed by A* (Dijkstra to reach the nearest road) on a 100-unit grid of the softened land. A step costs its length x
    (1 + steepness x (grade / soft)^2) with the class's own soft grade and steepness; water and the walls are closed; a river crossing
@@ -115,8 +116,10 @@ drainage; and central place theory and rank-size for settlements.
    way with the network and only its new parts are built: they leave and join the network at T-junctions, snapped onto the existing
    road. The path is thinned, rounded (Chaikin), and small roads given a slight wander (a lane follows old field edges, a main road
    barely); then the height profile: the land averaged over the class's window, pinned to the roads it joins and crosses (so junctions
-   are level), held to the class's grade; and bridges where it crosses a river channel (a deck 5 above the water, ramps at the grade,
-   concrete sides and parapets; the ground under it is left alone).
+   are level), held to the class's grade; and bridges wherever its paving would be over a river's water, found by intersecting the
+   road's line with the rivers' (a deck 5 above the water from 6 before it to 6 after, at the angle crossed; ramps at the grade, which
+   never pull the deck down; concrete sides and parapets; the ground under it is left alone, and the banks beside it never fill the
+   channel). Every paved road has a gravel verge 4 wide each side, from its edge down to the drawn ground (none on bridges).
 5. **Grown streets** (Parish and Müller's local rules): first a few old roads radiate from the centre to the place's fields (5 in a
    town, 2 in a village), between the roads already arriving. Then along every road in the place, side streets branch off at a right
    angle (give or take 12 degrees) every 60-115 units in a town (further apart towards the edge, and less often), each a walk of
@@ -127,9 +130,13 @@ drainage; and central place theory and rank-size for settlements.
    within half its width plus 4, then a bank back to the land, wider the bigger the cut or fill (1.6 x the height difference + 8, up to
    the class's limit). Of a road's segments the nearest one counts (the others' ends are a little higher or lower along a grade), and
    under any road's paving the ground is held below the lowest such road. Where a new road runs on one already built (at a junction or
-   a crossing), it takes that road's height there (`Seat`), and its grade runs on from the paving's edge; the bigger road's surface is
-   drawn higher (0.20 for the trunk down to 0.02 for tracks), so it is the one seen.
-7. **Land use** (`LandUse`), for each tile's 64 x 64 pixel-art ground texture (about 4 units a pixel): snow on peaks, rock on cliffs,
+   a crossing), it takes that road's height there (`Seat`), and its grade runs on from the paving's edge. Once every road is built
+   (`Junctions`), each stretch of a road on one drawn over it (bigger, or of its class and built earlier) is cut out along that
+   road's edges, so two surfaces never overlap; its mouth flares out (up to 4 each side) and over a 16-unit apron its height and
+   cross-fall are brought to meet the other's surface 0.05 under it, with up to a quarter more than its grade. A cut stretch makes no
+   bed: the other road's is the ground. Bigger roads are drawn higher above their line (0.20 for the trunk down to 0.05 for lanes).
+7. **Land use** (`LandUse`), for each tile's 64 x 64 pixel-art ground (about 4 units a pixel; the texture is 128 x 128, so the farm
+   tracks can be painted at 2 units a pixel): snow on peaks, rock on cliffs,
    sand on the shore, paving along town streets and gardens behind, farmyards, wet meadow on floodplains, fields round places (rotated
    parcels of 150-270 with crops by hash and hedges), woods on slopes and wherever nobody farms, grass or upland moor elsewhere.
    Whether land is farmed (or wooded) is decided per parcel, at its middle, so farmland ends at a hedge and woods meet fields along
@@ -163,13 +170,13 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 
 | | |
 |---|---|
-| Layout built | about 1.4 to 1.8 s (.NET 8; done in the background at game start) |
+| Layout built | about 2 to 2.4 s (.NET 8; done in the background at game start) |
 | Water | 31 rivers, 8 lakes |
 | Places | 2 towns, 16 villages, 120 farms and hamlets |
-| Roads, real km | trunk 10, main 18, minor 13, streets 21, lanes 51, tracks 6: 120 km |
+| Roads, real km | trunk 10, main 18, minor 13, streets 19, lanes 50, tracks 7: 117 km |
 | Density | 1.5 km of road per km² of land (rural England about 2, its towns 10 to 20) |
-| Junctions | about 620 T-junction ends, 50 crossroads, 280 dead ends (farm lanes and tracks) |
-| Steepest | trunk 5%, main 7%, minor 9%, streets 11%, lanes 11%, tracks 14% |
+| Junctions | about 590 T-junction ends, 46 crossroads, 290 dead ends (farm lanes and tracks) |
+| Steepest | trunk 5%, main 9%, minor 9%, streets 14%, lanes 14%, tracks 14% (the extra in mouths at junctions) |
 | Round the main town (225 tiles) | about 600 buildings, 4000 trees, 2200 grass tufts a tile |
 | A tile on a worker thread | 10 to 13 ms (heights, ground, buildings, trees and grass, meshes) |
 

@@ -5,8 +5,9 @@
 # The game folder can be the HalfGripRefs repo's game/ folder. HalfGripTools.dll comes from building HalfGripTools:
 #   dotnet build HalfGripTools/HalfGripTools.csproj -c Release -p:GameDir=<game folder>
 set -euo pipefail
-game="${1:?game folder}"
-tools="${2:?HalfGripTools.dll}"
+# Both made absolute: the project is built in a temporary folder, where relative paths would point nowhere.
+game="$(cd "${1:?game folder}" && pwd)"
+tools="$(cd "$(dirname "${2:?HalfGripTools.dll}")" && pwd)/$(basename "$2")"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

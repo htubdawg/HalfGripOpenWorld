@@ -11,8 +11,10 @@ generated from a fixed seed, the same every time and for every player, the way r
 - **Roads, grown in order of importance:** a dual-carriageway trunk road along the coast that bypasses the towns; main roads between
   neighbouring places (the strongest links first); a road over a mountain pass; streets grown out from the roads in every town and
   village; a lane to every farm; farm tracks into the fields. New roads follow the roads already there and branch off them at
-  T-junctions, so the network has the shape real ones have. Every road is held to its class's grade, crosses rivers on bridges and
-  meets the roads it crosses level. Roads that leave the world go into tunnels in the edge walls.
+  T-junctions, so the network has the shape real ones have. Every road is held to its class's grade, crosses rivers on bridges clear
+  of the water, and meets the roads it joins or crosses flush: it stops at the other road's edge with a flared mouth. Paved roads
+  have gravel verges down to the ground; farm tracks are pressed into the ground with two tyre ruts and a grass strip. Roads that
+  leave the world go into tunnels in the edge walls.
 - **Ground:** a pixel-art texture per tile from what the land is used for: fields in parcels of different crops with hedges, woods,
   wet meadows along the rivers, built-up streets and gardens in towns, farmyards, beaches, rock and snow.
 - **Buildings:** houses along the streets of every town and village, terraced and up to six storeys in a town's middle, detached and
@@ -25,7 +27,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.3**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.4**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -33,7 +35,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.3` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.4` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -72,8 +74,8 @@ the same ground.
   distance.
 - **Roads** (`Network.cs`): routed by A* over the land, costed by grade per class, with bridges dear and road-sharing cheap; built in
   order of importance; town streets grown with local rules (stop at a crossing, join a road nearby). See [docs/DESIGN.md](docs/DESIGN.md).
-- **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, tracks, water, buildings and
-  ground texture, all worked out on worker threads.
+- **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, verges, water, buildings and
+  ground texture (with the farm tracks painted on it), all worked out on worker threads.
 - **Trees and grass** (`Foliage.cs`): scattered from each tile's ground pixels and drawn GPU-instanced; the pines are captured from
   the main menu (as the Highway mod does), with simple pines made in code as a fallback.
 - **Floating origin** (`Origin.cs`, `GameCaches.cs`): past `ShiftDistance`, every root object in the scene moves back by whole tiles,
@@ -102,24 +104,36 @@ dotnet run -c Release --project tools/preview -- world.ppm 1024
 dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000    # west x, north z, side
 ```
 
+Check the built world against Unity's own types (road surfaces under the terrain, roads poking through each other, grades, bridges
+clear of the water, verges meeting the ground, track beds, building bases, mesh faces); it exits 1 if a check fails:
+
+```
+dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
+```
+
 ## Test checklist
 
 Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and `VerboseLog`, then:
 
 1. The race loads on the road into Kingsbridge, just outside the town, facing it; none of Tokyo's arena, city or train is left.
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
-   or seams between tiles, and the road does not flicker where roads meet. Try a lane to a farm and a farm track (looser grip).
-3. Cross a river on a bridge (concrete sides and parapets); drive into a river or the sea and check you are put back on a road.
-4. In Kingsbridge: houses line the streets, none stand on a road, you cannot drive through them. In the country: woods of pines (you
+   or seams between tiles. Where roads meet, the smaller one stops at the bigger one's edge with a flared mouth, level with it (no
+   lip, no flicker, nothing poking through); the same where two streets cross.
+3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Drive into a river or
+   the sea and check you are put back on a road.
+4. The gravel verges either side of the paved roads: no step at the road's edge or where they meet the grass, a little less grip
+   than the road, none on bridges. A farm track: a shallow dirt bed in the ground with two ruts and a grass strip, no grass tufts or
+   trees on it, looser grip than the grass beside it.
+5. In Kingsbridge: houses line the streets, none stand on a road, you cannot drive through them. In the country: woods of pines (you
    hit their trunks), grass round the car, wheat in the wheat fields. The log has `Forest trees captured: ...` (if it says simple pines
    stand in, the main menu's trees were not found), and `Tokyo landmarks found: ...` with the kinds it copies.
-5. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+6. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-6. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+7. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-7. Hold R far out: the car is put back on its wheels where it was.
-8. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-9. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+8. Hold R far out: the car is put back on its wheels where it was.
+9. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+10. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-10. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-11. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+11. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+12. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).

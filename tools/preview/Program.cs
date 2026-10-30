@@ -54,12 +54,19 @@ internal static class Program
 		double[] length = new double[6];
 		int[] count = new int[6];
 		double[] steepest = new double[6];
+		List<(double, double)> spans = new List<(double, double)>();
 		foreach (Network.Road r in Network.Roads)
 		{
 			length[(int)r.Kind] += r.S[r.Count - 1];
 			count[(int)r.Kind]++;
 			for (int i = 1; i < r.Count; i++)
 			{
+				// Only where it is drawn: a stretch cut out at a junction lies under the other road.
+				Network.Spans(r, i - 1, spans);
+				if (r.Kind != RoadKind.Track && spans.Count == 0)
+				{
+					continue;
+				}
 				double g = Math.Abs(r.Y[i] - r.Y[i - 1]) / Math.Max(1e-6, r.S[i] - r.S[i - 1]);
 				steepest[(int)r.Kind] = Math.Max(steepest[(int)r.Kind], g);
 			}
@@ -102,15 +109,16 @@ internal static class Program
 		}
 		Console.WriteLine("junctions: " + tees + " T-junction ends, about " + crossings / 2 + " crossroads, " + deadEnds + " dead ends");
 
-		// The ground meets each road's bed at its centre (bridges excepted; junctions may differ a little by design).
+		// The ground meets each road's bed at its centre (bridges and cuts at junctions excepted; junctions may differ a little by design).
 		double worstBed = 0.0;
 		foreach (Network.Road r in Network.Roads)
 		{
 			for (int i = 0; i < r.Count; i += 11)
 			{
-				if (!r.Bridge[i])
+				if (!r.Bridge[i] && Network.Shown(r, r.S[i]))
 				{
-					worstBed = Math.Max(worstBed, Math.Abs(WorldGen.Height(r.X[i], r.Z[i]) - Network.Lift - (r.Y[i] - Network.BedDepth)));
+					double depth = r.Kind == RoadKind.Track ? Network.TrackDepth : Network.BedDepth;
+					worstBed = Math.Max(worstBed, Math.Abs(WorldGen.Height(r.X[i], r.Z[i]) - Network.Lift - (r.Y[i] - depth)));
 				}
 			}
 		}
