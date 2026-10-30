@@ -27,7 +27,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.5**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.6**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -35,7 +35,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.5` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.6` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -86,6 +86,24 @@ the same ground.
   reader are patched to convert them. The packet format stays the same.
 - **Free roam** (`Patches.cs`): no laps, no AI rivals in solo, no "wrong way" or "hold R" hints, resets in place, and "fell under the
   map" measured from the ground under the car.
+
+## Map API for other mods
+
+`HalfGripOpenWorld.MapView` (`MapView.cs`) is a public API other mods rely on (the MiniMap mod reads it by reflection, by type and
+member name). **Do not rename it or change its members' names or signatures.** All its members are static properties or methods:
+
+| Member | |
+|---|---|
+| `bool Active` | True while an Open World race is loaded. |
+| `double OriginX`, `double OriginZ` | World coordinates of the scene's 0,0: add them to a scene position for a world position. |
+| `float TileSize` | 250. Tile (tx, tz) covers world x from `tx * TileSize` to `(tx + 1) * TileSize`, and z the same. |
+| `int TilePixels` | 64, the side of a tile's map picture. |
+| `bool TryGetTile(int tx, int tz, Color32[] into)` | Copies a loaded tile's map picture into `into` (`TilePixels` squared, rows from the south edge, x running east); false if the tile isn't loaded. Main thread only. |
+| `int Version` | Goes up whenever a tile's map picture is added or removed. |
+
+A tile's map picture is its land use with water and roads painted in, in the colours of `docs/world.png` (trunk orange, primary
+yellow, secondary cream, streets grey, lanes white, tracks brown), roads at least 2 pixels wide. It is made with the tile on a worker
+thread and kept only while the tile is loaded. Display only: nothing in the world depends on it.
 
 ## Checking a change
 

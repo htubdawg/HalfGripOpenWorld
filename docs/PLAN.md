@@ -3,6 +3,11 @@
 Agreed with the owner after testing 0.4.3. Work top to bottom; each PR runs `tools/check.sh`, `tools/preview` and `tools/meshcheck`
 before it goes up, and adds checks for what it fixes.
 
+## Map API for MiniMap (0.4.6; asked for by the MiniMap mod)
+
+Done: `MapView` (public, read by reflection; see README) gives each loaded tile's map picture (land use, water, roads by class) and
+the origin. Display only, outside the plan's order; the world is unchanged.
+
 ## PR 1b: river water hanging over the ground (0.4.5; reported after testing 0.4.4)
 
 On 0.4.4, 3021 of 8765 points along the rivers' water edges were over the drawn ground. Causes and fixes:
