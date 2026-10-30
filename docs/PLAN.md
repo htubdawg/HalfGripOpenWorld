@@ -3,7 +3,23 @@
 Agreed with the owner after testing 0.4.3. Work top to bottom; each PR runs `tools/check.sh`, `tools/preview` and `tools/meshcheck`
 before it goes up, and adds checks for what it fixes.
 
-## PR 1: fixes (0.4.4: built, all checks pass, waiting for the owner's test in game)
+## PR 1b: river water hanging over the ground (0.4.5; reported after testing 0.4.4)
+
+On 0.4.4, 3021 of 8765 points along the rivers' water edges were over the drawn ground. Causes and fixes:
+
+- The water level came from the land at the river's centre, smoothed; meanders put the line on slopes and smoothing lifted it
+  above narrow valley floors. Now a unit under the lowest land across both banks, as cut by the rivers before it (longest first),
+  never smoothed above it.
+- The channel's edge was a 1.2 step; the ground's 5-unit triangles dipped under the water there. It now rises over 5, and the
+  water surface is drawn far enough out to stay under the ground.
+- A place's levelling sank river banks: the floodplain is now kept.
+- A river's floodplain (up to 270 wide) spread across a neighbouring river or a meander's next loop, lower down. The nearest river
+  now shapes the ground; others cut it through a 1 in 1 bank, and a bank up to 10 is raised beside water if needed.
+- Left: 37 points (0.4%), on steep mountain bends and where a river runs right beside a lower tributary's channel.
+- Roads re-routed over the new land showed a lane coming off a bridge onto a street on the floodplain: decks now ramp down over
+  the banks (only the part over water is held), and mouths of streets and lanes may take up to 1.75 times their grade.
+
+## PR 1: fixes (0.4.4: merged)
 
 How it was done, where it differs from the notes below:
 

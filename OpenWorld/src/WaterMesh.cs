@@ -57,7 +57,7 @@ namespace HalfGripOpenWorld
 						double dx = river.X[a1] - river.X[a0], dz = river.Z[a1] - river.Z[a0];
 						double len = Math.Sqrt(dx * dx + dz * dz);
 						double sx = len > 0.0 ? -dz / len : 1.0, sz = len > 0.0 ? dx / len : 0.0;
-						double half = river.Half[k] + 2.0;
+						double half = Rivers.Edge(river.Half[k]);
 						float y = (float)river.W[k] + lift;
 						v.Add(new UnityEngine.Vector3((float)(river.X[k] + sx * half - ox), y, (float)(river.Z[k] + sz * half - oz)));
 						v.Add(new UnityEngine.Vector3((float)(river.X[k] - sx * half - ox), y, (float)(river.Z[k] - sz * half - oz)));
