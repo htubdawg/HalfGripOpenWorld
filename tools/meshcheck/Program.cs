@@ -6,14 +6,19 @@ using UnityEngine;
 // Checks of the built world that the preview tool cannot make (they need Unity's types and the mesh builders), outside the game:
 //   dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]
 //   1. clip:    road surfaces under the terrain mesh (sampled across every road, against the 5-unit triangles the game draws)
-//   2. poke:    a smaller road's surface above a bigger road's where it lies on its paving (junctions)
+//   2. poke:    where two drawn road surfaces overlap (more than half a unit in), the one that should be under (the smaller, or the
+//               later of one class) poking through the other (junctions, crossings), by more than 0.005
 //   3. float:   road centres floating more than 0.5 over the ground
-//   4. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
-//   5. faces:   road, track and water meshes with no upside-down flat faces, under 65000 vertices
-// Exits 1 if a check fails. Keep the surface lifts below in step with RoadMesh.
+//   4. grades:  drawn road pieces no steeper than their class's grade allows (a mouth's apron a little more)
+//   5. bridges: every point of a road surface over a river's water at least 4 above the water
+//   6. verges:  the step from a verge's outer edge to the ground (its inner edge is the road's edge by construction), under 0.1
+//   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
+//   8. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
+//   9. faces:   road, verge and water meshes with no upside-down flat faces, under 65000 vertices
+// Exits 1 if a check fails.
 internal static class Program
 {
-	private static readonly float[] Lift = { 0.20f, 0.16f, 0.12f, 0.08f, 0.05f, 0.02f };
+	private static readonly TerrainGrid Terrain = new TerrainGrid(0, 0, 0, null);
 
 	private static int Main()
 	{
@@ -22,6 +27,10 @@ internal static class Program
 		ok &= Clip();
 		ok &= Poke();
 		ok &= Float();
+		ok &= Grades();
+		ok &= Bridges();
+		ok &= Verges();
+		ok &= Tracks();
 		ok &= Bases();
 		ok &= Faces();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
@@ -31,10 +40,18 @@ internal static class Program
 	/// <summary>The terrain mesh's height at world (x, z): the 5-unit grid's triangles, as the streamer builds them.</summary>
 	private static double Mesh(double x, double z)
 	{
-		double gx = Math.Floor(x / 5.0), gz = Math.Floor(z / 5.0), fx = x / 5.0 - gx, fz = z / 5.0 - gz;
-		double a = WorldGen.Height(gx * 5, gz * 5), b = WorldGen.Height(gx * 5 + 5, gz * 5);
-		double c = WorldGen.Height(gx * 5, gz * 5 + 5), d = WorldGen.Height(gx * 5 + 5, gz * 5 + 5);
-		return fx + fz <= 1.0 ? a + (b - a) * fx + (c - a) * fz : d + (c - d) * (1.0 - fx) + (b - d) * (1.0 - fz);
+		return Terrain.At(x, z);
+	}
+
+	private static readonly List<(double t0, double t1)> spans = new List<(double, double)>();
+
+	/// <summary>The first stretch of piece i drawn across the road's whole width, as fractions along it (most pieces have one).</summary>
+	private static bool Drawn(Network.Road r, int i, out double t0, out double t1)
+	{
+		Network.Spans(r, i, spans);
+		t0 = spans.Count > 0 ? spans[0].t0 : 0.0;
+		t1 = spans.Count > 0 ? spans[0].t1 : 0.0;
+		return spans.Count > 0;
 	}
 
 	private static bool Clip()
@@ -43,21 +60,20 @@ internal static class Program
 		double worst = 0;
 		foreach (Network.Road r in Network.Roads)
 		{
+			if (r.Kind == RoadKind.Track)
+			{
+				continue;
+			}
 			for (int i = 0; i + 1 < r.Count; i += 2)
 			{
-				if (r.Bridge[i])
-				{
-					continue;
-				}
-				double tx = r.X[i + 1] - r.X[i], tz = r.Z[i + 1] - r.Z[i], len = Math.Sqrt(tx * tx + tz * tz);
-				if (len <= 0)
+				if (r.Bridge[i] || !Drawn(r, i, out double t0, out double _))
 				{
 					continue;
 				}
 				foreach (double f in new[] { -0.95, -0.5, 0.0, 0.5, 0.95 })
 				{
-					double x = r.X[i] - tz / len * r.Half * f, z = r.Z[i] + tx / len * r.Half * f;
-					double over = Mesh(x, z) - (r.Y[i] + Lift[(int)r.Kind] + Network.Lift);
+					Network.Point(r, i, t0, f, 0.0, out double x, out double z, out double y);
+					double over = Mesh(x, z) - (y + Network.Lift);
 					samples++;
 					if (over > -0.02)
 					{
@@ -67,56 +83,131 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("clip:  " + bad + " of " + samples + " road surface samples under the terrain, worst " + worst.ToString("0.00"));
+		Console.WriteLine("clip:    " + bad + " of " + samples + " road surface samples under the terrain, worst " + worst.ToString("0.00"));
 		return bad * 1000 < samples && worst < 0.5;
 	}
+
+	/// <summary>Road segments by 64-unit cell, for finding the roads near a point.</summary>
+	private static Dictionary<long, List<(int r, int i)>> grid;
+
+	private static long Key(double x, double z)
+	{
+		return ((long)Math.Floor(x / 64.0) << 32) | (uint)(int)Math.Floor(z / 64.0);
+	}
+
+	private static List<(int r, int i)> Near(double x, double z)
+	{
+		if (grid == null)
+		{
+			grid = new Dictionary<long, List<(int, int)>>();
+			for (int r = 0; r < Network.Roads.Count; r++)
+			{
+				Network.Road road = Network.Roads[r];
+				if (road.Kind == RoadKind.Track)
+				{
+					continue;
+				}
+				for (int i = 0; i + 1 < road.Count; i++)
+				{
+					double mx = (road.X[i] + road.X[i + 1]) * 0.5, mz = (road.Z[i] + road.Z[i + 1]) * 0.5;
+					for (int dz = -1; dz <= 1; dz++)
+					{
+						for (int dx = -1; dx <= 1; dx++)
+						{
+							long k = Key(mx + dx * 64.0, mz + dz * 64.0);
+							if (!grid.TryGetValue(k, out List<(int, int)> list))
+							{
+								list = new List<(int, int)>();
+								grid[k] = list;
+							}
+							list.Add((r, i));
+						}
+					}
+				}
+			}
+		}
+		return grid.TryGetValue(Key(x, z), out List<(int r, int i)> found) ? found : new List<(int, int)>();
+	}
+
+	/// <summary>The drawn surface's height of road o at (x, z), if (x, z) is well inside its drawn paving (NaN if not).</summary>
+	private static double SurfaceOf(int o, double x, double z)
+	{
+		Network.Road road = Network.Roads[o];
+		double best = double.NaN, bestD = double.MaxValue;
+		foreach ((int r, int i) in Near(x, z))
+		{
+			if (r != o)
+			{
+				continue;
+			}
+			Lines.Project(road.X, road.Z, i, x, z, out double t, out double d);
+			if ((i == 0 && t <= 0.0) || (i == road.Count - 2 && t >= 1.0) || d >= bestD || !Drawn(road, i, out double t0, out double t1) || t < t0 || t > t1)
+			{
+				continue;
+			}
+			double s = road.S[i] + (road.S[i + 1] - road.S[i]) * t;
+			// Half a unit in: a cut overlaps the other road by a quarter unit on purpose (no ground shows at the seam).
+			if (d < Network.HalfAt(road, s) - 0.5)
+			{
+				bestD = d;
+				Network.Point(road, i, t, 0, 0.0, out double _, out double _, out best);
+			}
+		}
+		return best;
+	}
+
+	/// <summary>How far through counts as poking: 0.005 is about 1.5 mm, beyond what can be seen; a mouth is cut 0.05 under the other road.</summary>
+	private const double PokeSlack = 0.005;
 
 	private static bool Poke()
 	{
 		int overlaps = 0, poke = 0;
 		double worst = 0;
-		foreach (Network.Road r in Network.Roads)
+		for (int r = 0; r < Network.Roads.Count; r++)
 		{
-			for (int i = 0; i + 1 < r.Count; i += 2)
+			Network.Road road = Network.Roads[r];
+			if (road.Kind == RoadKind.Track)
 			{
-				foreach (Network.Road o in Network.Roads)
+				continue;
+			}
+			for (int i = 0; i + 1 < road.Count; i++)
+			{
+				if (!Drawn(road, i, out double t0, out double t1))
 				{
-					if (o == r || o.Kind >= r.Kind)
+					continue;
+				}
+				foreach (double t in new[] { t0, (t0 + t1) * 0.5, t1 })
+				{
+					foreach (double f in new[] { -0.9, 0.0, 0.9 })
 					{
-						continue;
-					}
-					int bj = -1;
-					double bd = double.MaxValue, bt = 0;
-					for (int j = 0; j + 1 < o.Count; j++)
-					{
-						if (Math.Abs(o.X[j] - r.X[i]) > 60 || Math.Abs(o.Z[j] - r.Z[i]) > 60)
+						Network.Point(road, i, t, f, 0.0, out double x, out double z, out double y);
+						HashSet<int> seen = new HashSet<int>();
+						foreach ((int o, int _) in Near(x, z))
 						{
-							continue;
+							Network.Road other = Network.Roads[o];
+							// Only against a road this one should be under: bigger, or of its class and built before it.
+							if (o == r || !seen.Add(o) || other.Kind > road.Kind || (other.Kind == road.Kind && o > r))
+							{
+								continue;
+							}
+							double top = SurfaceOf(o, x, z);
+							if (double.IsNaN(top))
+							{
+								continue;
+							}
+							overlaps++;
+							if (y > top + PokeSlack)
+							{
+								poke++;
+								worst = Math.Max(worst, y - top);
+							}
 						}
-						Lines.Project(o.X, o.Z, j, r.X[i], r.Z[i], out double t, out double d);
-						if (d < bd)
-						{
-							bd = d;
-							bj = j;
-							bt = t;
-						}
-					}
-					if (bj < 0 || bd >= o.Half)
-					{
-						continue;
-					}
-					overlaps++;
-					double above = r.Y[i] + Lift[(int)r.Kind] - (o.Y[bj] + (o.Y[bj + 1] - o.Y[bj]) * bt + Lift[(int)o.Kind]);
-					if (above > 0)
-					{
-						poke++;
-						worst = Math.Max(worst, above);
 					}
 				}
 			}
 		}
-		Console.WriteLine("poke:  " + poke + " of " + overlaps + " points of a smaller road on a bigger road's paving poke through it, worst " + worst.ToString("0.00"));
-		return worst < 0.1;
+		Console.WriteLine("poke:    " + poke + " of " + overlaps + " points where a road's surface is on another's poke through it, worst " + worst.ToString("0.000"));
+		return poke == 0;
 	}
 
 	private static bool Float()
@@ -124,9 +215,13 @@ internal static class Program
 		int total = 0, bad = 0;
 		foreach (Network.Road r in Network.Roads)
 		{
+			if (r.Kind == RoadKind.Track)
+			{
+				continue;
+			}
 			for (int i = 0; i < r.Count; i += 3)
 			{
-				if (r.Bridge[i])
+				if (r.Bridge[i] || !Network.Shown(r, r.S[i]))
 				{
 					continue;
 				}
@@ -137,8 +232,166 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("float: " + bad + " of " + total + " road centres more than 0.5 over the ground");
+		Console.WriteLine("float:   " + bad + " of " + total + " road centres more than 0.5 over the ground");
 		return bad * 1000 < total;
+	}
+
+	/// <summary>Steepest grade each class is held to (as in Network's classes); a mouth's apron may take a quarter more, and a little.</summary>
+	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14 };
+
+	private static bool Grades()
+	{
+		int pieces = 0, bad = 0;
+		double worst = 0;
+		foreach (Network.Road r in Network.Roads)
+		{
+			for (int i = 0; i + 1 < r.Count; i++)
+			{
+				Network.Spans(r, i, spans);
+				if (r.Kind != RoadKind.Track && spans.Count == 0)
+				{
+					continue;
+				}
+				pieces++;
+				double g = Math.Abs(r.Y[i + 1] - r.Y[i]) / Math.Max(1e-6, r.S[i + 1] - r.S[i]);
+				worst = Math.Max(worst, g / Grade[(int)r.Kind]);
+				if (g > Grade[(int)r.Kind] * 1.3 + 0.01)
+				{
+					bad++;
+				}
+			}
+		}
+		Console.WriteLine("grades:  " + bad + " of " + pieces + " drawn road pieces steeper than their class allows, steepest " + worst.ToString("0.00") + " times its limit");
+		return bad == 0;
+	}
+
+	private static bool Bridges()
+	{
+		int over = 0, bad = 0, decks = 0;
+		double worst = double.MaxValue;
+		foreach (Network.Road r in Network.Roads)
+		{
+			for (int i = 0; i + 1 < r.Count; i++)
+			{
+				if (r.Bridge[i] && (i == 0 || !r.Bridge[i - 1]))
+				{
+					decks++;
+				}
+				bool track = r.Kind == RoadKind.Track;
+				double t0 = 0.0, t1 = 1.0;
+				if (!track && !Drawn(r, i, out t0, out t1))
+				{
+					continue;
+				}
+				for (int k = 0; k <= 8; k++)
+				{
+					double t = t0 + (t1 - t0) * k / 8.0;
+					foreach (double f in track ? new[] { 0.0 } : new[] { -1.0, -0.5, 0.0, 0.5, 1.0 })
+					{
+						Network.Point(r, i, t, f, 0.0, out double x, out double z, out double y);
+						if (!Rivers.Channel(x, z, 2.0, out double water))
+						{
+							continue;
+						}
+						over++;
+						// A track has no deck: one over water at all is wrong.
+						double clear = track ? -1.0 : y - water;
+						worst = Math.Min(worst, clear);
+						if (clear < 4.0)
+						{
+							bad++;
+						}
+					}
+				}
+			}
+		}
+		Console.WriteLine("bridges: " + decks + " decks; " + bad + " of " + over + " road points over water less than 4 above it, lowest " + (over > 0 ? worst.ToString("0.0") : "-"));
+		return bad == 0;
+	}
+
+	private static bool Verges()
+	{
+		int sections = 0, bad = 0;
+		double worst = 0;
+		RoadMesh.Mesher m = new RoadMesh.Mesher(0, 0, 1);
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (road.Kind == RoadKind.Track)
+			{
+				continue;
+			}
+			for (int i = 0; i + 1 < road.Count; i += 2)
+			{
+				if (road.Bridge[i] || road.Bridge[i + 1] || !Drawn(road, i, out double t0, out double _))
+				{
+					continue;
+				}
+				for (int side = -1; side <= 1; side += 2)
+				{
+					RoadMesh.Section(m, road, i, t0, side, Terrain, out Vector3 inner, out Vector3 middle, out Vector3 outer, out double wx, out double wz);
+					if (Network.OnOtherPaving(wx, wz, r))
+					{
+						continue;
+					}
+					sections++;
+					Vector3 edge = m.At(road, i, t0, side, 0.0);
+					double step = Math.Max(Math.Abs(inner.y - edge.y), Math.Abs(outer.y - Mesh(wx, wz)));
+					worst = Math.Max(worst, step);
+					if (step > 0.1)
+					{
+						bad++;
+					}
+				}
+			}
+		}
+		Console.WriteLine("verges:  " + bad + " of " + sections + " verge sections with a step over 0.1 at an edge, worst " + worst.ToString("0.00"));
+		return bad == 0;
+	}
+
+	private static bool Tracks()
+	{
+		int total = 0, bad = 0;
+		double worst = 0;
+		foreach (Network.Road r in Network.Roads)
+		{
+			if (r.Kind != RoadKind.Track)
+			{
+				continue;
+			}
+			// Away from the road it leaves and any it meets, where the bigger road's bed is the ground.
+			for (int i = 3; i + 3 < r.Count; i++)
+			{
+				if (OnPaved(r.X[i], r.Z[i]))
+				{
+					continue;
+				}
+				total++;
+				double off = Math.Abs(WorldGen.Height(r.X[i], r.Z[i]) - Network.Lift - (r.Y[i] - Network.TrackDepth));
+				worst = Math.Max(worst, off);
+				if (off > 0.15)
+				{
+					bad++;
+				}
+			}
+		}
+		Console.WriteLine("tracks:  " + bad + " of " + total + " track points whose ground is more than 0.15 off the bed, worst " + worst.ToString("0.00"));
+		return bad * 100 < total;
+	}
+
+	/// <summary>Whether (x, z) is near a paved road (within its half width, shoulder and widest bank's start).</summary>
+	private static bool OnPaved(double x, double z)
+	{
+		foreach ((int o, int i) in Near(x, z))
+		{
+			Network.Road road = Network.Roads[o];
+			Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
+			if (d < road.Half + Network.Shoulder + 24.0)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static bool Bases()
@@ -177,7 +430,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("bases: " + n + " buildings round " + town.Name + ", base at most " + sunk.ToString("0.0") + " under the ground, " + raised.ToString("0.0") + " above");
+		Console.WriteLine("bases:   " + n + " buildings round " + town.Name + ", base at most " + sunk.ToString("0.0") + " under the ground, " + raised.ToString("0.0") + " above");
 		return sunk < 7.0 && raised < 0.1;
 	}
 
@@ -188,7 +441,8 @@ internal static class Program
 		{
 			for (int tx = -64; tx < 64; tx++)
 			{
-				foreach (RoadMeshData d in new[] { RoadMesh.Build(tx, tz, 250f, false), RoadMesh.Build(tx, tz, 250f, true), WaterMesh.Build(tx, tz, 250f) })
+				RoadMeshData road = RoadMesh.Build(tx, tz, 250f, Terrain, out RoadMeshData verges);
+				foreach (RoadMeshData d in new[] { road, verges, WaterMesh.Build(tx, tz, 250f) })
 				{
 					if (d == null)
 					{
@@ -209,7 +463,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("faces: " + down + " upside-down flat faces in road, track and water meshes; most vertices in one mesh " + most);
+		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge and water meshes; most vertices in one mesh " + most);
 		return down == 0 && most < 65000;
 	}
 }

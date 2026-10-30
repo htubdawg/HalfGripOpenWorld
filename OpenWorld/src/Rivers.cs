@@ -562,6 +562,63 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
+		/// <summary>
+		/// The water level at (x, z) if it is within <paramref name="margin"/> of a river's channel (lakes and the sea not counted). The
+		/// water mesh reaches 2 past the channel's edge, so a margin of 2 is where water is drawn.
+		/// </summary>
+		internal static bool Channel(double x, double z, double margin, out double level)
+		{
+			level = 0.0;
+			if (!Nearest(x, z, out double d, out double w, out double half, out double _) || d > half + margin)
+			{
+				return false;
+			}
+			level = w;
+			return true;
+		}
+
+		/// <summary>
+		/// Where segment (ax, az)-(bx, bz) crosses a river's centre line: for each crossing, the fraction along the segment, the water
+		/// level and channel half width there, and the sine of the angle between the two (1 square on, near 0 alongside). A crossing is
+		/// found however narrow the river is, which testing the road's samples (8 apart) for being in the channel is not.
+		/// </summary>
+		internal static void Crossings(double ax, double az, double bx, double bz, List<(double t, double w, double half, double sin)> found)
+		{
+			found.Clear();
+			if (cellStart == null)
+			{
+				return;
+			}
+			// Every river segment is listed in each cell its floodplain and bank can reach (450 or more), so the cell of the segment's
+			// middle lists every river segment that can cross it (road segments are 8 long).
+			int c = CellOf((az + bz) * 0.5) * Cells + CellOf((ax + bx) * 0.5);
+			double ux = bx - ax, uz = bz - az;
+			double ul = Math.Sqrt(ux * ux + uz * uz);
+			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
+			{
+				long item = cellItems[k];
+				River river = All[(int)(item >> 32)];
+				int i = (int)(uint)item;
+				double cx = river.X[i], cz = river.Z[i];
+				double vx = river.X[i + 1] - cx, vz = river.Z[i + 1] - cz;
+				double den = ux * vz - uz * vx;
+				if (den == 0.0)
+				{
+					continue;
+				}
+				double t = ((cx - ax) * vz - (cz - az) * vx) / den;
+				double u = ((cx - ax) * uz - (cz - az) * ux) / den;
+				// Half-open on the river's segment, so a crossing at a river sample is counted once.
+				if (t < 0.0 || t > 1.0 || u < 0.0 || u >= 1.0)
+				{
+					continue;
+				}
+				double vl = Math.Sqrt(vx * vx + vz * vz);
+				double sin = ul > 0.0 && vl > 0.0 ? Math.Abs(den) / (ul * vl) : 1.0;
+				found.Add((t, river.W[i] + (river.W[i + 1] - river.W[i]) * u, river.Half[i] + (river.Half[i + 1] - river.Half[i]) * u, sin));
+			}
+		}
+
 		/// <summary>Distance to the nearest river's centre line (MaxValue if none is near), and that river's floodplain half width.</summary>
 		internal static double Distance(double x, double z, out double plain)
 		{

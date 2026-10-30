@@ -30,7 +30,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the ground's road beds |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
-| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, track and water meshes and their pixel-art textures |
+| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge and water meshes and their pixel-art textures (farm tracks are painted on the ground) |
 | `Buildings.cs` | Per-tile houses along streets and farm buildings (one mesh, one collider), their materials |
 | `Landmarks.cs` | Tokyo's tall buildings and temples copied into towns and villages (to be removed: see `docs/PLAN.md`) |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
@@ -63,8 +63,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - `dotnet run -c Release --project tools/preview -- out.ppm [pixels] [x z span]` checks the generator (layout, road density at real
   scale, junctions, grades, ground meets roads, repeatability, tile time) and draws a map; look at it after any generator change.
 - `dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]` runs the world against Unity's types: road surfaces under
-  the terrain (clip), smaller roads poking through bigger ones (poke), roads floating (float), building bases (bases), mesh faces
-  (faces); exits 1 on a failure. Keep its `Lift` table in step with `RoadMesh`. Add a check for every bug fixed.
+  the terrain (clip), roads poking through the roads drawn over them (poke), roads floating (float), grades, bridges clear of the
+  water, verges meeting the ground, farm track beds, building bases (bases), mesh faces (faces); exits 1 on a failure. It reads the
+  drawn surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - In game: see the test checklist in README. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next
