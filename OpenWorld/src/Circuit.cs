@@ -22,10 +22,11 @@ namespace HalfGripOpenWorld
 	///      tried: no water, river floodplain, coast, mountains or edge wall in it, and clear of the towns and villages. The box whose land
 	///      lies closest to a plane is taken (least earthwork).
 	///   2. **Lap.** A chain of seven to ten corners round a ring squashed to the box, some pulled in towards the middle (so corners go
-	///      both ways), each rounded with an arc, the sharpest made a hairpin, joined by straights, scaled to the lap's length; the longest
-	///      straight is the start straight. Then a few long sine waves bend the lap off the straights and the hairpin (the way ProcTrack's
-	///      generator makes its laps). Laps that leave the box, turn too tightly, come near themselves or leave no room for the pits and
-	///      stands are thrown away and drawn again. The lap runs anticlockwise, so its right is always the outside of the loop.
+	///      both ways), each rounded with an arc (slow, medium or a fast sweeper), the sharpest made a hairpin, joined by straights,
+	///      scaled to the lap's length and then down to fit the box (as ProcTrack's generator makes its laps); the longest straight is
+	///      the start straight, and the other long ones are bent a little. Laps that turn too tightly, come near themselves or leave no
+	///      room for the pits and stands are thrown away; of up to 40 that fit, the one with the most character is kept. The lap runs
+	///      anticlockwise, so its right is always the outside of the loop.
 	///   3. **Ground.** The whole of it (the infield, the run-off, the pits and paddock, the stands) is levelled to the plane that fits the
 	///      land best, tilted at most 2%, with banks back to the land round it (<see cref="Level"/>, a layer of the land under the roads).
 	///
@@ -68,8 +69,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Distance between the lap's samples.</summary>
 		internal const double Step = 8.0;
 
-		/// <summary>The lap's length: about 3 km real.</summary>
+		/// <summary>The lap's length: about 3 km real, or shorter (down to about 2.3 km) where it would not fit the box.</summary>
 		private const double TargetLength = 10000.0;
+		private const double MinLength = 7600.0;
 
 		/// <summary>The lap's box (it must fit in it, as laid out before it is turned onto the site).</summary>
 		private const double BoxLong = 4000.0;
@@ -80,7 +82,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>The tightest corner (the hairpin) and the tightest a corner turning right may be (its outside is the infield, its inside the outside of the loop, where the barrier and stands are).</summary>
 		private const double MinRadius = 60.0;
-		private const double MinRightRadius = 190.0;
+		private const double MinRightRadius = 130.0;
 
 		/// <summary>Two stretches of the lap more than <see cref="SeparationAlong"/> apart along it keep this far apart: both barriers and a gap.</summary>
 		private const double Separation = 260.0;
@@ -180,24 +182,83 @@ namespace HalfGripOpenWorld
 			Exists = false;
 			Stands.Clear();
 			List<(double x, double z, double angle, double score)> sites = Sites();
-			Rng rng = new Rng(Noise.Mix(Salt));
+			// Of the laps that fit a site, the one with the most character is kept (see Character); each attempt draws from its own
+			// seed, so the best is laid out again by drawing it once more.
 			for (int k = 0; k < sites.Count && k < 12; k++)
 			{
 				(double sx, double sz, double angle, double score) = sites[k];
-				for (int attempt = 0; attempt < 400; attempt++)
+				int best = -1, fitted = 0;
+				double bestScore = double.MinValue;
+				for (int attempt = 0; attempt < 600 && fitted < 40; attempt++)
 				{
 					Attempts++;
-					if (Try(rng, sx, sz, angle))
+					if (Try(new Rng(Noise.Mix(Salt + (ulong)(k * 1000 + attempt))), sx, sz, angle))
 					{
-						Fit(sx, sz, angle);
-						Index();
-						Exists = true;
-						Report = "circuit at (" + sx.ToString("0") + ", " + sz.ToString("0") + "), site " + (k + 1) + " of " + sites.Count + ", " + Attempts + " laps drawn";
-						return;
+						fitted++;
+						double c = Character();
+						if (c > bestScore)
+						{
+							bestScore = c;
+							best = attempt;
+						}
 					}
+				}
+				if (best >= 0)
+				{
+					Try(new Rng(Noise.Mix(Salt + (ulong)(k * 1000 + best))), sx, sz, angle);
+					Character();
+					Fit(sx, sz, angle);
+					Index();
+					Exists = true;
+					Report = "circuit at (" + sx.ToString("0") + ", " + sz.ToString("0") + "), site " + (k + 1) + " of " + sites.Count + ", best of " + fitted + " laps that fit (" + Attempts + " drawn), " + Corners + " corners";
+					return;
 				}
 			}
 			Report = "no circuit: " + sites.Count + " sites, no lap fitted";
+		}
+
+		/// <summary>The corners of the lap kept: runs of samples turning tighter than a 450 radius through more than 20 degrees.</summary>
+		internal static int Corners;
+		internal static int RightCorners;
+
+		/// <summary>
+		/// How good a lap is to drive: more corners, both ways, of different radii, and nearer the full length. A lap of a few
+		/// long straights round a box is the dullest that fits.
+		/// </summary>
+		private static double Character()
+		{
+			const double threshold = 1.0 / 450.0;
+			int corners = 0, rights = 0;
+			double tightest = double.MaxValue, loosest = 0.0;
+			int start = 0;
+			while (start < Count && Math.Abs(Curve[start]) > threshold)
+			{
+				start++;
+			}
+			double angle = 0.0, peak = 0.0;
+			for (int m = 1; m <= Count; m++)
+			{
+				int i = (start + m) % Count;
+				double c = Curve[i];
+				if (Math.Abs(c) > threshold && (angle == 0.0 || Math.Sign(c) == Math.Sign(angle)))
+				{
+					angle += c * Step;
+					peak = Math.Max(peak, Math.Abs(c));
+					continue;
+				}
+				if (Math.Abs(angle) > 0.35)
+				{
+					corners++;
+					rights += angle < 0.0 ? 1 : 0;
+					tightest = Math.Min(tightest, 1.0 / peak);
+					loosest = Math.Max(loosest, 1.0 / peak);
+				}
+				angle = Math.Abs(c) > threshold ? c * Step : 0.0;
+				peak = Math.Abs(c) > threshold ? Math.Abs(c) : 0.0;
+			}
+			Corners = corners;
+			RightCorners = rights;
+			return corners + 1.5 * Math.Min(rights, 3) + Math.Min(3.0, loosest / Math.Max(1.0, tightest)) * 0.5 + 6.0 * Length / TargetLength;
 		}
 
 		// ---- the site --------------------------------------------------------------------------------------------
@@ -404,8 +465,9 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The lap in the box's frame, every <see cref="Step"/>: the chain of corners (see the class summary) bent by sine waves, starting
-		/// at the beginning of the start straight, heading +u. False if the chain leaves no straight long enough for the pits.
+		/// The lap in the box's frame, every <see cref="Step"/>: the chain of corners (see the class summary), its straights bent, starting at
+		/// the beginning of the start straight, heading +u. False if the chain does not close, has no straight long enough for the pits or
+		/// comes out too short once fitted to the box.
 		/// </summary>
 		private static bool Chain(Rng rng, out List<(double u, double v)> line, out double lead, out double hairpinS, out double hairpinHalf)
 		{
@@ -419,7 +481,8 @@ namespace HalfGripOpenWorld
 				double jitter = rng.Next() - 0.5;
 				bool dent = rng.Next() < 0.4;
 				double depth = rng.Next();
-				want[i] = MinRadius * (1.3 + 3.5 * rng.Next());
+				// Most corners slow or medium; some fast sweepers.
+				want[i] = rng.Next() < 0.3 ? rng.Range(300.0, 700.0) : MinRadius * (1.3 + 3.5 * rng.Next());
 				double a = 2.0 * DetMath.Pi * (i + 0.6 * jitter) / k;
 				double f = dent ? 1.0 - 0.6 * (0.6 + 0.4 * depth) : 1.0 - 0.12 * depth;
 				vx[i] = DetMath.Cos(a) * f;
@@ -453,9 +516,14 @@ namespace HalfGripOpenWorld
 					want[i] = Math.Max(want[i], MinRightRadius * 1.15);
 				}
 			}
+			// Scaled to the lap's length, then down until it fits the box: the corners' radii stay, the straights shorten. A ring
+			// squashed to the box is about as long as the lap, so dents push it out; such laps come out shorter (the plan's fallback).
 			double scale = TargetLength / perimeter;
 			double[] rho = new double[k], tan = new double[k];
-			for (int pass = 0; pass < 6; pass++)
+			double[] len = new double[2 * k], segU = new double[2 * k], segV = new double[2 * k], segH = new double[2 * k], segR = new double[2 * k];
+			int first = -1;
+			double total = 0.0, hu = 0.0, hv = 0.0, hh = 0.0;
+			for (int pass = 0; pass < 12; pass++)
 			{
 				for (int i = 0; i < k; i++)
 				{
@@ -470,15 +538,65 @@ namespace HalfGripOpenWorld
 					}
 					tan[i] = rho[i] * t;
 				}
-				double length = 0.0;
+				first = -1;
+				lead = 0.0;
 				for (int i = 0; i < k; i++)
 				{
-					length += scale * side[i] - tan[i] - tan[(i + 1) % k] + rho[i] * Math.Abs(turn[i]);
+					double straight = scale * side[i] - tan[i] - tan[(i + 1) % k];
+					if (straight > lead)
+					{
+						lead = straight;
+						first = i;
+					}
 				}
-				scale *= TargetLength / length;
+				// The pieces from the start straight on: straight, arc, straight, arc...
+				hu = hv = hh = total = 0.0;
+				double minU = 0.0, maxU = 0.0, minV = 0.0, maxV = 0.0;
+				for (int m = 0; m < k; m++)
+				{
+					int i = (first + m) % k, c = (i + 1) % k;
+					double straight = scale * side[i] - tan[i] - tan[c];
+					len[2 * m] = straight;
+					segU[2 * m] = hu;
+					segV[2 * m] = hv;
+					segH[2 * m] = hh;
+					hu += straight * DetMath.Cos(hh);
+					hv += straight * DetMath.Sin(hh);
+					total += straight;
+					Box(hu, hv, ref minU, ref maxU, ref minV, ref maxV);
+					double arc = rho[c] * Math.Abs(turn[c]);
+					double r = turn[c] >= 0.0 ? rho[c] : -rho[c];
+					len[2 * m + 1] = arc;
+					segU[2 * m + 1] = hu;
+					segV[2 * m + 1] = hv;
+					segH[2 * m + 1] = hh;
+					segR[2 * m + 1] = r;
+					double ccu = hu - r * DetMath.Sin(hh), ccv = hv + r * DetMath.Cos(hh);
+					// The arc's extremes: its ends and its quarter points between them.
+					for (int q = 1; q <= 8; q++)
+					{
+						double a = hh + arc / r * q / 8.0;
+						Box(ccu + r * DetMath.Sin(a), ccv - r * DetMath.Cos(a), ref minU, ref maxU, ref minV, ref maxV);
+					}
+					hh += arc / r;
+					hu = ccu + r * DetMath.Sin(hh);
+					hv = ccv - r * DetMath.Cos(hh);
+					if (c == sharpest)
+					{
+						hairpinS = total + arc * 0.5;
+						hairpinHalf = arc * 0.5;
+					}
+					total += arc;
+				}
+				// The bends put on the straights below reach this far out: leave them room in the box.
+				double fit = Math.Min((BoxLong - 160.0) / (maxU - minU), (BoxShort - 160.0) / (maxV - minV));
+				fit = Math.Min(fit, TargetLength / total);
+				if (fit >= 0.995 && fit <= 1.0)
+				{
+					break;
+				}
+				scale *= Math.Min(1.0, fit) * 0.998;
 			}
-			int first = -1;
-			double longest = 0.0;
 			for (int i = 0; i < k; i++)
 			{
 				double straight = scale * side[i] - tan[i] - tan[(i + 1) % k];
@@ -486,98 +604,42 @@ namespace HalfGripOpenWorld
 				{
 					return false;
 				}
-				if (straight > longest)
-				{
-					longest = straight;
-					first = i;
-				}
-			}
-			if (longest < 1300.0)
-			{
-				return false;
-			}
-			// The pieces from the start straight on: straight, arc, straight, arc...
-			double[] len = new double[2 * k], segU = new double[2 * k], segV = new double[2 * k], segH = new double[2 * k], segR = new double[2 * k];
-			double hu = 0.0, hv = 0.0, hh = 0.0, acc = 0.0;
-			for (int m = 0; m < k; m++)
-			{
-				int i = (first + m) % k, c = (i + 1) % k;
-				double straight = scale * side[i] - tan[i] - tan[c];
-				len[2 * m] = straight;
-				segU[2 * m] = hu;
-				segV[2 * m] = hv;
-				segH[2 * m] = hh;
-				hu += straight * DetMath.Cos(hh);
-				hv += straight * DetMath.Sin(hh);
-				acc += straight;
-				double arc = rho[c] * Math.Abs(turn[c]);
-				double r = turn[c] >= 0.0 ? rho[c] : -rho[c];
-				len[2 * m + 1] = arc;
-				segU[2 * m + 1] = hu;
-				segV[2 * m + 1] = hv;
-				segH[2 * m + 1] = hh;
-				segR[2 * m + 1] = r;
-				double ccu = hu - r * DetMath.Sin(hh), ccv = hv + r * DetMath.Cos(hh);
-				hh += arc / r;
-				hu = ccu + r * DetMath.Sin(hh);
-				hv = ccv - r * DetMath.Cos(hh);
-				if (c == sharpest)
-				{
-					hairpinS = acc + arc * 0.5;
-					hairpinHalf = arc * 0.5;
-				}
-				acc += arc;
 			}
 			// The corners' ring must be a simple loop turning once anticlockwise, or the chain does not close on itself.
 			if (Math.Abs(hh - 2.0 * DetMath.Pi) > 0.01 || hu * hu + hv * hv > 4.0)
 			{
 				return false;
 			}
-			lead = len[0];
-			double total = acc;
-
-			// Sine waves along the lap, bending the straights other than the start straight: off the corners (an offset across a tight
-			// arc folds it into a cusp) and fading in over 200 beyond them. All the waves together bend no tighter than a 300 radius.
-			const int harmonics = 6;
-			double[] amp = new double[harmonics], phase = new double[harmonics];
-			for (int h = 0; h < harmonics; h++)
+			if (lead < 1300.0 || total < MinLength)
 			{
-				double w = 2.0 * DetMath.Pi * (h + 2) / total;
-				amp[h] = rng.Range(-1.0, 1.0) * Math.Min(1.0 / (300.0 * harmonics) / (w * w), 260.0);
-				phase[h] = rng.Range(0.0, 2.0 * DetMath.Pi);
+				return false;
 			}
-			// Where each arc is along the lap, for the fade.
-			List<(double from, double to)> arcs = new List<(double, double)>();
-			double at = 0.0;
-			for (int q = 0; q < len.Length; q++)
+
+			// Long straights other than the start straight are bent a little, the way real ones follow the lie of the land: an offset
+			// a sin²(πt) along each (no kink at its ends, where it meets the corners' arcs), no tighter anywhere than a 600 radius, so
+			// they stay flat out and take no kerbs. An offset across a corner's arc would fold it, so the arcs are left as they are.
+			double[] bend = new double[2 * k];
+			for (int m = 1; m < k; m++)
 			{
-				if (segR[q] != 0.0)
+				double l = len[2 * m];
+				if (l >= 500.0 && rng.Next() < 0.7)
 				{
-					arcs.Add((at, at + len[q]));
+					double most = Math.Min(l * l / (2.0 * DetMath.Pi * DetMath.Pi * 600.0), 70.0);
+					bend[2 * m] = rng.Range(0.4, 1.0) * most * (rng.Next() < 0.5 ? -1.0 : 1.0);
 				}
-				at += len[q];
 			}
 			int dense = (int)(total / 2.0);
 			List<(double u, double v)> pts = new List<(double u, double v)>(dense + 1);
 			for (int i = 0; i < dense; i++)
 			{
 				double s = total * i / dense;
-				Piece(s, len, segU, segV, segH, segR, out double u, out double v, out double nu, out double nv);
-				double fromStraight = s <= lead ? 0.0 : Math.Min(s - lead, total - s);
-				double fromHairpin = Math.Max(0.0, Math.Abs(s - hairpinS) - hairpinHalf);
-				double fromArc = double.MaxValue;
-				foreach ((double from, double to) in arcs)
-				{
-					double d = s < from ? Math.Min(from - s, s + total - to) : s > to ? Math.Min(s - to, from + total - s) : 0.0;
-					fromArc = Math.Min(fromArc, d);
-				}
-				double window = Noise.Step(0.0, 250.0, fromStraight) * Noise.Step(0.0, 250.0, fromHairpin) * Noise.Step(0.0, 200.0, fromArc);
+				int piece = Piece(s, len, segU, segV, segH, segR, out double u, out double v, out double nu, out double nv, out double along);
 				double off = 0.0;
-				for (int h = 0; h < harmonics; h++)
+				if (bend[piece] != 0.0)
 				{
-					off += amp[h] * DetMath.Sin(2.0 * DetMath.Pi * (h + 2) * s / total + phase[h]);
+					double w = DetMath.Sin(DetMath.Pi * along / len[piece]);
+					off = bend[piece] * w * w;
 				}
-				off *= window;
 				pts.Add((u + nu * off, v + nv * off));
 			}
 			line = Closed(pts, out double length2);
@@ -589,22 +651,31 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
-		/// <summary>The chain at distance s along it, with the unit vector to its right.</summary>
-		private static void Piece(double s, double[] len, double[] su, double[] sv, double[] sh, double[] sr, out double u, out double v, out double nu, out double nv)
+		private static void Box(double u, double v, ref double minU, ref double maxU, ref double minV, ref double maxV)
+		{
+			minU = Math.Min(minU, u);
+			maxU = Math.Max(maxU, u);
+			minV = Math.Min(minV, v);
+			maxV = Math.Max(maxV, v);
+		}
+
+		/// <summary>The chain at distance s along it, with the unit vector to its right; which piece it is on and how far along it.</summary>
+		private static int Piece(double s, double[] len, double[] su, double[] sv, double[] sh, double[] sr, out double u, out double v, out double nu, out double nv, out double along)
 		{
 			double acc = 0.0;
 			for (int k = 0; k < len.Length; k++)
 			{
 				if (s <= acc + len[k] || k == len.Length - 1)
 				{
-					double along = s - acc, h = sh[k];
+					along = s - acc;
+					double h = sh[k];
 					if (sr[k] == 0.0)
 					{
 						u = su[k] + along * DetMath.Cos(h);
 						v = sv[k] + along * DetMath.Sin(h);
 						nu = DetMath.Sin(h);
 						nv = -DetMath.Cos(h);
-						return;
+						return k;
 					}
 					double r = sr[k];
 					double cu = su[k] - r * DetMath.Sin(h), cv = sv[k] + r * DetMath.Cos(h);
@@ -613,11 +684,12 @@ namespace HalfGripOpenWorld
 					v = cv - r * DetMath.Cos(hh);
 					nu = DetMath.Sin(hh);
 					nv = -DetMath.Cos(hh);
-					return;
+					return k;
 				}
 				acc += len[k];
 			}
-			u = v = nu = nv = 0.0;
+			u = v = nu = nv = along = 0.0;
+			return 0;
 		}
 
 		/// <summary>A closed line resampled into pieces of (nearly) <see cref="Step"/>, as many as fit its length evenly; its length.</summary>
