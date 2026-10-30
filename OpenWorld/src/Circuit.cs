@@ -884,7 +884,7 @@ namespace HalfGripOpenWorld
 			// the barrier, facing the corner's apex.
 			Stands.Clear();
 			Straight(StartS - 40.0, -(Half + 82.0), out double ix, out double iz);
-			Stands.Add(new Stand { X = ix, Z = iz, Fx = -DirZ, Fz = DirX, Length = 240.0, Depth = 40.0, Name = "Main stand" });
+			Stands.Add(new Stand { X = ix, Z = iz, Fx = DirZ, Fz = -DirX, Length = 240.0, Depth = 40.0, Name = "Main stand" });
 			int turn1 = -1;
 			for (int i = e; i < Count; i++)
 			{
@@ -1348,6 +1348,32 @@ namespace HalfGripOpenWorld
 		internal static bool BarrierAt(double s)
 		{
 			return s < PitA - PitTaper - 40.0 || s > PitB + PitTaper + 40.0;
+		}
+
+		/// <summary>The grid's slots, two abreast.</summary>
+		internal const int GridSlots = 12;
+
+		/// <summary>True on a building's footprint: the garages or a stand.</summary>
+		internal static bool Building(double x, double z)
+		{
+			if (!Exists)
+			{
+				return false;
+			}
+			Local(x, z, out double u, out double v);
+			if (u >= GaragesA && u <= GaragesB && v >= PitLaneOut && v <= GaragesOut)
+			{
+				return true;
+			}
+			foreach (Stand s in Stands)
+			{
+				double dx = x - s.X, dz = z - s.Z;
+				if (Math.Abs(dx * -s.Fz + dz * s.Fx) <= s.Length * 0.5 && Math.Abs(dx * s.Fx + dz * s.Fz) <= s.Depth * 0.5)
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/// <summary>The grid: slot k's position (two abreast, staggered, behind the start line), facing along the straight.</summary>

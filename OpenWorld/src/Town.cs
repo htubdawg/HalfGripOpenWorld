@@ -281,6 +281,24 @@ namespace HalfGripOpenWorld
 					return null;
 				}
 			}
+			// Its ground in front, out to the verge's foot, is levelled no more than 0.4 over the ground the roads leave (see Ground):
+			// beside a road on an embankment that ground falls away down the bank, and the strip in front would sag under the surface.
+			for (int k = 0; k < count; k++)
+			{
+				double u = -w * 0.5 - Pad + k * FrontStep;
+				if (Math.Abs(u) > w * 0.5)
+				{
+					continue;
+				}
+				for (double v = foot[k]; v < 0.0; v += 2.0)
+				{
+					double x = lot.X + ax * u + nx * (v - d * 0.5), z = lot.Z + az * u + nz * (v - d * 0.5);
+					if (Network.Ground(x, z, WorldGen.Base(x, z)) + 0.4 < Surface(lot, u) - Bed - 0.05)
+					{
+						return null;
+					}
+				}
+			}
 			double reach = Reach(lot);
 			foreach (Lot other in found)
 			{

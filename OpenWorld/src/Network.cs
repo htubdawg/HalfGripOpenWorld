@@ -312,7 +312,7 @@ namespace HalfGripOpenWorld
 				List<int> path = router.Find(RoadKind.Secondary, Circuit.GateOutX, Circuit.GateOutZ, 0.0, 0.0, (int)RoadKind.Secondary);
 				if (path != null)
 				{
-					CircuitRoad = Build(RoadKind.Secondary, "Circuit road", path, Circuit.GateX, Circuit.GateZ, double.NaN, 0.0).Find(r => r.X[0] == Circuit.GateX && r.Z[0] == Circuit.GateZ);
+					CircuitRoad = Build(RoadKind.Secondary, "Circuit road", path, Circuit.GateX, Circuit.GateZ, double.NaN, 0.0, 60.0).Find(r => r.X[0] == Circuit.GateX && r.Z[0] == Circuit.GateZ);
 				}
 			}
 
@@ -589,9 +589,10 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Turns a routed path into roads: every stretch of the path not on a road already built becomes a road, from where it leaves the
 		/// network (or the start) to where it joins it again (or the end). Ends that join the network are moved onto the nearest point of
-		/// the road there, and pinned to its height.
+		/// the road there, and pinned to its height. With <paramref name="level"/>, the start's height is held that far along (the circuit's
+		/// road leaves its paddock level, or its bed and banks would rise through the paddock's edge).
 		/// </summary>
-		private static List<Road> Build(RoadKind kind, string name, List<int> path, double ax, double az, double bx, double bz)
+		private static List<Road> Build(RoadKind kind, string name, List<int> path, double ax, double az, double bx, double bz, double level = 0.0)
 		{
 			List<Road> made = new List<Road>();
 			int n = path.Count;
@@ -654,6 +655,10 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				pins.Add((0, double.IsNaN(pinStart) ? WorldGen.Base(road.X[0], road.Z[0]) : pinStart));
+				for (int i = 1; s == 0 && i < road.Count - 1 && road.S[i] <= level; i++)
+				{
+					pins.Add((i, pins[0].y));
+				}
 				pins.Add((road.Count - 1, double.IsNaN(pinEnd) ? WorldGen.Base(road.X[road.Count - 1], road.Z[road.Count - 1]) : pinEnd));
 				Add(road, pins);
 				// The cells it was routed through are on it too, though its smoothed line may run through their neighbours: a later

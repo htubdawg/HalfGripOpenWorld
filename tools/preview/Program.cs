@@ -257,6 +257,10 @@ internal static class Program
 				{
 					(r, g, b) = cs == CircuitSurface.Track ? (60, 60, 64) : cs == CircuitSurface.Kerb ? (200, 50, 50) : cs == CircuitSurface.Gravel ? (205, 190, 150) : (120, 120, 126);
 				}
+				if (Circuit.Building(x, z))
+				{
+					(r, g, b) = (95, 90, 100);
+				}
 				// Lots: their surface grey, their building darker.
 				if (Town.At(x, z, out bool building) != null)
 				{

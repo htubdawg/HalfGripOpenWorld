@@ -123,16 +123,31 @@ roads go round it and only its access road joins it. Deterministic like the rest
   units), 40 wide; seeds tried in order until it fits the site. Its own `RoadKind.Circuit` (and map colour).
 - **Ground:** levelled to a best-fit plane (at most 2%), banks back to the land.
 
-Status (work in progress, not released): `Circuit.cs` holds the site search, the lap (a chain of corners as in ProcTrack, sine
-waves on the straights), the plane, the index and the queries (`Level`, `Fenced`, `Clear`, `SurfaceAt`, `Covered`). It is wired
-into `Places.Build` (sited after the towns, before the villages and farms, which keep off it: with their clearance the villages
-covered almost all open land), `WorldGen.Base`, the router's closed cells, `Walk`, and the circuit road from the paddock gate
-(`Network.CircuitRoad`); `tools/preview` reports and draws it. While no lap fits there is no circuit and the world is as in
-0.7.0 (the preview fails "no circuit"). Found so far: one site; of 400 laps about 180 overflow the 4000 x 2500 box, about 100
-turn right tighter than 190, 80 have no corner sharp enough for a hairpin, 40 no straight of 1300. Next: make laps fit (fewer
-or shallower dents, a slightly smaller box or lap per the plan's fallback), then the meshes (`CircuitMesh`: track, kerbs,
-gravel, pit apron, paint, barrier, pit wall), the buildings (pits, stands, gantry), land use (`Cover.Circuit`), foliage, map
-pictures, destinations and the meshcheck checks.
+Status: done on branch `claude/epic-goodall-zas0pe` (0.8.0): compiled, preview and meshcheck clean (a new `circuit` check), not
+yet tested in game.
+
+- **Lap.** A ring squashed to the box is about as long as the lap, so with dents most laps overflowed the box: each lap is now
+  scaled to the target length and then down until it fits (as short as 7600 units, 2.3 km, the plan's fallback). The sine waves
+  over the whole lap faded out near the corners in 200 units and folded kinks into them (most laps failed the radius checks):
+  long straights other than the start straight are bent instead by an offset a sin²(πt) along each, no tighter than a 600 radius.
+  A corner is slow, medium or (3 in 10) a fast sweeper of 300 to 700; right-handers down to a 130 radius (their inside is the
+  outside of the loop, where only the band is). Of up to 40 laps that fit, the one with the most corners both ways is kept
+  (`Character`). This world: 2.88 km, 9 corners (3 right), start straight 422 m, hairpin 18 m radius, ground tilted 0.3%, worst
+  cut or fill 20 m.
+- **Meshes** (`CircuitMesh.cs`): track (white edge lines, a worn racing line), kerbs rising 0.12 to their outer edge, skirts down
+  under the grass, pit lane and paddock in one sheet, paint (start line, grid boxes, pit lane line); gravel traps a mesh of their
+  own with low grip and high drag (0.55, 3.5).
+- **Buildings** (in `Buildings.cs`): armco outside the loop (none along the pits), pit wall, a row of garages with roller doors and a
+  glass floor over them, the start gantry, three grandstands (rows of seats stepping up, back wall, roof on posts). All set into the
+  plane as far as it falls across them.
+- **Land use** `Cover.Circuit` (mown grass, no trees, short grass) over its ground; nothing grows on its surfaces or buildings; the
+  map pictures draw it. The teleport goes to the grid and the paddock.
+- The circuit road is held level for its first 60 units out of the gate (its bed and banks rose through the paddock's edge).
+- Found on the way: a filling station lot beside a road on an embankment sagged at its front (the ground in front of a lot is held
+  0.4 over the roads' ground, which fell away down the bank); lots are no longer placed where that cap would bite.
+- Not done from the list below: a paddock car park behind the pits (the paddock is open tarmac), `RoadKind.Circuit` (not needed: the
+  circuit is not a road).
+
 - **Furniture:** red and white kerbs on the corners, grass and gravel run-off outside the bends (no trees or buildings), pit lane and
   pit building on the start straight, a start/finish gantry, two or three grandstands, a paddock car park behind the pits.
 - **Access:** a minor road from the paddock gate to the network; nothing else crosses the lap. Teleport to the grid and paddock.

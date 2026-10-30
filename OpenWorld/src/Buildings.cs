@@ -21,10 +21,10 @@ namespace HalfGripOpenWorld
 	{
 		/// <summary>
 		/// Materials, in submesh order: five walls, three pitched roofs, a flat roof; glass curtain wall, shopfronts, metal cladding,
-		/// signs, a filling station's canopy; and the lots' asphalt, parking bays and concrete.
+		/// signs, a filling station's canopy; the lots' asphalt, parking bays and concrete; the circuit's garage doors and stand seats.
 		/// </summary>
 		internal const int Brick = 0, Render = 1, White = 2, Stone = 3, Wood = 4, RedTile = 5, Slate = 6, Metal = 7, Flat = 8;
-		internal const int Glass = 9, Shopfront = 10, Cladding = 11, Sign = 12, Canopy = 13, Asphalt = 14, Bays = 15, Concrete = 16, Count = 17;
+		internal const int Glass = 9, Shopfront = 10, Cladding = 11, Sign = 12, Canopy = 13, Asphalt = 14, Bays = 15, Concrete = 16, GarageDoor = 17, Seats = 18, Count = 19;
 
 		/// <summary>No roof (a box drawn with walls only).</summary>
 		private const int None = -1;
@@ -97,8 +97,151 @@ namespace HalfGripOpenWorld
 					Lot(b, data, lot);
 				}
 			}
+			CircuitParts(b, data, tx, tz, tileSize);
 			data.Mesh = b.Done();
 			return data;
+		}
+
+		// ---- the circuit -------------------------------------------------------------------------------------------
+
+		/// <summary>
+		/// The circuit's barrier, pit wall, garages, grandstands and start gantry (<see cref="Circuit"/>), each built by the tile its start
+		/// or middle is in. All stand on the levelled ground, a plane tilted at most 2%: each is set into it as far as it falls across.
+		/// </summary>
+		private static void CircuitParts(Builder b, Data data, int tx, int tz, float tileSize)
+		{
+			if (!Circuit.Exists)
+			{
+				return;
+			}
+			// The armco outside the loop, a rail along each piece of the lap (none along the pits).
+			for (int i = 0; i < Circuit.Count; i++)
+			{
+				int q = (i + 1) % Circuit.Count;
+				if (Math.Floor(Circuit.X[i] / tileSize) != tx || Math.Floor(Circuit.Z[i] / tileSize) != tz || !Circuit.BarrierAt(Circuit.S[i]))
+				{
+					continue;
+				}
+				double ax = Circuit.X[i] + Circuit.Rx[i] * Circuit.Barrier, az = Circuit.Z[i] + Circuit.Rz[i] * Circuit.Barrier;
+				double bx = Circuit.X[q] + Circuit.Rx[q] * Circuit.Barrier, bz = Circuit.Z[q] + Circuit.Rz[q] * Circuit.Barrier;
+				double len = Math.Sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+				if (len < 0.01)
+				{
+					continue;
+				}
+				CircuitSolid(b, (ax + bx) * 0.5, (az + bz) * 0.5, (bx - ax) / len, (bz - az) / len, len + 0.3, 0.5, 2.6f, Metal);
+			}
+			// The pit wall between the track and the pit lane, in 20-unit lengths.
+			double wallV = (Circuit.PitWallIn + Circuit.PitWallOut) * 0.5;
+			for (double u = Circuit.PitA; u < Circuit.PitB - 0.01; u += 20.0)
+			{
+				double u1 = Math.Min(Circuit.PitB, u + 20.0);
+				Circuit.Straight((u + u1) * 0.5, wallV, out double x, out double z);
+				if (Math.Floor(x / tileSize) == tx && Math.Floor(z / tileSize) == tz)
+				{
+					CircuitSolid(b, x, z, Circuit.DirX, Circuit.DirZ, u1 - u, Circuit.PitWallOut - Circuit.PitWallIn, 3.5f, Concrete);
+				}
+			}
+			// The garages: one long building, a door for each garage on the pit lane, a glass floor of hospitality boxes over them.
+			{
+				double u = (Circuit.GaragesA + Circuit.GaragesB) * 0.5, v = (Circuit.PitLaneOut + Circuit.GaragesOut) * 0.5;
+				Circuit.Straight(u, v, out double x, out double z);
+				if (Math.Floor(x / tileSize) == tx && Math.Floor(z / tileSize) == tz)
+				{
+					double w = Circuit.GaragesB - Circuit.GaragesA, d = Circuit.GaragesOut - Circuit.PitLaneOut;
+					Footing(x, z, -Circuit.DirX, -Circuit.DirZ, w, d, out float y, out float extra);
+					// Turned to face the pit lane (a box's front faces away from its "across").
+					b.Box(x, z, y, -Circuit.DirX, -Circuit.DirZ, (float)w, (float)d, 22f + extra, Cladding, Flat, GarageDoor, Storey + extra);
+					// Standing out from the front wall a little (flush with it, the two faces would flicker).
+					Circuit.Straight(u, Circuit.PitLaneOut - 0.2, out double gx, out double gz);
+					Footing(gx, gz, -Circuit.DirX, -Circuit.DirZ, w, 1.0, out float gy, out float _);
+					b.Box(gx, gz, gy + 12f, -Circuit.DirX, -Circuit.DirZ, (float)w, 1.2f, 8f, Glass, Flat, Glass, 8f);
+					data.Footprints.Add((x, z, Math.Sqrt(w * w + d * d) * 0.5));
+				}
+			}
+			// The start gantry over the start line: a post each side, a beam of lights and a sign facing the grid.
+			{
+				double v0 = -Circuit.Half - 4.0, v1 = Circuit.PitWallOut + 1.0;
+				Circuit.Straight(Circuit.StartS, (v0 + v1) * 0.5, out double x, out double z);
+				if (Math.Floor(x / tileSize) == tx && Math.Floor(z / tileSize) == tz)
+				{
+					foreach (double v in new[] { v0, v1 })
+					{
+						Circuit.Straight(Circuit.StartS, v, out double px, out double pz);
+						CircuitSolid(b, px, pz, Circuit.DirX, Circuit.DirZ, 1.6, 1.6, 26f, Metal);
+					}
+					float y = (float)(Circuit.PlaneAt(x, z) + Network.Lift);
+					// Along across the track (to its right), so its front faces back down the straight at the grid.
+					b.Box(x, z, y + 20f, Circuit.DirZ, -Circuit.DirX, (float)(v1 - v0 + 2.0), 2.4f, 6f, Metal, Flat, Sign, 6f, 0);
+				}
+			}
+			foreach (Circuit.Stand s in Circuit.Stands)
+			{
+				if (Math.Floor(s.X / tileSize) == tx && Math.Floor(s.Z / tileSize) == tz)
+				{
+					Stand(b, data, s);
+				}
+			}
+		}
+
+		/// <summary>
+		/// A grandstand: rows of seats stepping up away from the track, a back wall, a roof over them on posts at the front. Built in
+		/// its own frame: along its length (ax, az), towards the track (s.Fx, s.Fz).
+		/// </summary>
+		private static void Stand(Builder b, Data data, Circuit.Stand s)
+		{
+			const int rows = 8;
+			const float rise = 3f;
+			double ax = -s.Fz, az = s.Fx;
+			double row = s.Depth / (rows + 1);
+			Footing(s.X, s.Z, ax, az, s.Length, s.Depth, out float y, out float extra);
+			for (int r = 0; r < rows; r++)
+			{
+				// Each row's block runs from its front edge to the back, on top of the ones in front of it.
+				double from = r * row, depth = s.Depth - from;
+				double cx = s.X + s.Fx * (s.Depth * 0.5 - from - depth * 0.5), cz = s.Z + s.Fz * (s.Depth * 0.5 - from - depth * 0.5);
+				b.Solid(cx, cz, y, ax, az, (float)s.Length, (float)depth, extra + 2f + (r + 1) * rise, r == 0 ? Concrete : Seats);
+			}
+			float top = extra + 2f + rows * rise;
+			double backX = s.X - s.Fx * (s.Depth * 0.5 - 0.5), backZ = s.Z - s.Fz * (s.Depth * 0.5 - 0.5);
+			b.Solid(backX, backZ, y, ax, az, (float)s.Length, 1.0f, top + 10f, Cladding);
+			// The roof reaches out over the front row; posts hold it at the front.
+			double roofX = s.X + s.Fx * 2.0, roofZ = s.Z + s.Fz * 2.0;
+			b.Solid(roofX, roofZ, y + top + 10f, ax, az, (float)s.Length + 2f, (float)s.Depth + 4f, 1.2f, Metal);
+			for (double along = -s.Length * 0.5 + 2.0; along <= s.Length * 0.5 - 1.9; along += (s.Length - 4.0) / Math.Max(1.0, Math.Round(s.Length / 40.0)))
+			{
+				double px = s.X + ax * along + s.Fx * (s.Depth * 0.5 + 3.0), pz = s.Z + az * along + s.Fz * (s.Depth * 0.5 + 3.0);
+				b.Solid(px, pz, y, ax, az, 0.8f, 0.8f, top + 10f, Metal);
+			}
+			data.Footprints.Add((s.X, s.Z, Math.Sqrt(s.Length * s.Length + s.Depth * s.Depth) * 0.5));
+		}
+
+		/// <summary>A box of one material standing on the circuit's levelled ground, set into it as far as the ground falls across it.</summary>
+		private static void CircuitSolid(Builder b, double x, double z, double dx, double dz, double w, double d, float h, int material)
+		{
+			Footing(x, z, dx, dz, w, d, out float y, out float extra);
+			b.Solid(x, z, y, dx, dz, (float)w, (float)d, h + extra, material);
+		}
+
+		/// <summary>
+		/// Where a box w along (dx, dz) by d across, centred at (x, z), stands on the circuit's plane: its base (a scene height) at the
+		/// lowest of its corners and a little under, and how much higher the highest corner is (added to its walls).
+		/// </summary>
+		private static void Footing(double x, double z, double dx, double dz, double w, double d, out float y, out float extra)
+		{
+			double low = double.MaxValue, high = double.MinValue;
+			for (int a = -1; a <= 1; a += 2)
+			{
+				for (int c = -1; c <= 1; c += 2)
+				{
+					double px = x + dx * w * 0.5 * a - dz * d * 0.5 * c, pz = z + dz * w * 0.5 * a + dx * d * 0.5 * c;
+					double h = Circuit.PlaneAt(px, pz);
+					low = Math.Min(low, h);
+					high = Math.Max(high, h);
+				}
+			}
+			y = (float)(low + Network.Lift) - 0.3f;
+			extra = (float)(high - low) + 0.3f;
 		}
 
 		// ---- where -------------------------------------------------------------------------------------------------
@@ -772,6 +915,8 @@ namespace HalfGripOpenWorld
 			m[Asphalt] = Make(shader, Paved(new Color(0.25f, 0.25f, 0.27f), false), "Car Park");
 			m[Bays] = Make(shader, BayTexture(), "Bays");
 			m[Concrete] = Make(shader, Paved(new Color(0.62f, 0.61f, 0.58f), true), "Concrete");
+			m[GarageDoor] = Make(shader, GarageDoors(), "Garage Door");
+			m[Seats] = Make(shader, SeatRows(), "Stand Seats");
 			return m;
 		}
 
@@ -1021,6 +1166,40 @@ namespace HalfGripOpenWorld
 				for (int x = 0; x < 8; x++)
 				{
 					Color c = y % 2 == 0 ? roof * 0.82f : roof;
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply(true);
+			return t;
+		}
+
+		/// <summary>One bay of a pit garage (8 by 10 pixels): a roller door in slats, a white post at its side, a dark band at the top.</summary>
+		private static Texture2D GarageDoors()
+		{
+			Texture2D t = New(8, 10, true);
+			for (int y = 0; y < 10; y++)
+			{
+				for (int x = 0; x < 8; x++)
+				{
+					Color c = x == 0 ? new Color(0.90f, 0.90f, 0.88f) : y >= 8 ? new Color(0.20f, 0.22f, 0.26f) : y % 2 == 0 ? new Color(0.50f, 0.53f, 0.56f) : new Color(0.60f, 0.63f, 0.66f);
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply(true);
+			return t;
+		}
+
+		/// <summary>A stand's rows, as their walls show them (8 by 10 pixels a bay and storey): blue seats on a concrete step.</summary>
+		private static Texture2D SeatRows()
+		{
+			Texture2D t = New(8, 10, true);
+			for (int y = 0; y < 10; y++)
+			{
+				for (int x = 0; x < 8; x++)
+				{
+					Color c = y < 4 || x % 2 == 1 && y < 6 ? new Color(0.62f, 0.61f, 0.58f) : new Color(0.16f, 0.30f, 0.62f);
 					c.a = 1f;
 					t.SetPixel(x, y, c);
 				}

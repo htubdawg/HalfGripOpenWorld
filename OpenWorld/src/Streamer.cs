@@ -45,6 +45,10 @@ namespace HalfGripOpenWorld
 		private const float VergeGrip = 0.9f;
 		private const float VergeDrag = 1.3f;
 
+		/// <summary>The circuit's gravel traps: they slow a car that runs wide, as real ones do.</summary>
+		private const float GravelGrip = 0.55f;
+		private const float GravelDrag = 3.5f;
+
 		private CarControllerNew player;
 		private Material material;
 		private Material[] roadMaterials;
@@ -53,6 +57,8 @@ namespace HalfGripOpenWorld
 		private Material[] trackMaterials;
 		private Material waterMaterial;
 		private Material[] buildingMaterials;
+		private Material[] circuitMaterials;
+		private Material gravelMaterial;
 		private Foliage foliage;
 		private int layer;
 		private int roadLayer;
@@ -87,11 +93,15 @@ namespace HalfGripOpenWorld
 			internal RoadMeshData Sidewalks;
 			internal RoadMeshData Tracks;
 			internal RoadMeshData Water;
+			internal RoadMeshData CircuitTrack;
+			internal RoadMeshData Gravel;
 			internal string Error;
 		}
 
-		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material verges, Material sidewalks, Material[] tracks, Material water, int roadsLayer, Material[] buildings, Foliage plants)
+		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material verges, Material sidewalks, Material[] tracks, Material water, int roadsLayer, Material[] buildings, Material[] circuit, Material gravel, Foliage plants)
 		{
+			circuitMaterials = circuit;
+			gravelMaterial = gravel;
 			sidewalkMaterial = sidewalks;
 			trackMaterials = tracks;
 			buildingMaterials = buildings;
@@ -307,6 +317,7 @@ namespace HalfGripOpenWorld
 			MapPicture(tx, tz, map, ground);
 			Buildings.Data buildings = HalfGripOpenWorld.Buildings.Build(tx, tz, TileSize);
 			Foliage.Scatter(tx, tz, TileSize, Pixels, covers, Network.Clearance(tx, tz, TileSize, Pixels), h, side, (float)step, buildings.Footprints, out Plant[] trees, out Plant[] grass);
+			RoadMeshData circuit = CircuitMesh.Build(tx, tz, TileSize, out RoadMeshData gravel);
 			RoadMeshData road = RoadMesh.Build(tx, tz, TileSize, new TerrainGrid(x0, z0, side, h), out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
 			return new Heights
 			{
@@ -323,6 +334,8 @@ namespace HalfGripOpenWorld
 				Sidewalks = sidewalks,
 				Tracks = tracks,
 				Water = WaterMesh.Build(tx, tz, TileSize),
+				CircuitTrack = circuit,
+				Gravel = gravel,
 			};
 		}
 
@@ -372,6 +385,15 @@ namespace HalfGripOpenWorld
 		private static readonly Color32 MapWater = new Color32(46, 82, 128, 255);
 		private static readonly Color32 MapLot = new Color32(150, 150, 155, 255);
 		private static readonly Color32 MapBuilding = new Color32(95, 90, 100, 255);
+		/// <summary>The circuit by its surfaces (<see cref="CircuitSurface"/>): track, kerb, gravel, pit apron; its buildings as the lots'.</summary>
+		private static readonly Color32[] MapCircuit =
+		{
+			new Color32(0, 0, 0, 0),
+			new Color32(60, 60, 64, 255),
+			new Color32(200, 50, 50, 255),
+			new Color32(205, 190, 150, 255),
+			new Color32(120, 120, 126, 255),
+		};
 		private static readonly Color32[] MapRoads =
 		{
 			new Color32(225, 110, 40, 255),   // trunk
@@ -405,6 +427,15 @@ namespace HalfGripOpenWorld
 				if (lot != null)
 				{
 					map[k] = building ? MapBuilding : MapLot;
+				}
+				CircuitSurface surface = Circuit.SurfaceAt(x, z);
+				if (surface != CircuitSurface.None)
+				{
+					map[k] = MapCircuit[(int)surface];
+				}
+				if (Circuit.Building(x, z))
+				{
+					map[k] = MapBuilding;
 				}
 			}
 			// Pieces are listed by the tile their middle is in, so a road from a neighbouring tile may reach into this one.
@@ -534,6 +565,8 @@ namespace HalfGripOpenWorld
 			Part(go.transform, "Verges", data, data.Verges, new[] { vergeMaterial }, true, VergeGrip, VergeDrag);
 			Part(go.transform, "Sidewalks", data, data.Sidewalks, new[] { sidewalkMaterial }, true, 1f, 1f);
 			Part(go.transform, "Tracks", data, data.Tracks, trackMaterials, true, TrackGrip, TrackDrag);
+			Part(go.transform, "Circuit", data, data.CircuitTrack, circuitMaterials, true, 1f, 1f);
+			Part(go.transform, "Gravel", data, data.Gravel, new[] { gravelMaterial }, true, GravelGrip, GravelDrag);
 			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
 			Part(go.transform, "Buildings", data, data.Buildings?.Mesh, buildingMaterials, true, 1f, 1f);
 			Trunks(go.transform, data.Trees);

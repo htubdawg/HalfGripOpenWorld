@@ -30,6 +30,8 @@ namespace HalfGripOpenWorld
 		Moor,
 		/// <summary>A park's mown lawn.</summary>
 		Park,
+		/// <summary>The circuit's mown grass: its infield, run-off and the ground round its stands and pits.</summary>
+		Circuit,
 	}
 
 	internal static class LandUse
@@ -65,6 +67,7 @@ namespace HalfGripOpenWorld
 		private static readonly Rgb Grass = new Rgb(92, 134, 62);
 		private static readonly Rgb Moor = new Rgb(120, 122, 74);
 		private static readonly Rgb Lawn = new Rgb(84, 148, 60);
+		private static readonly Rgb Verge = new Rgb(80, 140, 58);
 
 		private static readonly Rgb[] Crops =
 		{
@@ -100,6 +103,10 @@ namespace HalfGripOpenWorld
 				return Cover.Sand;
 			}
 
+			if (Circuit.Grounds(x, z))
+			{
+				return Cover.Circuit;
+			}
 			if (Parks.At(x, z))
 			{
 				return Cover.Park;
@@ -180,6 +187,8 @@ namespace HalfGripOpenWorld
 				case Cover.Moor: return Shade(Moor, speckle);
 				// Mown in stripes 12 units wide, running north-east.
 				case Cover.Park: return Shade(Lawn, ((long)Math.Floor((x + z) / 12.0) & 1) == 0 ? 2 : -2);
+				// Mown in wide bands across the lap's line, as a circuit's run-off is.
+				case Cover.Circuit: return Shade(Verge, ((long)Math.Floor((x - z) / 24.0) & 1) == 0 ? 1 : -2);
 				default: return Shade(Grass, speckle);
 			}
 		}
