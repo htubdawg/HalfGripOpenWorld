@@ -35,6 +35,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, and the lots' buildings and surfaces (one mesh, one collider), their materials |
 | `Town.cs` | Lots: the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Parks.cs` | Parks (town blocks and a riverside, ponds dug in), their paths, trails round the lakes, benches; laid out after the road index |
+| `Circuit.cs`, `CircuitMesh.cs`, `Rally.cs`, `HillClimb.cs` | The race courses: the circuit, the rally stage, the hill climb (sited and laid out in `Places.Build`; the stage's and the climb's roads made first in `Network.Build`) |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |

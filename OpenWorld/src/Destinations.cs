@@ -68,6 +68,14 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+			if (HillClimb.Exists && HillClimb.Road != null)
+			{
+				// Behind the start line, facing up the road; the top, short of the finish line, facing on over the col.
+				HillClimb.At(HillClimb.StartS - 20.0, out double sx, out double sz, out double dx, out double dz);
+				list.Add(new Place { Name = "Hill climb (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
+				HillClimb.At(HillClimb.FinishS - 40.0, out double fx, out double fz, out double ex, out double ez);
+				list.Add(new Place { Name = "Hill climb (finish)", X = fx, Z = fz, Dx = ex, Dz = ez });
+			}
 			bool garage = false, workshop = false;
 			foreach (Town.Lot lot in Town.Lots)
 			{

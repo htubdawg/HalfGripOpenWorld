@@ -32,6 +32,9 @@ using UnityEngine;
 //  16. rally:   the stage a closed loop (its ends meet in place, height and width), never near itself (100 apart past 500 along,
 //                40 past 100: a hairpin's legs), no corner tighter than its limit; nothing in its fence but its service area and
 //                track; every straw bale clear of the stage's edges and standing on the ground; the service area laid out
+//  17. climb:   the hill climb never near itself (70 apart past 400 along, 42 past 120: a hairpin's legs), no corner tighter than
+//                its limit, no steeper than 13%; its lane meeting its foot end to end (point, height and edges); nothing in its fence but
+//                the lane, its paddock and turning area (both laid out); its arches' posts off the verge
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -59,6 +62,7 @@ internal static class Program
 		ok &= ParkChecks();
 		ok &= CircuitChecks();
 		ok &= RallyChecks();
+		ok &= ClimbChecks();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -263,7 +267,7 @@ internal static class Program
 	}
 
 	/// <summary>Steepest grade each class is held to (as in Network's classes); a road with cuts at junctions has Network.Leeway.</summary>
-	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.18, 0.12 };
+	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.18, 0.12, HillClimb.Grade };
 
 	private static bool Grades()
 	{
@@ -339,7 +343,7 @@ internal static class Program
 	{
 		int samples = 0, bad = 0;
 		double worst = 0;
-		int[] byKind = new int[8];
+		int[] byKind = new int[9];
 		foreach (Network.Road r in Network.Roads)
 		{
 			bool track = Network.Unpaved(r.Kind);
@@ -1155,6 +1159,103 @@ internal static class Program
 		bool ok = gap < 1e-6 && nearest >= 100.0 && hairpin >= 40.0 && Rally.TightestRadius >= 23.9 && roads == 0 && places == 0 && lots == 0 && parks == 0
 			&& service == 1 && Network.RallyAccess != null && onStage == 0 && floating == 0 && steepest <= 0.1201;
 		Console.WriteLine("rally:   stage " + Rally.Length.ToString("0") + " long, " + Rally.CornerCount + " corners, tightest radius " + Rally.TightestRadius.ToString("0") + ", steepest " + (steepest * 100.0).ToString("0.0") + "%, ends " + gap.ToString("0.000") + " apart, nearest itself " + nearest.ToString("0") + " (a hairpin's legs " + hairpin.ToString("0") + "); in the fence: " + roads + " roads, " + places + " places, " + lots + " lots, " + parks + " parks; service area " + service + ", track " + (Network.RallyAccess != null ? "joined" : "MISSING") + "; " + bales + " bales, " + onStage + " on the stage's edge, " + floating + " on ground falling over 3 across");
+		return ok;
+	}
+
+	private static bool ClimbChecks()
+	{
+		Network.Road climb = HillClimb.Road, lane = Network.ClimbAccess;
+		if (!HillClimb.Exists || climb == null)
+		{
+			Console.WriteLine("climb:   none");
+			return false;
+		}
+		int n = climb.Count;
+		// Never near itself: two stretches far apart along it keep their distance, a hairpin's legs theirs.
+		double nearest = double.MaxValue, hairpin = double.MaxValue;
+		for (int i = 0; i < n; i += 2)
+		{
+			for (int j = i + 2; j < n; j += 2)
+			{
+				double along = climb.S[j] - climb.S[i];
+				double d = Math.Sqrt((climb.X[j] - climb.X[i]) * (climb.X[j] - climb.X[i]) + (climb.Z[j] - climb.Z[i]) * (climb.Z[j] - climb.Z[i]));
+				if (along >= HillClimb.SeparationAlong)
+				{
+					nearest = Math.Min(nearest, d);
+				}
+				else if (along >= 120.0)
+				{
+					hairpin = Math.Min(hairpin, d);
+				}
+			}
+		}
+		// Its lane meets its foot end to end: the same point, height and edges.
+		double join = double.MaxValue;
+		if (lane != null)
+		{
+			join = Math.Abs(lane.X[0] - climb.X[0]) + Math.Abs(lane.Z[0] - climb.Z[0]) + Math.Abs(lane.Y[0] + Network.Top(RoadKind.Lane) - climb.Y[0] - Network.Top(RoadKind.Climb));
+			foreach (int side in new[] { -1, 1 })
+			{
+				Network.Point(climb, 0, 0.0, side, 0.0, out double ax, out double az, out double ay);
+				Network.Point(lane, 0, 0.0, -side, 0.0, out double bx, out double bz, out double by);
+				join = Math.Max(join, Math.Abs(ax - bx) + Math.Abs(az - bz) + Math.Abs(ay - by));
+			}
+		}
+
+		// Nothing in the fence but the road, its lane, its paddock and turning area.
+		int roads = 0, places = 0, lots = 0, parks = 0, paddock = 0, turning = 0;
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (road == climb || road == lane)
+			{
+				continue;
+			}
+			for (int i = 0; i < road.Count; i++)
+			{
+				if (HillClimb.Fenced(road.X[i], road.Z[i], road.Half + HillClimb.Fence))
+				{
+					roads++;
+					break;
+				}
+			}
+		}
+		foreach (Places.Place p in Places.All)
+		{
+			places += HillClimb.Fenced(p.X, p.Z, p.Radius) ? 1 : 0;
+		}
+		foreach (Town.Lot lot in Town.Lots)
+		{
+			paddock += lot.Kind == LotKind.Paddock ? 1 : 0;
+			turning += lot.Kind == LotKind.Turning ? 1 : 0;
+			if (lot.Kind != LotKind.Paddock && lot.Kind != LotKind.Turning)
+			{
+				lots += HillClimb.Fenced(lot.X, lot.Z, Math.Max(lot.W, lot.D)) ? 1 : 0;
+			}
+		}
+		foreach (Parks.Park park in Parks.All)
+		{
+			parks += HillClimb.Fenced(park.X, park.Z, 100.0) ? 1 : 0;
+		}
+		// The arches' posts off the road and its verge.
+		int posts = 0;
+		foreach (double s in new[] { HillClimb.StartS, HillClimb.FinishS })
+		{
+			for (int side = -1; side <= 1; side += 2)
+			{
+				HillClimb.Post(s, side, out double px, out double pz);
+				posts += HillClimb.Distance(px, pz) < HillClimb.Half + Network.Verge + 1.0 ? 1 : 0;
+			}
+		}
+		double steepest = 0.0, low = double.MaxValue, high = double.MinValue;
+		for (int i = 1; i < n; i++)
+		{
+			steepest = Math.Max(steepest, Math.Abs(climb.Y[i] - climb.Y[i - 1]) / Math.Max(1e-6, climb.S[i] - climb.S[i - 1]));
+			low = Math.Min(low, climb.Y[i]);
+			high = Math.Max(high, climb.Y[i]);
+		}
+		bool ok = nearest >= HillClimb.Separation && hairpin >= HillClimb.HairpinApart && HillClimb.TightestRadius >= HillClimb.MinRadius - 0.1 && join < 1e-6
+			&& roads == 0 && places == 0 && lots == 0 && parks == 0 && paddock == 1 && turning == 1 && posts == 0 && steepest <= HillClimb.Grade + 0.0001;
+		Console.WriteLine("climb:   road " + HillClimb.Length.ToString("0") + " long, " + ((high - low)).ToString("0") + " from foot to top, " + HillClimb.Hairpins + " hairpins, tightest radius " + HillClimb.TightestRadius.ToString("0") + ", steepest " + (steepest * 100.0).ToString("0.0") + "%, nearest itself " + nearest.ToString("0") + " (a hairpin's legs " + hairpin.ToString("0") + "); lane " + (lane == null ? "MISSING" : "joined " + join.ToString("0.000") + " off") + "; in the fence: " + roads + " roads, " + places + " places, " + lots + " lots, " + parks + " parks; paddock " + paddock + ", turning area " + turning + "; " + posts + " arch posts on the verge");
 		return ok;
 	}
 }

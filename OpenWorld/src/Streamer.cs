@@ -404,6 +404,7 @@ namespace HalfGripOpenWorld
 			new Color32(150, 110, 70, 255),   // track
 			new Color32(196, 180, 150, 255),  // footpath
 			new Color32(200, 120, 50, 255),   // rally stage
+			new Color32(200, 70, 150, 255),   // hill climb
 		};
 
 		/// <summary>

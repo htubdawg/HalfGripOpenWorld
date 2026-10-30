@@ -101,6 +101,7 @@ namespace HalfGripOpenWorld
 			}
 			CircuitParts(b, data, tx, tz, tileSize);
 			RallyParts(b, data, tx, tz, tileSize);
+			ClimbParts(b, data, tx, tz, tileSize);
 			data.Mesh = b.Done();
 			return data;
 		}
@@ -245,6 +246,41 @@ namespace HalfGripOpenWorld
 			}
 			y = (float)(low + Network.Lift) - 0.3f;
 			extra = (float)(high - low) + 0.3f;
+		}
+
+		// ---- the hill climb ----------------------------------------------------------------------------------------
+
+		/// <summary>
+		/// The arches over the hill climb's start and finish lines (<see cref="HillClimb"/>), as the rally stage's: a post each side, a
+		/// banner across, each built by the tile its middle is in, standing on the drawn ground.
+		/// </summary>
+		private static void ClimbParts(Builder b, Data data, int tx, int tz, float tileSize)
+		{
+			if (!HillClimb.Exists)
+			{
+				return;
+			}
+			foreach (double s in new[] { HillClimb.StartS, HillClimb.FinishS })
+			{
+				HillClimb.Post(s, 1, out double lx, out double lz);
+				HillClimb.Post(s, -1, out double rx, out double rz);
+				double mx = (lx + rx) * 0.5, mz = (lz + rz) * 0.5;
+				if (Math.Floor(mx / tileSize) != tx || Math.Floor(mz / tileSize) != tz)
+				{
+					continue;
+				}
+				HillClimb.At(s, out double _, out double _, out double dx, out double dz);
+				float top = float.MinValue;
+				foreach ((double px, double pz) in new[] { (lx, lz), (rx, rz) })
+				{
+					GroundFooting(px, pz, dx, dz, 1.6, 1.6, out float y, out float extra);
+					b.Solid(px, pz, y, dx, dz, 1.6f, 1.6f, 24f + extra, Metal);
+					top = Math.Max(top, y + extra + 24f);
+				}
+				double width = Math.Sqrt((lx - rx) * (lx - rx) + (lz - rz) * (lz - rz));
+				b.Solid(mx, mz, top - 7f, -dz, dx, (float)(width + 1.6), 1.0f, 6f, Banner);
+				data.Footprints.Add((mx, mz, 1.0));
+			}
 		}
 
 		// ---- the rally stage ---------------------------------------------------------------------------------------
@@ -618,6 +654,26 @@ namespace HalfGripOpenWorld
 					b.Kerb(lot);
 					return;
 				}
+				case LotKind.Paddock:
+				{
+					// Tarmac to the back; along the back the competitors' vans, each with its open trailer beside it.
+					Surface(b, lot, -half, half, 0.0, lot.D, Asphalt);
+					for (double u = -half + 10.0; u <= half - 27.9; u += (lot.W - 38.0) / 3.0)
+					{
+						Block(b, lot, u, lot.D - 14.0, 9.0, 22.0, 10f, Town.Unit(lot.Hash, (int)(u + 500.0)) < 0.5 ? White : Metal, Flat);
+						Block(b, lot, u + 12.0, lot.D - 13.0, 7.5, 20.0, 1.6f, Metal, Flat);
+						Town.World(lot, u + 6.0, lot.D - 14.0, out double vx, out double vz);
+						data.Footprints.Add((vx, vz, 14.0));
+					}
+					b.Apron(lot, Asphalt);
+					b.Kerb(lot);
+					return;
+				}
+				case LotKind.Turning:
+					Surface(b, lot, -half, half, 0.0, lot.D, Asphalt);
+					b.Apron(lot, Asphalt);
+					b.Kerb(lot);
+					return;
 				default:
 				{
 					Surface(b, lot, -half, half, 0.0, bv, Concrete);
