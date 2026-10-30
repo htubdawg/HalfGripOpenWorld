@@ -8,6 +8,10 @@ before it goes up, and adds checks for what it fixes.
 Done: `MapView` (public, read by reflection; see README) gives each loaded tile's map picture (land use, water, roads by class) and
 the origin. Display only, outside the plan's order; the world is unchanged.
 
+Status: PR #12 (branch `claude/epic-goodall-zas0pe`), compiled and meshcheck clean, not yet tested in game. Open with the owner:
+streets are drawn grey and bridges in their road's colour (world.png draws them red); change `Streamer.MapRoads` if asked. The
+picture is made by `Streamer.MapPicture` from `Colours()`'s land use; no tool runs it (it needs `Streamer`), so check it in game.
+
 ## PR 1b: river water hanging over the ground (0.4.5; reported after testing 0.4.4)
 
 On 0.4.4, 3021 of 8765 points along the rivers' water edges were over the drawn ground. Causes and fixes:
