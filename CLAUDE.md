@@ -64,8 +64,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   scale, junctions, grades, ground meets roads, repeatability, tile time) and draws a map; look at it after any generator change.
 - `dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]` runs the world against Unity's types: road surfaces under
   the terrain (clip), roads poking through the roads drawn over them (poke), roads floating (float), grades, bridges clear of the
-  water, verges meeting the ground, farm track beds, building bases (bases), mesh faces (faces); exits 1 on a failure. It reads the
-  drawn surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
+  water, river water meeting its banks (water), verges meeting the ground, farm track beds, building bases (bases), mesh faces
+  (faces); exits 1 on a failure. It reads the drawn surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a
+  check for every bug fixed.
 - In game: see the test checklist in README. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next

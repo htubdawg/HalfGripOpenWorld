@@ -24,6 +24,9 @@ namespace HalfGripOpenWorld
 			public double[] Half;
 			/// <summary>Half the floodplain's width (from the centre) at each sample.</summary>
 			public double[] Plain;
+			/// <summary>The river this one flows into (-1 for the sea) and the sample of it where.</summary>
+			public int Into = -1;
+			public int At;
 			public int Count => X.Length;
 		}
 
@@ -35,6 +38,29 @@ namespace HalfGripOpenWorld
 		private const int Source = 700;
 
 		private const double Step = 20.0;
+
+		/// <summary>
+		/// The channel's edge rises from just under the water to the floodplain over this width, not in one step: the ground is drawn
+		/// as 5-unit triangles, and across a step they dipped under the water's edge, leaving it hanging in the air.
+		/// </summary>
+		private const double EdgeRise = 5.0;
+
+		/// <summary>
+		/// How far from a river's centre its water surface is drawn, for a channel <paramref name="half"/> wide each side: past where
+		/// the edge rises above the water (a third of <see cref="EdgeRise"/> out) by a triangle's diagonal, so the drawn ground covers
+		/// the surface's edge wherever it is.
+		/// </summary>
+		internal static double Edge(double half)
+		{
+			return half + EdgeRise / 3.0 + 7.2;
+		}
+
+		/// <summary>
+		/// Where the ground beside a river's water is under its floodplain's height (cut lower by another river beside it in the same
+		/// valley, or a tributary held up to the river it flows into), the river raises a bank up to it, at most this high, falling
+		/// away 1 in 2 past where its surface is drawn; never in a channel, and never over the land.
+		/// </summary>
+		private const double LeveeMost = 10.0;
 
 		/// <summary>Bank slope beside the floodplain: 1 up for every 3 across.</summary>
 		private const double BankRun = 3.0;
@@ -178,6 +204,12 @@ namespace HalfGripOpenWorld
 			All.Sort((a, b) => b.Count != a.Count ? b.Count.CompareTo(a.Count) : a.X[0] != b.X[0] ? a.X[0].CompareTo(b.X[0]) : a.Z[0].CompareTo(b.Z[0]));
 			Join();
 			Index();
+			// Each river's water level from the land as the rivers before it have cut it: a tributary coming down into a bigger river's
+			// valley runs on that valley's cut banks, far under the land it would have had.
+			for (int r = 0; r < All.Count; r++)
+			{
+				Level(r);
+			}
 		}
 
 		/// <summary>The lakes: a second flood over the real land (no routing noise) finds the hollows, kept where deep and big enough.</summary>
@@ -352,30 +384,79 @@ namespace HalfGripOpenWorld
 				double flow = Math.Sqrt(acc[c] / (double)Source);
 				river.Half[i] = Math.Min(40.0, 4.0 + 4.0 * flow);
 				river.Plain[i] = river.Half[i] + Math.Min(260.0, 10.0 + 22.0 * flow);
-				river.W[i] = Math.Max(WorldGen.SeaLevel + 0.3, WorldGen.Natural(line[i].x, line[i].z) - 1.0);
-			}
-			// The water only falls downstream (a smoothed, then held, level).
-			double[] w = (double[])river.W.Clone();
-			for (int i = 0; i < n; i++)
-			{
-				int a = Math.Max(0, i - 6), b = Math.Min(n - 1, i + 6);
-				double sum = 0.0;
-				for (int k = a; k <= b; k++)
-				{
-					sum += w[k];
-				}
-				river.W[i] = sum / (b - a + 1);
-			}
-			for (int i = 1; i < n; i++)
-			{
-				river.W[i] = Math.Max(WorldGen.SeaLevel + 0.3, Math.Min(river.W[i], river.W[i - 1] - 0.002 * Step));
 			}
 			return river;
 		}
 
 		/// <summary>
-		/// A tributary's last point is moved onto the river it flows into (the nearest point of a longer river), and its water at the mouth
-		/// is held no lower than that river's there, so the two meet.
+		/// River r's water level: a unit under the lowest land along it, at the centre and across past where its surface is drawn on both
+		/// sides, as cut by the rivers before it (the meanders put the line on slopes, where one bank is well under the centre); smoothed,
+		/// but never over the land near it (a smoothed level rose above the floor of a narrow valley); held so it only falls downstream;
+		/// and a tributary's held up to the level of the river it flows into at its mouth, so the two meet. Rivers only ever lower the land,
+		/// so water above the land at a bank would hang in the air there.
+		/// </summary>
+		private static void Level(int r)
+		{
+			River river = All[r];
+			int n = river.Count;
+			double[] low = new double[n];
+			for (int i = 0; i < n; i++)
+			{
+				int a = Math.Max(0, i - 1), b = Math.Min(n - 1, i + 1);
+				double tx = river.X[b] - river.X[a], tz = river.Z[b] - river.Z[a];
+				double len = Math.Sqrt(tx * tx + tz * tz);
+				double sx = len > 0.0 ? -tz / len : 0.0, sz = len > 0.0 ? tx / len : 0.0;
+				double reach = Edge(river.Half[i]) + 8.0;
+				int steps = (int)Math.Ceiling(reach / 4.0);
+				low[i] = Before(river.X[i], river.Z[i], r);
+				for (int k = 1; k <= steps; k++)
+				{
+					double off = reach * k / steps;
+					low[i] = Math.Min(low[i], Math.Min(Before(river.X[i] + sx * off, river.Z[i] + sz * off, r), Before(river.X[i] - sx * off, river.Z[i] - sz * off, r)));
+				}
+				low[i] -= 1.0;
+			}
+			// Between two samples (20 apart) the surface is drawn straight, so each sample is also held to its neighbours' lows.
+			for (int i = 0; i < n; i++)
+			{
+				int a = Math.Max(0, i - 6), b = Math.Min(n - 1, i + 6);
+				double sum = 0.0, floor = double.MaxValue;
+				for (int k = a; k <= b; k++)
+				{
+					sum += low[k];
+					if (Math.Abs(k - i) <= 1)
+					{
+						floor = Math.Min(floor, low[k]);
+					}
+				}
+				river.W[i] = Math.Max(WorldGen.SeaLevel + 0.3, Math.Min(sum / (b - a + 1), floor));
+			}
+			for (int i = 1; i < n; i++)
+			{
+				river.W[i] = Math.Max(WorldGen.SeaLevel + 0.3, Math.Min(river.W[i], river.W[i - 1] - 0.002 * Step));
+			}
+			if (river.Into >= 0)
+			{
+				// Never over its own banks, though: its last stretch can run beside the other river downstream of where it joins it,
+				// where that river (and so its floodplain) is lower.
+				double meet = All[river.Into].W[river.At];
+				for (int i = n - 1; i >= 0 && river.W[i] < meet; i--)
+				{
+					river.W[i] = Math.Max(river.W[i], Math.Min(meet, low[i]));
+				}
+			}
+		}
+
+		/// <summary>The natural land at (x, z) with the rivers before river r cut into it.</summary>
+		private static double Before(double x, double z, int r)
+		{
+			double natural = WorldGen.Natural(x, z);
+			return Cut(x, z, natural, natural, r);
+		}
+
+		/// <summary>
+		/// A tributary's last point is moved onto the river it flows into (the nearest point of a longer river), which is noted, so its
+		/// water at the mouth is held no lower than that river's there (<see cref="Level"/>) and the two meet.
 		/// </summary>
 		private static void Join()
 		{
@@ -407,11 +488,8 @@ namespace HalfGripOpenWorld
 				River m = All[into];
 				trib.X[last] = m.X[at];
 				trib.Z[last] = m.Z[at];
-				double floor = m.W[at];
-				for (int i = last; i >= 0 && trib.W[i] < floor; i--)
-				{
-					trib.W[i] = floor;
-				}
+				trib.Into = into;
+				trib.At = at;
 			}
 		}
 
@@ -422,6 +500,10 @@ namespace HalfGripOpenWorld
 		private const double Origin0 = -Cells * Cell / 2.0;
 		private static int[] cellStart;
 		private static long[] cellItems;
+
+		/// <summary>Each thread's projections of a cell's river segments, made once per point in <see cref="Cut(double, double, double, double, int)"/>.</summary>
+		[ThreadStatic]
+		private static double[] projected;
 
 		private static void Index()
 		{
@@ -500,49 +582,127 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The land at (x, z) with the rivers cut into it (rivers only ever lower the land): the channel, a floodplain just above the water,
-		/// and a bank of 1 in 3 back up to the land.
+		/// The land at (x, z) with the rivers cut into it: the channel, its edge rising over <see cref="EdgeRise"/> to a floodplain just
+		/// above the water, and a bank of 1 in 3 back up to the land. Rivers mostly lower the land, with two exceptions, both so a river's
+		/// water never hangs over lower ground: where the land given (<paramref name="land"/>) was lowered from the natural land
+		/// (<paramref name="natural"/>) by a place's levelling under a river's floodplain, it is raised back towards the floodplain's
+		/// height (never above the natural land); and land just beside the water lower than its floodplain gets a low bank
+		/// (<see cref="LeveeMost"/>).
 		/// </summary>
-		internal static double Cut(double x, double z, double land)
+		internal static double Cut(double x, double z, double land, double natural)
+		{
+			return Cut(x, z, land, natural, int.MaxValue);
+		}
+
+		/// <summary>The land cut by the rivers before river <paramref name="limit"/> only (see <see cref="Cut(double, double, double, double)"/>).</summary>
+		private static double Cut(double x, double z, double land, double natural, int limit)
 		{
 			if (cellStart == null)
 			{
 				return land;
 			}
 			int c = CellOf(z) * Cells + CellOf(x);
-			double h = land;
-			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
+			double h = double.MaxValue;
+			double floor = double.MinValue;
+			double levee = double.MinValue;
+			bool channel = false;
+			// The nearest river shapes the ground. A farther one, or a farther stretch of the same river (a meander's next loop, lower
+			// downstream), cuts it only through a bank of 1 in 1 rising away from the nearest: otherwise its wide floodplain spread
+			// across the nearest river's banks, under that river's water.
+			double nearest = double.MaxValue;
+			int count = cellStart[c + 1] - cellStart[c];
+			if (projected == null || projected.Length < count * 2)
 			{
-				long item = cellItems[k];
-				River river = All[(int)(item >> 32)];
-				int i = (int)(uint)item;
-				Lines.Project(river.X, river.Z, i, x, z, out double t, out double d);
-				double plain = river.Plain[i] + (river.Plain[i + 1] - river.Plain[i]) * t;
-				if (d >= plain + MaxBank)
+				projected = new double[Math.Max(64, count * 4)];
+			}
+			for (int q = cellStart[c]; q < cellStart[c + 1]; q++)
+			{
+				int rq = (int)(cellItems[q] >> 32);
+				if (rq < limit)
 				{
+					River near = All[rq];
+					Lines.Project(near.X, near.Z, (int)(uint)cellItems[q], x, z, out double tn, out double dn);
+					projected[(q - cellStart[c]) * 2] = tn;
+					projected[(q - cellStart[c]) * 2 + 1] = dn;
+					nearest = Math.Min(nearest, dn);
+				}
+			}
+			int k = cellStart[c], end = cellStart[c + 1];
+			while (k < end)
+			{
+				int r = (int)(cellItems[k] >> 32);
+				int k1 = k;
+				while (k1 < end && (int)(cellItems[k1] >> 32) == r)
+				{
+					k1++;
+				}
+				if (r >= limit)
+				{
+					k = k1;
 					continue;
 				}
-				double w = river.W[i] + (river.W[i + 1] - river.W[i]) * t;
-				double half = river.Half[i] + (river.Half[i + 1] - river.Half[i]) * t;
-				double depth = 1.5 + half * 0.08;
-				double target;
-				if (d < half)
+				River river = All[r];
+				for (; k < k1; k++)
 				{
-					// A rounded channel bed.
-					double u = d / half;
-					target = w - depth * (1.0 - u * u) - 0.4;
+					int i = (int)(uint)cellItems[k];
+					double t = projected[(k - cellStart[c]) * 2], d = projected[(k - cellStart[c]) * 2 + 1];
+					double plain = river.Plain[i] + (river.Plain[i + 1] - river.Plain[i]) * t;
+					if (d >= plain + MaxBank)
+					{
+						continue;
+					}
+					double w = river.W[i] + (river.W[i + 1] - river.W[i]) * t;
+					double half = river.Half[i] + (river.Half[i + 1] - river.Half[i]) * t;
+					double depth = 1.5 + half * 0.08;
+					double flat = w + 0.8 + Math.Max(0.0, d - half - EdgeRise) * 0.01;
+					double target;
+					if (d < half)
+					{
+						// A rounded channel bed.
+						double u = d / half;
+						target = w - depth * (1.0 - u * u) - 0.4;
+					}
+					else if (d < half + EdgeRise)
+					{
+						target = w - 0.4 + 1.2 * (d - half) / EdgeRise;
+					}
+					else if (d < plain)
+					{
+						target = flat;
+					}
+					else
+					{
+						target = w + 0.8 + (plain - half - EdgeRise) * 0.01 + (d - plain) / BankRun;
+					}
+					double away = (d - nearest) * 1.0;
+					target += away;
+					h = Math.Min(h, target);
+					if (d >= half && d < plain + 40.0)
+					{
+						floor = Math.Max(floor, Math.Min(target, flat + away) - Noise.Step(plain, plain + 40.0, d) * 1000.0);
+					}
+					if (d >= half + EdgeRise)
+					{
+						levee = Math.Max(levee, flat + away - Math.Max(0.0, d - Edge(half) - 8.0) * 0.5);
+					}
+					else
+					{
+						channel = true;
+					}
 				}
-				else if (d < plain)
-				{
-					target = w + 0.8 + (d - half) * 0.01;
-				}
-				else
-				{
-					target = w + 0.8 + (plain - half) * 0.01 + (d - plain) / BankRun;
-				}
-				h = Math.Min(h, target);
 			}
-			return h;
+			double ground = land;
+			if (land < natural)
+			{
+				ground = Math.Max(ground, Math.Min(natural, floor));
+			}
+			ground = Math.Min(ground, h);
+			// Out of every channel, the bank is raised to the floodplain of any river whose water reaches here (never over the land).
+			if (!channel)
+			{
+				ground = Math.Max(ground, Math.Min(Math.Min(levee, natural), ground + LeveeMost));
+			}
+			return ground;
 		}
 
 		/// <summary>The water surface at (x, z) if (x, z) is in a river's channel, a lake or the sea.</summary>
@@ -617,6 +777,38 @@ namespace HalfGripOpenWorld
 				double sin = ul > 0.0 && vl > 0.0 ? Math.Abs(den) / (ul * vl) : 1.0;
 				found.Add((t, river.W[i] + (river.W[i + 1] - river.W[i]) * u, river.Half[i] + (river.Half[i + 1] - river.Half[i]) * u, sin));
 			}
+		}
+
+		/// <summary>
+		/// The highest water surface drawn over (x, z) by a river other than <paramref name="skip"/> (its channel and the margin its
+		/// surface is drawn past it), or NaN: where two rivers meet, one's water runs on into the other's.
+		/// </summary>
+		internal static double OtherWater(double x, double z, River skip)
+		{
+			double best = double.NaN;
+			if (cellStart == null)
+			{
+				return best;
+			}
+			int c = CellOf(z) * Cells + CellOf(x);
+			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
+			{
+				long item = cellItems[k];
+				River river = All[(int)(item >> 32)];
+				if (river == skip)
+				{
+					continue;
+				}
+				int i = (int)(uint)item;
+				Lines.Project(river.X, river.Z, i, x, z, out double t, out double d);
+				double half = river.Half[i] + (river.Half[i + 1] - river.Half[i]) * t;
+				if (d < Edge(half))
+				{
+					double w = river.W[i] + (river.W[i + 1] - river.W[i]) * t;
+					best = double.IsNaN(best) ? w : Math.Max(best, w);
+				}
+			}
+			return best;
 		}
 
 		/// <summary>Distance to the nearest river's centre line (MaxValue if none is near), and that river's floodplain half width.</summary>

@@ -91,8 +91,12 @@ drainage; and central place theory and rank-size for settlements.
    on smooth noise runs in straight parallel lines; the swell makes streams wander and gather) by a priority flood from the sea, so every
    cell drains to the sea and hollows fill to their spill point. Catchments (cells draining through) of 700 or more are streams; each
    is traced to the sea or to a bigger river, smoothed, given meanders scaled by its size, a width and floodplain from its catchment, and
-   a water level from the real land that only falls downstream; tributaries are joined onto their river. They cut a rounded channel, a
-   floodplain just above the water and 1-in-3 banks into the land (cutting only). Lakes: a second flood over the real land finds the
+   a water level a unit under the lowest land across both banks (as cut by the rivers before it, longest first), smoothed but never
+   above that, only falling downstream, and held up to the river a tributary joins (never over its own banks). They cut a rounded
+   channel whose edge rises over 5 units, a floodplain just above the water and 1-in-3 banks into the land. The nearest river shapes
+   the ground; another river, or another loop of the same one, cuts it only through a 1-in-1 bank rising from the nearest. Rivers
+   only lower the land, except that a place's levelling never sinks a floodplain, and a bank up to 10 is raised beside the water
+   where the ground would be under it. The water surface is drawn 9 past the channel, under the ground. Lakes: a second flood over the real land finds the
    hollows; the eight biggest hold a lake in their deepest part (up to 6 above the floor).
 3. **Places** (`Places`): every spot on a 200-unit grid is scored: flatness, a river within 1.5 km but out of its floodplain, the coast
    within 4 km, low ground, no mountains. Taken best first: towns (up to 2, 11 km apart, within 75% of the best score), villages (4.2 km
@@ -118,8 +122,9 @@ drainage; and central place theory and rank-size for settlements.
    barely); then the height profile: the land averaged over the class's window, pinned to the roads it joins and crosses (so junctions
    are level), held to the class's grade; and bridges wherever its paving would be over a river's water, found by intersecting the
    road's line with the rivers' (a deck 5 above the water from 6 before it to 6 after, at the angle crossed; ramps at the grade, which
-   never pull the deck down; concrete sides and parapets; the ground under it is left alone, and the banks beside it never fill the
-   channel). Every paved road has a gravel verge 4 wide each side, from its edge down to the drawn ground (none on bridges).
+   never pull down the part over the water, though the ends over the banks may ramp; concrete sides and parapets; the ground under it
+   is left alone, and the banks beside it never fill the channel). Every paved road has a gravel verge 4 wide each side, from its edge
+   down to the drawn ground (none on bridges).
 5. **Grown streets** (Parish and Müller's local rules): first a few old roads radiate from the centre to the place's fields (5 in a
    town, 2 in a village), between the roads already arriving. Then along every road in the place, side streets branch off at a right
    angle (give or take 12 degrees) every 60-115 units in a town (further apart towards the edge, and less often), each a walk of
@@ -173,10 +178,10 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 | Layout built | about 2 to 2.4 s (.NET 8; done in the background at game start) |
 | Water | 31 rivers, 8 lakes |
 | Places | 2 towns, 16 villages, 120 farms and hamlets |
-| Roads, real km | trunk 10, main 18, minor 13, streets 19, lanes 50, tracks 7: 117 km |
-| Density | 1.5 km of road per km² of land (rural England about 2, its towns 10 to 20) |
-| Junctions | about 590 T-junction ends, 46 crossroads, 290 dead ends (farm lanes and tracks) |
-| Steepest | trunk 5%, main 9%, minor 9%, streets 14%, lanes 14%, tracks 14% (the extra in mouths at junctions) |
+| Roads, real km | trunk 10, main 18, minor 13, streets 23, lanes 53, tracks 6: 124 km |
+| Density | 1.6 km of road per km² of land (rural England about 2, its towns 10 to 20) |
+| Junctions | about 660 T-junction ends, 52 crossroads, 305 dead ends (farm lanes and tracks) |
+| Steepest | trunk 5%, main 11%, minor 14%, streets 19%, lanes 19%, tracks 14% (the extra only in mouths at junctions) |
 | Round the main town (225 tiles) | about 600 buildings, 4000 trees, 2200 grass tufts a tile |
 | A tile on a worker thread | 10 to 13 ms (heights, ground, buildings, trees and grass, meshes) |
 

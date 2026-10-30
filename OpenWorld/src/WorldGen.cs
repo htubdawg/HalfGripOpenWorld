@@ -104,7 +104,8 @@ namespace HalfGripOpenWorld
 		/// <summary>The land with the rivers cut into it (what places are chosen on).</summary>
 		internal static double Land(double x, double z)
 		{
-			return Rivers.Cut(x, z, Natural(x, z));
+			double natural = Natural(x, z);
+			return Rivers.Cut(x, z, natural, natural);
 		}
 
 		/// <summary>
@@ -113,7 +114,8 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static double Base(double x, double z)
 		{
-			return Rivers.Cut(x, z, Places.Soften(x, z, Natural(x, z)));
+			double natural = Natural(x, z);
+			return Rivers.Cut(x, z, Places.Soften(x, z, natural), natural);
 		}
 
 		/// <summary>

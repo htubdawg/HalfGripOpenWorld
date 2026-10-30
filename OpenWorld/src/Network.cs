@@ -52,6 +52,11 @@ namespace HalfGripOpenWorld
 			public double[] S;
 			/// <summary>True where the road is on a bridge: the ground under it is left as it is.</summary>
 			public bool[] Bridge;
+			/// <summary>
+			/// True where the bridge's deck is over the water: held at its height, clear of the water. The rest of a deck (out over the
+			/// banks) may ramp down at the road's grade, so a junction just past a bridge can be reached.
+			/// </summary>
+			public bool[] Over;
 			/// <summary>The stretches not drawn because they lie on a road drawn over them (<see cref="Junctions"/>), in order.</summary>
 			public List<Gap> Gaps = new List<Gap>();
 			/// <summary>Per sample: the surface's cross-fall (rise per unit to the left), in a mouth, so it meets the other road flush.</summary>
@@ -397,12 +402,13 @@ namespace HalfGripOpenWorld
 			}
 			int add = (int)(1100.0 / Step);
 			int n = road.Count + add;
-			Road longer = new Road { Kind = road.Kind, Name = road.Name, Half = road.Half, X = new double[n], Z = new double[n], Y = new double[n], S = new double[n], Bridge = new bool[n] };
+			Road longer = new Road { Kind = road.Kind, Name = road.Name, Half = road.Half, X = new double[n], Z = new double[n], Y = new double[n], S = new double[n], Bridge = new bool[n], Over = new bool[n] };
 			int offset = atStart ? add : 0;
 			Array.Copy(road.X, 0, longer.X, offset, road.Count);
 			Array.Copy(road.Z, 0, longer.Z, offset, road.Count);
 			Array.Copy(road.Y, 0, longer.Y, offset, road.Count);
 			Array.Copy(road.Bridge, 0, longer.Bridge, offset, road.Count);
+			Array.Copy(road.Over, 0, longer.Over, offset, road.Count);
 			for (int k = 1; k <= add; k++)
 			{
 				int i = atStart ? add - k : road.Count - 1 + k;
@@ -423,11 +429,12 @@ namespace HalfGripOpenWorld
 		private static Road Trim(Road road, int a, int b)
 		{
 			int n = b - a + 1;
-			Road cut = new Road { Kind = road.Kind, Name = road.Name, Half = road.Half, X = new double[n], Z = new double[n], Y = new double[n], S = new double[n], Bridge = new bool[n] };
+			Road cut = new Road { Kind = road.Kind, Name = road.Name, Half = road.Half, X = new double[n], Z = new double[n], Y = new double[n], S = new double[n], Bridge = new bool[n], Over = new bool[n] };
 			Array.Copy(road.X, a, cut.X, 0, n);
 			Array.Copy(road.Z, a, cut.Z, 0, n);
 			Array.Copy(road.Y, a, cut.Y, 0, n);
 			Array.Copy(road.Bridge, a, cut.Bridge, 0, n);
+			Array.Copy(road.Over, a, cut.Over, 0, n);
 			Lengths(cut);
 			return cut;
 		}
@@ -576,7 +583,7 @@ namespace HalfGripOpenWorld
 		private static Road Make(RoadKind kind, string name, List<(double x, double z)> points)
 		{
 			int n = points.Count;
-			Road road = new Road { Kind = kind, Name = name, Half = HalfOf(kind), X = new double[n], Z = new double[n], Y = new double[n], S = new double[n], Bridge = new bool[n] };
+			Road road = new Road { Kind = kind, Name = name, Half = HalfOf(kind), X = new double[n], Z = new double[n], Y = new double[n], S = new double[n], Bridge = new bool[n], Over = new bool[n] };
 			for (int i = 0; i < n; i++)
 			{
 				road.X[i] = points[i].x;
@@ -691,7 +698,7 @@ namespace HalfGripOpenWorld
 			double[] y = road.Y;
 			for (int i = a + 1; i <= b; i++)
 			{
-				if (!road.Bridge[i])
+				if (!road.Over[i])
 				{
 					double rise = grade * (road.S[i] - road.S[i - 1]);
 					y[i] = Math.Max(y[i - 1] - rise, Math.Min(y[i - 1] + rise, y[i]));
@@ -699,7 +706,7 @@ namespace HalfGripOpenWorld
 			}
 			for (int i = b - 1; i >= a; i--)
 			{
-				if (!road.Bridge[i])
+				if (!road.Over[i])
 				{
 					double rise = grade * (road.S[i + 1] - road.S[i]);
 					y[i] = Math.Max(y[i + 1] - rise, Math.Min(y[i + 1] + rise, y[i]));
@@ -737,8 +744,8 @@ namespace HalfGripOpenWorld
 			bool any = false;
 			for (int i = 0; i < n; i++)
 			{
-				seated[i] = road.Bridge[i];
-				if (segments.Under(road.X[i], road.Z[i], 1.5, out double y) && !(road.Bridge[i] && y < road.Y[i]))
+				seated[i] = road.Over[i];
+				if (segments.Under(road.X[i], road.Z[i], 1.5, out double y) && !(road.Over[i] && y < road.Y[i]))
 				{
 					road.Y[i] = y;
 					seated[i] = true;
@@ -773,7 +780,8 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Bridges: wherever the road's paving would be over a river's water, it is carried on a deck clear of the water (5 units, more
-		/// for a wide road) from a little before the water to a little after it, with ramps up to it at the road's grade, and the ground
+		/// for a wide road) from a little before the water to a little after it (the deck's ends over the banks may already ramp down),
+		/// with ramps up to it at the road's grade, and the ground
 		/// under the deck is left alone so the river runs under it. Crossings are found by intersecting the road's line with the rivers'
 		/// lines, so a narrow stream is never stepped over between two samples (8 apart) as it was when only the samples were tested;
 		/// each span reaches across the water at the angle the road crosses it, to the paving's far corners. Samples whose paving reaches
@@ -787,6 +795,7 @@ namespace HalfGripOpenWorld
 			}
 			int n = road.Count;
 			List<(double s0, double s1, double w)> spans = new List<(double, double, double)>();
+			List<(double s0, double s1)> wet = new List<(double, double)>();
 			List<(double t, double w, double half, double sin)> found = new List<(double, double, double, double)>();
 			for (int i = 0; i + 1 < n; i++)
 			{
@@ -797,8 +806,10 @@ namespace HalfGripOpenWorld
 					// Along the road, the water (drawn 2 past the channel) is half / sin each way of the crossing, and the paving's corners
 					// reach Half / tan further at a slant. Near alongside, the samples' own test below takes over.
 					double sn = Math.Max(0.3, sin);
-					double reach = (half + 2.0 + Abutment) / sn + road.Half * Math.Sqrt(1.0 - sn * sn) / sn;
+					double slant = road.Half * Math.Sqrt(1.0 - sn * sn) / sn;
+					double reach = (half + 2.0 + Abutment) / sn + slant;
 					spans.Add((s - reach, s + reach, w));
+					wet.Add((s - (half + 2.0) / sn - slant, s + (half + 2.0) / sn + slant));
 				}
 			}
 			for (int i = 0; i < n; i++)
@@ -806,6 +817,7 @@ namespace HalfGripOpenWorld
 				if (Rivers.Channel(road.X[i], road.Z[i], road.Half + 2.0, out double level))
 				{
 					spans.Add((road.S[i] - Abutment - Step, road.S[i] + Abutment + Step, level));
+					wet.Add((road.S[i] - Step, road.S[i] + Step));
 				}
 			}
 			if (spans.Count == 0)
@@ -842,6 +854,10 @@ namespace HalfGripOpenWorld
 				{
 					road.Y[j] = deck;
 					road.Bridge[j] = true;
+					foreach ((double w0, double w1) in wet)
+					{
+						road.Over[j] |= road.S[j] >= w0 && road.S[j] <= w1;
+					}
 				}
 			}
 			Hold(road, grade, 0, n - 1);
@@ -909,8 +925,8 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// After its cuts, the drawn road is held to its class's grade (with a quarter more leeway, for the mouths) away from them: the
-		/// samples in a cut, where it meets the other road, and bridge decks stay where they are.
+		/// After its cuts, the drawn road is held to its class's grade, with some leeway (<see cref="Leeway"/>): the samples in a cut,
+		/// where it meets the other road, and bridge decks over water stay where they are.
 		/// </summary>
 		private static void Regrade(Road road)
 		{
@@ -918,14 +934,13 @@ namespace HalfGripOpenWorld
 			bool[] fixedAt = new bool[n];
 			for (int k = 0; k < n; k++)
 			{
-				fixedAt[k] = road.Bridge[k] || !Shown(road, road.S[k]);
+				fixedAt[k] = road.Over[k] || !Shown(road, road.S[k]);
 			}
-			double grade = Classes[(int)road.Kind].Grade * 1.25;
 			for (int i = 1; i < n; i++)
 			{
 				if (!fixedAt[i])
 				{
-					double rise = grade * (road.S[i] - road.S[i - 1]);
+					double rise = Leeway(road, i - 1) * (road.S[i] - road.S[i - 1]);
 					road.Y[i] = Math.Max(road.Y[i - 1] - rise, Math.Min(road.Y[i - 1] + rise, road.Y[i]));
 				}
 			}
@@ -933,10 +948,28 @@ namespace HalfGripOpenWorld
 			{
 				if (!fixedAt[i])
 				{
-					double rise = grade * (road.S[i + 1] - road.S[i]);
+					double rise = Leeway(road, i) * (road.S[i + 1] - road.S[i]);
 					road.Y[i] = Math.Max(road.Y[i + 1] - rise, Math.Min(road.Y[i + 1] + rise, road.Y[i]));
 				}
 			}
+		}
+
+		/// <summary>
+		/// The steepest grade piece i of a road with cuts may have: half as much again as its class's in a cut's apron, three quarters
+		/// more for a street or lane (a short pitch where it meets the other road, as real lanes have: one coming off a bridge onto a
+		/// street on the floodplain needs it), a quarter more elsewhere.
+		/// </summary>
+		internal static double Leeway(Road road, int i)
+		{
+			double grade = Classes[(int)road.Kind].Grade;
+			foreach (Gap g in road.Gaps)
+			{
+				if (road.S[i] < Math.Max(g.L1, g.R1) + Apron + Step && road.S[i + 1] > Math.Min(g.L0, g.R0) - Apron - Step)
+				{
+					return grade * (road.Kind >= RoadKind.Street ? 1.75 : 1.5);
+				}
+			}
+			return grade * 1.25;
 		}
 
 		/// <summary>The cut in samples a to b of road r, if its centre line is on another road there (see <see cref="Junctions"/>).</summary>
@@ -944,13 +977,6 @@ namespace HalfGripOpenWorld
 		{
 			int n = road.Count;
 			double length = road.S[n - 1];
-			for (int k = a; k <= b; k++)
-			{
-				if (road.Bridge[k])
-				{
-					return;
-				}
-			}
 			// The centre line's stretch on the others.
 			List<int> others = new List<int>();
 			double c0 = double.NaN, c1 = double.NaN;
@@ -1131,10 +1157,10 @@ namespace HalfGripOpenWorld
 					double half = HalfAt(road, c);
 					double drawn = road.Tilt[kh] * (1.0 - u) + road.Tilt[k0] * u;
 					double centre = at - Math.Abs(meet - drawn) * half;
-					// Mostly by the sample inside, at most half a unit under where it was (a corner close to the sample out would take it
-					// far down); the rest by the sample out, at most 0.3, so the road keeps near its grade.
-					road.Y[kh] = Math.Max(road.Y[kh] - 0.5, Math.Min(road.Y[kh], (centre - road.Y[k0] * u) / (1.0 - u)));
-					road.Y[k0] = Math.Max(road.Y[k0] - 0.3, Math.Min(road.Y[k0], (centre - road.Y[kh] * (1.0 - u)) / u));
+					// Mostly by the sample inside, at most a unit under where it was (a corner close to the sample out would take it far
+					// down); the rest by the sample out, at most 0.6, so the road keeps near its grade.
+					road.Y[kh] = Math.Max(road.Y[kh] - 1.0, Math.Min(road.Y[kh], (centre - road.Y[k0] * u) / (1.0 - u)));
+					road.Y[k0] = Math.Max(road.Y[k0] - 0.6, Math.Min(road.Y[k0], (centre - road.Y[kh] * (1.0 - u)) / u));
 				}
 			}
 		}
@@ -1201,10 +1227,17 @@ namespace HalfGripOpenWorld
 			double best = double.MaxValue;
 			foreach (int o in others)
 			{
-				if (segments.Nearest(o, x, z, 80.0, out double d, out double oy) && d - Roads[o].Half < best)
+				if (segments.Nearest(o, x, z, 80.0, out double d, out int k, out double t) && d - Roads[o].Half < best)
 				{
-					best = d - Roads[o].Half;
-					y = oy + Top(Roads[o].Kind);
+					// With the other's own cross-fall, if it is in a mouth itself, out to its drawn edge.
+					Road other = Roads[o];
+					double sx = other.X[k + 1] - other.X[k], sz = other.Z[k + 1] - other.Z[k];
+					double sl = Math.Sqrt(sx * sx + sz * sz);
+					double across = sl > 0.0 ? ((z - other.Z[k]) * sx - (x - other.X[k]) * sz) / sl : 0.0;
+					double half = HalfAt(other, other.S[k] + (other.S[k + 1] - other.S[k]) * t);
+					double tilt = other.Tilt == null ? 0.0 : other.Tilt[k] + (other.Tilt[k + 1] - other.Tilt[k]) * t;
+					best = d - other.Half;
+					y = other.Y[k] + (other.Y[k + 1] - other.Y[k]) * t + Top(other.Kind) + tilt * Math.Max(-half, Math.Min(half, across));
 				}
 			}
 			return best < double.MaxValue;
@@ -1745,6 +1778,7 @@ namespace HalfGripOpenWorld
 			{
 				trunk.Y[k] = level;
 				trunk.Bridge[k] = false;
+				trunk.Over[k] = false;
 			}
 			Hold(trunk, Classes[0].Grade, 0, trunk.Count - 1);
 			// Right of the direction of travel: (dz, -dx). The inner lane's centre is the median (5) plus its shoulder (2) plus half a lane.
@@ -2362,12 +2396,13 @@ namespace HalfGripOpenWorld
 				return found;
 			}
 
-			/// <summary>The nearest point of road <paramref name="r"/> to (x, z) within <paramref name="reach"/>: its distance and the road line's height there.</summary>
-			internal bool Nearest(int r, double x, double z, double reach, out double d, out double y)
+			/// <summary>The nearest point of road <paramref name="r"/> to (x, z) within <paramref name="reach"/>: its distance, and its segment and fraction along it.</summary>
+			internal bool Nearest(int r, double x, double z, double reach, out double d, out int segment, out double along)
 			{
 				Road road = Roads[r];
 				d = double.MaxValue;
-				y = 0.0;
+				segment = 0;
+				along = 0.0;
 				for (int j = Cell(z - reach); j <= Cell(z + reach); j++)
 				{
 					for (int i = Cell(x - reach); i <= Cell(x + reach); i++)
@@ -2387,7 +2422,8 @@ namespace HalfGripOpenWorld
 							if (dist < d)
 							{
 								d = dist;
-								y = road.Y[k] + (road.Y[k + 1] - road.Y[k]) * t;
+								segment = k;
+								along = t;
 							}
 						}
 					}

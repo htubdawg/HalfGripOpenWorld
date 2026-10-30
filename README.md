@@ -27,7 +27,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.4**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.4.5**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -35,7 +35,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.4` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.4.5` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -69,7 +69,9 @@ the same ground.
 - **Land** (`WorldGen.cs`, `Noise.cs`): height is a pure function of world x, z from integer-hash gradient noise, using only additions
   and multiplications (no `System.Random`, `UnityEngine.Random` or `sin`), so it comes out identical on every machine.
 - **Rivers and lakes** (`Rivers.cs`): a priority flood drains every cell of a 100-unit grid to the sea; catchments give the rivers,
-  which are smoothed, given meanders and a falling water level, and cut into the land.
+  which are smoothed, given meanders and a falling water level a unit under the lowest land along both banks (as cut by the bigger
+  rivers), and cut into the land: the nearest river shapes the ground, and a low bank keeps a river's water from hanging over a
+  lower river beside it.
 - **Places** (`Places.cs`): every spot is scored for settling; a town, villages and farms are taken best first, each tier keeping its
   distance.
 - **Roads** (`Network.cs`): routed by A* over the land, costed by grade per class, with bridges dear and road-sharing cheap; built in
@@ -105,7 +107,8 @@ dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000  
 ```
 
 Check the built world against Unity's own types (road surfaces under the terrain, roads poking through each other, grades, bridges
-clear of the water, verges meeting the ground, track beds, building bases, mesh faces); it exits 1 if a check fails:
+clear of the water, river water meeting its banks, verges meeting the ground, track beds, building bases, mesh faces); it exits 1 if
+a check fails:
 
 ```
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
@@ -119,8 +122,9 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
    or seams between tiles. Where roads meet, the smaller one stops at the bigger one's edge with a flared mouth, level with it (no
    lip, no flicker, nothing poking through); the same where two streets cross.
-3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Drive into a river or
-   the sea and check you are put back on a road.
+3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Follow a river and its
+   tributaries, in the lowland and up in the mountains: the water's edge meets the bank everywhere, never hanging in the air with
+   ground or sky showing under it. Drive into a river or the sea and check you are put back on a road.
 4. The gravel verges either side of the paved roads: no step at the road's edge or where they meet the grass, a little less grip
    than the road, none on bridges. A farm track: a shallow dirt bed in the ground with two ruts and a grass strip, no grass tufts or
    trees on it, looser grip than the grass beside it.

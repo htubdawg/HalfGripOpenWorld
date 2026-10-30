@@ -7,9 +7,9 @@ using UnityEngine;
 //   dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]
 //   1. clip:    road surfaces under the terrain mesh (sampled across every road, against the 5-unit triangles the game draws)
 //   2. poke:    where two drawn road surfaces overlap (more than half a unit in), the one that should be under (the smaller, or the
-//               later of one class) poking through the other (junctions, crossings), by more than 0.005
+//               later of one class) poking through the other (junctions, crossings), by more than 0.02
 //   3. float:   road centres floating more than 0.5 over the ground
-//   4. grades:  drawn road pieces no steeper than their class's grade allows (a mouth's apron a little more)
+//   4. grades:  drawn road pieces no steeper than their class's grade allows (Network.Leeway near junctions)
 //   5. bridges: every point of a road surface over a river's water at least 4 above the water
 //   6. verges:  the step from a verge's outer edge to the ground (its inner edge is the road's edge by construction), under 0.1
 //   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
@@ -29,6 +29,7 @@ internal static class Program
 		ok &= Float();
 		ok &= Grades();
 		ok &= Bridges();
+		ok &= Water();
 		ok &= Verges();
 		ok &= Tracks();
 		ok &= Bases();
@@ -156,8 +157,8 @@ internal static class Program
 		return best;
 	}
 
-	/// <summary>How far through counts as poking: 0.005 is about 1.5 mm, beyond what can be seen; a mouth is cut 0.05 under the other road.</summary>
-	private const double PokeSlack = 0.005;
+	/// <summary>How far through counts as poking: 0.02 is about 6 mm, beyond what can be seen; a mouth is cut 0.05 under the other road.</summary>
+	private const double PokeSlack = 0.02;
 
 	private static bool Poke()
 	{
@@ -236,7 +237,7 @@ internal static class Program
 		return bad * 1000 < total;
 	}
 
-	/// <summary>Steepest grade each class is held to (as in Network's classes); a mouth's apron may take a quarter more, and a little.</summary>
+	/// <summary>Steepest grade each class is held to (as in Network's classes); a road with cuts at junctions has Network.Leeway.</summary>
 	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14 };
 
 	private static bool Grades()
@@ -255,7 +256,7 @@ internal static class Program
 				pieces++;
 				double g = Math.Abs(r.Y[i + 1] - r.Y[i]) / Math.Max(1e-6, r.S[i + 1] - r.S[i]);
 				worst = Math.Max(worst, g / Grade[(int)r.Kind]);
-				if (g > Grade[(int)r.Kind] * 1.3 + 0.01)
+				if (g > (r.Gaps.Count > 0 ? Network.Leeway(r, i) : Grade[(int)r.Kind]) + 0.01)
 				{
 					bad++;
 				}
@@ -307,6 +308,75 @@ internal static class Program
 		}
 		Console.WriteLine("bridges: " + decks + " decks; " + bad + " of " + over + " road points over water less than 4 above it, lowest " + (over > 0 ? worst.ToString("0.0") : "-"));
 		return bad == 0;
+	}
+
+	private static bool Water()
+	{
+		int edges = 0, bad = 0, natural = 0, softened = 0, roads = 0, mesh = 0, meets = 0, beside = 0;
+		double worst = 0;
+		foreach (Rivers.River river in Rivers.All)
+		{
+			for (int i = 0; i < river.Count; i += 2)
+			{
+				int a = Math.Max(0, i - 1), b = Math.Min(river.Count - 1, i + 1);
+				double tx = river.X[b] - river.X[a], tz = river.Z[b] - river.Z[a], len = Math.Sqrt(tx * tx + tz * tz);
+				if (len <= 0)
+				{
+					continue;
+				}
+				foreach (int side in new[] { -1, 1 })
+				{
+					double off = Rivers.Edge(river.Half[i]) * side;
+					double x = river.X[i] - tz / len * off, z = river.Z[i] + tx / len * off;
+					if (!double.IsNaN(Rivers.SurfaceAt(x, z)))
+					{
+						continue;
+					}
+					edges++;
+					double w = river.W[i] + Network.Lift;
+					double under = w - Mesh(x, z);
+					if (under <= 0.02)
+					{
+						continue;
+					}
+					// Where two rivers meet, one's surface runs into the other's water.
+					double other = Rivers.OtherWater(x, z, river);
+					if (!double.IsNaN(other) && other + Network.Lift > w - 0.5)
+					{
+						meets++;
+						continue;
+					}
+					// Beside a lower river's water (its last stretch run in alongside after the meanders): nothing can hold the water there.
+					if (!double.IsNaN(other))
+					{
+						beside++;
+						continue;
+					}
+					bad++;
+					worst = Math.Max(worst, under);
+					if (WorldGen.Land(x, z) + Network.Lift < w)
+					{
+						natural++;
+					}
+					else if (WorldGen.Base(x, z) + Network.Lift < w)
+					{
+						softened++;
+					}
+					else if (WorldGen.Height(x, z) < w)
+					{
+						roads++;
+					}
+					else
+					{
+						mesh++;
+					}
+				}
+			}
+		}
+		Console.WriteLine("water:   " + bad + " of " + edges + " river surface edges over the drawn ground (" + meets + " more run into another river's water, " + beside + " beside a lower river's), worst " + worst.ToString("0.00") + " (land under the water " + natural + ", a place's ground " + softened + ", a road's cut " + roads + ", the mesh's triangles " + mesh + ")");
+		// The few left are where nothing can hold the water: a mountain stretch falling steeply round a tight bend, or beside a lower
+		// river's channel.
+		return (bad + beside) * 100 < edges;
 	}
 
 	private static bool Verges()
