@@ -616,8 +616,10 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The junctions that get a fingerpost: three or more ways out by main roads; or the way to a race course, from the
-		/// nearest main road to its access road.
+		/// The junctions that get a fingerpost: three or more ways out by main roads; out in the country (outside every town and
+		/// village), three or more by paved roads, lanes included, as British lanes have a post at almost every junction (the owner
+		/// found the country roads too bare with main-road junctions only); or the way to a race course, from the nearest main road to
+		/// its access road.
 		/// </summary>
 		private static bool[] Signed()
 		{
@@ -629,15 +631,16 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				int major = 0;
+				int major = 0, paved = 0;
 				bool access = false;
 				foreach (Arm arm in arms)
 				{
 					major += Major(arm.Kind) ? 1 : 0;
+					paved += arm.Kind <= RoadKind.Lane ? 1 : 0;
 					access |= arm.Access;
 				}
 				// Three main-road ways: a main road ending on another, or two crossing (a main road past a street's end has only two).
-				signed[n] = major >= 3 || access;
+				signed[n] = major >= 3 || access || (paved >= 3 && Rural(nodes[n].x, nodes[n].z));
 			}
 			// Each course's way in: from the first junction on a main road its shortest way reaches, every junction on to its access road.
 			foreach (Destination d in destinations)
@@ -675,6 +678,19 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return signed;
+		}
+
+		/// <summary>Whether (x, z) is out in the country: outside every town's and village's edge (hamlets and farms are country).</summary>
+		private static bool Rural(double x, double z)
+		{
+			foreach (Places.Place place in Places.All)
+			{
+				if (place.Kind != PlaceKind.Hamlet && Distance(place, x, z) < place.Radius)
+				{
+					return false;
+				}
+			}
+			return true;
 		}
 
 		/// <summary>Whether a sign's part may stand at (x, z): <paramref name="margin"/> off every road's edge, off lots, parks, water and the circuit.</summary>

@@ -249,3 +249,25 @@ preview and meshcheck clean (a new `signs` check), not yet tested in game.
 `preview` draws the courses and reports site, length, tightest corner, steepest grade. New `meshcheck` checks: lap closed and never
 near itself, circuit grade and cross-fall, nothing in the circuit's fence or run-off, kerbs on the surface, hairpin radii, rally and
 hill-climb grades.
+
+## 0.12.0: a bridge's banks, country signs, through ways (reported after 0.11.0)
+
+Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (`clip` now covers bridge decks), not yet tested
+in game.
+
+- **Ground through a bridge's ends** at (208, -2517): a primary road in a cutting (land 57, road 53) crosses a river in a gorge.
+  The deck is held at the road's height, but the ground under a deck was left alone, so the bank tops stood up to 3.3 over the deck
+  at both ends. A deck now cuts the ground under it where the ground is higher (its bed and banks, as any road's), and still never
+  fills: over the water and the lower banks nothing changes. The other lookups on the road index (`Nearest`, `Claims`,
+  `OnOtherPaving`) still pass over decks, so nothing else moves. `meshcheck clip` skipped bridge samples, which is why it never
+  showed; now it samples them too (on 0.11.0: 32 samples under the ground, worst 5.07, on several bridges; now none).
+- **Fingerposts in the country**: besides junctions of main roads, every junction outside the towns and villages with three or
+  more ways out by paved roads (lanes included) gets a post, as British lanes do. 28 posts became 157 (453 fingers); the lettering
+  atlas is 1024 x 2048 (was 1024 x 512).
+- **Through ways** (`Network.Throughs`, after the footpaths): from most dead ends of lanes, tracks and footpaths outside the towns
+  and villages (85%, 55%, 75%), a way of the same class is walked on, steered towards the nearest point on another road (a point
+  behind counts up to three times as far; never one within 250 of the road's own start), keeping out of towns, water, steep ground
+  and the courses' fences; kept only if it reaches a road it may end on (a lane on a lane or bigger, a track on a track or bigger)
+  and can climb between its two ends at its grade; a second point is tried if the first fails. Country dead ends: lanes 102 to 55,
+  tracks 71 to 39, footpaths 38 to 23. Roads 150 to 166 km real (2.1 km per km²). `tools/preview` reports the country dead ends by
+  class.

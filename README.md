@@ -10,7 +10,8 @@ generated from a fixed seed, the same every time and for every player, the way r
   but above its floodplain, near the coast, out of the mountains. A few big places and many small ones, fairly evenly spread.
 - **Roads, grown in order of importance:** a dual-carriageway trunk road along the coast that bypasses the towns; main roads between
   neighbouring places (the strongest links first); a road over a mountain pass; streets grown out from the roads in every town and
-  village; a lane to every farm; farm tracks into the fields; footpaths on from the dead ends of streets. New roads follow the roads already there and branch off them at
+  village; a lane to every farm; farm tracks into the fields; footpaths on from the dead ends of streets; and many of the lanes,
+  tracks and footpaths that would end in nothing in the country carried on to another road, so the small roads make loops. New roads follow the roads already there and branch off them at
   T-junctions, so the network has the shape real ones have. Every road is held to its class's grade, crosses rivers on bridges clear
   of the water, runs on a low embankment where the land by the coast or a lake is lower than the water, and meets the roads it joins or crosses flush: it stops at the other road's edge with a flared mouth. Paved roads
   have gravel verges down to the ground, and paved sidewalks with a kerb in towns and villages; farm tracks (two tyre ruts and a
@@ -45,7 +46,8 @@ generated from a fixed seed, the same every time and for every player, the way r
   the start arch at its end; the finish arch is near the top, with a tarmac turning area beside the road's end to turn and come back
   down. A lane joins its foot to the network, running straight on into it; no other road comes near it. Free roam only.
 - **Road signs:** a white name sign on the nearside of every road into a town or village, at its edge, facing you as you come
-  in; and a fingerpost where main roads meet and on the way to each race course, with a pointed finger along each road that leads
+  in; and a fingerpost where main roads meet, at the junctions of the paved roads and lanes out in the country, and on the way to
+  each race course, with a pointed finger along each road that leads
   somewhere, giving the nearest town or village that way and the nearest town, and the miles to each by road (in quarters under 3
   miles); brown fingers to the circuit, the rally stage and the hill climb. Black lettering on white, in a pixel font of the game's
   look, crisp close up. Which way and how far come from the roads themselves (the shortest way by road, along the main roads where
@@ -60,7 +62,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.11.0**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.12.0**, made for game version 0.418.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -68,7 +70,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.11.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.12.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -216,7 +218,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    lip, no flicker, nothing poking through); the same where two streets cross.
 3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Follow a river and its
    tributaries, in the lowland and up in the mountains: the water's edge meets the bank everywhere, never hanging in the air with
-   ground or sky showing under it. Drive into a river or the sea and check you are put back on a road.
+   ground or sky showing under it. The bridge at world 0.208, -2.517 km (a main road in a cutting over a river in a gorge): no ground
+   pokes through the deck at either end. Drive into a river or the sea and check you are put back on a road.
 4. The gravel verges either side of the paved roads: no step at the road's edge or where they meet the grass, a little less grip
    than the road, none on bridges. In Kingsbridge and the villages, sidewalks instead (no bump from the road, a kerb at their back,
    none in front of a car park or forecourt). A farm track, and a footpath out of the end of a town street: crisp ruts and gravel
@@ -257,16 +260,20 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    At a junction of main roads (teleport to a village and follow its main road out), the fingerpost stands back from the road, each
    finger pointing along its road, readable from both sides (name at the left, miles at the right), none reaching over the road;
    brown fingers on the way to the circuit, the rally stage and the hill climb. Follow the fingers to a place: the miles count down.
+   Out in the country, a fingerpost at most junctions of lanes and minor roads, outside the towns and villages.
    Posts are solid, no house or tree stands in a sign. The log has a `Road signs:` line.
-13. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
+13. Country lanes, tracks and footpaths: follow a few out from a farm or hamlet. Most run on to another road rather than stopping
+   in a field; where one was carried on, no kink or step where the old road ends and the new one begins, and its far end meets the
+   road it joins with a mouth like any other junction.
+14. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
    low bank above the shore.
-14. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+15. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-15. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+16. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-16. Hold R far out: the car is put back on its wheels where it was.
-17. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-18. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+17. Hold R far out: the car is put back on its wheels where it was.
+18. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-19. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-20. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+20. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+21. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
