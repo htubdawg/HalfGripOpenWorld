@@ -63,7 +63,7 @@ the same ground.
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | Lets `TeleportKey` (F7) jump the car `TeleportDistance` (5000 m) ahead. |
+| Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the retail park, the villages, a filling station and a workshop, the mountain pass, the circuits), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 
@@ -159,7 +159,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    or trees on it, no ground poking through it, no flicker; hit a lamp post and a canopy post (solid).
 7. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-8. Teleport (F7) a few times to 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+8. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
 9. Hold R far out: the car is put back on its wheels where it was.
 10. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.

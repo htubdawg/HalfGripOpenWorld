@@ -1,0 +1,105 @@
+using System;
+using System.Collections.Generic;
+
+namespace HalfGripOpenWorld
+{
+	/// <summary>
+	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the retail park, the
+	/// villages, a filling station, a workshop, the mountain pass and the circuits. Each is a point on a road (on its right-hand lane)
+	/// and the road's direction there, so a car put there can drive off at once.
+	/// </summary>
+	internal static class Destinations
+	{
+		internal struct Place
+		{
+			public string Name;
+			public double X;
+			public double Z;
+			public double Dx;
+			public double Dz;
+		}
+
+		private static List<Place> all;
+
+		/// <summary>The places, worked out the first time they are asked for (the layout must be built).</summary>
+		internal static List<Place> All
+		{
+			get
+			{
+				if (all == null)
+				{
+					all = Make();
+				}
+				return all;
+			}
+		}
+
+		private static List<Place> Make()
+		{
+			List<Place> list = new List<Place>();
+			Network.Ensure();
+			list.Add(new Place { Name = "Spawn", X = Network.SpawnX, Z = Network.SpawnZ, Dx = Network.SpawnDirX, Dz = Network.SpawnDirZ });
+			foreach (Places.Place p in Places.All)
+			{
+				if (p.Kind == PlaceKind.Town)
+				{
+					OnRoad(list, p.Name + " (town centre)", p.X, p.Z);
+				}
+			}
+			bool garage = false, workshop = false;
+			foreach (Town.Lot lot in Town.Lots)
+			{
+				string name = lot.Kind == LotKind.Retail ? lot.Place + " retail park" : lot.Kind == LotKind.Garage && !garage ? lot.Place + " filling station" : lot.Kind == LotKind.Workshop && !workshop ? lot.Place + " workshop" : null;
+				if (name == null)
+				{
+					continue;
+				}
+				garage |= lot.Kind == LotKind.Garage;
+				workshop |= lot.Kind == LotKind.Workshop;
+				// In front of the lot, on its road.
+				Town.World(lot, 0.0, -8.0, out double x, out double z);
+				OnRoad(list, name, x, z);
+			}
+			foreach (Places.Place p in Places.All)
+			{
+				if (p.Kind == PlaceKind.Village)
+				{
+					OnRoad(list, p.Name + " (village)", p.X, p.Z);
+				}
+			}
+			Pass(list);
+			Circuits.AddDestinations(list);
+			return list;
+		}
+
+		/// <summary>The highest point of the road over the mountains to the north edge.</summary>
+		private static void Pass(List<Place> list)
+		{
+			foreach (Network.Road road in Network.Roads)
+			{
+				if (road.Name == null || !road.Name.EndsWith("north", StringComparison.Ordinal))
+				{
+					continue;
+				}
+				int top = 0;
+				for (int i = 1; i < road.Count; i++)
+				{
+					top = road.Y[i] > road.Y[top] ? i : top;
+				}
+				OnRoad(list, "Mountain pass", road.X[top], road.Z[top]);
+				return;
+			}
+		}
+
+		/// <summary>Adds the road point nearest (x, z), in the right-hand lane, facing along the road.</summary>
+		internal static void OnRoad(List<Place> list, string name, double x, double z)
+		{
+			if (!Network.NearestRoad(x, z, Streamer.TileSize, out double rx, out double rz, out double dx, out double dz))
+			{
+				return;
+			}
+			// Right of the way the car faces is (dz, -dx); a lane is about 11 wide.
+			list.Add(new Place { Name = name, X = rx + dz * 4.0, Z = rz - dx * 4.0, Dx = dx, Dz = dz });
+		}
+	}
+}

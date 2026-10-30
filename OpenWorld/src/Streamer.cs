@@ -139,7 +139,8 @@ namespace HalfGripOpenWorld
 			}
 			if (Mod.Teleport.Value && GameInput.GetKeyDown(Mod.TeleportKey.Value))
 			{
-				TeleportAhead(Mod.TeleportDistance.Value);
+				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
+				TeleportNext(back ? -1 : 1);
 			}
 			// A car that has gone into a river, a lake or the sea is put back on the nearest road after a moment (nothing here floats).
 			Origin.World(player.transform.position, out double wx, out double wz);
@@ -629,24 +630,29 @@ namespace HalfGripOpenWorld
 			go.AddComponent<TileMesh>().Mesh = mesh;
 		}
 
-		/// <summary>Moves the car <paramref name="distance"/> metres ahead (debug), building the ground there first so it lands on something.</summary>
-		private void TeleportAhead(float distance)
+		/// <summary>The key place the teleport went to last (-1: none yet, so the first press goes to the first).</summary>
+		private int destination = -1;
+		private string destinationName;
+		private float destinationShown;
+
+		/// <summary>
+		/// Moves the car to the next key place (debug; <paramref name="step"/> -1 for the one before), on the road there and facing along
+		/// it, building the ground there first so it lands on something.
+		/// </summary>
+		private void TeleportNext(int step)
 		{
-			Transform car = player.transform;
-			Vector3 forward = car.forward;
-			forward.y = 0f;
-			if (forward.sqrMagnitude < 1e-4f)
+			List<Destinations.Place> places = Destinations.All;
+			if (places.Count == 0)
 			{
-				forward = Vector3.forward;
+				return;
 			}
-			forward.Normalize();
-			Origin.World(car.position, out double x, out double z);
-			x += forward.x * distance;
-			z += forward.z * distance;
-			WorldGen.ClampInside(ref x, ref z, 100.0);
-			BuildAround(x, z, 1);
-			Place(x, z, Quaternion.LookRotation(forward, Vector3.up));
-			Mod.Log.LogInfo("Teleported to world (" + x.ToString("0") + ", " + z.ToString("0") + "), ground " + WorldGen.Height(x, z).ToString("0") + " m");
+			destination = ((destination < 0 && step < 0 ? 0 : destination + step) % places.Count + places.Count) % places.Count;
+			Destinations.Place place = places[destination];
+			BuildAround(place.X, place.Z, 1);
+			Place(place.X, place.Z, Quaternion.LookRotation(new Vector3((float)place.Dx, 0f, (float)place.Dz), Vector3.up));
+			destinationName = (destination + 1) + "/" + places.Count + "  " + place.Name;
+			destinationShown = Time.realtimeSinceStartup;
+			Mod.Log.LogInfo("Teleported to " + place.Name + ": world (" + place.X.ToString("0") + ", " + place.Z.ToString("0") + "), ground " + WorldGen.Height(place.X, place.Z).ToString("0") + " m");
 		}
 
 		/// <summary>Puts the player car upright on the ground at world (x, z), stopped. Used by the teleport and by a reset.</summary>
@@ -667,6 +673,11 @@ namespace HalfGripOpenWorld
 
 		private void OnGUI()
 		{
+			// The place just teleported to, for a few seconds, mid-screen at the top.
+			if (destinationName != null && Time.realtimeSinceStartup - destinationShown < 4f)
+			{
+				GUI.Label(new Rect(Screen.width * 0.5f - 300f, 40f, 600f, 30f), destinationName, new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 22 });
+			}
 			if (!Mod.ShowCoords.Value || player == null)
 			{
 				return;
