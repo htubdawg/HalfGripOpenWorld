@@ -30,7 +30,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the ground's road beds |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
-| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge and water meshes and their pixel-art textures (farm tracks are painted on the ground) |
+| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track and footpath, and water meshes and their pixel-art textures |
+| `Destinations.cs` | The key places the debug teleport goes round |
 | `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, and the lots' buildings and surfaces (one mesh, one collider), their materials |
 | `Town.cs` | Lots: the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
@@ -68,8 +69,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - `dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]` runs the world against Unity's types: road surfaces under
   the terrain (clip), roads poking through the roads drawn over them (poke), roads floating (float), grades, bridges clear of the
   water, river water meeting its banks (water), verges meeting the ground, farm track beds, building bases (bases), mesh faces
-  (faces); exits 1 on a failure. It reads the drawn surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a
-  check for every bug fixed.
+  (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs; exits 1 on a failure. It reads the drawn
+  surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - In game: see the test checklist in README. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next

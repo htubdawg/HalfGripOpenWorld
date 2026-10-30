@@ -60,7 +60,7 @@ namespace HalfGripOpenWorld
 				{
 					int r = (int)(piece >> 32);
 					Network.Road road = Network.Roads[r];
-					if (road.Kind == RoadKind.Trunk || road.Kind == RoadKind.Track)
+					if (road.Kind == RoadKind.Trunk || Network.Unpaved(road.Kind))
 					{
 						continue;
 					}
@@ -144,7 +144,8 @@ namespace HalfGripOpenWorld
 					{
 						floors = Math.Max(2, floors);
 					}
-					double setback = terrace ? 2.0 : 6.0 + 8.0 * Unit(h, 4);
+					// A terrace stands at the back of the sidewalk.
+					double setback = terrace ? Network.Verge + 0.5 : 6.0 + 8.0 * Unit(h, 4);
 					double off = road.Half + setback + depth * 0.5;
 					double cx = px + nx * off, cz = pz + nz * off;
 					int wall = (int)(Unit(h, 5) * 4.0);
@@ -164,7 +165,7 @@ namespace HalfGripOpenWorld
 		private static void Tower(Builder b, Data data, int r, double px, double pz, double dx, double dz, double nx, double nz, double half, double from, ulong h)
 		{
 			double w = 40.0 + 6.0 * Unit(h, 1), d = 34.0 + 10.0 * Unit(h, 2);
-			const double setback = 4.0;
+			const double setback = Network.Verge + 1.0;
 			double off = half + setback + d * 0.5;
 			double cx = px + nx * off, cz = pz + nz * off;
 			if (!Fits(r, setback, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))

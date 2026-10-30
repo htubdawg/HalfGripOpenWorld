@@ -12,6 +12,8 @@ namespace HalfGripOpenWorld
 		Street = 3,
 		Lane = 4,
 		Track = 5,
+		/// <summary>A gravel footpath, out from the dead ends of streets into the country. Unpaved like a track, and narrower.</summary>
+		Path = 6,
 	}
 
 	/// <summary>
@@ -91,12 +93,35 @@ namespace HalfGripOpenWorld
 			new Class { Half = 10.0, Grade = 0.11, Window = 3, Keep = 1, Rounds = 2, Soft = 0.09, Steep = 2.0, Bank = 30.0 },
 			new Class { Half = 7.5, Grade = 0.11, Window = 6, Keep = 2, Rounds = 3, Soft = 0.09, Steep = 2.0, Bank = 40.0 },
 			new Class { Half = 5.0, Grade = 0.14, Window = 3, Keep = 1, Rounds = 2, Soft = 0.12, Steep = 1.5, Bank = 25.0 },
+			// A footpath 1.5 m wide.
+			new Class { Half = 2.5, Grade = 0.18, Window = 3, Keep = 1, Rounds = 2, Soft = 0.15, Steep = 1.5, Bank = 15.0 },
 		};
 
 		internal static double HalfOf(RoadKind kind)
 		{
 			return Classes[(int)kind].Half;
 		}
+
+		/// <summary>Farm tracks and footpaths: no paving, verge, junction cuts or bridges; a ribbon on a shallow bed pressed into the ground.</summary>
+		internal static bool Unpaved(RoadKind kind)
+		{
+			return kind >= RoadKind.Track;
+		}
+
+		/// <summary>The soft edge each side of a track's or path's ribbon, from the ribbon down to the ground.</summary>
+		internal static double EdgeOf(RoadKind kind)
+		{
+			return kind == RoadKind.Path ? 1.5 : 2.0;
+		}
+
+		/// <summary>
+		/// How far past a track's or path's soft edges its bed stays flat: further than the ground's 5-unit triangles reach, so none of
+		/// them rises into the ribbon from the bank beyond.
+		/// </summary>
+		internal const double UnpavedFlat = 3.0;
+
+		/// <summary>A track's or path's ribbon lies this far over its bed (which is <see cref="TrackDepth"/> under its line).</summary>
+		internal const double UnpavedLift = 0.15;
 
 		/// <summary>Distance between a road's samples.</summary>
 		internal const double Step = 8.0;
@@ -107,7 +132,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The road bed is this far under the road surface, so the ground never shows through the paving.</summary>
 		internal const double BedDepth = 0.5;
 
-		/// <summary>A farm track is no mesh: the ground is pressed this far into a shallow bed along it, with soft edges.</summary>
+		/// <summary>The ground is pressed this far into a shallow bed along a farm track or footpath, with soft edges; its ribbon lies on it.</summary>
 		internal const double TrackDepth = 0.3;
 
 		/// <summary>The gravel verge each side of a paved road, from its edge down to the ground, as wide as the flat shoulder it lies on.</summary>
@@ -131,9 +156,11 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// How far each class's surface is drawn above its road line: bigger roads higher, so where two surfaces overlap the bigger road
-		/// is cleanly on top (as its markings would be); small enough to drive over. Tracks have no surface of their own.
+		/// is cleanly on top (as its markings would be); small enough to drive over. A track's or path's ribbon is under its line, on its
+		/// pressed bed, so where it meets a road it is under that road's surface and needs no cut; a path's a little under a track's, so
+		/// where one ends on the other they do not flicker.
 		/// </summary>
-		private static readonly double[] Tops = { 0.20, 0.16, 0.12, 0.08, 0.05, 0.0 };
+		private static readonly double[] Tops = { 0.20, 0.16, 0.12, 0.08, 0.05, UnpavedLift - TrackDepth, UnpavedLift - TrackDepth - 0.02 };
 
 		/// <summary>How far a road of this class is drawn above its road line (see <see cref="Tops"/>).</summary>
 		internal static double Top(RoadKind kind)
@@ -309,8 +336,9 @@ namespace HalfGripOpenWorld
 				}
 			}
 
-			// 5. Farm tracks off the lanes and minor roads.
+			// 5. Farm tracks off the lanes and minor roads, and footpaths on from the dead ends of streets.
 			Tracks(new Rng(Noise.Mix(WorldGen.Seed + 9000UL)));
+			Footpaths(new Rng(Noise.Mix(WorldGen.Seed + 9500UL)));
 
 			// The junctions, now every road is in, then the samples near bridges.
 			Junctions();
@@ -792,7 +820,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private static void Bridges(Road road, double grade)
 		{
-			if (road.Kind == RoadKind.Track)
+			if (Unpaved(road.Kind))
 			{
 				return;
 			}
@@ -898,7 +926,7 @@ namespace HalfGripOpenWorld
 			{
 				Road road = Roads[r];
 				road.Tilt = new double[road.Count];
-				if (road.Kind == RoadKind.Track || road.Count < 4)
+				if (Unpaved(road.Kind) || road.Count < 4)
 				{
 					continue;
 				}
@@ -1561,6 +1589,35 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// Footpaths, the way real ones run: on from the dead end of a street in a town or village, out across the fields, until they
+		/// meet a road (or a track) or have gone their length; they stop at water and on steep ground (<see cref="Walk"/>).
+		/// </summary>
+		private static void Footpaths(Rng rng)
+		{
+			int count = Roads.Count;
+			for (int r = 0; r < count; r++)
+			{
+				Road street = Roads[r];
+				if (street.Kind != RoadKind.Street || street.Count < 4)
+				{
+					continue;
+				}
+				for (int end = 0; end < 2; end++)
+				{
+					int i = end == 0 ? 0 : street.Count - 1, j = end == 0 ? 1 : street.Count - 2;
+					double x = street.X[i], z = street.Z[i];
+					// A dead end: no other road at this end.
+					if (segments.Snap(x, z, street.Half + 12.0, r, out double _, out double _, out double _) || rng.Next() > 0.7)
+					{
+						continue;
+					}
+					double angle = Atan2(z - street.Z[j], x - street.X[j]);
+					Walk(rng, x, z, street.Y[i], angle, rng.Range(250.0, 700.0), null, RoadKind.Path, r, 0.25);
+				}
+			}
+		}
+
 		private static bool InPlace(double x, double z)
 		{
 			foreach (Places.Place p in Places.All)
@@ -1648,7 +1705,7 @@ namespace HalfGripOpenWorld
 			{
 				return null;
 			}
-			Road road = Make(kind, kind == RoadKind.Track ? "Track" : (place != null ? place.Name + " street" : "Street"), Lines.Resample(Rounded(pts), Step));
+			Road road = Make(kind, kind == RoadKind.Track ? "Track" : kind == RoadKind.Path ? "Footpath" : (place != null ? place.Name + " street" : "Street"), Lines.Resample(Rounded(pts), Step));
 			if (road.S[road.Count - 1] < 50.0)
 			{
 				return null;
@@ -1875,7 +1932,8 @@ namespace HalfGripOpenWorld
 		/// The ground at (x, z) given the land there (<paramref name="land"/>), from sea level: the bed of the nearest road where a road
 		/// is, and a bank blending back to the land beside it, wider where the road is far above or below the land (up to the class's
 		/// limit), so cuts and embankments are about 1 in 1.6. Where two roads' banks overlap, the one that claims the point most wins.
-		/// A farm track presses a shallow bed into the ground with soft edges. Bridges leave the ground alone, and the banks by a bridge
+		/// A farm track or footpath presses a shallow bed into the ground, flat a little past its ribbon, with soft edges; where such
+		/// beds overlap the lowest is taken. Bridges leave the ground alone, and the banks by a bridge
 		/// never fill the river's channel under it.
 		/// </summary>
 		internal static double Ground(double x, double z, double land)
@@ -1889,7 +1947,11 @@ namespace HalfGripOpenWorld
 			double bestD = double.MaxValue;
 			double bestY = land;
 			bool bestAbut = false;
+			bool bestUnpaved = false;
 			double paved = double.MaxValue;
+			double unpaved = double.MaxValue;
+			int road1 = -1;
+			double near1 = double.MaxValue, y1 = 0.0;
 			// A cell lists each road's segments together, so the nearest segment of each road is tracked as they go by.
 			int road0 = -1;
 			double near0 = double.MaxValue, y0 = 0.0, half0 = 0.0;
@@ -1899,7 +1961,7 @@ namespace HalfGripOpenWorld
 				int r = (int)(item >> 32);
 				Road road = Roads[r];
 				int i = (int)(uint)item;
-				bool track = road.Kind == RoadKind.Track;
+				bool track = Unpaved(road.Kind);
 				Lines.Project(road.X, road.Z, i, x, z, out double t, out double d);
 				// Of a piece a cut runs into, only the drawn part makes a bed.
 				if (t < road.From[i] || t > road.To[i])
@@ -1935,7 +1997,26 @@ namespace HalfGripOpenWorld
 					y0 = ry;
 					half0 = road.Half;
 				}
-				double inner = road.Half + (track ? 0.0 : Shoulder);
+				double inner = road.Half + (track ? EdgeOf(road.Kind) + UnpavedFlat : Shoulder);
+				// Where tracks and paths meet, their flat beds overlap: the ground takes the lowest (each road's by its nearest segment),
+				// so every ribbon is over it.
+				if (track && d < inner)
+				{
+					if (r != road1)
+					{
+						if (road1 >= 0)
+						{
+							unpaved = Math.Min(unpaved, y1);
+						}
+						road1 = r;
+						near1 = double.MaxValue;
+					}
+					if (d < near1)
+					{
+						near1 = d;
+						y1 = ry;
+					}
+				}
 				double most = Classes[(int)road.Kind].Bank;
 				if (d >= inner + most)
 				{
@@ -1951,6 +2032,7 @@ namespace HalfGripOpenWorld
 					bestD = d;
 					bestY = ry;
 					bestAbut = road.Abut != null && (road.Abut[i] || road.Abut[i + 1]);
+					bestUnpaved = track;
 				}
 			}
 			// Under any road's paving (each road by its nearest segment) the ground stays below it, whichever road claims the point.
@@ -1958,7 +2040,16 @@ namespace HalfGripOpenWorld
 			{
 				paved = Math.Min(paved, y0);
 			}
+			if (road1 >= 0)
+			{
+				unpaved = Math.Min(unpaved, y1);
+			}
+			// One road's own bed is the ground already; only where two or more overlap does the lowest matter.
 			double ground = Math.Min(land + (bestY - land) * bestW, paved);
+			if (unpaved < ground && bestUnpaved && bestW >= 1.0 - 1e-9)
+			{
+				ground = unpaved;
+			}
 			// The embankment up to a bridge stops at the water: the river keeps its channel under the deck.
 			if (bestAbut && ground > land && Rivers.Channel(x, z, 2.0, out double _))
 			{
@@ -1997,11 +2088,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// For each of a tile's <paramref name="pixels"/> x <paramref name="pixels"/> pixels, how far its centre is from the nearest road's
-		/// edge, counting a paved road's verge as the road (up to 20; negative on a road), from the road pieces of the tile and its
-		/// neighbours. For keeping trees and grass off the roads without asking every pixel. With <paramref name="tracks"/>, only the farm
-		/// tracks, measured from their centre lines (for painting them on the ground).
+		/// edge, counting a paved road's verge and a track's or path's soft edges as the road (up to 20; negative on a road), from the
+		/// road pieces of the tile and its neighbours. For keeping trees and grass off the roads without asking every pixel.
 		/// </summary>
-		internal static float[] Clearance(int tx, int tz, float tileSize, int pixels, bool tracks = false)
+		internal static float[] Clearance(int tx, int tz, float tileSize, int pixels)
 		{
 			float[] clear = new float[pixels * pixels];
 			for (int k = 0; k < clear.Length; k++)
@@ -2022,13 +2112,8 @@ namespace HalfGripOpenWorld
 					foreach (long piece in list)
 					{
 						Road road = Roads[(int)(piece >> 32)];
-						bool track = road.Kind == RoadKind.Track;
-						if (tracks && !track)
-						{
-							continue;
-						}
 						int k = (int)(uint)piece;
-						double width = tracks ? 0.0 : road.Half + (track ? 0.0 : Verge);
+						double width = road.Half + (Unpaved(road.Kind) ? EdgeOf(road.Kind) : Verge);
 						double reach = width + 20.0;
 						int p0 = Math.Max(0, (int)Math.Floor((Math.Min(road.X[k], road.X[k + 1]) - reach - ox) / size));
 						int p1 = Math.Min(pixels - 1, (int)Math.Floor((Math.Max(road.X[k], road.X[k + 1]) + reach - ox) / size));
@@ -2068,7 +2153,7 @@ namespace HalfGripOpenWorld
 				long item = cellItems[k];
 				int r = (int)(item >> 32);
 				Road road = Roads[r];
-				if (r == self || road.Kind == RoadKind.Track)
+				if (r == self || Unpaved(road.Kind))
 				{
 					continue;
 				}
@@ -2139,7 +2224,7 @@ namespace HalfGripOpenWorld
 						{
 							Road road = Roads[(int)(piece >> 32)];
 							int k = (int)(uint)piece;
-							if (road.Bridge[k] || road.Kind == RoadKind.Track)
+							if (road.Bridge[k] || Unpaved(road.Kind))
 							{
 								continue;
 							}
@@ -2376,7 +2461,7 @@ namespace HalfGripOpenWorld
 						{
 							int r = (int)(item >> 32);
 							Road road = Roads[r];
-							if (r == skip || road.Kind > kind || (road.Kind == kind && r >= before) || road.Kind == RoadKind.Track)
+							if (r == skip || road.Kind > kind || (road.Kind == kind && r >= before) || Unpaved(road.Kind))
 							{
 								continue;
 							}

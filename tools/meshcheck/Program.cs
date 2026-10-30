@@ -15,6 +15,9 @@ using UnityEngine;
 //   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
 //   8. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
 //   9. faces:   road, verge and water meshes with no upside-down flat faces, under 65000 vertices
+//  11. ribbons:  farm tracks' and footpaths' ribbons over the drawn ground everywhere across them (away from paved roads, which
+//                they run under)
+//  12. sidewalks: a sidewalk's back on or over the ground, its kerb's foot under it
 //  10. lots:    car parks, yards and forecourts: the drawn ground just under their surface (0.02 to 0.3), their front at the foot of
 //               the road's verge (within 0.25), clear of every other road; a retail park and businesses laid out
 // Exits 1 if a check fails.
@@ -37,6 +40,8 @@ internal static class Program
 		ok &= Bases();
 		ok &= Faces();
 		ok &= Lots();
+		ok &= Ribbons();
+		ok &= Sidewalks();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -64,7 +69,7 @@ internal static class Program
 		double worst = 0;
 		foreach (Network.Road r in Network.Roads)
 		{
-			if (r.Kind == RoadKind.Track)
+			if (Network.Unpaved(r.Kind))
 			{
 				continue;
 			}
@@ -107,7 +112,7 @@ internal static class Program
 			for (int r = 0; r < Network.Roads.Count; r++)
 			{
 				Network.Road road = Network.Roads[r];
-				if (road.Kind == RoadKind.Track)
+				if (Network.Unpaved(road.Kind))
 				{
 					continue;
 				}
@@ -170,7 +175,7 @@ internal static class Program
 		for (int r = 0; r < Network.Roads.Count; r++)
 		{
 			Network.Road road = Network.Roads[r];
-			if (road.Kind == RoadKind.Track)
+			if (Network.Unpaved(road.Kind))
 			{
 				continue;
 			}
@@ -219,7 +224,7 @@ internal static class Program
 		int total = 0, bad = 0;
 		foreach (Network.Road r in Network.Roads)
 		{
-			if (r.Kind == RoadKind.Track)
+			if (Network.Unpaved(r.Kind))
 			{
 				continue;
 			}
@@ -241,7 +246,7 @@ internal static class Program
 	}
 
 	/// <summary>Steepest grade each class is held to (as in Network's classes); a road with cuts at junctions has Network.Leeway.</summary>
-	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14 };
+	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.18 };
 
 	private static bool Grades()
 	{
@@ -252,7 +257,7 @@ internal static class Program
 			for (int i = 0; i + 1 < r.Count; i++)
 			{
 				Network.Spans(r, i, spans);
-				if (r.Kind != RoadKind.Track && spans.Count == 0)
+				if (!Network.Unpaved(r.Kind) && spans.Count == 0)
 				{
 					continue;
 				}
@@ -281,7 +286,7 @@ internal static class Program
 				{
 					decks++;
 				}
-				bool track = r.Kind == RoadKind.Track;
+				bool track = Network.Unpaved(r.Kind);
 				double t0 = 0.0, t1 = 1.0;
 				if (!track && !Drawn(r, i, out t0, out t1))
 				{
@@ -390,7 +395,7 @@ internal static class Program
 		for (int r = 0; r < Network.Roads.Count; r++)
 		{
 			Network.Road road = Network.Roads[r];
-			if (road.Kind == RoadKind.Track)
+			if (Network.Unpaved(road.Kind))
 			{
 				continue;
 			}
@@ -402,6 +407,10 @@ internal static class Program
 				}
 				for (int side = -1; side <= 1; side += 2)
 				{
+					if (RoadMesh.Sidewalk(road, i, side))
+					{
+						continue;
+					}
 					RoadMesh.Section(m, road, i, t0, side, Terrain, out Vector3 inner, out Vector3 middle, out Vector3 outer, out double wx, out double wz);
 					if (Network.OnOtherPaving(wx, wz, r))
 					{
@@ -428,7 +437,7 @@ internal static class Program
 		double worst = 0;
 		foreach (Network.Road r in Network.Roads)
 		{
-			if (r.Kind != RoadKind.Track)
+			if (!Network.Unpaved(r.Kind))
 			{
 				continue;
 			}
@@ -448,7 +457,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("tracks:  " + bad + " of " + total + " track points whose ground is more than 0.15 off the bed, worst " + worst.ToString("0.00"));
+		Console.WriteLine("tracks:  " + bad + " of " + total + " track and path points whose ground is more than 0.15 off the bed, worst " + worst.ToString("0.00"));
 		return bad * 100 < total;
 	}
 
@@ -514,8 +523,8 @@ internal static class Program
 		{
 			for (int tx = -64; tx < 64; tx++)
 			{
-				RoadMeshData road = RoadMesh.Build(tx, tz, 250f, Terrain, out RoadMeshData verges);
-				foreach (RoadMeshData d in new[] { road, verges, WaterMesh.Build(tx, tz, 250f) })
+				RoadMeshData road = RoadMesh.Build(tx, tz, 250f, Terrain, out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
+				foreach (RoadMeshData d in new[] { road, verges, sidewalks, tracks, WaterMesh.Build(tx, tz, 250f) })
 				{
 					if (d == null)
 					{
@@ -536,7 +545,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge and water meshes; most vertices in one mesh " + most);
+		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track and water meshes; most vertices in one mesh " + most);
 		return down == 0 && most < 65000;
 	}
 
@@ -589,5 +598,87 @@ internal static class Program
 		}
 		Console.WriteLine("lots:    " + Town.Lots.Count + " lots (" + retail + " retail park); of " + samples + " surface points " + under + " with the ground through them (worst " + worstUnder.ToString("0.00") + "), " + over + " floating (worst " + worstOver.ToString("0.00") + "), " + roads + " on or by another road; " + front + " front points off the verge's foot (worst " + worstFront.ToString("0.00") + ")");
 		return retail == 1 && Town.Lots.Count > 10 && under == 0 && over == 0 && roads == 0 && front == 0;
+	}
+
+	private static bool Ribbons()
+	{
+		int samples = 0, bad = 0;
+		double worst = 0.0;
+		foreach (Network.Road r in Network.Roads)
+		{
+			if (!Network.Unpaved(r.Kind))
+			{
+				continue;
+			}
+			for (int i = 0; i + 1 < r.Count; i++)
+			{
+				for (int k = 0; k < 4; k++)
+				{
+					double t = (k + 0.5) / 4.0;
+					foreach (double f in new[] { -1.0, -0.5, 0.0, 0.5, 1.0 })
+					{
+						Network.Point(r, i, t, f, 0.0, out double x, out double z, out double y);
+						if (OnPaved(x, z))
+						{
+							continue;
+						}
+						samples++;
+						double over = Mesh(x, z) - (y + Network.Lift);
+						if (over > -0.02)
+						{
+							bad++;
+							worst = Math.Max(worst, over);
+						}
+					}
+				}
+			}
+		}
+		Console.WriteLine("ribbons: " + bad + " of " + samples + " track and path surface samples with the ground through them, worst " + worst.ToString("0.00"));
+		return bad * 1000 < samples && worst < 0.1;
+	}
+
+	private static bool Sidewalks()
+	{
+		int sections = 0, floating = 0, kerbs = 0;
+		RoadMesh.Mesher m = new RoadMesh.Mesher(0, 0, 1);
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (Network.Unpaved(road.Kind))
+			{
+				continue;
+			}
+			for (int i = 0; i + 1 < road.Count; i++)
+			{
+				if (road.Bridge[i] || road.Bridge[i + 1] || !Drawn(road, i, out double t0, out double _))
+				{
+					continue;
+				}
+				for (int side = -1; side <= 1; side += 2)
+				{
+					if (!RoadMesh.Sidewalk(road, i, side))
+					{
+						continue;
+					}
+					RoadMesh.PavementSection(m, road, i, t0, side, Terrain, out Vector3 inner, out Vector3 back, out Vector3 foot, out double wx, out double wz);
+					if (Network.OnOtherPaving(wx, wz, r))
+					{
+						continue;
+					}
+					sections++;
+					if (back.y < Mesh(wx, wz))
+					{
+						floating++;
+					}
+					Network.Point(road, i, t0, side, Network.Verge + 0.8, out double fx, out double fz, out double _);
+					if (foot.y > Mesh(fx, fz) + 0.001 && foot.y < back.y)
+					{
+						kerbs++;
+					}
+				}
+			}
+		}
+		Console.WriteLine("sidewalks: " + sections + " sections; " + floating + " with the ground over their back, " + kerbs + " kerbs not reaching under the ground");
+		return sections > 100 && floating == 0 && kerbs == 0;
 	}
 }

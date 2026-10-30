@@ -199,27 +199,6 @@ namespace HalfGripOpenWorld
 			parcel = Noise.Mix(region ^ (ulong)pu * 0x632BE59BUL ^ (ulong)pv * 0x9E3779B97F4A7C15UL);
 		}
 
-		private static readonly Rgb Dirt = new Rgb(128, 104, 74);
-		private static readonly Rgb Rut = new Rgb(98, 78, 56);
-		private static readonly Rgb Strip = new Rgb(92, 124, 58);
-
-		/// <summary>
-		/// A farm track painted on the ground, at <paramref name="d"/> from its centre line: a grass strip down the middle, two tyre ruts
-		/// worn darker either side of it, a little loose dirt at the edges (as wide as the track's bed). False beyond it.
-		/// </summary>
-		internal static bool Track(double d, double x, double z, out Rgb rgb)
-		{
-			rgb = default;
-			double half = Network.HalfOf(RoadKind.Track);
-			if (d >= half)
-			{
-				return false;
-			}
-			int speckle = (int)(Noise.Mix(SaltSpeckle ^ (ulong)(long)Math.Floor(x / 2.0) * 83492791UL ^ (ulong)(long)Math.Floor(z / 2.0) * 19349663UL) >> 61) - 4;
-			rgb = Shade(d < half * 0.22 ? Strip : d < half * 0.64 ? Rut : Dirt, speckle);
-			return true;
-		}
-
 		private static Rgb Shade(Rgb c, int by)
 		{
 			return new Rgb(c.R + by * 3, c.G + by * 3, c.B + by * 3);

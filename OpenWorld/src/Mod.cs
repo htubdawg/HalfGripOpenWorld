@@ -27,7 +27,6 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<int> GrassReach;
 		internal static ConfigEntry<bool> Teleport;
 		internal static ConfigEntry<KeyCode> TeleportKey;
-		internal static ConfigEntry<float> TeleportDistance;
 		internal static ConfigEntry<bool> ShowCoords;
 		internal static ConfigEntry<bool> Verbose;
 
@@ -52,9 +51,8 @@ namespace HalfGripOpenWorld
 			TileRadius = ctx.Config.Bind("World", "TileRadius", 5, new ConfigDescription("How many 250 m tiles of ground are kept loaded around the car in each direction. 5 is about 1.3 km, which the fog hides. More draws further and costs memory and frame time. Only changes your own view.", new AcceptableValueRange<int>(2, 10)));
 			GrassReach = ctx.Config.Bind("World", "GrassReach", 2, new ConfigDescription("Grass is drawn on the tiles this many tiles round the car's (2 is about 600 m). 0 turns grass off. Only changes your own view (grass has no collision).", new AcceptableValueRange<int>(0, 4)));
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many metres from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
-			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let TeleportKey jump the car TeleportDistance metres ahead, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
+			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let TeleportKey jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
 			TeleportKey = ctx.Config.Bind("Debug", "TeleportKey", KeyCode.F7, "The key for Teleport.");
-			TeleportDistance = ctx.Config.Bind("Debug", "TeleportDistance", 5000f, "How far one Teleport jumps, in metres.");
 			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset and the tile count in the top left corner.");
 			Verbose = ctx.Config.Bind("Debug", "VerboseLog", false, "Write the detailed log (each origin shift, tile timings) to the BepInEx log. Off, only the world's build, warnings and errors are logged.");
 

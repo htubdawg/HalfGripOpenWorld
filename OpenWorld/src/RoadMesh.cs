@@ -63,8 +63,9 @@ namespace HalfGripOpenWorld
 	/// texture per class made in code to match the game's look. Bridges get concrete sides and parapets. The ribbon's corners come from
 	/// <see cref="Network.Point"/>, worked out the same way in every tile, so pieces meet exactly across tile edges. Where a road ends on
 	/// or crosses one drawn over it, it is cut out along the other's edges (<see cref="Network.Gap"/>), its mouth flared
-	/// (<see cref="Network.HalfAt"/>). Every paved road has a gravel verge each side down to the ground (a mesh of its own: it has its own grip). Farm tracks
-	/// have no mesh: they are pressed into the ground and painted on its texture.
+	/// (<see cref="Network.HalfAt"/>). Every paved road has a gravel verge each side down to the ground (a mesh of its own: it has its own
+	/// grip), or in a town or village a paved sidewalk. Farm tracks and footpaths are ribbons of their own (their own grip), with soft
+	/// edges down to the ground, on a shallow bed pressed into it.
 	/// </summary>
 	internal static class RoadMesh
 	{
@@ -80,13 +81,20 @@ namespace HalfGripOpenWorld
 		/// <summary>Pieces within this distance of a mouth are cut finer (2 units), so the flare's curve is smooth.</summary>
 		private const double Fine = 16.0;
 
+		/// <summary>Materials of the unpaved mesh: farm tracks, then footpaths.</summary>
+		internal const int TrackMaterial = 0, PathMaterial = 1;
+
+		/// <summary>The sidewalk's back stands this far over the ground before its kerb goes down under it.</summary>
+		private const double KerbOut = 0.8;
+
 		/// <summary>
-		/// The tile's paved roads, and in <paramref name="verges"/> their verges; null if it has none. <paramref name="terrain"/> gives
-		/// the drawn ground's height, which each verge comes down to.
+		/// The tile's paved roads, and in <paramref name="verges"/> their verges, in <paramref name="sidewalks"/> the sidewalks of town and
+		/// village streets, in <paramref name="tracks"/> the farm tracks and footpaths; null if it has none. <paramref name="terrain"/>
+		/// gives the drawn ground's height, which each verge and soft edge comes down to.
 		/// </summary>
-		internal static RoadMeshData Build(int tx, int tz, float tileSize, TerrainGrid terrain, out RoadMeshData verges)
+		internal static RoadMeshData Build(int tx, int tz, float tileSize, TerrainGrid terrain, out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks)
 		{
-			verges = null;
+			verges = sidewalks = tracks = null;
 			List<long> pieces = Network.PiecesIn(tx, tz, tileSize);
 			if (pieces == null || pieces.Count == 0)
 			{
@@ -94,17 +102,20 @@ namespace HalfGripOpenWorld
 			}
 			Mesher roads = new Mesher(tx * (double)tileSize, tz * (double)tileSize, Concrete + 1);
 			Mesher sides = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 1);
+			Mesher walks = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 1);
+			Mesher ribbons = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 2);
 			List<(double t0, double t1)> spans = new List<(double, double)>();
 			List<(double apex, int side, double from, double to)> fans = new List<(double, int, double, double)>();
 			foreach (long piece in pieces)
 			{
 				int r = (int)(piece >> 32);
 				Network.Road road = Network.Roads[r];
-				if (road.Kind == RoadKind.Track)
+				int i = (int)(uint)piece;
+				if (Network.Unpaved(road.Kind))
 				{
+					Ribbon(ribbons, road, i, terrain);
 					continue;
 				}
-				int i = (int)(uint)piece;
 				bool bridge = road.Bridge[i] && road.Bridge[i + 1];
 				bool verge = !road.Bridge[i] && !road.Bridge[i + 1];
 				int cuts = NearCut(road, i) ? 4 : 1;
@@ -117,8 +128,17 @@ namespace HalfGripOpenWorld
 						Strip(roads, road, i, a, b, bridge);
 						if (verge)
 						{
-							Verge(sides, road, r, i, a, b, 1, terrain);
-							Verge(sides, road, r, i, a, b, -1, terrain);
+							for (int side = -1; side <= 1; side += 2)
+							{
+								if (Sidewalk(road, i, side))
+								{
+									Pavement(walks, road, r, i, a, b, side, terrain);
+								}
+								else
+								{
+									Verge(sides, road, r, i, a, b, side, terrain);
+								}
+							}
 						}
 					}
 				}
@@ -129,7 +149,87 @@ namespace HalfGripOpenWorld
 				}
 			}
 			verges = sides.Done();
+			sidewalks = walks.Done();
+			tracks = ribbons.Done();
 			return roads.Done();
+		}
+
+		/// <summary>
+		/// Whether piece i of a paved road has a sidewalk on <paramref name="side"/> rather than a gravel verge: a street or main road in a
+		/// town or village, except in front of a lot (a car park or forecourt is driven onto from the road, so the verge stays there).
+		/// Shared with tools/meshcheck.
+		/// </summary>
+		internal static bool Sidewalk(Network.Road road, int i, int side)
+		{
+			if (road.Kind != RoadKind.Street && road.Kind != RoadKind.Primary && road.Kind != RoadKind.Secondary)
+			{
+				return false;
+			}
+			Network.Point(road, i, 0.5, side, Network.Verge * 0.5, out double x, out double z, out double _);
+			Places.Place place = Places.At(x, z);
+			return place != null && place.Kind != PlaceKind.Hamlet && !Town.Taken(x, z, 4.0);
+		}
+
+		/// <summary>
+		/// A track's or path's ribbon over piece i: its middle on its pressed bed, a soft edge each side down to the drawn ground (which
+		/// is the bed there, flat well past it). Its texture runs across the whole width, edges included.
+		/// </summary>
+		private static void Ribbon(Mesher m, Network.Road road, int i, TerrainGrid terrain)
+		{
+			int material = road.Kind == RoadKind.Path ? PathMaterial : TrackMaterial;
+			double edge = Network.EdgeOf(road.Kind);
+			float across = (float)(road.Half + edge), inner = (float)(edge / (2.0 * across));
+			float va = V(road, i, 0.0), vb = V(road, i, 1.0);
+			Vector3 la = m.At(road, i, 0.0, 1, 0.0), lb = m.At(road, i, 1.0, 1, 0.0);
+			Vector3 ra = m.At(road, i, 0.0, -1, 0.0), rb = m.At(road, i, 1.0, -1, 0.0);
+			m.Quad(material, la, lb, ra, rb, new Vector2(inner, va), new Vector2(inner, vb), new Vector2(1f - inner, va), new Vector2(1f - inner, vb));
+			for (int side = -1; side <= 1; side += 2)
+			{
+				Vector3 ia = side > 0 ? la : ra, ib = side > 0 ? lb : rb;
+				Vector3 oa = Ground(m, road, i, 0.0, side, edge, terrain), ob = Ground(m, road, i, 1.0, side, edge, terrain);
+				float u = side > 0 ? 0f : 1f;
+				m.Quad(material, ia, ib, oa, ob, new Vector2(side > 0 ? inner : 1f - inner, va), new Vector2(side > 0 ? inner : 1f - inner, vb), new Vector2(u, va), new Vector2(u, vb));
+			}
+		}
+
+		/// <summary>The point <paramref name="beyond"/> past a road's edge at fraction t of piece i, just over the drawn ground.</summary>
+		private static Vector3 Ground(Mesher m, Network.Road road, int i, double t, int side, double beyond, TerrainGrid terrain)
+		{
+			Network.Point(road, i, t, side, beyond, out double x, out double z, out double _);
+			return new Vector3((float)(x - m.Ox), (float)(terrain.At(x, z) + VergeLift), (float)(z - m.Oz));
+		}
+
+		/// <summary>
+		/// A sidewalk on one side over fractions a to b of piece i: flat from the road's edge, at its surface's height, to
+		/// <see cref="Network.Verge"/> beyond it, then a kerb down under the ground (where the ground there is higher, it lies on it).
+		/// None where it would lie on another road.
+		/// </summary>
+		private static void Pavement(Mesher m, Network.Road road, int r, int i, double a, double b, int side, TerrainGrid terrain)
+		{
+			PavementSection(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 oa, out Vector3 ka, out double xa, out double za);
+			PavementSection(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 ob, out Vector3 kb, out double xb, out double zb);
+			if (Network.OnOtherPaving(xa, za, r) || Network.OnOtherPaving(xb, zb, r))
+			{
+				return;
+			}
+			float va = (float)((road.S[i] * (1.0 - a) + road.S[i + 1] * a) / 4.0), vb = (float)((road.S[i] * (1.0 - b) + road.S[i + 1] * b) / 4.0);
+			m.Quad(0, ia, ib, oa, ob, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+			m.Quad(0, oa, ob, ka, kb, new Vector2(0.9f, va), new Vector2(0.9f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+		}
+
+		/// <summary>
+		/// A sidewalk's cross-section at fraction t of piece i: its inner edge (the road's edge), its back edge and the foot of its kerb,
+		/// relative to the mesher's corner, and the back edge's world position. Shared with tools/meshcheck.
+		/// </summary>
+		internal static void PavementSection(Mesher m, Network.Road road, int i, double t, int side, TerrainGrid terrain, out Vector3 inner, out Vector3 back, out Vector3 foot, out double wx, out double wz)
+		{
+			inner = m.At(road, i, t, side, 0.0);
+			Network.Point(road, i, t, side, Network.Verge, out wx, out wz, out double _);
+			Network.Point(road, i, t, side, Network.Verge + KerbOut, out double fx, out double fz, out double _);
+			double ground = terrain.At(wx, wz);
+			double y = Math.Max(inner.y - 0.02, ground + VergeLift);
+			back = new Vector3((float)(wx - m.Ox), (float)y, (float)(wz - m.Oz));
+			foot = new Vector3((float)(fx - m.Ox), (float)Math.Min(y, terrain.At(fx, fz) - 0.25), (float)(fz - m.Oz));
 		}
 
 		/// <summary>Whether piece i is within <see cref="Fine"/> of a cut, where the mouth flares.</summary>
@@ -393,6 +493,68 @@ namespace HalfGripOpenWorld
 				Make(shader, Lane(), "OpenWorld Lane"),
 				Make(shader, Blank(8, 8, new Color(0.58f, 0.57f, 0.54f), true), "OpenWorld Concrete"),
 			};
+		}
+
+		/// <summary>
+		/// The unpaved ribbons' materials, in submesh order, at 4 pixels a unit across and 2 along (the ground's texture is a pixel to 2
+		/// units, far too coarse for ruts): a farm track (grass at its soft edges, two dirt ruts, a grass strip between them) and a
+		/// footpath (pale gravel, grass at its edges).
+		/// </summary>
+		internal static Material[] TrackMaterials(Shader shader)
+		{
+			Color grass = new Color(0.40f, 0.52f, 0.28f), dirt = new Color(0.50f, 0.40f, 0.29f), rut = new Color(0.42f, 0.33f, 0.24f), gravel = new Color(0.66f, 0.62f, 0.54f);
+			double trackAcross = Network.HalfOf(RoadKind.Track) + Network.EdgeOf(RoadKind.Track), pathAcross = Network.HalfOf(RoadKind.Path) + Network.EdgeOf(RoadKind.Path);
+			Texture2D track = Unpaved((int)(trackAcross * 8.0), Network.EdgeOf(RoadKind.Track) / (2.0 * trackAcross), grass, (double u) =>
+			{
+				// From the middle out, as a share of the ribbon's half width: grass strip, rut, dirt.
+				double d = Math.Abs(u - 0.5) * 2.0 * trackAcross / Network.HalfOf(RoadKind.Track);
+				return d < 0.22 ? grass * 0.92f : d < 0.64 ? rut : dirt;
+			});
+			Texture2D path = Unpaved((int)(pathAcross * 8.0), Network.EdgeOf(RoadKind.Path) / (2.0 * pathAcross), grass, (double u) => gravel);
+			return new[] { Make(shader, track, "OpenWorld Farm Track"), Make(shader, path, "OpenWorld Footpath") };
+		}
+
+		/// <summary>
+		/// An unpaved ribbon's texture, <paramref name="w"/> pixels across and 80 along (one repeat, 40 units): the surface from
+		/// <paramref name="surface"/> (by share across), speckled, fading into grass over the edges (<paramref name="edge"/> of the width
+		/// each side), raggedly.
+		/// </summary>
+		private static Texture2D Unpaved(int w, double edge, Color grass, Func<double, Color> surface)
+		{
+			Texture2D t = Blank(w, (int)TextureLength * 2, grass, false);
+			for (int y = 0; y < t.height; y++)
+			{
+				for (int x = 0; x < w; x++)
+				{
+					double u = (x + 0.5) / w;
+					ulong h = Noise.Mix((ulong)(y * w + x) * 0x9E3779B97F4A7C15UL + 23UL);
+					double from = Math.Min(u, 1.0 - u);
+					// The surface reaches into the edge by a ragged amount, so the edge is not a straight line.
+					double reach = edge * (1.0 - 0.6 * ((Noise.Mix((ulong)(y / 2) * 0x632BE59BUL + (u < 0.5 ? 1UL : 2UL)) >> 61) / 7.0));
+					Color c = from < reach ? grass : surface(u);
+					float grain = ((int)(h >> 61) - 3.5f) * 0.02f;
+					t.SetPixel(x, y, new Color(c.r + grain, c.g + grain, c.b + grain, 1f));
+				}
+			}
+			t.Apply();
+			return t;
+		}
+
+		/// <summary>The sidewalks' material: a kerb stone at the road's edge, then 4-unit paving slabs, at 4 pixels a unit.</summary>
+		internal static Material SidewalkMaterial(Shader shader)
+		{
+			Texture2D t = new Texture2D(16, 16, TextureFormat.RGBA32, true) { filterMode = FilterMode.Point, wrapModeU = TextureWrapMode.Clamp, wrapModeV = TextureWrapMode.Repeat, hideFlags = HideFlags.HideAndDontSave };
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					float grain = ((int)(Noise.Mix((ulong)(y * 16 + x) + 77UL) >> 61) - 3.5f) * 0.012f;
+					Color c = x < 2 ? new Color(0.74f, 0.73f, 0.70f) : x == 2 || y == 0 || x == 15 ? new Color(0.50f, 0.49f, 0.47f) : new Color(0.62f, 0.61f, 0.58f);
+					t.SetPixel(x, y, new Color(c.r + grain, c.g + grain, c.b + grain, 1f));
+				}
+			}
+			t.Apply(true);
+			return Make(shader, t, "OpenWorld Sidewalk");
 		}
 
 		/// <summary>

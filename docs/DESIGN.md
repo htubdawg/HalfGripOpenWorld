@@ -111,8 +111,16 @@ drainage; and central place theory and rank-size for settlements.
      road) are main roads (28 wide, 7%), the rest minor (24, 9%);
    - streets grown in each town and village (below);
    - a lane (15 wide, single track, 11%) from each farm to the nearest road, and some between neighbouring farms;
-   - farm tracks (10 wide, dirt, 14%) branching off lanes and minor roads: no mesh, a shallow bed (0.3) pressed into the ground with
-     soft edges, painted on the ground texture (two tyre ruts, a grass strip), with dirt grip looked up from the texture.
+   - farm tracks (10 wide, dirt, 14%) branching off lanes and minor roads, and footpaths (5 wide, gravel, 18%) walked on from the
+     dead ends of town and village streets (most of them) until they meet a road or track or have gone 250 to 700: a shallow bed
+     (0.3) pressed into the ground, flat 3 past their soft edges (2, 1.5) so none of the ground's 5-unit triangles rises into them
+     (where two beds overlap the lowest is taken), and a ribbon of their own 0.15 over it (a path's 0.02 lower, so one ending on a
+     track does not flicker) with a fine texture (4 pixels a unit across: two tyre ruts and a grass strip; gravel), soft edges down
+     to the ground, and dirt grip. They meet roads under the road's surface, so they need no junction cuts. (Until 0.6.0 tracks
+     were painted into the ground texture, a pixel to 2 units: too blocky.)
+   - paved roads in towns and villages (streets, main roads) have a sidewalk instead of the gravel verge: flat at the road's edge
+     height, 4 wide (kerb stone, then slabs), its back on a kerb down under the ground; none in front of a lot. Terraces stand
+     behind it.
 
    Each road is routed by A* (Dijkstra to reach the nearest road) on a 100-unit grid of the softened land. A step costs its length x
    (1 + steepness x (grade / soft)^2) with the class's own soft grade and steepness; water and the walls are closed; a river crossing
