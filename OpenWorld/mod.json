@@ -1,7 +1,7 @@
 {
 	"id": "openworld",
 	"name": "Open World",
-	"version": "0.4.5",
+	"version": "0.4.6",
 	"author": "htubdawg",
 	"description": "Free roam in a 32 km (20 mile) square of country generated from a fixed seed the way real country comes about: rivers and lakes, a market town, villages and farms where people would settle, a road network grown in order of importance, houses along the streets, farms, woods of the Forest's pines, grass and fields. Built in the Tokyo scene; the weather is drawn each race. A floating origin keeps the physics precise anywhere. Works in Multiplayer rooms with the Multiplayer mod as it is.",
 	"gameVersion": "0.418"

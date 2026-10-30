@@ -34,8 +34,8 @@ namespace HalfGripOpenWorld
 
 		internal static Streamer Instance;
 
-		/// <summary>Pixels along a side of a tile's land use: about 4 units each, the game's own chunky pixel-art scale.</summary>
-		private const int Pixels = 64;
+		/// <summary>Pixels along a side of a tile's land use (and its map picture): about 4 units each, the game's own chunky pixel-art scale.</summary>
+		internal const int Pixels = 64;
 
 		/// <summary>
 		/// Pixels along a side of a tile's ground texture: twice the land use's, so a farm track's tyre ruts and grass strip (2 units
@@ -68,6 +68,9 @@ namespace HalfGripOpenWorld
 		private readonly ConcurrentQueue<Heights> done = new ConcurrentQueue<Heights>();
 		private readonly List<long> wanted = new List<long>();
 
+		/// <summary>The map picture of each loaded tile, for <see cref="MapView"/>: added and dropped with the tile.</summary>
+		private readonly Dictionary<long, Color32[]> maps = new Dictionary<long, Color32[]>();
+
 		private float buildMs;
 		private int built;
 
@@ -78,6 +81,8 @@ namespace HalfGripOpenWorld
 			internal int Tz;
 			internal float[] H;
 			internal Color32[] Ground;
+			/// <summary>The map picture, for <see cref="MapView"/>.</summary>
+			internal Color32[] Map;
 			/// <summary>Per ground texture pixel: on a farm track (dirt grip).</summary>
 			internal bool[] Dirt;
 			internal Buildings.Data Buildings;
@@ -213,6 +218,10 @@ namespace HalfGripOpenWorld
 				{
 					Destroy(tiles[key]);
 					tiles.Remove(key);
+					if (maps.Remove(key))
+					{
+						MapView.Changed();
+					}
 					foliage?.Remove(key);
 				}
 			}
@@ -295,7 +304,8 @@ namespace HalfGripOpenWorld
 					h[j * side + i] = (float)WorldGen.Height(x0 + i * step, z0 + j * step);
 				}
 			}
-			Color32[] colours = Colours(tx, tz, h, out Cover[] covers, out bool[] dirt);
+			Color32[] colours = Colours(tx, tz, h, out Cover[] covers, out bool[] dirt, out Color32[] map, out float[] ground);
+			MapPicture(tx, tz, map, ground);
 			Buildings.Data buildings = HalfGripOpenWorld.Buildings.Build(tx, tz, TileSize);
 			Foliage.Scatter(tx, tz, TileSize, Pixels, covers, Network.Clearance(tx, tz, TileSize, Pixels), h, side, (float)step, buildings.Footprints, out Plant[] trees, out Plant[] grass);
 			RoadMeshData road = RoadMesh.Build(tx, tz, TileSize, new TerrainGrid(x0, z0, side, h), out RoadMeshData verges);
@@ -305,6 +315,7 @@ namespace HalfGripOpenWorld
 				Tz = tz,
 				H = h,
 				Ground = colours,
+				Map = map,
 				Dirt = dirt,
 				Buildings = buildings,
 				Trees = trees,
@@ -319,11 +330,14 @@ namespace HalfGripOpenWorld
 		/// The tile's ground texture: each land-use pixel's colour from <see cref="LandUse"/>, at the pixel's centre, with the height and
 		/// slope taken from the tile's own height samples (so the colours follow exactly the ground that is drawn), drawn as 2 by 2 fine
 		/// pixels; then the farm tracks painted over it at the fine pixels (<see cref="LandUse.Track"/>), which are marked in
-		/// <paramref name="dirt"/> for their grip.
+		/// <paramref name="dirt"/> for their grip. The land use is also given at its own pixels in <paramref name="map"/>, with each
+		/// pixel's ground height from sea level in <paramref name="ground"/>, to start the tile's map picture from.
 		/// </summary>
-		private static Color32[] Colours(int tx, int tz, float[] h, out Cover[] covers, out bool[] dirt)
+		private static Color32[] Colours(int tx, int tz, float[] h, out Cover[] covers, out bool[] dirt, out Color32[] map, out float[] ground)
 		{
 			covers = new Cover[Pixels * Pixels];
+			map = new Color32[Pixels * Pixels];
+			ground = new float[Pixels * Pixels];
 			int side = Quads + 3;
 			float step = TileSize / Quads;
 			float pixel = TileSize / Pixels;
@@ -346,6 +360,8 @@ namespace HalfGripOpenWorld
 					LandUse.Rgb rgb = LandUse.Colour(cover, crop, wx, wz);
 					covers[pj * Pixels + pi] = cover;
 					Color32 colour = new Color32(rgb.R, rgb.G, rgb.B, 255);
+					map[pj * Pixels + pi] = colour;
+					ground[pj * Pixels + pi] = height - (float)lift;
 					int f = pj * 2 * Fine + pi * 2;
 					colours[f] = colour;
 					colours[f + 1] = colour;
@@ -365,6 +381,89 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return colours;
+		}
+
+		/// <summary>Map colours of water and of the roads by class (<see cref="RoadKind"/>), those of the preview's map (docs/world.png).</summary>
+		private static readonly Color32 MapWater = new Color32(46, 82, 128, 255);
+		private static readonly Color32[] MapRoads =
+		{
+			new Color32(225, 110, 40, 255),   // trunk
+			new Color32(235, 190, 60, 255),   // primary
+			new Color32(240, 225, 130, 255),  // secondary
+			new Color32(70, 70, 74, 255),     // street
+			new Color32(238, 236, 228, 255),  // lane
+			new Color32(150, 110, 70, 255),   // track
+		};
+
+		/// <summary>
+		/// Paints the water and the roads onto a tile's land use (<paramref name="map"/>, from <see cref="Colours"/>), making its map
+		/// picture for <see cref="MapView"/>. Only looks, for other mods' maps: nothing in the world or its ground texture depends on it.
+		/// Every road is at least a pixel either side of its line, so it is still there when a minimap shrinks the picture; the bigger
+		/// classes are painted last, over the smaller ones they meet.
+		/// </summary>
+		private static void MapPicture(int tx, int tz, Color32[] map, float[] ground)
+		{
+			double ox = tx * (double)TileSize, oz = tz * (double)TileSize;
+			double pixel = TileSize / (double)Pixels;
+			for (int k = 0; k < map.Length; k++)
+			{
+				if (Rivers.Water(ox + (k % Pixels + 0.5) * pixel, oz + (k / Pixels + 0.5) * pixel, out double level) && level > ground[k])
+				{
+					map[k] = MapWater;
+				}
+			}
+			// Pieces are listed by the tile their middle is in, so a road from a neighbouring tile may reach into this one.
+			List<long> pieces = new List<long>();
+			for (int j = tz - 1; j <= tz + 1; j++)
+			{
+				for (int i = tx - 1; i <= tx + 1; i++)
+				{
+					List<long> list = Network.PiecesIn(i, j, TileSize);
+					if (list != null)
+					{
+						pieces.AddRange(list);
+					}
+				}
+			}
+			for (int kind = MapRoads.Length - 1; kind >= 0; kind--)
+			{
+				foreach (long piece in pieces)
+				{
+					Network.Road road = Network.Roads[(int)(piece >> 32)];
+					if ((int)road.Kind != kind)
+					{
+						continue;
+					}
+					int k = (int)(uint)piece;
+					double reach = Math.Max(road.Half, pixel);
+					int p0 = Math.Max(0, (int)Math.Floor((Math.Min(road.X[k], road.X[k + 1]) - reach - ox) / pixel));
+					int p1 = Math.Min(Pixels - 1, (int)Math.Floor((Math.Max(road.X[k], road.X[k + 1]) + reach - ox) / pixel));
+					int q0 = Math.Max(0, (int)Math.Floor((Math.Min(road.Z[k], road.Z[k + 1]) - reach - oz) / pixel));
+					int q1 = Math.Min(Pixels - 1, (int)Math.Floor((Math.Max(road.Z[k], road.Z[k + 1]) + reach - oz) / pixel));
+					for (int q = q0; q <= q1; q++)
+					{
+						for (int p = p0; p <= p1; p++)
+						{
+							Lines.Project(road.X, road.Z, k, ox + (p + 0.5) * pixel, oz + (q + 0.5) * pixel, out double _, out double d);
+							if (d <= reach)
+							{
+								map[q * Pixels + p] = MapRoads[kind];
+							}
+						}
+					}
+				}
+			}
+		}
+
+		/// <summary>Copies a loaded tile's map picture into <paramref name="into"/>; false if the tile is not loaded. Main thread only.</summary>
+		internal bool TryGetMap(int tx, int tz, Color32[] into)
+		{
+			if (into == null || into.Length < Pixels * Pixels || !maps.TryGetValue(Key(tx, tz), out Color32[] map))
+			{
+				return false;
+			}
+			Array.Copy(map, into, map.Length);
+			return true;
 		}
 
 		private void Make(Heights data)
@@ -452,6 +551,11 @@ namespace HalfGripOpenWorld
 				}
 			}
 			tiles[Key(data.Tx, data.Tz)] = go;
+			if (data.Map != null)
+			{
+				maps[Key(data.Tx, data.Tz)] = data.Map;
+				MapView.Changed();
+			}
 			foliage?.Add(Key(data.Tx, data.Tz), go.transform, data.Tx, data.Tz, data.Trees, data.Grass);
 
 			buildMs += (Time.realtimeSinceStartup - started) * 1000f;
@@ -579,6 +683,11 @@ namespace HalfGripOpenWorld
 				Instance = null;
 			}
 			tiles.Clear();
+			if (maps.Count > 0)
+			{
+				maps.Clear();
+				MapView.Changed();
+			}
 		}
 
 		private static bool InWorld(int tx, int tz)

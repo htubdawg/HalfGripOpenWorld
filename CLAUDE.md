@@ -35,7 +35,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Landmarks.cs` | Tokyo's tall buildings and temples copied into towns and villages (to be removed: see `docs/PLAN.md`) |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
-| `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay |
+| `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
+| `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
 | `GameCaches.cs` | World positions the game keeps in fields, moved on each shift |
 | `MultiplayerLink.cs` | Positions over the network in world coordinates; stand-in cars moved on each shift |
@@ -56,6 +57,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - Match the style: tabs, `///` summaries that explain *why*, `Mod.Info(...)` for verbose logging, `Mod.Log.LogWarning` and a try/catch
   around risky scene work.
 - Do not invent an `ObjectiveKind` (a saved run with one is deleted).
+- `HalfGripOpenWorld.MapView` is a public API that other mods (MiniMap) read by reflection: never rename it or change its members'
+  names or signatures. It is left out of `tools/meshcheck` (it needs `Streamer`).
 
 ## Checking changes
 
