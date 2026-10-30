@@ -57,6 +57,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Villages' and farms' edges keep this far outside the circuit's levelled ground (beyond its banks).</summary>
 		private const double CircuitClearance = 300.0;
 
+		/// <summary>Farms keep this far from the rally stage (and out of its loop).</summary>
+		private const double RallyClearance = 400.0;
+
 		internal static void Build(Rng rng)
 		{
 			double[] score = new double[N * N];
@@ -78,6 +81,8 @@ namespace HalfGripOpenWorld
 			// The circuit, on open country clear of the towns, before the villages and farms (which keep off it).
 			Circuit.Build();
 			Take(rng, order, score, PlaceKind.Village, VillageSpacing, best * 0.3, VillageNames.Length, VillageNames);
+			// The rally stage, in the upland woods clear of the towns and villages, before the farms (which keep out of it).
+			Rally.Build();
 			Take(rng, Order(farm), farm, PlaceKind.Hamlet, HamletSpacing, bestFarm * 0.25, 120, null);
 			Index();
 		}
@@ -139,7 +144,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 				}
-				if (!clear || Score(x, z, false) <= 0.0 || !Circuit.Clear(x, z, CircuitClearance + (kind == PlaceKind.Village ? 500.0 : 120.0)))
+				if (!clear || Score(x, z, false) <= 0.0 || !Circuit.Clear(x, z, CircuitClearance + (kind == PlaceKind.Village ? 500.0 : 120.0)) || !Rally.Clear(x, z, RallyClearance))
 				{
 					continue;
 				}

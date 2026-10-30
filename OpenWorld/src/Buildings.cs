@@ -21,10 +21,12 @@ namespace HalfGripOpenWorld
 	{
 		/// <summary>
 		/// Materials, in submesh order: five walls, three pitched roofs, a flat roof; glass curtain wall, shopfronts, metal cladding,
-		/// signs, a filling station's canopy; the lots' asphalt, parking bays and concrete; the circuit's garage doors and stand seats.
+		/// signs, a filling station's canopy; the lots' asphalt, parking bays and concrete; the circuit's garage doors and stand seats;
+		/// the rally stage's gravel yard, straw bales and arch banners.
 		/// </summary>
 		internal const int Brick = 0, Render = 1, White = 2, Stone = 3, Wood = 4, RedTile = 5, Slate = 6, Metal = 7, Flat = 8;
-		internal const int Glass = 9, Shopfront = 10, Cladding = 11, Sign = 12, Canopy = 13, Asphalt = 14, Bays = 15, Concrete = 16, GarageDoor = 17, Seats = 18, Count = 19;
+		internal const int Glass = 9, Shopfront = 10, Cladding = 11, Sign = 12, Canopy = 13, Asphalt = 14, Bays = 15, Concrete = 16, GarageDoor = 17, Seats = 18;
+		internal const int Gravel = 19, Straw = 20, Banner = 21, Count = 22;
 
 		/// <summary>No roof (a box drawn with walls only).</summary>
 		private const int None = -1;
@@ -98,6 +100,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			CircuitParts(b, data, tx, tz, tileSize);
+			RallyParts(b, data, tx, tz, tileSize);
 			data.Mesh = b.Done();
 			return data;
 		}
@@ -241,6 +244,77 @@ namespace HalfGripOpenWorld
 				}
 			}
 			y = (float)(low + Network.Lift) - 0.3f;
+			extra = (float)(high - low) + 0.3f;
+		}
+
+		// ---- the rally stage ---------------------------------------------------------------------------------------
+
+		/// <summary>
+		/// The rally stage's straw bales on the outside of its tightest corners and the arches over its start and finish lines
+		/// (<see cref="Rally"/>), each bale and arch built by the tile its middle is in, standing on the drawn ground.
+		/// </summary>
+		private static void RallyParts(Builder b, Data data, int tx, int tz, float tileSize)
+		{
+			if (!Rally.Exists)
+			{
+				return;
+			}
+			foreach (Rally.Bales row in Rally.Corners)
+			{
+				for (double s = row.S0; s <= row.S1 + 0.01; s += Rally.BaleLength)
+				{
+					Rally.Bale(row, s, out double x, out double z, out double dx, out double dz);
+					if (Math.Floor(x / tileSize) != tx || Math.Floor(z / tileSize) != tz)
+					{
+						continue;
+					}
+					// Laid end to end with no gap, so a car that runs wide meets a wall of straw, not posts.
+					GroundFooting(x, z, dx, dz, Rally.BaleLength, Rally.BaleDepth, out float y, out float extra);
+					b.Solid(x, z, y, dx, dz, (float)Rally.BaleLength, (float)Rally.BaleDepth, Rally.BaleHeight + extra, Straw);
+				}
+			}
+			// The arches: a post each side, a banner across, facing the way the cars come (the finish arch the cars arriving, the start
+			// arch the cars waiting on the line).
+			foreach (double s in new[] { Rally.FinishS, Rally.StartS })
+			{
+				Rally.Post(s, 1, out double lx, out double lz);
+				Rally.Post(s, -1, out double rx, out double rz);
+				double mx = (lx + rx) * 0.5, mz = (lz + rz) * 0.5;
+				if (Math.Floor(mx / tileSize) != tx || Math.Floor(mz / tileSize) != tz)
+				{
+					continue;
+				}
+				float top = float.MinValue;
+				foreach ((double px, double pz) in new[] { (lx, lz), (rx, rz) })
+				{
+					GroundFooting(px, pz, Rally.DirX, Rally.DirZ, 1.6, 1.6, out float y, out float extra);
+					b.Solid(px, pz, y, Rally.DirX, Rally.DirZ, 1.6f, 1.6f, 24f + extra, Metal);
+					top = Math.Max(top, y + extra + 24f);
+				}
+				double width = Math.Sqrt((lx - rx) * (lx - rx) + (lz - rz) * (lz - rz));
+				// Along across the stage (to its left), so the banner's faces look up and down the straight.
+				b.Solid(mx, mz, top - 7f, -Rally.DirZ, Rally.DirX, (float)(width + 1.6), 1.0f, 6f, Banner);
+				data.Footprints.Add((mx, mz, 1.0));
+			}
+		}
+
+		/// <summary>
+		/// Where a box w along (dx, dz) by d across, centred at (x, z), stands on the drawn ground: its base (a scene height) a little under
+		/// its lowest corner or middle, and how much higher the highest is (added to its walls).
+		/// </summary>
+		private static void GroundFooting(double x, double z, double dx, double dz, double w, double d, out float y, out float extra)
+		{
+			double low = WorldGen.Height(x, z), high = low;
+			for (int a = -1; a <= 1; a += 2)
+			{
+				for (int c = -1; c <= 1; c += 2)
+				{
+					double h = WorldGen.Height(x + dx * w * 0.5 * a - dz * d * 0.5 * c, z + dz * w * 0.5 * a + dx * d * 0.5 * c);
+					low = Math.Min(low, h);
+					high = Math.Max(high, h);
+				}
+			}
+			y = (float)low - 0.3f;
 			extra = (float)(high - low) + 0.3f;
 		}
 
@@ -525,6 +599,25 @@ namespace HalfGripOpenWorld
 					Surface(b, lot, -half, half, 0.0, bv, Concrete);
 					Block(b, lot, 0.0, bv + bd * 0.5, bw, bd, 16f, Cladding, Metal);
 					break;
+				case LotKind.Service:
+				{
+					// Gravel to the back; along the back four teams' vans, each with an awning on posts beside it to work under.
+					Surface(b, lot, -half, half, 0.0, lot.D, Gravel);
+					for (double u = -half + 12.0; u <= half - 35.9; u += (lot.W - 48.0) / 3.0)
+					{
+						Block(b, lot, u, lot.D - 15.0, 10.0, 24.0, 11f, Town.Unit(lot.Hash, (int)(u + 500.0)) < 0.5 ? White : Metal, Flat);
+						Block(b, lot, u + 15.0, lot.D - 28.0, 18.0, 26.0, 1.2f, Canopy, Flat, -1, 0f, -1, 9f);
+						foreach ((double cu, double cv) in new[] { (6.5, -40.0), (23.5, -40.0), (6.5, -16.0), (23.5, -16.0) })
+						{
+							Block(b, lot, u + cu, lot.D + cv, 0.6, 0.6, 9.2f, Metal, Flat);
+						}
+						Town.World(lot, u, lot.D - 15.0, out double vx, out double vz);
+						data.Footprints.Add((vx, vz, 13.0));
+					}
+					b.Apron(lot, Gravel);
+					b.Kerb(lot);
+					return;
+				}
 				default:
 				{
 					Surface(b, lot, -half, half, 0.0, bv, Concrete);
@@ -917,6 +1010,9 @@ namespace HalfGripOpenWorld
 			m[Concrete] = Make(shader, Paved(new Color(0.62f, 0.61f, 0.58f), true), "Concrete");
 			m[GarageDoor] = Make(shader, GarageDoors(), "Garage Door");
 			m[Seats] = Make(shader, SeatRows(), "Stand Seats");
+			m[Gravel] = Make(shader, GravelTexture(), "Gravel");
+			m[Straw] = Make(shader, StrawTexture(), "Straw");
+			m[Banner] = Make(shader, BannerTexture(), "Banner");
 			return m;
 		}
 
@@ -1205,6 +1301,73 @@ namespace HalfGripOpenWorld
 				}
 			}
 			t.Apply(true);
+			return t;
+		}
+
+		/// <summary>8 by 8 units of loose gravel at 4 pixels a unit: speckled stones, a few darker.</summary>
+		private static Texture2D GravelTexture()
+		{
+			Texture2D t = New(32, 32, true);
+			for (int y = 0; y < 32; y++)
+			{
+				for (int x = 0; x < 32; x++)
+				{
+					float g = Grain(x, y, 11) * 4f;
+					bool stone = (Noise.Mix((ulong)(y * 32 + x) + 0x6A11UL) & 7) == 0;
+					Color c = new Color(0.62f + g, 0.56f + g, 0.45f + g) * (stone ? 0.8f : 1f);
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply(true);
+			return t;
+		}
+
+		/// <summary>A straw bale's side, a bale (8 units) across and a storey up: straw in streaks along it, two strings round it.</summary>
+		private static Texture2D StrawTexture()
+		{
+			Texture2D t = New(16, 20);
+			for (int y = 0; y < 20; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					float g = ((int)(Noise.Mix((ulong)(y * 7919 + x / 3) + 0x57AAUL) >> 61) - 3.5f) * 0.03f;
+					Color c = x == 4 || x == 11 ? new Color(0.55f, 0.45f, 0.22f) : new Color(0.84f + g, 0.72f + g, 0.38f + g);
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply();
+			return t;
+		}
+
+		/// <summary>An arch's banner, 8 units across and a storey up: chequered edges, a red band with white lettering between.</summary>
+		private static Texture2D BannerTexture()
+		{
+			Texture2D t = New(16, 20);
+			for (int y = 0; y < 20; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					Color c;
+					if (y < 2 || (y >= 10 && y < 12))
+					{
+						c = ((x / 2 + y) & 1) == 0 ? new Color(0.1f, 0.1f, 0.1f) : new Color(0.95f, 0.95f, 0.95f);
+					}
+					else if (y < 10)
+					{
+						bool text = y >= 4 && y <= 7 && x % 4 != 3 && (Noise.Mix((ulong)(y * 16 + x) + 0xBA77UL) & 3) != 0;
+						c = text ? new Color(0.97f, 0.96f, 0.92f) : Brands[0];
+					}
+					else
+					{
+						c = new Color(0.12f, 0.12f, 0.14f);
+					}
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply();
 			return t;
 		}
 

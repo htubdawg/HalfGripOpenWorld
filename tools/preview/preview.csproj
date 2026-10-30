@@ -20,5 +20,6 @@
     <Compile Include="../../OpenWorld/src/Town.cs" />
     <Compile Include="../../OpenWorld/src/Parks.cs" />
     <Compile Include="../../OpenWorld/src/Circuit.cs" />
+    <Compile Include="../../OpenWorld/src/Rally.cs" />
   </ItemGroup>
 </Project>
