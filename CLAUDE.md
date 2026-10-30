@@ -31,8 +31,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the ground's road beds |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge and water meshes and their pixel-art textures (farm tracks are painted on the ground) |
-| `Buildings.cs` | Per-tile houses along streets and farm buildings (one mesh, one collider), their materials |
-| `Landmarks.cs` | Tokyo's tall buildings and temples copied into towns and villages (to be removed: see `docs/PLAN.md`) |
+| `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, and the lots' buildings and surfaces (one mesh, one collider), their materials |
+| `Town.cs` | Lots: the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |

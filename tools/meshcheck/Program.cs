@@ -15,6 +15,8 @@ using UnityEngine;
 //   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
 //   8. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
 //   9. faces:   road, verge and water meshes with no upside-down flat faces, under 65000 vertices
+//  10. lots:    car parks, yards and forecourts: the drawn ground just under their surface (0.02 to 0.3), their front at the foot of
+//               the road's verge (within 0.25), clear of every other road; a retail park and businesses laid out
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -34,6 +36,7 @@ internal static class Program
 		ok &= Tracks();
 		ok &= Bases();
 		ok &= Faces();
+		ok &= Lots();
 		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
 		return ok ? 0 : 1;
 	}
@@ -535,5 +538,56 @@ internal static class Program
 		}
 		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge and water meshes; most vertices in one mesh " + most);
 		return down == 0 && most < 65000;
+	}
+
+	private static bool Lots()
+	{
+		int samples = 0, under = 0, over = 0, front = 0, roads = 0, retail = 0;
+		double worstUnder = 0.0, worstOver = 0.0, worstFront = 0.0;
+		foreach (Town.Lot lot in Town.Lots)
+		{
+			retail += lot.Kind == LotKind.Retail ? 1 : 0;
+			for (double v = -5.5; v < lot.D; v += 2.0)
+			{
+				for (double u = -lot.W * 0.5 + 0.5; u < lot.W * 0.5; u += 2.0)
+				{
+					// The surface reaches forward to the verge's foot.
+					if (v < Town.Foot(lot, u) + 0.5)
+					{
+						continue;
+					}
+					Town.World(lot, u, v, out double x, out double z);
+					double gap = Town.Surface(lot, u) + Network.Lift - Mesh(x, z);
+					samples++;
+					if (gap < 0.02)
+					{
+						under++;
+						worstUnder = Math.Max(worstUnder, -gap);
+					}
+					else if (gap > 0.3)
+					{
+						over++;
+						worstOver = Math.Max(worstOver, gap);
+					}
+					if (v > 0.0 && !Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0))
+					{
+						roads++;
+					}
+				}
+			}
+			for (double u = -lot.W * 0.5 + 0.5; u < lot.W * 0.5; u += 2.0)
+			{
+				// The verge comes down to the ground's height at its foot (not the drawn triangles under it, which it hides).
+				Town.World(lot, u, Town.Foot(lot, u), out double x, out double z);
+				double step = Math.Abs(Town.Surface(lot, u) + Network.Lift - WorldGen.Height(x, z));
+				worstFront = Math.Max(worstFront, step);
+				if (step > 0.25)
+				{
+					front++;
+				}
+			}
+		}
+		Console.WriteLine("lots:    " + Town.Lots.Count + " lots (" + retail + " retail park); of " + samples + " surface points " + under + " with the ground through them (worst " + worstUnder.ToString("0.00") + "), " + over + " floating (worst " + worstOver.ToString("0.00") + "), " + roads + " on or by another road; " + front + " front points off the verge's foot (worst " + worstFront.ToString("0.00") + ")");
+		return retail == 1 && Town.Lots.Count > 10 && under == 0 && over == 0 && roads == 0 && front == 0;
 	}
 }

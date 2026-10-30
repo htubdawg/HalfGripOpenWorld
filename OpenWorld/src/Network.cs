@@ -317,6 +317,9 @@ namespace HalfGripOpenWorld
 			Abutments();
 			Index();
 			Lift = 0.5 - SpawnY;
+
+			// 6. The retail park and businesses on the main roads, now the roads are fixed.
+			Town.Build();
 		}
 
 		// ---- the edges ---------------------------------------------------------------------------------------------

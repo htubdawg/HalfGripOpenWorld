@@ -17,5 +17,6 @@
     <Compile Include="../../OpenWorld/src/Places.cs" />
     <Compile Include="../../OpenWorld/src/Network.cs" />
     <Compile Include="../../OpenWorld/src/LandUse.cs" />
+    <Compile Include="../../OpenWorld/src/Town.cs" />
   </ItemGroup>
 </Project>

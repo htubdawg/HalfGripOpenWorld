@@ -153,10 +153,23 @@ drainage; and central place theory and rank-size for settlements.
    every road and nearer its own road's edge than any other road's (so each road builds on its own side of a block and houses on
    different streets never overlap), out of the water, and on ground falling less than 6 across. Boxes with gable roofs (or flat, 4
    storeys up; pitched at about 48 degrees, so the near slope shows from the street) in five wall and four roof materials, pixel-art textures with a window to a bay and storey. A farmhouse, barn and shed
-   round each farm's yard. A tile's buildings are one mesh with one collider. Landmarks (`Landmarks`): one of each of Tokyo's tall
-   buildings, station buildings and temples is found under its decoration before that is hidden, measured, and copied with its
-   collider: a tall or station building on 4% of the plots in a town's middle (46 square, facing the road, if it fits), and a temple
-   near each village's middle (the first spot, ring by ring outwards, that fits off the roads).
+   round each farm's yard. A tile's buildings are one mesh with one collider. The main roads (primary and secondary) through a town's
+   core or a village's middle are its high street: terraces of at least 2 storeys with a shopfront (one of four colours, a sign band
+   over it) on the road side of the ground floor. In the main town's middle (within 0.16 of its radius) the plots are 52 apart and
+   take glass towers instead: 8 to 14 storeys (taller nearer the middle), in two or three stacked blocks each set back from the one
+   under it, plant rooms and now and then a mast on the roof. A stone church with a tower and spire near each village's middle (the
+   first spot, ring by ring outwards, that fits off the roads).
+   **Lots** (`Town`): laid out once with the roads, walking every main road through a town or village in 40-unit steps: the main
+   town's retail park (220 wide, 200 deep: a car park of two double rows of bays with a lamp-post island, a 170 by 66 building with a
+   glass front and a sign) on the first spot at its edge where it fits, then shops (a row of bays), workshops (a concrete yard) and
+   filling stations (a forecourt under a canopy, pumps, a kiosk) at the edges of towns (up to 8) and villages (up to 2). A lot fits
+   on a straight stretch of road (the road's line strays at most 6 across its front) that runs about straight in height (at most
+   0.3 off a straight grade, at most 7%), clear of every other road, out of the water, on ground within 5 (9 for the retail park) of
+   the road's height. Its surface is a mesh with its own fine textures (bay lines at 4 pixels a unit; painted into the 2-unit ground
+   texture they were blocks), level across and following the road's grade along it, 0.1 over the road's bed so it meets the foot of
+   the verge; the strip between its straight front and the verge's foot where the road bends away is part of it, and a kerb runs
+   down under the ground round it. The ground under a lot, its 6-unit pad and the verge in front is levelled 0.12 under the surface
+   and blends back over a bank round the sides and back; houses and trees keep off it.
 9. **Trees and grass** (`Foliage`): one try per ground pixel, with a chance by cover (woods 12%, hedges 6%, gardens 2.5%, the odd one
    in the open; grass on most lawn, meadow, pasture and moor, wheat in wheat fields), placed by hashing the pixel's position; none
    within 6 of a road's edge (a per-pixel clearance map rasterised from the road pieces) or on a building. Trees are the Forest's pines
@@ -190,14 +203,14 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 ## Assets
 
 Only one race scene is loaded at a time, plus the main menu (always loaded before a race; its objects can be kept alive, as the
-Highway mod does). The world is built in Tokyo, so it can use Tokyo's tall buildings, temples, arch, street lamps, barriers and sakura
-trees; the menu gives the Forest's pine trees, wooden fences, grass and wheat, and its pixel terrain textures. Anything else is made in
+Highway mod does). The world is built in Tokyo, so it can use Tokyo's arch, street lamps, barriers and sakura trees (its buildings were
+tried as landmarks and dropped: they did not fit the look); the menu gives the Forest's pine trees, wooden fences, grass and wheat, and its pixel terrain textures. Anything else is made in
 code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 ## Next steps
 
 1. **Signs and furniture:** place-name signs at the edges of places, direction signs at junctions, street lamps (Tokyo's), guardrails
    on the trunk road.
-2. **Landmarks:** a church or temple in each village's middle, Tokyo's tall buildings as a few landmarks in the town centre.
+2. **Town fabric:** see `docs/PLAN.md`.
 3. **Far view:** low-detail mountains and the town past the loaded tiles.
 4. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.
