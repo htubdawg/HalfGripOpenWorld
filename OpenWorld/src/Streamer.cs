@@ -37,13 +37,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Pixels along a side of a tile's land use (and its map picture): about 4 units each, the game's own chunky pixel-art scale.</summary>
 		internal const int Pixels = 64;
 
-		/// <summary>
-		/// Pixels along a side of a tile's ground texture: twice the land use's, so a farm track's tyre ruts and grass strip (2 units
-		/// each) can be painted on it. The land use is drawn in 2 by 2 blocks of these.
-		/// </summary>
-		private const int Fine = Pixels * 2;
-
-		/// <summary>Grip and rolling resistance of the farm tracks (loose dirt), as on the Highway mod's dirt roads.</summary>
+		/// <summary>Grip and rolling resistance of the farm tracks and footpaths (loose dirt and gravel), as on the Highway mod's dirt roads.</summary>
 		internal const float TrackGrip = 0.8f;
 		internal const float TrackDrag = 1.6f;
 
@@ -55,6 +49,8 @@ namespace HalfGripOpenWorld
 		private Material material;
 		private Material[] roadMaterials;
 		private Material vergeMaterial;
+		private Material sidewalkMaterial;
+		private Material[] trackMaterials;
 		private Material waterMaterial;
 		private Material[] buildingMaterials;
 		private Foliage foliage;
@@ -83,19 +79,21 @@ namespace HalfGripOpenWorld
 			internal Color32[] Ground;
 			/// <summary>The map picture, for <see cref="MapView"/>.</summary>
 			internal Color32[] Map;
-			/// <summary>Per ground texture pixel: on a farm track (dirt grip).</summary>
-			internal bool[] Dirt;
 			internal Buildings.Data Buildings;
 			internal Plant[] Trees;
 			internal Plant[] Grass;
 			internal RoadMeshData Road;
 			internal RoadMeshData Verges;
+			internal RoadMeshData Sidewalks;
+			internal RoadMeshData Tracks;
 			internal RoadMeshData Water;
 			internal string Error;
 		}
 
-		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material verges, Material water, int roadsLayer, Material[] buildings, Foliage plants)
+		internal void Setup(CarControllerNew car, Material ground, int groundLayer, Material[] roads, Material verges, Material sidewalks, Material[] tracks, Material water, int roadsLayer, Material[] buildings, Foliage plants)
 		{
+			sidewalkMaterial = sidewalks;
+			trackMaterials = tracks;
 			buildingMaterials = buildings;
 			foliage = plants;
 			Instance = this;
@@ -305,11 +303,11 @@ namespace HalfGripOpenWorld
 					h[j * side + i] = (float)WorldGen.Height(x0 + i * step, z0 + j * step);
 				}
 			}
-			Color32[] colours = Colours(tx, tz, h, out Cover[] covers, out bool[] dirt, out Color32[] map, out float[] ground);
+			Color32[] colours = Colours(tx, tz, h, out Cover[] covers, out Color32[] map, out float[] ground);
 			MapPicture(tx, tz, map, ground);
 			Buildings.Data buildings = HalfGripOpenWorld.Buildings.Build(tx, tz, TileSize);
 			Foliage.Scatter(tx, tz, TileSize, Pixels, covers, Network.Clearance(tx, tz, TileSize, Pixels), h, side, (float)step, buildings.Footprints, out Plant[] trees, out Plant[] grass);
-			RoadMeshData road = RoadMesh.Build(tx, tz, TileSize, new TerrainGrid(x0, z0, side, h), out RoadMeshData verges);
+			RoadMeshData road = RoadMesh.Build(tx, tz, TileSize, new TerrainGrid(x0, z0, side, h), out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
 			return new Heights
 			{
 				Tx = tx,
@@ -317,24 +315,25 @@ namespace HalfGripOpenWorld
 				H = h,
 				Ground = colours,
 				Map = map,
-				Dirt = dirt,
 				Buildings = buildings,
 				Trees = trees,
 				Grass = grass,
 				Road = road,
 				Verges = verges,
+				Sidewalks = sidewalks,
+				Tracks = tracks,
 				Water = WaterMesh.Build(tx, tz, TileSize),
 			};
 		}
 
 		/// <summary>
 		/// The tile's ground texture: each land-use pixel's colour from <see cref="LandUse"/>, at the pixel's centre, with the height and
-		/// slope taken from the tile's own height samples (so the colours follow exactly the ground that is drawn), drawn as 2 by 2 fine
-		/// pixels; then the farm tracks painted over it at the fine pixels (<see cref="LandUse.Track"/>), which are marked in
-		/// <paramref name="dirt"/> for their grip. The land use is also given at its own pixels in <paramref name="map"/>, with each
-		/// pixel's ground height from sea level in <paramref name="ground"/>, to start the tile's map picture from.
+		/// slope taken from the tile's own height samples (so the colours follow exactly the ground that is drawn). Nothing is painted
+		/// over it (tracks and paths are meshes of their own: at 4 units a pixel they were blocks). The land use is also given in
+		/// <paramref name="map"/>, with each pixel's ground height from sea level in <paramref name="ground"/>, to start the tile's map
+		/// picture from.
 		/// </summary>
-		private static Color32[] Colours(int tx, int tz, float[] h, out Cover[] covers, out bool[] dirt, out Color32[] map, out float[] ground)
+		private static Color32[] Colours(int tx, int tz, float[] h, out Cover[] covers, out Color32[] map, out float[] ground)
 		{
 			covers = new Cover[Pixels * Pixels];
 			map = new Color32[Pixels * Pixels];
@@ -343,7 +342,7 @@ namespace HalfGripOpenWorld
 			float step = TileSize / Quads;
 			float pixel = TileSize / Pixels;
 			double lift = Network.Lift;
-			Color32[] colours = new Color32[Fine * Fine];
+			Color32[] colours = new Color32[Pixels * Pixels];
 			for (int pj = 0; pj < Pixels; pj++)
 			{
 				for (int pi = 0; pi < Pixels; pi++)
@@ -363,22 +362,7 @@ namespace HalfGripOpenWorld
 					Color32 colour = new Color32(rgb.R, rgb.G, rgb.B, 255);
 					map[pj * Pixels + pi] = colour;
 					ground[pj * Pixels + pi] = height - (float)lift;
-					int f = pj * 2 * Fine + pi * 2;
-					colours[f] = colour;
-					colours[f + 1] = colour;
-					colours[f + Fine] = colour;
-					colours[f + Fine + 1] = colour;
-				}
-			}
-			dirt = new bool[Fine * Fine];
-			float[] track = Network.Clearance(tx, tz, TileSize, Fine, true);
-			float fine = TileSize / Fine;
-			for (int k = 0; k < track.Length; k++)
-			{
-				if (LandUse.Track(track[k], tx * (double)TileSize + (k % Fine + 0.5) * fine, tz * (double)TileSize + (k / Fine + 0.5) * fine, out LandUse.Rgb rgb))
-				{
-					colours[k] = new Color32(rgb.R, rgb.G, rgb.B, 255);
-					dirt[k] = true;
+					colours[pj * Pixels + pi] = colour;
 				}
 			}
 			return colours;
@@ -396,6 +380,7 @@ namespace HalfGripOpenWorld
 			new Color32(70, 70, 74, 255),     // street
 			new Color32(238, 236, 228, 255),  // lane
 			new Color32(150, 110, 70, 255),   // track
+			new Color32(196, 180, 150, 255),  // footpath
 		};
 
 		/// <summary>
@@ -522,7 +507,7 @@ namespace HalfGripOpenWorld
 			GameObject go = new GameObject("Tile " + data.Tx + "," + data.Tz) { layer = layer };
 			go.transform.SetParent(transform, false);
 			go.transform.position = Origin.Local(data.Tx * (double)TileSize, 0f, data.Tz * (double)TileSize);
-			Texture2D texture = new Texture2D(Fine, Fine, TextureFormat.RGBA32, false)
+			Texture2D texture = new Texture2D(Pixels, Pixels, TextureFormat.RGBA32, false)
 			{
 				filterMode = FilterMode.Point,
 				wrapMode = TextureWrapMode.Clamp,
@@ -538,18 +523,17 @@ namespace HalfGripOpenWorld
 			block.SetTexture("_MainTex", texture);
 			renderer.SetPropertyBlock(block);
 			go.AddComponent<MeshCollider>().sharedMesh = mesh;
-			GroundHandling handling = go.AddComponent<GroundHandling>();
+			HandlingModifier handling = go.AddComponent<HandlingModifier>();
 			handling.gripModifier = GroundGrip;
 			handling.resistanceModifier = GroundDrag;
 			handling.background = true;
-			handling.Dirt = data.Dirt;
-			handling.Pixels = Fine;
-			handling.PixelSize = TileSize / Fine;
 			TileMesh owned = go.AddComponent<TileMesh>();
 			owned.Mesh = mesh;
 			owned.Texture = texture;
 			Part(go.transform, "Roads", data, data.Road, roadMaterials, true, 1f, 1f);
 			Part(go.transform, "Verges", data, data.Verges, new[] { vergeMaterial }, true, VergeGrip, VergeDrag);
+			Part(go.transform, "Sidewalks", data, data.Sidewalks, new[] { sidewalkMaterial }, true, 1f, 1f);
+			Part(go.transform, "Tracks", data, data.Tracks, trackMaterials, true, TrackGrip, TrackDrag);
 			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
 			Part(go.transform, "Buildings", data, data.Buildings?.Mesh, buildingMaterials, true, 1f, 1f);
 			Trunks(go.transform, data.Trees);
@@ -730,29 +714,6 @@ namespace HalfGripOpenWorld
 		{
 			Unkey(key, out int tx, out int tz);
 			return (tx - cx) * (tx - cx) + (tz - cz) * (tz - cz);
-		}
-	}
-
-	/// <summary>
-	/// The ground's grip: loose grass and dirt, and looser dirt on the farm tracks painted on it (they have no mesh of their own to
-	/// carry a grip), looked up from the tile's texture pixels where a wheel touches (<see cref="GroundGripPatch"/>).
-	/// </summary>
-	internal sealed class GroundHandling : HandlingModifier
-	{
-		internal bool[] Dirt;
-		internal int Pixels;
-		internal float PixelSize;
-
-		/// <summary>Whether the scene point is on a farm track painted on this tile.</summary>
-		internal bool OnTrack(Vector3 point)
-		{
-			if (Dirt == null)
-			{
-				return false;
-			}
-			Vector3 local = point - transform.position;
-			int i = (int)Math.Floor(local.x / PixelSize), j = (int)Math.Floor(local.z / PixelSize);
-			return i >= 0 && j >= 0 && i < Pixels && j < Pixels && Dirt[j * Pixels + i];
 		}
 	}
 

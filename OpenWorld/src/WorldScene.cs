@@ -136,7 +136,7 @@ namespace HalfGripOpenWorld
 			Trees.Capture();
 			Foliage foliage = root.AddComponent<Foliage>();
 			foliage.Setup(lit);
-			streamer.Setup(tm.playerCarController, GroundMaterial(lit), groundLayer >= 0 ? groundLayer : 0, RoadMesh.Materials(lit), RoadMesh.VergeMaterial(lit), WaterMaterial(lit), 0, Buildings.Materials(lit), foliage);
+			streamer.Setup(tm.playerCarController, GroundMaterial(lit), groundLayer >= 0 ? groundLayer : 0, RoadMesh.Materials(lit), RoadMesh.VergeMaterial(lit), RoadMesh.SidewalkMaterial(lit), RoadMesh.TrackMaterials(lit), WaterMaterial(lit), 0, Buildings.Materials(lit), foliage);
 
 			PlaceGrid(tm, env, out Vector3 forward);
 			Tunnels(lit);

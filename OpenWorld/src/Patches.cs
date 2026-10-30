@@ -208,18 +208,4 @@ namespace HalfGripOpenWorld
 			return false;
 		}
 	}
-
-	/// <summary>A wheel on the ground of an Open World tile gets the farm tracks' dirt grip where one is painted under it.</summary>
-	[HarmonyPatch(typeof(HandlingModifier), nameof(HandlingModifier.Resolve))]
-	internal static class GroundGripPatch
-	{
-		private static void Postfix(HandlingModifier __instance, Vector3 worldPoint, ref HandlingModifier.SurfaceHandling __result)
-		{
-			if (__instance is GroundHandling ground && ground.OnTrack(worldPoint))
-			{
-				__result.gripModifier = Streamer.TrackGrip;
-				__result.resistanceModifier = Streamer.TrackDrag;
-			}
-		}
-	}
 }

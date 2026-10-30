@@ -66,9 +66,9 @@ internal static class Program
 			}
 		}
 		double realKm2 = landArea / (PerMetre * 1000.0) / (PerMetre * 1000.0);
-		double[] length = new double[6];
-		int[] count = new int[6];
-		double[] steepest = new double[6];
+		double[] length = new double[7];
+		int[] count = new int[7];
+		double[] steepest = new double[7];
 		List<(double, double)> spans = new List<(double, double)>();
 		foreach (Network.Road r in Network.Roads)
 		{
@@ -78,7 +78,7 @@ internal static class Program
 			{
 				// Only where it is drawn: a stretch cut out at a junction lies under the other road.
 				Network.Spans(r, i - 1, spans);
-				if (r.Kind != RoadKind.Track && spans.Count == 0)
+				if (!Network.Unpaved(r.Kind) && spans.Count == 0)
 				{
 					continue;
 				}
@@ -88,7 +88,7 @@ internal static class Program
 		}
 		Console.WriteLine("land " + realKm2.ToString("0") + " km² at real scale");
 		double total = 0.0;
-		for (int k = 0; k < 6; k++)
+		for (int k = 0; k < 7; k++)
 		{
 			double km = length[k] / PerMetre / 1000.0;
 			total += km;
@@ -132,7 +132,7 @@ internal static class Program
 			{
 				if (!r.Bridge[i] && Network.Shown(r, r.S[i]))
 				{
-					double depth = r.Kind == RoadKind.Track ? Network.TrackDepth : Network.BedDepth;
+					double depth = Network.Unpaved(r.Kind) ? Network.TrackDepth : Network.BedDepth;
 					worstBed = Math.Max(worstBed, Math.Abs(WorldGen.Height(r.X[i], r.Z[i]) - Network.Lift - (r.Y[i] - depth)));
 				}
 			}
@@ -235,8 +235,8 @@ internal static class Program
 				rgb[o + 2] = (byte)Math.Min(255.0, b);
 			}
 		}
-		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 } };
-		for (int kind = 5; kind >= 0; kind--)
+		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 }, new byte[] { 196, 180, 150 } };
+		for (int kind = 6; kind >= 0; kind--)
 		{
 			foreach (Network.Road r in Network.Roads)
 			{

@@ -68,7 +68,6 @@ namespace HalfGripOpenWorld
 				}
 			}
 			Pass(list);
-			Circuits.AddDestinations(list);
 			return list;
 		}
 

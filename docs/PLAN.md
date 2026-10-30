@@ -69,13 +69,21 @@ Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck cle
   workshops with a yard, filling stations with a canopy, pumps and a kiosk. A lot's surface is its own mesh with fine textures (the
   owner found the painted farm tracks too blocky, so nothing new is painted into the ground texture), level across and following
   the road's grade, its front meeting the foot of the verge; the ground under it is levelled. Tarmac grip.
-- Open: the farm tracks are still painted into the 2-unit ground texture and look blocky; they could become a mesh like the lots.
+
+## 0.6.0: teleport round key places, tracks as meshes, footpaths, sidewalks (asked for after 0.5.0)
+
+Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (new `ribbons` and `sidewalks` checks), not yet
+tested in game.
+
+- The debug teleport (F7, Shift+F7 back) goes round the key places (`Destinations.cs`) instead of a fixed distance ahead.
+- Farm tracks are ribbons with a fine texture and dirt grip, no longer painted into the ground (which is back to 64 pixels a tile).
+- Footpaths (`RoadKind.Path`) on from the dead ends of streets into the country.
+- Sidewalks on town and village streets and main roads.
 
 ## PR 2b: town fabric, the rest
 
 - **Parks**: a few town blocks and riverbanks in town: lawn, tree clumps, a pond, benches, footpaths.
-- **Walking trails**: narrow gravel paths looping round lakes and through parks; drivable. Not painted into the ground texture
-  (too blocky): a thin mesh like the lots', or a finer texture.
+- **Walking trails**: paths looping round lakes and through parks (footpaths out of town are in 0.6.0, as `RoadKind.Path`).
 
 ## PR 3: race circuits
 
