@@ -170,6 +170,9 @@ namespace HalfGripOpenWorld
 
 		internal static readonly List<Road> Roads = new List<Road>();
 
+		/// <summary>The circuit's road, from its paddock gate to the network (null if there is no circuit).</summary>
+		internal static Road CircuitRoad;
+
 		/// <summary>Where roads leave the world: the mouth of a tunnel into the edge wall, facing out along (DirX, DirZ).</summary>
 		internal struct Portal
 		{
@@ -299,6 +302,17 @@ namespace HalfGripOpenWorld
 							Extend(r, false);
 						}
 					}
+				}
+			}
+
+			// The circuit's road, from its paddock gate to the nearest main or minor road: routed from a point out beyond the gate (the
+			// cells round the circuit are closed), drawn from the gate itself.
+			if (Circuit.Exists)
+			{
+				List<int> path = router.Find(RoadKind.Secondary, Circuit.GateOutX, Circuit.GateOutZ, 0.0, 0.0, (int)RoadKind.Secondary);
+				if (path != null)
+				{
+					CircuitRoad = Build(RoadKind.Secondary, "Circuit road", path, Circuit.GateX, Circuit.GateZ, double.NaN, 0.0).Find(r => r.X[0] == Circuit.GateX && r.Z[0] == Circuit.GateZ);
 				}
 			}
 
@@ -1770,7 +1784,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 				}
-				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0)
+				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0 || Circuit.Fenced(nx, nz, 40.0))
 				{
 					break;
 				}
@@ -2747,7 +2761,7 @@ namespace HalfGripOpenWorld
 				{
 					double x = X(c), z = Z(c);
 					h[c] = WorldGen.Base(x, z);
-					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z));
+					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z)) || Circuit.Fenced(x, z, 60.0);
 					road[c] = 255;
 					foreach (Places.Place p in Places.All)
 					{

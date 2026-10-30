@@ -54,6 +54,9 @@ namespace HalfGripOpenWorld
 		private const double VillageSpacing = 4200.0;
 		private const double HamletSpacing = 1500.0;
 
+		/// <summary>Villages' and farms' edges keep this far outside the circuit's levelled ground (beyond its banks).</summary>
+		private const double CircuitClearance = 300.0;
+
 		internal static void Build(Rng rng)
 		{
 			double[] score = new double[N * N];
@@ -72,6 +75,8 @@ namespace HalfGripOpenWorld
 			}
 			List<int> order = Order(score);
 			Take(rng, order, score, PlaceKind.Town, TownSpacing, best * 0.75, TownNames.Length, TownNames);
+			// The circuit, on open country clear of the towns, before the villages and farms (which keep off it).
+			Circuit.Build();
 			Take(rng, order, score, PlaceKind.Village, VillageSpacing, best * 0.3, VillageNames.Length, VillageNames);
 			Take(rng, Order(farm), farm, PlaceKind.Hamlet, HamletSpacing, bestFarm * 0.25, 120, null);
 			Index();
@@ -134,7 +139,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 				}
-				if (!clear || Score(x, z, false) <= 0.0)
+				if (!clear || Score(x, z, false) <= 0.0 || !Circuit.Clear(x, z, CircuitClearance + (kind == PlaceKind.Village ? 500.0 : 120.0)))
 				{
 					continue;
 				}

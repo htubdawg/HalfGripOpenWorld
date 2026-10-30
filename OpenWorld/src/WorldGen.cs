@@ -10,7 +10,8 @@ namespace HalfGripOpenWorld
 	/// Layers, each built on the one before:
 	///   <see cref="Natural"/>  the land: sea and coastal plain in the south, uplands and mountain ranges in the north, edge walls;
 	///   <see cref="Land"/>     with the rivers' channels, floodplains and banks cut in (<see cref="Rivers"/>);
-	///   <see cref="Base"/>     softened under each place (<see cref="Places"/>), rivers cut again;
+	///   <see cref="Base"/>     softened under each place (<see cref="Places"/>), the circuit levelled (<see cref="Circuit"/>), rivers
+	///                          cut again;
 	///   <see cref="Height"/>   the ground as driven on: Base with every road's bed cut or filled into it (<see cref="Network"/>), the lots
 	///                          levelled (<see cref="Town"/>) and the ponds dug (<see cref="Parks"/>).
 	/// </summary>
@@ -110,13 +111,13 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The land as roads are laid on it: softened under each town, village and farm (<see cref="Places.Soften"/>), then the rivers cut
-		/// in again, so a river keeps its channel and floodplain through a town.
+		/// The land as roads are laid on it: softened under each town, village and farm (<see cref="Places.Soften"/>), the circuit's ground
+		/// levelled (<see cref="Circuit.Level"/>), then the rivers cut in again, so a river keeps its channel and floodplain through a town.
 		/// </summary>
 		internal static double Base(double x, double z)
 		{
 			double natural = Natural(x, z);
-			return Rivers.Cut(x, z, Places.Soften(x, z, natural), natural);
+			return Rivers.Cut(x, z, Circuit.Level(x, z, Places.Soften(x, z, natural)), natural);
 		}
 
 		/// <summary>

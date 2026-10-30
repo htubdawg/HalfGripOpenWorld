@@ -108,9 +108,47 @@ Parks and trails (see DESIGN.md, World 9):
   benches facing the water. Two lakes have none (their low shore runs far out); paths through parks are the parks' own.
 - The debug teleport goes to the parks and lake trails too.
 
-## PR 3: race circuits
+## PR 3: race courses (agreed after 0.7.0)
 
-Two to four closed circuits across the map, each joined to the network by an access road and with a start/finish gantry:
-a **tarmac circuit** on open flat land (about 3-4 km real lap, kerbs, run-off, pit straight and building, grandstands, paddock car
-park; lap shape as ProcTrack's generator: start straight, corners, a hairpin), a **rally loop** on forest tracks in the uplands, and a
-**hill climb** up a mountain road to a pass. Free roam first; lap timing on a circuit later (our own HUD, not the game's race flow).
+Three courses, free roam only: no race mode, no timing (a custom game mode comes later, separately). Each is placed after
+`Places` and before any road is routed: its ground is a layer of the height function and its cells are closed to the router, so
+roads go round it and only its access road joins it. Deterministic like the rest of the layout (`Rng`, `DetMath`, doubles).
+
+### 3a: tarmac circuit (0.8.0)
+
+- **Site:** the 200-unit grid scored for a box of about 4000 x 2500: flat, no river or lake in it (plus a margin), low, 1.5 km
+  real or more from towns and villages, out of the mountains; the best is taken. Measure first with `tools/preview`; if no site
+  fits, a shorter lap (about 2 to 2.5 km real) rather than a bridge.
+- **Lap:** ProcTrack's generator ported to doubles and `DetMath` (start straight, corners, a hairpin), about 3 km real (10,000
+  units), 40 wide; seeds tried in order until it fits the site. Its own `RoadKind.Circuit` (and map colour).
+- **Ground:** levelled to a best-fit plane (at most 2%), banks back to the land.
+
+Status (work in progress, not released): `Circuit.cs` holds the site search, the lap (a chain of corners as in ProcTrack, sine
+waves on the straights), the plane, the index and the queries (`Level`, `Fenced`, `Clear`, `SurfaceAt`, `Covered`). It is wired
+into `Places.Build` (sited after the towns, before the villages and farms, which keep off it: with their clearance the villages
+covered almost all open land), `WorldGen.Base`, the router's closed cells, `Walk`, and the circuit road from the paddock gate
+(`Network.CircuitRoad`); `tools/preview` reports and draws it. While no lap fits there is no circuit and the world is as in
+0.7.0 (the preview fails "no circuit"). Found so far: one site; of 400 laps about 180 overflow the 4000 x 2500 box, about 100
+turn right tighter than 190, 80 have no corner sharp enough for a hairpin, 40 no straight of 1300. Next: make laps fit (fewer
+or shallower dents, a slightly smaller box or lap per the plan's fallback), then the meshes (`CircuitMesh`: track, kerbs,
+gravel, pit apron, paint, barrier, pit wall), the buildings (pits, stands, gantry), land use (`Cover.Circuit`), foliage, map
+pictures, destinations and the meshcheck checks.
+- **Furniture:** red and white kerbs on the corners, grass and gravel run-off outside the bends (no trees or buildings), pit lane and
+  pit building on the start straight, a start/finish gantry, two or three grandstands, a paddock car park behind the pits.
+- **Access:** a minor road from the paddock gate to the network; nothing else crosses the lap. Teleport to the grid and paddock.
+
+### 3b: rally loop and hill climb (0.9.0)
+
+- **Rally loop:** gravel, about 16 wide, through upland woods, about 5 km real: ring waypoints routed in turn by A* at the rally
+  class's grade (about 12%), its own cells dear so it never crosses itself; built before lanes and tracks so they keep off it,
+  joined to the network by a track. Track ribbon, bed and dirt grip; start and finish arches, a service area, tape or hay bales
+  on the worst corners.
+- **Hill climb:** a new narrow tarmac road (not an existing one) with switchbacks from a valley floor to a col in the northern
+  mountains, about 3 to 4 km real, routed on a finer local grid (about 25) so hairpins have a real radius (about 50); start at the
+  bottom joined to a lane or minor road, finish line and a turning area at the top.
+
+### Checks
+
+`preview` draws the courses and reports site, length, tightest corner, steepest grade. New `meshcheck` checks: lap closed and never
+near itself, circuit grade and cross-fall, nothing in the circuit's fence or run-off, kerbs on the surface, hairpin radii, rally and
+hill-climb grades.
