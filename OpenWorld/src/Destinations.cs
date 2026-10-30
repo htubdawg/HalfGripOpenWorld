@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the retail park, the
-	/// villages, a filling station, a workshop, the mountain pass and the circuits. Each is a point on a road (on its right-hand lane)
+	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the retail park, a filling
+	/// station, a workshop, the parks, the lake trails, the villages and the mountain pass. Each is a point on a road (on its right-hand lane)
 	/// and the road's direction there, so a car put there can drive off at once.
 	/// </summary>
 	internal static class Destinations
@@ -59,6 +59,34 @@ namespace HalfGripOpenWorld
 				// In front of the lot, on its road.
 				Town.World(lot, 0.0, -8.0, out double x, out double z);
 				OnRoad(list, name, x, z);
+			}
+			// The parks, from the street beside them; the lake trails, from the road nearest the middle of each one's longest stretch.
+			foreach (Parks.Park park in Parks.All)
+			{
+				OnRoad(list, park.Name, park.X, park.Z);
+			}
+			Dictionary<string, Network.Road> trails = new Dictionary<string, Network.Road>();
+			List<string> order = new List<string>();
+			foreach (Network.Road road in Network.Roads)
+			{
+				if (road.Kind != RoadKind.Path || road.Name == null || !road.Name.StartsWith("Lake trail ", StringComparison.Ordinal) || road.Name.EndsWith(" way", StringComparison.Ordinal))
+				{
+					continue;
+				}
+				if (!trails.TryGetValue(road.Name, out Network.Road longest))
+				{
+					order.Add(road.Name);
+					trails[road.Name] = road;
+				}
+				else if (road.S[road.Count - 1] > longest.S[longest.Count - 1])
+				{
+					trails[road.Name] = road;
+				}
+			}
+			foreach (string name in order)
+			{
+				Network.Road road = trails[name];
+				OnRoad(list, name, road.X[road.Count / 2], road.Z[road.Count / 2]);
 			}
 			foreach (Places.Place p in Places.All)
 			{

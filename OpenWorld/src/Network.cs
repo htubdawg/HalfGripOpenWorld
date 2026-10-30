@@ -344,10 +344,65 @@ namespace HalfGripOpenWorld
 			Junctions();
 			Abutments();
 			Index();
+
+			// 6. Parks in the towns' blocks and by their rivers, with paths through them, and trails round the lakes: the blocks are
+			// found between the roads, so after the index; the paths meet roads under their surface and need no junctions.
+			Parks.Build();
+			foreach (Road road in Roads)
+			{
+				road.Tilt ??= new double[road.Count];
+			}
+			Abutments();
+			Index();
 			Lift = 0.5 - SpawnY;
 
-			// 6. The retail park and businesses on the main roads, now the roads are fixed.
+			// 7. The retail park and businesses on the main roads, now the roads are fixed; then the benches, clear of them.
 			Town.Build();
+			Parks.Furnish();
+		}
+
+		// ---- paths added from outside (parks and trails) ---------------------------------------------------------
+
+		/// <summary>
+		/// A footpath along <paramref name="points"/> (corners rounded, resampled), its ends at the heights given (NaN: the land's), if it
+		/// is at least <paramref name="least"/> long. For <see cref="Parks"/>, while the layout is built.
+		/// </summary>
+		internal static Road AddPath(List<(double x, double z)> points, string name, double startY, double endY, double least)
+		{
+			if (points.Count < 2)
+			{
+				return null;
+			}
+			Road road = Make(RoadKind.Path, name, Lines.Resample(Rounded(points), Step));
+			if (road.Count < 3 || road.S[road.Count - 1] < least)
+			{
+				return null;
+			}
+			List<(int idx, double y)> pins = new List<(int, double)>
+			{
+				(0, double.IsNaN(startY) ? WorldGen.Base(road.X[0], road.Z[0]) : startY),
+				(road.Count - 1, double.IsNaN(endY) ? WorldGen.Base(road.X[road.Count - 1], road.Z[road.Count - 1]) : endY),
+			};
+			Add(road, pins);
+			return road;
+		}
+
+		/// <summary>The nearest point within <paramref name="radius"/> on any road, and the road's height there (while the layout is built).</summary>
+		internal static bool SnapRoad(double x, double z, double radius, out double px, out double pz, out double py)
+		{
+			return segments.Snap(x, z, radius, -1, out px, out pz, out py);
+		}
+
+		/// <summary>Where segment (ax, az)-(bx, bz) first crosses a road, and the road's height there (while the layout is built).</summary>
+		internal static bool CrossRoad(double ax, double az, double bx, double bz, out double ix, out double iz, out double iy)
+		{
+			return segments.Intersect(ax, az, bx, bz, -1, out ix, out iz, out iy);
+		}
+
+		/// <summary>A footpath to the nearest lane or bigger road from (x, z), along the router's grid (while the layout is built).</summary>
+		internal static List<Road> PathToNetwork(string name, double x, double z)
+		{
+			return RouteToNetwork(RoadKind.Path, name, x, z, RoadKind.Lane);
 		}
 
 		// ---- the edges ---------------------------------------------------------------------------------------------
@@ -717,6 +772,53 @@ namespace HalfGripOpenWorld
 				Hold(road, grade, 0, n - 1);
 			}
 			Pin(y, pins);
+			Dry(road, grade);
+		}
+
+		/// <summary>How far a road's line is kept above any water surface drawn over its paving.</summary>
+		private const double DryClear = 1.0;
+
+		/// <summary>
+		/// Keeps the road out of the water: a lake's or the sea's surface is drawn flat over its cells and the cells round them (so its
+		/// edge hides under the shore), and on low land by the coast a road following the land ran up to 4 under it, the water drawn over
+		/// the paving. Each sample is raised to <see cref="DryClear"/> over the highest water drawn across its paving, with ramps at the
+		/// grade either side (the most of two profiles held to the grade is held to it too), so the road runs on a low embankment.
+		/// </summary>
+		private static void Dry(Road road, double grade)
+		{
+			int n = road.Count;
+			double[] floor = new double[n];
+			bool any = false;
+			for (int i = 0; i < n; i++)
+			{
+				floor[i] = double.MinValue;
+				Side(road, i, out double sx, out double sz);
+				foreach (double f in new[] { -1.0, 0.0, 1.0 })
+				{
+					double w = Rivers.DrawnWater(road.X[i] + sx * road.Half * f, road.Z[i] + sz * road.Half * f);
+					if (!double.IsNaN(w) && w + DryClear > floor[i])
+					{
+						floor[i] = w + DryClear;
+						any |= floor[i] > road.Y[i];
+					}
+				}
+			}
+			if (!any)
+			{
+				return;
+			}
+			for (int i = 1; i < n; i++)
+			{
+				floor[i] = Math.Max(floor[i], floor[i - 1] - grade * (road.S[i] - road.S[i - 1]));
+			}
+			for (int i = n - 2; i >= 0; i--)
+			{
+				floor[i] = Math.Max(floor[i], floor[i + 1] - grade * (road.S[i + 1] - road.S[i]));
+			}
+			for (int i = 0; i < n; i++)
+			{
+				road.Y[i] = Math.Max(road.Y[i], floor[i]);
+			}
 		}
 
 		/// <summary>
@@ -2058,8 +2160,11 @@ namespace HalfGripOpenWorld
 			return ground;
 		}
 
-		/// <summary>Distance from (x, z) to the nearest road of class <paramref name="kind"/> or smaller, up to <paramref name="most"/>.</summary>
-		internal static double Nearest(double x, double z, double most, RoadKind kind)
+		/// <summary>
+		/// Distance from (x, z) to the nearest road of class <paramref name="kind"/> or smaller (and <paramref name="smallest"/> or
+		/// bigger), up to <paramref name="most"/>.
+		/// </summary>
+		internal static double Nearest(double x, double z, double most, RoadKind kind, RoadKind smallest = RoadKind.Path)
 		{
 			if (cellStart == null)
 			{
@@ -2071,7 +2176,7 @@ namespace HalfGripOpenWorld
 			{
 				long item = cellItems[k];
 				Road road = Roads[(int)(item >> 32)];
-				if (road.Kind < kind)
+				if (road.Kind < kind || road.Kind > smallest)
 				{
 					continue;
 				}

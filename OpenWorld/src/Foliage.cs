@@ -403,13 +403,16 @@ namespace HalfGripOpenWorld
 			List<Plant> g = new List<Plant>();
 			float pixel = tileSize / pixels;
 			double ox = tx * (double)tileSize, oz = tz * (double)tileSize;
+			// The ground as drawn (its triangles), for keeping out of the water: the bilinear height plants stand on is up to a unit or
+			// two higher at a channel's edge.
+			TerrainGrid drawn = new TerrainGrid(ox - step, oz - step, side, heights);
 			for (int pj = 0; pj < pixels; pj++)
 			{
 				for (int pi = 0; pi < pixels; pi++)
 				{
 					Cover cover = covers[pj * pixels + pi];
 					ulong h = Noise.Mix(Salt ^ (ulong)(long)(tx * pixels + pi) * 0x9E3779B97F4A7C15UL ^ (ulong)(long)(tz * pixels + pj) * 0xBF58476D1CE4E5B9UL);
-					double treeChance = TreeChance(cover);
+					double treeChance = cover == Cover.Park ? -1.0 : TreeChance(cover);
 					double grassChance = GrassChance(cover);
 					if (treeChance <= 0.0 && grassChance <= 0.0)
 					{
@@ -417,6 +420,11 @@ namespace HalfGripOpenWorld
 					}
 					float lx = (pi + U(h, 1)) * pixel, lz = (pj + U(h, 2)) * pixel;
 					double wx = ox + lx, wz = oz + lz;
+					if (treeChance < 0.0)
+					{
+						// A park's trees stand in clumps.
+						treeChance = Parks.TreeChance(wx, wz);
+					}
 					bool tree = U(h, 0) < treeChance;
 					if (!tree && U(h, 3) >= grassChance)
 					{
@@ -429,6 +437,10 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					float y = Height(heights, side, step, lx, lz);
+					if (Wet(wx, wz, drawn.At(wx, wz), tree ? 1.0 : 0.3))
+					{
+						continue;
+					}
 					if (tree)
 					{
 						t.Add(new Plant { Pos = new Vector3(lx, y - 0.3f, lz), Yaw = U(h, 4) * 360f, Scale = 0.75f + U(h, 5) * 0.6f, Model = (byte)(h >> 56) });
@@ -443,6 +455,17 @@ namespace HalfGripOpenWorld
 			}
 			trees = t.ToArray();
 			grass = g.ToArray();
+		}
+
+		/// <summary>
+		/// Whether ground at scene height <paramref name="y"/> at (x, z) is under water drawn over it, or within <paramref name="margin"/>
+		/// of it: the ground's covers come from the land use, which knows the floodplain but not the channel, so river beds and the
+		/// shallows round lakes were full of grass and trees standing in the water.
+		/// </summary>
+		private static bool Wet(double x, double z, double y, double margin)
+		{
+			double water = Rivers.DrawnWater(x, z);
+			return !double.IsNaN(water) && water + Network.Lift > y - margin;
 		}
 
 		private static double TreeChance(Cover c)
@@ -474,6 +497,8 @@ namespace HalfGripOpenWorld
 				case Cover.Hedge: return 0.6;
 				case Cover.Forest: return 0.2;
 				case Cover.Yard: return 0.15;
+				// Mown short.
+				case Cover.Park: return 0.12;
 				default: return 0.0;
 			}
 		}

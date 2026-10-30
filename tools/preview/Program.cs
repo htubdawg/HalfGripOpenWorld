@@ -47,6 +47,18 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("  " + lots[1] + " shops, " + lots[2] + " workshops, " + lots[3] + " filling stations on the main roads");
+		int ponds = 0;
+		foreach (Parks.Park park in Parks.All)
+		{
+			ponds += park.HasPond ? 1 : 0;
+			Console.WriteLine("  park " + park.Name.PadRight(22) + "(" + park.X.ToString("0") + ", " + park.Z.ToString("0") + ") " + (park.Cells * Parks.CellSize * Parks.CellSize / (PerMetre * PerMetre) / 10000.0).ToString("0.00") + " ha" + (park.HasPond ? ", a pond " + (park.PondR * 2.0 / PerMetre).ToString("0") + " m across" : ""));
+		}
+		Console.WriteLine("  " + Parks.All.Count + " parks (" + ponds + " with a pond), " + Parks.TrailCount + " lake trails (" + (Parks.TrailLength / PerMetre / 1000.0).ToString("0.0") + " km real), " + Parks.Benches.Count + " benches");
+		if (Parks.All.Count == 0)
+		{
+			Console.WriteLine("FAIL: no parks");
+			ok = false;
+		}
 		if (lots[0] == 0)
 		{
 			Console.WriteLine("FAIL: no retail park");

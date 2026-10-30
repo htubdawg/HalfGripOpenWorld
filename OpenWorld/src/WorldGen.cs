@@ -11,7 +11,8 @@ namespace HalfGripOpenWorld
 	///   <see cref="Natural"/>  the land: sea and coastal plain in the south, uplands and mountain ranges in the north, edge walls;
 	///   <see cref="Land"/>     with the rivers' channels, floodplains and banks cut in (<see cref="Rivers"/>);
 	///   <see cref="Base"/>     softened under each place (<see cref="Places"/>), rivers cut again;
-	///   <see cref="Height"/>   the ground as driven on: Base with every road's bed cut or filled into it (<see cref="Network"/>).
+	///   <see cref="Height"/>   the ground as driven on: Base with every road's bed cut or filled into it (<see cref="Network"/>), the lots
+	///                          levelled (<see cref="Town"/>) and the ponds dug (<see cref="Parks"/>).
 	/// </summary>
 	internal static class WorldGen
 	{
@@ -119,14 +120,14 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Ground height at world point (x, z) in the scene: the land with the road beds and the lots' levelled ground in it, plus the world's lift (everything inside
+		/// Ground height at world point (x, z) in the scene: the land with the road beds, the lots' levelled ground and the parks' ponds in it, plus the world's lift (everything inside
 		/// the generator is measured from sea level; the scene is lifted so the road at the spawn is at 0.5). Road surfaces sit just
 		/// above this.
 		/// </summary>
 		internal static double Height(double x, double z)
 		{
 			Network.Ensure();
-			return Town.Ground(x, z, Network.Ground(x, z, Base(x, z))) + Network.Lift;
+			return Parks.Ground(x, z, Town.Ground(x, z, Network.Ground(x, z, Base(x, z)))) + Network.Lift;
 		}
 
 		/// <summary>True when (x, z) is inside the world square, where tiles are built.</summary>

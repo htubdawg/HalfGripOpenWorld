@@ -82,6 +82,13 @@ namespace HalfGripOpenWorld
 					Church(b, data, p);
 				}
 			}
+			foreach (Parks.Bench bench in Parks.Benches)
+			{
+				if (Math.Floor(bench.X / tileSize) == tx && Math.Floor(bench.Z / tileSize) == tz)
+				{
+					Bench(b, data, bench);
+				}
+			}
 			// Each lot is built whole by the tile its middle is in.
 			foreach (Town.Lot lot in Town.Lots)
 			{
@@ -289,7 +296,7 @@ namespace HalfGripOpenWorld
 				{
 					return false;
 				}
-				if (Town.Taken(x, z, 2.0))
+				if (Town.Taken(x, z, 2.0) || Parks.At(x, z))
 				{
 					return false;
 				}
@@ -302,6 +309,29 @@ namespace HalfGripOpenWorld
 				hi = Math.Max(hi, gh);
 			}
 			return hi - lo <= 6.0;
+		}
+
+		/// <summary>
+		/// A park bench (1.8 m long): a wooden seat and back on two metal legs, standing on the lowest ground under it, its seat facing
+		/// (Dx, Dz).
+		/// </summary>
+		private static void Bench(Builder b, Data data, Parks.Bench bench)
+		{
+			// Along the bench is to the right of the way it faces; its back is behind.
+			double ax = bench.Dz, az = -bench.Dx;
+			float lo = float.MaxValue;
+			foreach ((double u, double v) in new[] { (-3.0, -1.0), (3.0, -1.0), (-3.0, 1.0), (3.0, 1.0) })
+			{
+				lo = Math.Min(lo, (float)WorldGen.Height(bench.X + ax * u + bench.Dx * v, bench.Z + az * u + bench.Dz * v));
+			}
+			float y = lo - 0.3f;
+			foreach (double u in new[] { -2.4, 2.4 })
+			{
+				b.Solid(bench.X + ax * u, bench.Z + az * u, y, ax, az, 0.4f, 1.4f, 1.6f, Metal);
+			}
+			b.Solid(bench.X, bench.Z, y + 1.5f, ax, az, 6f, 1.6f, 0.3f, Wood);
+			b.Solid(bench.X - bench.Dx * 0.8, bench.Z - bench.Dz * 0.8, y + 1.8f, ax, az, 6f, 0.3f, 1.4f, Wood);
+			data.Footprints.Add((bench.X, bench.Z, 3.5));
 		}
 
 		// ---- lots --------------------------------------------------------------------------------------------------
@@ -521,6 +551,21 @@ namespace HalfGripOpenWorld
 				Triangle(p1 + eave, p2 + eave, c + a + ridge, along, wall);
 				Triangle(p0 + eave, p3 + eave, c - a + ridge, along, wall);
 				Triangle(p1 + eave, p2 + eave, c + a + ridge, -along, wall);
+			}
+
+			/// <summary>A small box all of one material, top and sides (a bench's seat, its legs): <paramref name="w"/> along (dx, dz), <paramref name="d"/> across, <paramref name="h"/> high.</summary>
+			internal void Solid(double cx, double cz, float y, double dx, double dz, float w, float d, float h, int material)
+			{
+				Vector3 c = new Vector3((float)(cx - ox), y, (float)(cz - oz));
+				Vector3 along = new Vector3((float)dx, 0f, (float)dz);
+				Vector3 across = new Vector3((float)-dz, 0f, (float)dx);
+				Vector3 a = along * (w * 0.5f), b = across * (d * 0.5f), up = Vector3.up * h;
+				Vector3 p0 = c - a - b, p1 = c + a - b, p2 = c + a + b, p3 = c - a + b;
+				Quad(p0, p1, p0 + up, p1 + up, -across, material, w / Bay, h / Storey);
+				Quad(p1, p2, p1 + up, p2 + up, along, material, d / Bay, h / Storey);
+				Quad(p2, p3, p2 + up, p3 + up, across, material, w / Bay, h / Storey);
+				Quad(p3, p0, p3 + up, p0 + up, -along, material, d / Bay, h / Storey);
+				Quad(p0 + up, p1 + up, p3 + up, p2 + up, Vector3.up, material, w / Bay, d / Bay);
 			}
 
 			/// <summary>A four-sided spire standing on <paramref name="y"/>, <paramref name="side"/> across its base, <paramref name="h"/> high.</summary>
@@ -831,17 +876,20 @@ namespace HalfGripOpenWorld
 		/// <summary>Profiled metal cladding: vertical ribs.</summary>
 		private static Texture2D Ribs(Color metal)
 		{
-			Texture2D t = New(8, 10);
+			// Two ribs to a bay (4 pixels, about 4 units apart: a lit edge, the sheet, its shadow), with mipmaps. Ribs a pixel apart with
+			// no mipmaps broke up into moiré stripes beyond a few car lengths, pinkish under the scene's grading.
+			Texture2D t = New(8, 10, true);
+			float[] shade = { 1.08f, 1f, 1f, 0.84f };
 			for (int y = 0; y < 10; y++)
 			{
 				for (int x = 0; x < 8; x++)
 				{
-					Color c = x % 2 == 0 ? metal * 0.86f : metal;
+					Color c = metal * shade[x % 4];
 					c.a = 1f;
 					t.SetPixel(x, y, c);
 				}
 			}
-			t.Apply();
+			t.Apply(true);
 			return t;
 		}
 
@@ -966,15 +1014,18 @@ namespace HalfGripOpenWorld
 
 		private static Texture2D Rows(Color roof)
 		{
-			Texture2D t = New(8, 8);
+			// With mipmaps: a row a unit high breaks into moiré on a big roof seen from afar (a workshop's), as the cladding's ribs did.
+			Texture2D t = New(8, 8, true);
 			for (int y = 0; y < 8; y++)
 			{
 				for (int x = 0; x < 8; x++)
 				{
-					t.SetPixel(x, y, y % 2 == 0 ? roof * 0.82f : roof);
+					Color c = y % 2 == 0 ? roof * 0.82f : roof;
+					c.a = 1f;
+					t.SetPixel(x, y, c);
 				}
 			}
-			t.Apply();
+			t.Apply(true);
 			return t;
 		}
 
