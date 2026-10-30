@@ -15,6 +15,10 @@ namespace HalfGripOpenWorld
 		Garage = 3,
 		/// <summary>The rally stage's service area: a gravel yard beside its straight, with the teams' vans and awnings at the back.</summary>
 		Service = 4,
+		/// <summary>The hill climb's paddock: a tarmac yard beside its start straight, with the competitors' vans and trailers at the back.</summary>
+		Paddock = 5,
+		/// <summary>The hill climb's turning area: a tarmac apron beside the top of the road, where the cars turn to come back down.</summary>
+		Turning = 6,
 	}
 
 	/// <summary>
@@ -79,6 +83,8 @@ namespace HalfGripOpenWorld
 				case LotKind.Shop: w = 48.0; d = 50.0; rough = 5.0; return;
 				case LotKind.Workshop: w = 56.0; d = 62.0; rough = 5.0; return;
 				case LotKind.Service: w = Rally.ServiceW; d = Rally.ServiceD; rough = 7.0; return;
+				case LotKind.Paddock: w = HillClimb.PaddockW; d = HillClimb.PaddockD; rough = 9.0; return;
+				case LotKind.Turning: w = HillClimb.TurnW; d = HillClimb.TurnD; rough = 9.0; return;
 				default: w = 64.0; d = 64.0; rough = 5.0; return;
 			}
 		}
@@ -96,6 +102,8 @@ namespace HalfGripOpenWorld
 				case LotKind.Workshop: w = 42.0; v0 = 26.0; d = 32.0; return;
 				// No building: the yard is open to the back.
 				case LotKind.Service: w = 0.0; v0 = Rally.ServiceD; d = 0.0; return;
+				case LotKind.Paddock: w = 0.0; v0 = HillClimb.PaddockD; d = 0.0; return;
+				case LotKind.Turning: w = 0.0; v0 = HillClimb.TurnD; d = 0.0; return;
 				default: w = 26.0; v0 = 44.0; d = 16.0; return;
 			}
 		}
@@ -169,6 +177,31 @@ namespace HalfGripOpenWorld
 				{
 					lot.Place = "Rally stage";
 					found.Add(lot);
+				}
+			}
+			// The hill climb's paddock beside its start straight and turning area beside the top, each on whichever side it fits (the
+			// right first).
+			Network.Road climb = HillClimb.Road;
+			if (climb != null)
+			{
+				int r = Network.Roads.IndexOf(climb);
+				foreach ((LotKind kind, double s, string name) in new[] { (LotKind.Paddock, HillClimb.PaddockS, "Hill climb paddock"), (LotKind.Turning, HillClimb.TurnS, "Hill climb top") })
+				{
+					Network.Locate(climb, s, out int i, out double t);
+					double px = climb.X[i] + (climb.X[i + 1] - climb.X[i]) * t, pz = climb.Z[i] + (climb.Z[i + 1] - climb.Z[i]) * t;
+					double py = climb.Y[i] + (climb.Y[i + 1] - climb.Y[i]) * t;
+					double len = Math.Max(1e-6, climb.S[i + 1] - climb.S[i]);
+					double dx = (climb.X[i + 1] - climb.X[i]) / len, dz = (climb.Z[i + 1] - climb.Z[i]) / len;
+					for (int side = -1; side <= 1; side += 2)
+					{
+						Lot lot = Fit(kind, r, climb, s, side, px, pz, py, dx * side, dz * side, Hash(r, (long)kind, side), found);
+						if (lot != null)
+						{
+							lot.Place = name;
+							found.Add(lot);
+							break;
+						}
+					}
 				}
 			}
 			Lots.AddRange(found);
@@ -278,9 +311,10 @@ namespace HalfGripOpenWorld
 			{
 				return null;
 			}
-			// Beside an unpaved road (the rally stage) a hair further out: its edge is exactly the verge's width from the stage's, and
-			// the test that keeps a lot 4 clear of every road's edge failed on rounding there.
-			double front = Network.Unpaved(road.Kind) ? Network.Verge + 0.05 : Network.Verge;
+			// Beside a course's road (the rally stage, the hill climb) a hair further out: their lots stand by straights laid exactly
+			// straight, so the lot's front is exactly the verge's width from the road's edge, and the test that keeps a lot 4 clear of
+			// every road's edge failed on rounding there.
+			double front = Network.Unpaved(road.Kind) || road.Kind == RoadKind.Climb ? Network.Verge + 0.05 : Network.Verge;
 			double off = most + road.Half + front + d * 0.5;
 			double[] foot = new double[count];
 			for (int k = 0; k < count; k++)

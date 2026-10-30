@@ -251,7 +251,7 @@ namespace HalfGripOpenWorld
 			Vector3 la = m.At(road, i, a, 1, 0.0), lb = m.At(road, i, b, 1, 0.0);
 			Vector3 ra = m.At(road, i, a, -1, 0.0), rb = m.At(road, i, b, -1, 0.0);
 			float va = V(road, i, a), vb = V(road, i, b);
-			m.Quad((int)road.Kind, la, lb, ra, rb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+			m.Quad(Paving(road.Kind), la, lb, ra, rb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
 			if (bridge)
 			{
 				// The deck's sides, 3 deep, and a parapet 1.4 high along each edge, seen from both sides.
@@ -261,6 +261,12 @@ namespace HalfGripOpenWorld
 				m.Wall(Concrete, la, lb, la + upward, lb + upward);
 				m.Wall(Concrete, ra, rb, ra + upward, rb + upward);
 			}
+		}
+
+		/// <summary>The paved mesh's material for a class: its own, but the hill climb is surfaced as a lane is.</summary>
+		private static int Paving(RoadKind kind)
+		{
+			return kind == RoadKind.Climb ? (int)RoadKind.Lane : (int)kind;
 		}
 
 		private static float V(Network.Road road, int i, double t)
@@ -293,7 +299,7 @@ namespace HalfGripOpenWorld
 				Network.Locate(road, s, out int ni, out double nt);
 				Vector3 next = m.At(road, ni, nt, -side, 0.0);
 				float nv = V(road, ni, nt);
-				m.Triangle((int)road.Kind, tip, prev, next, new Vector2(ua, va), new Vector2(uo, pv), new Vector2(uo, nv));
+				m.Triangle(Paving(road.Kind), tip, prev, next, new Vector2(ua, va), new Vector2(uo, pv), new Vector2(uo, nv));
 				prev = next;
 				pv = nv;
 			}

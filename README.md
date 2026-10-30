@@ -39,14 +39,19 @@ generated from a fixed seed, the same every time and for every player, the way r
   than 12%), with straw bales on the outside of the tightest corners. A short straight holds the finish and start arches, with the
   service area beside it (a gravel yard with the teams' vans and awnings); a track leads from there to the nearest lane, and no other
   road comes near the stage. Loose gravel grip. Free roam only, like the circuit.
+- **Hill climb:** a narrow tarmac road of about 1.5 km from a valley floor up a mountain valley to a col in the northern mountains,
+  laid out from the seed: it winds up the valley side and hooks round a hairpin near the top (about 120 m of climbing, never steeper
+  than 13%). The paddock (a tarmac yard with the competitors' vans and trailers) is beside the start straight at the bottom, with
+  the start arch at its end; the finish arch is near the top, with a tarmac turning area beside the road's end to turn and come back
+  down. A lane joins its foot to the network, running straight on into it; no other road comes near it. Free roam only.
 - **Trees and grass:** the Forest map's own pines in the woods, along hedges, in gardens and in clumps in the parks (with trunks you
   can hit), and grass tufts on lawns, meadows, pasture and moor, with ripe wheat in the wheat fields, drawn near the car; none in the
   water.
 
-![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west, the rally stage (orange) in the north-east](docs/world.png)
+![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west, the rally stage (orange) in the north-east, the hill climb (pink) in the mountains north of the middle](docs/world.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.9.0**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.10.0**, made for game version 0.418.
 
 **Work in progress.** Signs, street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -54,7 +59,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.9.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.10.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -79,7 +84,7 @@ the same ground.
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 
@@ -106,6 +111,13 @@ the same ground.
   a slow noise make it wind; each leg keeps off the ones before it), rounded, the best of 30 that fit. It is a road of its own class
   (`RoadKind.Rally`), unpaved like a track, made before every other road; the router keeps them out of it, and the land use keeps
   forest round it.
+- **Hill climb** (`HillClimb.cs`): sited after the rally stage and before the farms. The cols (saddles) in the mountains are found,
+  each given a straight at the top with room for the turning area, and paired with valley floors below that have a start straight
+  with room for the paddock; the best pairs are routed on a coarse grid, then on a 25-unit grid whose states carry a heading (45
+  degrees a step at most, so bends and hairpins have a real radius), costed by grade so a steep slope is climbed in zigzags, and
+  never across a river (it has no bridges). It is a road of its own class (`RoadKind.Climb`), paved and surfaced like a lane, made
+  before every other road and kept out of the network's junctions; the router keeps other roads out of it, and its lane is routed
+  from just behind its foot.
 - **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, verges, water, buildings and
   ground texture, all worked out on worker threads.
 - **Trees and grass** (`Foliage.cs`): scattered from each tile's ground pixels and drawn GPU-instanced; the pines are captured from
@@ -132,7 +144,7 @@ member name). **Do not rename it or change its members' names or signatures.** A
 | `int Version` | Goes up whenever a tile's map picture is added or removed. |
 
 A tile's map picture is its land use with water and roads painted in, in the colours of `docs/world.png` (trunk orange, primary
-yellow, secondary cream, streets grey, lanes white, tracks brown, footpaths pale tan, the rally stage orange), roads at least 2 pixels wide, car parks and yards light grey
+yellow, secondary cream, streets grey, lanes white, tracks brown, footpaths pale tan, the rally stage orange, the hill climb pink), roads at least 2 pixels wide, car parks and yards light grey
 with their buildings dark grey, and the circuit's track dark grey with red kerbs, sand gravel traps, a mid-grey pit apron and its
 garages and stands dark grey. It is made with the tile on a worker
 thread and kept only while the tile is loaded. Display only: nothing in the world depends on it.
@@ -161,7 +173,8 @@ clear of the water, no road under water drawn over it, river water meeting its b
 bases, mesh faces, car parks lying on their ground and meeting the verge, track and path ribbons over the ground, sidewalk kerbs, no
 tree or grass in the water, ponds' edges under the ground, no building on a park's lawn; the circuit's lap closed and clear of
 itself, its surfaces over the ground, nothing else in its fence, its barrier and stands clear of the track; the rally stage closed,
-clear of itself, held to its grade, nothing else in its fence, its bales off it); it exits 1 if a check fails:
+clear of itself, held to its grade, nothing else in its fence, its bales off it; the hill climb clear of itself, held to its grade,
+its lane meeting it end to end, nothing else in its fence, its paddock and turning area laid out); it exits 1 if a check fails:
 
 ```
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
@@ -208,15 +221,20 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    arches over the start and finish lines stand clear of the road. `Rally stage (service area)`: the gravel yard, vans and awnings,
    no bump onto the stage; drive out along the track at its back to the lane, where the track ends at the lane's edge (it does not
    run on across or under it).
-11. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
+11. The hill climb (teleport to `Hill climb (start)`): drive up. Tarmac like a lane, no ground showing through it and no step at its
+   edges or where cut into the hillside; the bends and the hairpin near the top have a real radius, no kink. The start arch stands
+   clear of the road; the paddock beside the start straight lies flat with no bump onto the road. Turn round at the bottom and drive
+   down the lane: no seam or step where the lane runs into the climb's foot. `Hill climb (finish)`: the finish arch, then the
+   turning area beside the end of the road, flat and big enough to turn round on.
+12. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
    low bank above the shore.
-12. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+13. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-13. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+14. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-14. Hold R far out: the car is put back on its wheels where it was.
-15. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
-16. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+15. Hold R far out: the car is put back on its wheels where it was.
+16. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+17. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
-17. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-18. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+18. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+19. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).

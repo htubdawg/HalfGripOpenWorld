@@ -3,7 +3,10 @@ using System.Collections.Generic;
 
 namespace HalfGripOpenWorld
 {
-	/// <summary>Road classes, biggest first. A road may follow a road of its own class or bigger, never a smaller one.</summary>
+	/// <summary>
+	/// Road classes, biggest first. A road may follow a road of its own class or bigger, never a smaller one. The courses' roads come
+	/// last: no road follows them.
+	/// </summary>
 	internal enum RoadKind
 	{
 		Trunk = 0,
@@ -19,6 +22,11 @@ namespace HalfGripOpenWorld
 		/// Smallest of all, so no road follows it; none comes near it either (its ground is closed to the router).
 		/// </summary>
 		Rally = 7,
+		/// <summary>
+		/// The hill climb (<see cref="HillClimb"/>): a narrow tarmac road from a valley floor up to a col, paved like a lane. Not in the
+		/// network: no road joins or crosses it (its ground is closed to the router) but the lane at its foot, which meets it end to end.
+		/// </summary>
+		Climb = 8,
 	}
 
 	/// <summary>
@@ -104,6 +112,9 @@ namespace HalfGripOpenWorld
 			new Class { Half = 2.5, Grade = 0.18, Window = 3, Keep = 1, Rounds = 2, Soft = 0.15, Steep = 1.5, Bank = 15.0 },
 			// The rally stage, 5 m wide: routed by Rally itself, so only its grade, window and bank are used.
 			new Class { Half = Rally.Half, Grade = 0.12, Window = 4, Keep = 2, Rounds = 3, Soft = 0.10, Steep = 3.0, Bank = 30.0 },
+			// The hill climb, a lane's width: routed by HillClimb itself, so only its grade, window and bank are used; its banks are
+			// wide, as it is cut into the mountainside up to 10 m.
+			new Class { Half = HillClimb.Half, Grade = HillClimb.Grade, Window = 3, Keep = 1, Rounds = 2, Soft = 0.10, Steep = 1.2, Bank = 60.0 },
 		};
 
 		internal static double HalfOf(RoadKind kind)
@@ -111,10 +122,13 @@ namespace HalfGripOpenWorld
 			return Classes[(int)kind].Half;
 		}
 
-		/// <summary>Farm tracks and footpaths: no paving, verge, junction cuts or bridges; a ribbon on a shallow bed pressed into the ground.</summary>
+		/// <summary>
+		/// Farm tracks, footpaths and the rally stage: no paving, verge, junction cuts or bridges; a ribbon on a shallow bed pressed into
+		/// the ground. (The hill climb, after them, is paved.)
+		/// </summary>
 		internal static bool Unpaved(RoadKind kind)
 		{
-			return kind >= RoadKind.Track;
+			return kind >= RoadKind.Track && kind <= RoadKind.Rally;
 		}
 
 		/// <summary>The soft edge each side of a track's or path's ribbon, from the ribbon down to the ground.</summary>
@@ -169,7 +183,7 @@ namespace HalfGripOpenWorld
 		/// pressed bed, so where it meets a road it is under that road's surface and needs no cut; a path's a little under a track's, so
 		/// where one ends on the other they do not flicker.
 		/// </summary>
-		private static readonly double[] Tops = { 0.20, 0.16, 0.12, 0.08, 0.05, UnpavedLift - TrackDepth, UnpavedLift - TrackDepth - 0.02, UnpavedLift - TrackDepth };
+		private static readonly double[] Tops = { 0.20, 0.16, 0.12, 0.08, 0.05, UnpavedLift - TrackDepth, UnpavedLift - TrackDepth - 0.02, UnpavedLift - TrackDepth, 0.05 };
 
 		/// <summary>How far a road of this class is drawn above its road line (see <see cref="Tops"/>).</summary>
 		internal static double Top(RoadKind kind)
@@ -184,6 +198,9 @@ namespace HalfGripOpenWorld
 
 		/// <summary>The rally stage's track, from the back of its service area to the network (null if there is no stage).</summary>
 		internal static Road RallyAccess;
+
+		/// <summary>The hill climb's lane, from its foot to the network (null if there is no hill climb).</summary>
+		internal static Road ClimbAccess;
 
 		/// <summary>Where roads leave the world: the mouth of a tunnel into the edge wall, facing out along (DirX, DirZ).</summary>
 		internal struct Portal
@@ -253,11 +270,16 @@ namespace HalfGripOpenWorld
 			segments = new Segments();
 			router = new Router();
 			RallyAccess = null;
+			ClimbAccess = null;
 
-			// 0. The rally stage, before any other road: they all go round it.
+			// 0. The rally stage and the hill climb, before any other road: they all go round them.
 			if (Rally.Exists)
 			{
 				AddRally();
+			}
+			if (HillClimb.Exists)
+			{
+				AddClimb();
 			}
 
 			List<Places.Place> towns = Places.All.FindAll(p => p.Kind == PlaceKind.Town);
@@ -369,10 +391,15 @@ namespace HalfGripOpenWorld
 				}
 			}
 
-			// The rally stage's track, from the back of its service area to the nearest lane or bigger road.
+			// The rally stage's track, from the back of its service area to the nearest lane or bigger road; the hill climb's lane, from
+			// its foot.
 			if (Rally.Exists)
 			{
 				RallyAccess = RallyTrack();
+			}
+			if (HillClimb.Exists)
+			{
+				ClimbAccess = ClimbLane();
 			}
 
 			// 5. Farm tracks off the lanes and minor roads, and footpaths on from the dead ends of streets.
@@ -432,6 +459,120 @@ namespace HalfGripOpenWorld
 			Profile(road, cl.Grade, cl.Window, pins);
 			Roads.Add(road);
 			Rally.Road = road;
+		}
+
+		/// <summary>
+		/// The hill climb as a road: its start straight held to a straight grade between the land at its ends (the paddock beside it is
+		/// level across and follows that grade), and the turning area's stretch at the top likewise, no steeper than 6%; the rest given
+		/// its height as any road's is, held to 13%. It is not put in the segments or marked in the router: no road joins or follows it,
+		/// and its ground is closed to them; its lane meets its foot end to end.
+		/// </summary>
+		private static void AddClimb()
+		{
+			List<(double x, double z)> points = new List<(double x, double z)>(HillClimb.Count);
+			for (int i = 0; i < HillClimb.Count; i++)
+			{
+				points.Add((HillClimb.X[i], HillClimb.Z[i]));
+			}
+			Road road = Make(RoadKind.Climb, "Hill climb", points);
+			int n = road.Count;
+			int straight = 0;
+			while (straight + 1 < n && road.S[straight + 1] <= HillClimb.StartLength)
+			{
+				straight++;
+			}
+			int top = n - 1;
+			while (top > 0 && road.S[n - 1] - road.S[top - 1] <= HillClimb.TopLength)
+			{
+				top--;
+			}
+			List<(int idx, double y)> pins = new List<(int, double)>();
+			double y0 = WorldGen.Base(road.X[0], road.Z[0]), y1 = WorldGen.Base(road.X[straight], road.Z[straight]);
+			for (int i = 0; i <= straight; i++)
+			{
+				pins.Add((i, y0 + (y1 - y0) * road.S[i] / road.S[straight]));
+			}
+			double t0 = WorldGen.Base(road.X[top], road.Z[top]), run = road.S[n - 1] - road.S[top];
+			double t1 = WorldGen.Base(road.X[n - 1], road.Z[n - 1]);
+			t1 = t0 + Math.Max(-0.06 * run, Math.Min(0.06 * run, t1 - t0));
+			for (int i = top; i < n; i++)
+			{
+				pins.Add((i, t0 + (t1 - t0) * (road.S[i] - road.S[top]) / run));
+			}
+			Class cl = Classes[(int)RoadKind.Climb];
+			Profile(road, cl.Grade, cl.Window, pins);
+			Roads.Add(road);
+			HillClimb.Road = road;
+		}
+
+		/// <summary>
+		/// The hill climb's lane to the nearest lane or bigger road: routed from a point just behind its foot (where its fence opens),
+		/// drawn from the foot itself straight back in line with the start straight, so the two roads meet end to end at one height, then
+		/// rounded into the route; ended where its line first meets a road (as the rally's track is).
+		/// </summary>
+		private static Road ClimbLane()
+		{
+			Road climb = HillClimb.Road;
+			List<int> path = router.Find(RoadKind.Lane, HillClimb.AccessOutX, HillClimb.AccessOutZ, 0.0, 0.0, (int)RoadKind.Lane);
+			if (path == null || climb == null)
+			{
+				return null;
+			}
+			double fx = climb.X[0], fz = climb.Z[0];
+			double bx = (HillClimb.AccessOutX - fx) / HillClimb.AccessBack, bz = (HillClimb.AccessOutZ - fz) / HillClimb.AccessBack;
+			// The straight back (three points, so the rounding leaves its first stretch in line), then every other routed cell from the
+			// first clear of the foot (the first cells, round the point it was routed from, would only add a kink).
+			List<(double x, double z)> pts = new List<(double x, double z)> { (fx, fz), (fx + bx * 40.0, fz + bz * 40.0), (HillClimb.AccessOutX, HillClimb.AccessOutZ) };
+			double endY = double.NaN, lx = HillClimb.AccessOutX, lz = HillClimb.AccessOutZ;
+			int kept = 0;
+			foreach (int c in path)
+			{
+				double cx = router.X(c), cz = router.Z(c);
+				if (kept == 0 && (cx - fx) * (cx - fx) + (cz - fz) * (cz - fz) < 180.0 * 180.0)
+				{
+					continue;
+				}
+				if (segments.Intersect(lx, lz, cx, cz, -1, out double ix, out double iz, out double iy))
+				{
+					pts.Add((ix, iz));
+					endY = iy;
+					break;
+				}
+				if (kept++ % 2 == 0)
+				{
+					pts.Add((cx, cz));
+				}
+				lx = cx;
+				lz = cz;
+			}
+			if (double.IsNaN(endY))
+			{
+				if (!segments.Snap(lx, lz, 160.0, -1, out double sx, out double sz, out double sy))
+				{
+					return null;
+				}
+				pts.Add((sx, sz));
+				endY = sy;
+			}
+			Road road = Make(RoadKind.Lane, "Hill climb lane", Smooth(pts, 1, Classes[(int)RoadKind.Lane].Rounds));
+			if (road.Count < 3)
+			{
+				return null;
+			}
+			// Its first stretch carries on the start straight's grade, so the two surfaces meet in line.
+			double grade = (climb.Y[1] - climb.Y[0]) / Math.Max(1e-6, climb.S[1]);
+			List<(int idx, double y)> pins = new List<(int, double)> { (0, climb.Y[0]) };
+			for (int i = 1; i < road.Count - 1 && road.S[i] <= 30.0; i++)
+			{
+				pins.Add((i, climb.Y[0] - grade * road.S[i]));
+			}
+			pins.Add((road.Count - 1, endY));
+			Add(road, pins);
+			foreach (int c in path)
+			{
+				router.Mark(c, RoadKind.Lane);
+			}
+			return road;
 		}
 
 		/// <summary>
@@ -1168,7 +1309,8 @@ namespace HalfGripOpenWorld
 			{
 				Road road = Roads[r];
 				road.Tilt = new double[road.Count];
-				if (Unpaved(road.Kind) || road.Count < 4)
+				// The hill climb is in no junction: nothing crosses it, and its lane meets it end to end.
+				if (Unpaved(road.Kind) || road.Kind == RoadKind.Climb || road.Count < 4)
 				{
 					continue;
 				}
@@ -1916,7 +2058,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 				}
-				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0 || Circuit.Fenced(nx, nz, 40.0) || Rally.Fenced(nx, nz, 60.0))
+				if (!double.IsNaN(Rivers.SurfaceAt(nx, nz)) || Rivers.Distance(nx, nz, out double plain) < plain * 0.5 + 25.0 || Circuit.Fenced(nx, nz, 40.0) || Rally.Fenced(nx, nz, 60.0) || HillClimb.Fenced(nx, nz, HillClimb.Fence))
 				{
 					break;
 				}
@@ -2893,7 +3035,7 @@ namespace HalfGripOpenWorld
 				{
 					double x = X(c), z = Z(c);
 					h[c] = WorldGen.Base(x, z);
-					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z)) || Circuit.Fenced(x, z, 60.0) || Rally.Fenced(x, z, 150.0);
+					closed[c] = Math.Abs(x) > limit || z > limit || !double.IsNaN(Rivers.SurfaceAt(x, z)) || Circuit.Fenced(x, z, 60.0) || Rally.Fenced(x, z, 150.0) || HillClimb.Fenced(x, z, HillClimb.Fence);
 					road[c] = 255;
 					foreach (Places.Place p in Places.All)
 					{
