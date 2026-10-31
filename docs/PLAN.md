@@ -641,7 +641,7 @@ started on the host's go), so every player has the same sky and nothing is sent.
   and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
   the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
 - **Debug.** `ShowCoords` adds a line: the time, the sun or moon's height, the rain or snow, cloud, wetness and grip at the car,
-  the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back).
+  the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back); the Weather fast key (F2) toggles it running 10x.
 
 **Garages and start boxes on letting go of the shifter** (0.17.0, asked for): they act when the hand lets go of the active shifter in
 neutral (`ShifterHand`: the grabber's held object under the active shifter's object), stopped and armed as before, in place of

@@ -49,6 +49,10 @@ namespace HalfGripOpenWorld
 		private Storms storms;
 		private float startHour;
 		private float skip;
+		/// <summary>The debug fast key's toggle: while on, the sky runs <see cref="FastFactor"/> times as fast, by adding to <see cref="skip"/>
+		/// each frame, so turning it off leaves the sky where it got to.</summary>
+		private bool fast;
+		private const float FastFactor = 10f;
 
 		private WeatherController controller;
 		private WeatherProfile live;
@@ -362,6 +366,15 @@ namespace HalfGripOpenWorld
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				skip += back ? -300f : 300f;
 				TextController.EnqueueRandomText(1f, (back ? "Weather back" : "Weather on") + " 5 min");
+			}
+			if (Mod.WeatherSkip.Value && Mod.WeatherFastKey != null && Mod.WeatherFastKey.Down)
+			{
+				fast = !fast;
+				TextController.EnqueueRandomText(1f, fast ? "Weather x" + FastFactor.ToString("0") : "Weather x1");
+			}
+			if (fast && Mod.WeatherSkip.Value)
+			{
+				skip += Time.deltaTime * (FastFactor - 1f);
 			}
 			try
 			{
