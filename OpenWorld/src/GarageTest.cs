@@ -14,13 +14,11 @@ namespace HalfGripOpenWorld
 	/// too, before any garage is built on it. Only the car changes: the save and the Multiplayer loadout keep what was fitted, so the
 	/// next race starts with the old fit.
 	///
-	/// The refit alone is not enough for guns. The cockpit has one gun per kind (SMG, pump shotgun, revolver, sawed-off), all built in;
-	/// the refit only switches which one is on. A gun reads its item (capacity, magazines, blood-fed) and the gun mods convert it (the
-	/// M1911, Minigun, RPG and Sniper Rifle all turn the SMG into theirs) once, when it first starts up. So a swap kept the last gun's
-	/// rounds and set-up: after the BloodDrainer the SMG had no magazines for any SMG after it, and no modded gun was ever converted.
-	/// Every gun swap therefore puts a fresh copy of that kind's gun in, which starts up for the item now fitted. The gun's held model
-	/// (the 3D one raised to the camera, which lives under the camera, outside the gun) is replaced with it: the gun mods build their
-	/// models into it, so one left over showed the Sniper Rifle's model on every gun after it.
+	/// A press reads the car's loadout, empties the car and fits the new loadout (the old one with the next gun and wheel), as a garage
+	/// would. Emptying includes the cockpit's guns: there is one built-in gun per kind (SMG, pump shotgun, revolver, sawed-off), and
+	/// taking a gun item off only switches its gun off. A gun reads its item and the gun mods convert it (the M1911, Minigun, RPG and
+	/// Sniper Rifle all turn the SMG into theirs, building their models into its held model under the camera) once, when it first
+	/// starts up, so each gun and its held model are put back as the scene built them, from copies taken before they started.
 	/// </summary>
 	internal static class GarageTest
 	{
@@ -65,6 +63,7 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>The three steps: read the car's loadout, empty the car, fit the new loadout (the old one with the next gun and wheel).</summary>
 		private static void Swap(int step)
 		{
 			if (!PlayerLoadout.Known)
@@ -73,40 +72,66 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			List<UpgradeComponent> loadout = new List<UpgradeComponent>(PlayerLoadout.Equipped);
-			string gun = Next<GunUpgrade>(loadout, step);
-			string wheel = Next<ServoUpgrade>(loadout, step);
-			TextController.EnqueueRandomText(1f, gun + " / " + wheel);
+			List<UpgradeComponent> wanted = new List<UpgradeComponent>(loadout);
+			GunUpgrade gun = Next<GunUpgrade>(wanted, step);
+			ServoUpgrade wheel = Next<ServoUpgrade>(wanted, step);
+			Empty(loadout);
+			Fit(wanted);
+			Mod.Log.LogInfo("Garage test: emptied " + loadout.Count + " item(s), fitted " + string.Join(", ", wanted.Select(u => u.id).ToArray()));
+			TextController.EnqueueRandomText(1f, (gun != null ? gun.Name : "no gun") + " / " + (wheel != null ? wheel.Name : "no wheel"));
 			refillAt = Time.realtimeSinceStartup + 0.25f;
 		}
 
-		/// <summary>Swaps the fitted item of this kind for the next (or previous) one in the catalog, by id; returns the name of what is fitted now.</summary>
-		private static string Next<T>(List<UpgradeComponent> loadout, int step) where T : UpgradeComponent
+		/// <summary>Puts the next (or previous) item of this kind in the catalog, by id, in the loadout in place of the one there; returns it.</summary>
+		private static T Next<T>(List<UpgradeComponent> loadout, int step) where T : UpgradeComponent
 		{
 			List<T> all = Catalog().OfType<T>().Where(u => !u.disabled).GroupBy(u => u.id).Select(g => g.First()).OrderBy(u => u.id, StringComparer.Ordinal).ToList();
 			T off = loadout.OfType<T>().FirstOrDefault();
 			if (all.Count == 0)
 			{
-				return off != null ? off.Name : "nothing";
+				return off;
 			}
 			int at = off == null ? -1 : all.FindIndex(u => u.id == off.id);
-			int to = ((at < 0 ? (step > 0 ? -1 : 0) : at) + step + all.Count) % all.Count;
-			T on = all[to];
-			if (on == off)
+			T on = all[((at < 0 ? (step > 0 ? -1 : 0) : at) + step + all.Count) % all.Count];
+			int index = off == null ? -1 : loadout.IndexOf(off);
+			if (index >= 0)
 			{
-				return on.Name;
+				loadout[index] = on;
 			}
-			if (off != null)
+			else
 			{
-				loadout.Remove(off);
+				loadout.Add(on);
 			}
-			loadout.Add(on);
-			if (on is GunUpgrade gun)
+			return on;
+		}
+
+		/// <summary>
+		/// Takes every item off the car, then puts the cockpit's guns and their held models back as the scene built them. Taking a gun
+		/// item off only switches its gun off: the gun keeps its rounds and whatever its item and the gun mods set up when it started.
+		/// </summary>
+		private static void Empty(List<UpgradeComponent> loadout)
+		{
+			List<UpgradeComponent> left = new List<UpgradeComponent>(loadout);
+			for (int i = loadout.Count - 1; i >= 0; i--)
 			{
-				FreshGun(gun.gunType);
+				left.Remove(loadout[i]);
+				LoadoutRefit.Swap(loadout[i], null, left);
 			}
-			LoadoutRefit.Swap(off, on, loadout);
-			Mod.Log.LogInfo("Garage test: " + (off != null ? off.id : "nothing") + " -> " + on.id + " (" + (to + 1) + " of " + all.Count + " " + typeof(T).Name + ")");
-			return on.Name;
+			foreach (GunType type in templates.Keys.ToList())
+			{
+				ResetGun(type);
+			}
+		}
+
+		/// <summary>Fits the loadout to the empty car, one item at a time, the way the refit fits one.</summary>
+		private static void Fit(List<UpgradeComponent> loadout)
+		{
+			List<UpgradeComponent> on = new List<UpgradeComponent>();
+			foreach (UpgradeComponent item in loadout)
+			{
+				on.Add(item);
+				LoadoutRefit.Swap(null, item, on);
+			}
 		}
 
 		/// <summary>
@@ -253,10 +278,10 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Puts a fresh copy of this kind's gun and of its held model in place of the ones there, before the refit switches the gun on.
-		/// The old gun is taken out of the car first, so the refit's gun activator (which looks through the car) cannot find it again.
+		/// Puts a fresh copy of this kind's gun and of its held model in place of the ones there. The old gun is taken out of the car
+		/// first, so the refit's gun activator (which looks through the car) cannot find it again before it goes.
 		/// </summary>
-		private static void FreshGun(GunType type)
+		private static void ResetGun(GunType type)
 		{
 			if (!templates.TryGetValue(type, out Template template) || template.Gun == null)
 			{
@@ -275,7 +300,7 @@ namespace HalfGripOpenWorld
 				GameObject held = Replace(oldHeld.gameObject, template.Held);
 				Remap(gun, template.Held.transform, held.transform);
 			}
-			Mod.Info("Garage test: a fresh " + gun.name + " in the car");
+			Mod.Info("Garage test: " + gun.name + " back as built");
 		}
 
 		/// <summary>Swaps an object in the scene for a copy of the template, in the same place among its siblings.</summary>
