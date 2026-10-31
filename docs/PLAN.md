@@ -423,3 +423,11 @@ The owner's second test (screenshots): the window works. Asked for, and done:
   oily warm greys, the HUD's orange for the chosen slot and a pointed-at button, a dirty mustard for what is fitted and drop targets,
   cream lettering, an olive health bar (rust red when low), and a tiled grime texture (specks, blotches, the odd scratch, an integer
   hash) over every box and button.
+
+### The garage: the vanilla garage's colours (0.13.3)
+
+The owner found 0.13.2's orange and brown gross and sent a screenshot of the vanilla garage to take the colours and theme from (not
+its layout). The window and prompt now use them: a dark slate frame, worn mid-grey metal tiles with a near-black outline, black
+wells for the pictures and the health bar, white lettering; the vanilla red (its map button, its prices) for the chosen slot, a
+pointed-at button and the headings; its unlock bar's green for what is fitted, the drop targets and the health blocks (red when
+low). The grime stays, neutral grey instead of warm.

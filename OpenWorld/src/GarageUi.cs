@@ -10,8 +10,8 @@ namespace HalfGripOpenWorld
 	/// What the player sees of a garage: a "GARAGE" label over each circle nearby, a line telling them how to open it while they are in
 	/// one, and the garage's own window while it is open. The game's drag-and-drop garage exists only in the menu scene, so this is drawn
 	/// with Unity's immediate-mode GUI, as the debug overlay is, at a size that follows the screen's height, in the game's pixel look:
-	/// bevelled panels made of chunky pixels (<see cref="Px"/> units each) in oily warm greys with grime over them, the game's HUD
-	/// orange and the m6x11 font: a grungy racing garage, not a neon one.
+	/// bevelled panels made of chunky pixels (<see cref="Px"/> units each) in the vanilla garage's colours (worn grey metal, black
+	/// wells, red and the unlock bar's green for accents) with grime over them, and the m6x11 font.
 	///
 	/// The window: the car's slots down the left, grouped and in the order of their categories (the car, the cockpit, extras), each with
 	/// what is fitted; the items that fit the chosen slot on the right, best tier first, with the pointed-at one's description under them;
@@ -317,8 +317,8 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			string words = garage.Armed
-				? "<color=#ff8c1a>GARAGE</color>  " + here.Name + "\nStop and shift into neutral to open it"
-				: "<color=#ff8c1a>GARAGE</color>  " + here.Name + "\nShift into gear or drive out of the circle to open it again";
+				? "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nStop and shift into neutral to open it"
+				: "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nShift into gear or drive out of the circle to open it again";
 			Rect r = new Rect(Mathf.Round(w * 0.5f - 330f), Mathf.Round(h * 0.56f), 660f, 78f);
 			Box(r, panel);
 			Shadowed(r, words, prompt);
@@ -344,7 +344,7 @@ namespace HalfGripOpenWorld
 			Box(win, panel);
 
 			// Title and what holds while it is open.
-			Shadowed(new Rect(win.x + 24f, win.y + 14f, 800f, 40f), "GARAGE  <color=#ff8c1a>" + garage.OpenAt.Name + "</color>", title);
+			Shadowed(new Rect(win.x + 24f, win.y + 14f, 800f, 40f), "GARAGE  <color=#e23a3a>" + garage.OpenAt.Name + "</color>", title);
 			if (Button(new Rect(win.xMax - 168f, win.y + 16f, 144f, 38f), "Close  [Esc]"))
 			{
 				EndPress();
@@ -438,7 +438,7 @@ namespace HalfGripOpenWorld
 					Icon(new Rect(r.x + 8f, r.y + 8f, 30f, 30f), s.Item);
 				}
 				GUI.Label(new Rect(r.x + 54f, r.y + 3f, r.width - 58f, 18f), s.Label, small);
-				GUI.Label(new Rect(r.x + 54f, r.y + 20f, r.width - 58f, 24f), s.Item != null && !lifted ? Titled(s.Item) : "<color=#7d7364>Empty</color>", text);
+				GUI.Label(new Rect(r.x + 54f, r.y + 20f, r.width - 58f, 24f), s.Item != null && !lifted ? Titled(s.Item) : "<color=#8c8e93>Empty</color>", text);
 				y += 49f;
 			}
 		}
@@ -449,7 +449,7 @@ namespace HalfGripOpenWorld
 			Event e = Event.current;
 			Slot slot = slots[selected];
 			List<UpgradeComponent> items = offered.TryGetValue(slot.Category, out List<UpgradeComponent> list) ? list : new List<UpgradeComponent>();
-			Shadowed(new Rect(area.x + 2f, area.y, area.width - 170f, 26f), slot.Label.ToUpperInvariant() + "  <color=#7d7364>" + items.Count + " to choose from</color>", heading);
+			Shadowed(new Rect(area.x + 2f, area.y, area.width - 170f, 26f), slot.Label.ToUpperInvariant() + "  <color=#8c8e93>" + items.Count + " to choose from</color>", heading);
 			if (slot.Item != null && Button(new Rect(area.xMax - 160f, area.y - 4f, 160f, 32f), "Take off"))
 			{
 				Place(selected, null);
@@ -498,8 +498,8 @@ namespace HalfGripOpenWorld
 				Box(new Rect(r.x + Px * 2, r.y + Px * 2, cardH - Px * 4, cardH - Px * 4), iconBox);
 				Icon(new Rect(r.x + 10f, r.y + 10f, cardH - 20f, cardH - 20f), u);
 				GUI.Label(new Rect(r.x + 60f, r.y + 5f, r.width - 220f, 26f), Titled(u), text);
-				GUI.Label(new Rect(r.x + 60f, r.y + 29f, r.width - 220f, 20f), TierName(u) + (Unlocked(u) ? "" : "  <color=#b08a50>not unlocked yet</color>"), small);
-				string tag = fitted ? "<color=#e0b030>FITTED</color>" : elsewhere ? "<color=#e0b030>FITTED</color> <color=#7d7364>(other slot)</color>" : "";
+				GUI.Label(new Rect(r.x + 60f, r.y + 29f, r.width - 220f, 20f), TierName(u) + (Unlocked(u) ? "" : "  <color=#d05050>not unlocked yet</color>"), small);
+				string tag = fitted ? "<color=#9ccc5a>FITTED</color>" : elsewhere ? "<color=#9ccc5a>FITTED</color> <color=#8c8e93>(other slot)</color>" : "";
 				GUI.Label(new Rect(r.xMax - 180f, r.y, 168f, cardH), tag, smallRight);
 			}
 			GUI.EndScrollView();
@@ -530,7 +530,7 @@ namespace HalfGripOpenWorld
 		{
 			CarLink link = garage.Link;
 			float hp = link != null ? link.hp : 0f, max = link != null ? Mathf.Max(1f, link.MaxHp) : 1f;
-			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#7d7364>(held while open)</color>", small);
+			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#8c8e93>(held while open)</color>", small);
 			HealthBar(new Rect(area.x, area.y + 20f, 300f, 26f), Mathf.Clamp01(hp / max));
 			bool full = hp >= max - 0.5f;
 			GUI.enabled = !full;
@@ -545,7 +545,7 @@ namespace HalfGripOpenWorld
 				garage.Refill();
 				Say("Ammo, nitro and charges filled");
 			}
-			string right = message != null && Time.realtimeSinceStartup < messageUntil ? "<color=#e8d8b0>" + message + "</color>" : "<color=#7d7364>To leave: Close, then shift into gear and drive off.</color>";
+			string right = message != null && Time.realtimeSinceStartup < messageUntil ? "<color=#e8e8e8>" + message + "</color>" : "<color=#8c8e93>To leave: Close, then shift into gear and drive off.</color>";
 			GUI.Label(new Rect(area.x + 770f, area.y + 14f, area.width - 770f, 38f), right, smallRight);
 		}
 
@@ -765,7 +765,7 @@ namespace HalfGripOpenWorld
 		private static Texture2D Bevel(Color fill, Color light, Color shade, bool sunk = false)
 		{
 			const int n = 8;
-			Color outline = new Color(0.03f, 0.025f, 0.02f, 1f), clear = new Color(0f, 0f, 0f, 0f);
+			Color outline = new Color(0.03f, 0.03f, 0.035f, 1f), clear = new Color(0f, 0f, 0f, 0f);
 			Color top = sunk ? shade : light, bottom = sunk ? light : shade;
 			Texture2D t = new Texture2D(n * Px, n * Px, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
 			Color[] pixels = new Color[n * n * Px * Px];
@@ -814,7 +814,7 @@ namespace HalfGripOpenWorld
 		private const int GrimeSize = 64;
 
 		/// <summary>
-		/// The grime laid over every box: dark specks and oily blotches with the odd scratch of light, each texel one of the look's
+		/// The grime laid over every box: dark specks and blotches, the vanilla garage's worn metal, with the odd scratch of light, each texel one of the look's
 		/// pixels, repeating. Only looks: an integer hash, nothing from the world's randomness.
 		/// </summary>
 		private static Texture2D Dirt()
@@ -843,12 +843,12 @@ namespace HalfGripOpenWorld
 					}
 					else if (speck < 105u)
 					{
-						c = new Color(0.95f, 0.85f, 0.65f, 0.07f);
+						c = new Color(0.85f, 0.86f, 0.88f, 0.07f);
 					}
 					// A short scratch now and then, three pixels along.
 					if (Hash(x, y, 4u) % 400u == 0u || Hash(x - 1, y, 4u) % 400u == 0u || Hash(x - 2, y, 4u) % 400u == 0u)
 					{
-						c = new Color(0.95f, 0.85f, 0.65f, 0.08f);
+						c = new Color(0.85f, 0.86f, 0.88f, 0.08f);
 					}
 					pixels[y * n + x] = c;
 				}
@@ -886,26 +886,28 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			styled = true;
-			// A grungy garage, not a neon one: oily warm greys, the game's HUD orange for what is chosen, a dirty mustard (the nitro gauge's
-			// yellow) for what is fitted, cream lettering.
-			Color grey = new Color(0.14f, 0.125f, 0.10f, 1f), greyLight = new Color(0.27f, 0.24f, 0.19f, 1f), greyShade = new Color(0.055f, 0.05f, 0.04f, 1f);
-			Color orange = new Color(0.88f, 0.46f, 0.10f, 1f), orangeFill = new Color(0.30f, 0.15f, 0.05f, 1f), orangeShade = new Color(0.38f, 0.17f, 0.03f, 1f);
-			Color mustard = new Color(0.82f, 0.66f, 0.20f, 1f), mustardFill = new Color(0.22f, 0.18f, 0.07f, 1f), mustardShade = new Color(0.32f, 0.25f, 0.06f, 1f);
-			Color cream = new Color(0.93f, 0.89f, 0.80f, 1f), muted = new Color(0.62f, 0.58f, 0.50f, 1f);
-			panel = Panel(Bevel(new Color(0.10f, 0.09f, 0.075f, 0.97f), greyLight, greyShade));
-			inset = Panel(Bevel(new Color(0.06f, 0.055f, 0.045f, 1f), greyLight, greyShade, true));
-			slotOff = Panel(Bevel(grey, greyLight, greyShade));
-			slotOn = Panel(Bevel(orangeFill, orange, orangeShade));
-			slotDrop = Panel(Bevel(mustardFill, mustard, mustardShade));
-			cardOff = Panel(Bevel(grey, new Color(0.22f, 0.20f, 0.16f, 1f), greyShade));
-			cardHover = Panel(Bevel(new Color(0.20f, 0.18f, 0.145f, 1f), new Color(0.36f, 0.32f, 0.26f, 1f), greyShade));
-			cardOn = Panel(Bevel(mustardFill, mustard, mustardShade));
-			iconBox = Panel(Bevel(new Color(0.045f, 0.04f, 0.035f, 1f), greyShade, greyLight, false));
-			barBack = Panel(Bevel(new Color(0.03f, 0.025f, 0.02f, 1f), greyLight, greyShade, true));
+			// The vanilla garage's colours: worn mid-grey metal tiles with a near-black outline on a dark slate frame, black wells, white
+			// lettering; its red (the map button, the prices) for what is chosen, its unlock bar's green for what is fitted.
+			Color metal = new Color(0.33f, 0.335f, 0.35f, 1f), metalLight = new Color(0.50f, 0.505f, 0.52f, 1f), metalShade = new Color(0.17f, 0.17f, 0.185f, 1f);
+			Color slate = new Color(0.12f, 0.125f, 0.145f, 0.97f), slateLight = new Color(0.27f, 0.275f, 0.30f, 1f), slateShade = new Color(0.06f, 0.06f, 0.07f, 1f);
+			Color red = new Color(0.66f, 0.10f, 0.10f, 1f), redLight = new Color(0.85f, 0.22f, 0.20f, 1f), redShade = new Color(0.36f, 0.05f, 0.05f, 1f);
+			Color green = new Color(0.25f, 0.38f, 0.17f, 1f), greenLight = new Color(0.56f, 0.72f, 0.32f, 1f), greenShade = new Color(0.13f, 0.20f, 0.08f, 1f);
+			Color well = new Color(0.035f, 0.035f, 0.04f, 1f);
+			Color white = new Color(0.94f, 0.94f, 0.95f, 1f), muted = new Color(0.66f, 0.67f, 0.70f, 1f);
+			panel = Panel(Bevel(slate, slateLight, slateShade));
+			inset = Panel(Bevel(new Color(0.08f, 0.08f, 0.095f, 1f), slateLight, slateShade, true));
+			slotOff = Panel(Bevel(metal, metalLight, metalShade));
+			slotOn = Panel(Bevel(red, redLight, redShade));
+			slotDrop = Panel(Bevel(green, greenLight, greenShade));
+			cardOff = Panel(Bevel(new Color(0.27f, 0.275f, 0.29f, 1f), new Color(0.42f, 0.425f, 0.44f, 1f), metalShade));
+			cardHover = Panel(Bevel(new Color(0.38f, 0.385f, 0.40f, 1f), new Color(0.58f, 0.585f, 0.60f, 1f), metalShade));
+			cardOn = Panel(Bevel(green, greenLight, greenShade));
+			iconBox = Panel(Bevel(well, slateShade, slateLight, false));
+			barBack = Panel(Bevel(well, slateLight, slateShade, true));
 			dark = Solid(new Color(0f, 0f, 0f, 0.35f));
-			healthFill = Solid(new Color(0.55f, 0.68f, 0.22f, 1f));
-			healthLow = Solid(new Color(0.72f, 0.20f, 0.12f, 1f));
-			dropTint = Solid(new Color(0.82f, 0.66f, 0.20f, 0.14f));
+			healthFill = Solid(new Color(0.56f, 0.72f, 0.32f, 1f));
+			healthLow = Solid(new Color(0.85f, 0.16f, 0.14f, 1f));
+			dropTint = Solid(new Color(0.56f, 0.72f, 0.32f, 0.14f));
 			grime = Dirt();
 			Font font = PixelFont();
 
@@ -919,17 +921,17 @@ namespace HalfGripOpenWorld
 				}
 				return s;
 			}
-			title = Make(36, cream, TextAnchor.MiddleLeft);
-			text = Make(18, cream, TextAnchor.MiddleLeft);
+			title = Make(36, white, TextAnchor.MiddleLeft);
+			text = Make(18, white, TextAnchor.MiddleLeft);
 			small = Make(18, muted, TextAnchor.MiddleLeft);
 			smallRight = Make(18, muted, TextAnchor.MiddleRight);
-			faint = Make(18, new Color(0.55f, 0.51f, 0.44f), TextAnchor.UpperLeft, true);
-			heading = Make(18, orange, TextAnchor.MiddleLeft);
+			faint = Make(18, new Color(0.56f, 0.57f, 0.60f), TextAnchor.UpperLeft, true);
+			heading = Make(18, redLight, TextAnchor.MiddleLeft);
 			label = Make(18, new Color(0.55f, 0.92f, 1f), TextAnchor.MiddleCenter);
-			prompt = Make(18, cream, TextAnchor.MiddleCenter, true);
-			detailName = Make(27, cream, TextAnchor.MiddleLeft);
-			detail = Make(18, new Color(0.84f, 0.80f, 0.72f), TextAnchor.UpperLeft, true);
-			dropLabel = Make(27, mustard, TextAnchor.MiddleCenter);
+			prompt = Make(18, white, TextAnchor.MiddleCenter, true);
+			detailName = Make(27, white, TextAnchor.MiddleLeft);
+			detail = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.UpperLeft, true);
+			dropLabel = Make(27, greenLight, TextAnchor.MiddleCenter);
 
 			// Buttons: a raised pixel box, lighter when pointed at, sunk when pressed, the text pushed down a pixel with it.
 			button = new GUIStyle { fontSize = 18, richText = true, alignment = TextAnchor.MiddleCenter, border = new RectOffset(Px * 3, Px * 3, Px * 3, Px * 3), padding = new RectOffset(Px * 3, Px * 3, Px * 2, Px * 3) };
@@ -937,12 +939,12 @@ namespace HalfGripOpenWorld
 			{
 				button.font = font;
 			}
-			button.normal.background = Bevel(new Color(0.22f, 0.20f, 0.16f, 1f), new Color(0.40f, 0.36f, 0.29f, 1f), greyShade);
-			button.hover.background = Bevel(orangeFill, orange, orangeShade);
-			button.active.background = Bevel(new Color(0.22f, 0.11f, 0.03f, 1f), orange, orangeShade, true);
-			button.normal.textColor = cream;
-			button.hover.textColor = cream;
-			button.active.textColor = new Color(1f, 0.80f, 0.55f, 1f);
+			button.normal.background = Bevel(metal, metalLight, metalShade);
+			button.hover.background = Bevel(red, redLight, redShade);
+			button.active.background = Bevel(redShade, redLight, red, true);
+			button.normal.textColor = white;
+			button.hover.textColor = white;
+			button.active.textColor = new Color(1f, 0.80f, 0.78f, 1f);
 			button.contentOffset = Vector2.zero;
 		}
 	}
