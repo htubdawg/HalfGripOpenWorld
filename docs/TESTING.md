@@ -85,8 +85,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    shines, and the overlay's grip drops; drive out the other side: the rain stops, the road stays wet and dries over about 10
    minutes. In the rain, the drops reach the ground and splash on it,
    on the road and on buildings, on high ground and down in a valley alike, with no drops stopping or splashing in mid-air (the
-   log says `Rain particles ... now land on the world's ground`; with `VerboseLog` the `Sky: particles` lines say how the game's
-   rain was set up, worth sending if it still looks wrong). Up in the northern mountains above the snow line it snows instead. Frame time with heavy rain (the graphics budget
+   log says `Sky: rain and snow land on 1 collision plane(s)`). Teleport about (origin shifts) while it rains, and drive down a
+   long hill in the rain: the rain stays, and still reaches the ground. Up in the northern mountains above the snow line it snows instead. Frame time with heavy rain (the graphics budget
    still cuts the rain on a low setting).
 22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
    filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each

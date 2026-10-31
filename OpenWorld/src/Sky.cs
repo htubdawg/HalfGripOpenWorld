@@ -70,6 +70,10 @@ namespace HalfGripOpenWorld
 		private AudioSource rainSound;
 		private readonly List<GameObject> headlights = new List<GameObject>();
 		private int headlightsOn = -1;
+		/// <summary>The falling particles' collision planes, and how far round the rain the ground under them is looked at.</summary>
+		private readonly List<Transform> planes = new List<Transform>();
+		private const double PlaneReach = 60.0;
+		private float nextPlanes;
 		private readonly List<(Material m, Color colour, float smooth)> roads = new List<(Material, Color, float)>();
 
 		/// <summary>The weather at the car, eased so it never jumps (a teleport, a skip).</summary>
@@ -197,6 +201,7 @@ namespace HalfGripOpenWorld
 			{
 				Road(m, false);
 			}
+			Mod.Log.LogInfo("Sky: rain and snow land on " + planes.Count + " collision plane(s) kept under them at the lowest ground");
 			Mod.Info("Sky: day " + dayLook.name + ", night " + nightLook.name + ", " + rainParticles.Count + " rain and " + snowParticles.Count + " snow particle systems, "
 				+ headlights.Count + " headlights, " + cabin.Count + " cabin lights, ambient keeper " + (keeper != null ? "found" : "none") + ", rain sound " + (clip != null ? clip.name : "none"));
 		}
@@ -208,11 +213,10 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			int ground = Ground();
 			foreach (ParticleSystem ps in effect.GetComponentsInChildren<ParticleSystem>(true))
 			{
 				into.Add((ps, ps.emission.rateOverTimeMultiplier));
-				Land(ps, ground);
+				Land(ps);
 				ParticleSystemRenderer r = ps.GetComponent<ParticleSystemRenderer>();
 				if (r == null || r.sharedMaterial == null)
 				{
@@ -228,22 +232,17 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The layers the world's ground, roads and buildings are on (the tiles on Floor, the roads and buildings on Default).</summary>
-		private static int Ground()
-		{
-			int floor = LayerMask.NameToLayer("Floor");
-			return (1 << 0) | (floor >= 0 ? 1 << floor : 0);
-		}
-
 		/// <summary>
-		/// Makes a falling particle system that collides land on the world's own ground. The game's rain collides with a plane object
-		/// (<c>Weather/ParticleColliderPlane</c>, Tokyo's ground level, used as a collision plane by the particles, so switching its
-		/// collider off changes nothing): in the Open World that is the spawn's height, so the rain stopped and splashed in mid-air over
-		/// low ground and fell through high ground. Collision with the world's colliders instead, the drop dying where it hits (so its
-		/// splash, a collision sub-emitter, comes up there), and a longer life so it reaches a valley floor below the emitter.
-		/// Only systems that already collide are changed: one that never did (snow) keeps falling until its life ends.
+		/// Makes a falling particle system that collides land on the world's own ground. The game's rain and snow collide with a plane
+		/// (<c>Weather/ParticleColliderPlane</c>, at Tokyo's ground level; a collision plane, so switching its collider off changes nothing):
+		/// in the Open World that was the spawn's height, so the drops stopped and splashed in mid-air over low ground. Collision with the
+		/// world's colliders was tried (0.17.0 before its test) and failed: at a quality the drops can afford Unity caches the colliders as
+		/// static, and the floating origin moves them all and the streamer swaps them, so after the first shift the drops hit ground that
+		/// was no longer there and vanished. So the plane stays, and <see cref="MovePlanes"/> puts it under the rain at the lowest ground
+		/// there: no drop stops in the air, and where the ground is higher they go into it, out of sight. The drop dies where it hits (its
+		/// splash, a collision sub-emitter, comes up there) and lives twice as long, to reach a valley floor below the emitter.
 		/// </summary>
-		private static void Land(ParticleSystem ps, int ground)
+		private void Land(ParticleSystem ps)
 		{
 			try
 			{
@@ -252,25 +251,64 @@ namespace HalfGripOpenWorld
 				Mod.Info("Sky: particles " + ps.name + ": collision " + (collision.enabled ? collision.type + " (" + collision.planeCount + " planes, quality " + collision.quality + ", lifetime loss " + collision.lifetimeLossMultiplier + ")" : "off")
 					+ ", " + subs.subEmittersCount + " sub-emitters" + (subs.subEmittersCount > 0 ? " (" + subs.GetSubEmitterType(0) + " " + (subs.GetSubEmitterSystem(0) != null ? subs.GetSubEmitterSystem(0).name : "none") + ")" : "")
 					+ ", life " + ps.main.startLifetimeMultiplier.ToString("0.0") + " s");
-				if (!collision.enabled)
+				if (!collision.enabled || collision.type != ParticleSystemCollisionType.Planes)
 				{
 					return;
 				}
-				string was = collision.type == ParticleSystemCollisionType.Planes ? "a plane" : "the world's colliders already";
-				collision.type = ParticleSystemCollisionType.World;
-				collision.mode = ParticleSystemCollisionMode.Collision3D;
-				collision.collidesWith = ground;
-				// 10000 drops: medium quality checks against a cache of the colliders, not a ray each.
-				collision.quality = ParticleSystemCollisionQuality.Medium;
+				for (int i = 0; i < collision.planeCount; i++)
+				{
+					Transform plane = collision.GetPlane(i);
+					if (plane != null && !planes.Contains(plane))
+					{
+						planes.Add(plane);
+					}
+				}
 				collision.lifetimeLossMultiplier = 1f;
 				collision.bounceMultiplier = 0f;
 				ParticleSystem.MainModule main = ps.main;
 				main.startLifetimeMultiplier *= 2f;
-				Mod.Log.LogInfo("Rain particles " + ps.name + " now land on the world's ground (they collided with " + was + ")");
 			}
 			catch (Exception e)
 			{
 				Mod.Log.LogWarning("Could not make the particles " + ps.name + " land on the ground: " + e.Message);
+			}
+		}
+
+		/// <summary>
+		/// Puts the falling particles' collision planes under the rain at the lowest ground (or water) near it, a few times a second. The
+		/// planes are in scene coordinates like everything else, so this also puts them right after an origin shift.
+		/// </summary>
+		private void MovePlanes()
+		{
+			GameObject effect = controller.rainEffect != null && controller.rainEffect.activeSelf ? controller.rainEffect : controller.snowEffect;
+			if (planes.Count == 0 || effect == null || !effect.activeSelf || Time.time < nextPlanes)
+			{
+				return;
+			}
+			nextPlanes = Time.time + 0.2f;
+			Vector3 at = effect.transform.position;
+			Origin.World(at, out double x, out double z);
+			double lowest = double.MaxValue;
+			for (int j = -1; j <= 1; j++)
+			{
+				for (int i = -1; i <= 1; i++)
+				{
+					double px = x + i * PlaneReach, pz = z + j * PlaneReach;
+					double ground = WorldGen.Height(px, pz);
+					if (Rivers.Water(px, pz, out double level))
+					{
+						ground = Math.Max(ground, level + Network.Lift);
+					}
+					lowest = Math.Min(lowest, ground);
+				}
+			}
+			Vector3 position = new Vector3(at.x, (float)lowest - 0.05f, at.z);
+			foreach (Transform plane in planes)
+			{
+				if (plane != null)
+				{
+					plane.SetPositionAndRotation(position, Quaternion.identity);
+				}
 			}
 		}
 
@@ -427,6 +465,7 @@ namespace HalfGripOpenWorld
 			float falling = rain < 0.02f ? 0f : rain;
 			Fall(controller.rainEffect, rainParticles, falling * (1f - snowShare), out live.rain);
 			Fall(controller.snowEffect, snowParticles, falling * snowShare, out live.snow);
+			MovePlanes();
 			float bright = Mathf.Lerp(0.3f, 1f, daylight) * (1f - 0.3f * cloud);
 			foreach ((Material m, string colour, Color baseColour) in fallMaterials)
 			{
