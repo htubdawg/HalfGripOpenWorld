@@ -88,6 +88,13 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    Refill the ammo and nitro.
    Esc or Close closes it; it does not open again until you shift into gear or leave the circle. The next race starts with the
    loadout from the menu or the room, not the garage's (the log says `Garage: the race's own loadout is back`).
+22b. Respawn at a garage (0.16.0), alone and in a Multiplayer room. The garage window's bottom right says `Respawn after a wreck: the
+   start`. Press Respawn here: `A wreck comes back here`, the log says `Respawn point: <garage>`, the button reads Respawn at start
+   and the bottom right `this garage`; another garage's window says `another garage`. Close, drive off, get wrecked: after the wait
+   the car is in that garage's circle, facing out of the lot (along the pit lane to its exit in the pits), repaired, on its wheels,
+   `BACK AT THE GARAGE`; the garage does not open until you shift into gear and back to neutral. In a room, with another player's
+   car parked in that circle: you come back at the start instead. Press Respawn at start and get wrecked: back at the start. Wrecked
+   in an event: still back at the last checkpoint. Start the next race (or a new run): a wreck goes back to the start again.
 23. Events, solo (0.15.3). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
    5 gates`. Out of an event the cockpit's board (top right) is tucked into the screen's right edge with a sliver showing; the hand
    over the sliver slides it out with the cars in the race (`cars 1` solo, `players N` in a room, on the lap counter), and it goes

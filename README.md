@@ -14,7 +14,7 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Race courses:** a 2.9 km tarmac circuit with kerbs, gravel traps, pits and grandstands; a 5 km gravel rally stage through the
   upland forest; a 1.5 km hill climb up a mountain valley. Each has a timed solo event (see [Events](#events)).
 - **Road signs:** name signs into every town and village, and fingerposts at junctions with the miles to the nearest places by road.
-- **Garages:** where the car can be refitted, repaired and refilled mid-race (see [Garages](#garages)).
+- **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west, the rally stage (orange) in the north-east, the hill climb (pink) in the mountains north of the middle](docs/world.png)
@@ -22,7 +22,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.15.3**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.16.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -30,7 +30,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.15.3` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.16.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -42,7 +42,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 - **Reset** (hold R) puts the car back on its wheels where it is, not back at the spawn. A car that ends up in a river, a lake or the
   sea is put back on the nearest road.
 - **Wrecked:** the drive goes on. After a few seconds the car is back at the start, repaired (on the first free grid slot, so
-  players respawning together do not land on each other). In a Multiplayer room the room's respawn time counts, and an Open World
+  players respawning together do not land on each other), or at the garage you made the respawn point (see [Garages](#garages)). In a Multiplayer room the room's respawn time counts, and an Open World
   race is always played with respawns (a Demolition is played as a race, and "out, watch" as respawn), since it has no finish.
 - **No AI rivals**, solo or in a room: the room's AI RIVALS setting is ignored in the Open World.
 - **Weather** is drawn from all the game's weathers each race (in a Multiplayer room from the room's seed, so everyone gets the same).
@@ -57,6 +57,10 @@ into neutral to open it:
   right-click it to fit it; drag it off its slot or right-click it again to take it off. In a Multiplayer room, the items the
   Multiplayer mod bans are not offered.
 - **Repair** fills the health, **Refill** the ammo and nitro. Nothing can hurt the car while the garage is open.
+- **Respawn here** makes the garage your respawn point: after a wreck the car comes back in its circle, facing out, instead of at
+  the start (at the start after all if another car is standing in the circle). Press it again (**Respawn at start**) to go back to
+  the start. The bottom right of the window says where a wreck goes. It lasts for that race only: every race starts at the start,
+  and it is never saved. In an event a wreck still goes back to the last checkpoint.
 - Close it with Close or Esc. Changes last for that race only: nothing is saved, and the next race starts with the loadout picked
   in the menu or the room. Mouse only.
 
@@ -90,7 +94,7 @@ the same ground.
 | Section | Key | Default | What it does |
 |---|---|---|---|
 | Map | `TestMode` | false | Every race you start is in the Open World. |
-| Map | `RespawnSeconds` | 3 | Solo: seconds after a wreck before the car is back at the start (1 to 30). |
+| Map | `RespawnSeconds` | 3 | Solo: seconds after a wreck before the car is back at the start or the respawn garage (1 to 30). |
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |

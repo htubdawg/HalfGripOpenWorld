@@ -132,7 +132,7 @@ namespace HalfGripOpenWorld
 
 	/// <summary>
 	/// A reset (holding R) puts the car back on its wheels where it is, on the ground, facing the way it was going (or on the nearest road,
-	/// if it is in water). The respawn after a wreck (<see cref="GameMode"/>'s, or the Multiplayer mod's) puts it back at the spawn. The game's own reset would carry it back to the token loop at the spawn, kilometres away.
+	/// if it is in water). The respawn after a wreck (<see cref="GameMode"/>'s, or the Multiplayer mod's) puts it back at the spawn, or at the garage chosen as the respawn point. The game's own reset would carry it back to the token loop at the spawn, kilometres away.
 	/// </summary>
 	[HarmonyPatch(typeof(PlayerResetLogic), nameof(PlayerResetLogic.ResetOnTrack))]
 	internal static class ResetInPlace

@@ -1354,17 +1354,70 @@ internal static class Program
 	}
 
 	/// <summary>
+	/// A car respawned at a garage: its heading a unit vector pointing out (a point ahead nearer the lot's front, or further along the
+	/// start straight in the pits), its footprint (14 by 6) inside the circle, and the ground <c>Streamer.Place</c> drops it on within
+	/// half a unit of the garage's surface under each corner and the middle.
+	/// </summary>
+	private static bool RespawnFits(GarageSites.Site g, Town.Lot lot)
+	{
+		bool ok = true;
+		if (Math.Abs(g.Hx * g.Hx + g.Hz * g.Hz - 1.0) > 1e-6)
+		{
+			Console.WriteLine("  garage " + g.Name + ": its respawn heading is not a unit vector");
+			return false;
+		}
+		double ax = g.X + g.Hx * 10.0, az = g.Z + g.Hz * 10.0;
+		bool outward;
+		if (lot != null)
+		{
+			Town.Local(lot, g.X, g.Z, out _, out double v0);
+			Town.Local(lot, ax, az, out _, out double v1);
+			outward = v1 < v0 - 9.0;
+		}
+		else
+		{
+			Circuit.Local(g.X, g.Z, out double u0, out _);
+			Circuit.Local(ax, az, out double u1, out _);
+			outward = u1 > u0 + 9.0;
+		}
+		if (!outward)
+		{
+			Console.WriteLine("  garage " + g.Name + ": a car respawned there would not face out");
+			ok = false;
+		}
+		for (int k = 0; k < 5; k++)
+		{
+			double along = k == 0 ? 0.0 : (k < 3 ? 7.0 : -7.0), across = k == 0 ? 0.0 : (k % 2 == 0 ? 3.0 : -3.0);
+			double x = g.X + g.Hx * along + g.Hz * across, z = g.Z + g.Hz * along - g.Hx * across;
+			double dx = x - g.X, dz = z - g.Z;
+			double drop = WorldGen.Height(x, z) - (GarageSites.SurfaceAt(g, x, z) + Network.Lift);
+			if (dx * dx + dz * dz > g.Radius * g.Radius || Math.Abs(drop) > 0.5)
+			{
+				Console.WriteLine("  garage " + g.Name + ": a respawned car's corner at (" + x.ToString("0") + ", " + z.ToString("0") + ") is out of the circle or " + drop.ToString("0.00") + " off the surface");
+				ok = false;
+			}
+		}
+		return ok;
+	}
+
+	/// <summary>
 	/// Every garage's circle on clear, drivable ground: round its edge and at its middle, on its own lot's surface and off its building
 	/// (pumps, canopy posts, vans and awnings too), or on the circuit's pit lane off the garages; at the surface's height (the ring
-	/// follows the slope); its ring over the drawn ground; no two circles overlapping.
+	/// follows the slope); its ring over the drawn ground; no two circles overlapping. A car respawned there (<c>GameMode.ToSpawn</c>,
+	/// put at <c>WorldGen.Height</c> by <c>Streamer.Place</c>) lands on the surface, faces out (to the lot's road, or along the pit lane
+	/// to its exit) and fits in the circle.
 	/// </summary>
 	private static bool GarageChecks()
 	{
-		int samples = 0, off = 0, blocked = 0, height = 0, sunk = 0, overlap = 0;
+		int samples = 0, off = 0, blocked = 0, height = 0, sunk = 0, overlap = 0, respawn = 0;
 		List<GarageSites.Site> all = GarageSites.All;
 		foreach (GarageSites.Site g in all)
 		{
 			Town.Lot lot = g.Kind == GarageKind.Pits ? null : Town.Lots.OrderBy(l => (l.X - g.X) * (l.X - g.X) + (l.Z - g.Z) * (l.Z - g.Z)).First();
+			if (!RespawnFits(g, lot))
+			{
+				respawn++;
+			}
 			for (int k = -1; k < 32; k++)
 			{
 				double a = k * Math.PI / 16.0, r = k < 0 ? 0.0 : g.Radius;
@@ -1431,9 +1484,9 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0 && marked == all.Count && blots == 0;
+		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0 && respawn == 0 && marked == all.Count && blots == 0;
 		Console.WriteLine("garages: " + all.Count + " (" + string.Join(", ", all.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "), " + samples + " samples: " + off + " off their surface, " + blocked + " on a building or in the way, "
-			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping; " + marks.Count + " map marks with " + marked + " garages, " + blots + " running into each other " + (ok ? "ok" : "FAIL"));
+			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping, " + respawn + " bad respawn spots; " + marks.Count + " map marks with " + marked + " garages, " + blots + " running into each other " + (ok ? "ok" : "FAIL"));
 		return ok;
 	}
 

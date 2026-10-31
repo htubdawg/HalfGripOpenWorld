@@ -575,6 +575,26 @@ From the owner's try of 0.15.2 (log): just after `Event: signed on at the Circui
 
 Not tested in game yet (TESTING.md 23).
 
+## Respawn at a garage (0.16.0; asked for after 0.15.3)
+
+The last addition before the branch is merged into main. A garage's window has a third button along the bottom, **Respawn here**:
+a wreck then comes back to that garage instead of the spawn, for the rest of the race.
+
+- **Not saved.** The choice is a field of `GameMode`, which is made with the world and goes with the scene: every race (solo, or the
+  room's next race) starts with the spawn again. Nothing goes in the config file or the game's save.
+- **Where.** `GameMode.ToSpawn` puts the car at the circle's middle, facing out (`GarageSites.Site.Hx`, `Hz`: towards the lot's road,
+  or along the pit lane to its exit), and keeps the garage shut until the car goes into gear (`Garage.Disarm`), as after closing
+  it. If another car is within 8 of the middle (another player respawned or parked there) it goes to the spawn's grid slots instead.
+  An event's wreck still goes back to its last gate first. The call-out says where: `BACK AT THE GARAGE`, `BACK AT THE START` or
+  `BACK AT THE LAST CHECKPOINT`.
+- **The window.** Pressed again on the same garage it reads **Respawn at start** and clears the choice. The bottom right says where a
+  wreck goes (the start, this garage, another garage) when no other message shows; the old "To leave" hint made way (the prompt
+  after closing says to shift into gear).
+- meshcheck's `garages` now checks each respawn spot: the heading a unit vector pointing out, the car's 14 by 6 footprint in the
+  circle and the ground `Streamer.Place` drops it on within 0.5 of the garage's surface.
+
+Not tested in game yet (TESTING.md 22b).
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

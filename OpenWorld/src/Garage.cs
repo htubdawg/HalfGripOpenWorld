@@ -296,6 +296,13 @@ namespace HalfGripOpenWorld
 			Mod.Log.LogInfo("Garage closed");
 		}
 
+		/// <summary>Keeps the garage shut until the car goes into gear or leaves the circle: after a respawn into the circle.</summary>
+		internal void Disarm()
+		{
+			Armed = false;
+			readySince = -1f;
+		}
+
 		// ---- what the garage does ----------------------------------------------------------------------------------
 
 		/// <summary>Fits <paramref name="wanted"/> to the car (the whole loadout), and fills ammo and nitro a moment later. False if nothing changed.</summary>

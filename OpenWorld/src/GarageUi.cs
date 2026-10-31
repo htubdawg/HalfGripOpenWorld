@@ -16,7 +16,8 @@ namespace HalfGripOpenWorld
 	///
 	/// The window: the car's slots down the left, grouped and in the order of their categories (the car, the cockpit, extras), each with
 	/// what is fitted; the items that fit the chosen slot on the right, best tier first, with the pointed-at one's description under them;
-	/// health with Repair, Refill for ammo and nitro, and Close along the bottom. Items are dragged onto a slot to fit them and off it to
+	/// health with Repair, Refill for ammo and nitro, Respawn here (a wreck comes back to this garage, for this race) and where a wreck
+	/// goes along the bottom, Close at the top. Items are dragged onto a slot to fit them and off it to
 	/// take them off, as in the game's own garage; a right click fits an item (or takes it off if it is fitted), and takes a slot's off.
 	/// </summary>
 	internal sealed class GarageUi
@@ -79,7 +80,7 @@ namespace HalfGripOpenWorld
 		private Rect listArea;
 
 		private bool styled;
-		private GUIStyle title, text, small, smallRight, faint, heading, label, eventLabel, prompt, detailName, detail, dropLabel;
+		private GUIStyle title, text, small, smallRight, smallRightWrap, faint, heading, label, eventLabel, prompt, detailName, detail, dropLabel;
 		private GUIStyle button, panel, inset, slotOff, slotOn, slotDrop, cardOff, cardHover, cardOn, iconBox, barBack;
 		private Texture2D dark, healthFill, healthLow, dropTint, grime;
 
@@ -553,7 +554,7 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Health and Repair, Refill, and the last thing done.</summary>
+		/// <summary>Health and Repair, Refill, Respawn here, and the last thing done (or where a wreck goes back to).</summary>
 		private void Bottom(Rect area)
 		{
 			CarLink link = garage.Link;
@@ -561,18 +562,26 @@ namespace HalfGripOpenWorld
 			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#d6d7da>(held while open)</color>", small);
 			HealthBar(new Rect(area.x, area.y + 20f, 300f, 26f), Mathf.Clamp01(hp / max));
 			bool full = hp >= max - 0.5f;
-			if (Button(new Rect(area.x + 316f, area.y + 12f, 190f, 42f), full ? "Health is full" : "Repair to full") && !full)
+			if (Button(new Rect(area.x + 316f, area.y + 12f, 170f, 42f), full ? "Health is full" : "Repair to full") && !full)
 			{
 				garage.Repair();
 				Say("Repaired");
 			}
-			if (Button(new Rect(area.x + 520f, area.y + 12f, 230f, 42f), "Refill ammo and nitro"))
+			if (Button(new Rect(area.x + 498f, area.y + 12f, 230f, 42f), "Refill ammo and nitro"))
 			{
 				garage.Refill();
 				Say("Ammo, nitro and charges filled");
 			}
-			string right = message != null && Time.realtimeSinceStartup < messageUntil ? "<color=#e8e8e8>" + message + "</color>" : "<color=#d6d7da>To leave: Close, then shift into gear and drive off.</color>";
-			GUI.Label(new Rect(area.x + 770f, area.y + 14f, area.width - 770f, 38f), right, smallRight);
+			// The respawn point: this garage, or back to the start if it already is.
+			bool respawnHere = GameMode.RespawnGarage == garage.OpenAt;
+			if (Button(new Rect(area.x + 740f, area.y + 12f, 190f, 42f), respawnHere ? "Respawn at start" : "Respawn here"))
+			{
+				GameMode.SetRespawn(respawnHere ? null : garage.OpenAt);
+				Say(respawnHere ? "A wreck goes back to the start" : "A wreck comes back here");
+			}
+			string where = GameMode.RespawnGarage == null ? "the start" : GameMode.RespawnGarage == garage.OpenAt ? "this garage" : "another garage";
+			string right = message != null && Time.realtimeSinceStartup < messageUntil ? "<color=#e8e8e8>" + message + "</color>" : "<color=#d6d7da>Respawn after a wreck: " + where + "</color>";
+			GUI.Label(new Rect(area.x + 944f, area.y + 4f, area.width - 944f, 56f), right, smallRightWrap);
 		}
 
 		/// <summary>Health as a row of pixel blocks, as the game's bars are, red when low.</summary>
@@ -973,6 +982,8 @@ namespace HalfGripOpenWorld
 			// Light enough to read on the grey metal (it is drawn with a black shadow there).
 			small = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.MiddleLeft);
 			smallRight = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.MiddleRight);
+			// Beside the bottom row's buttons: narrow, so its messages take two lines.
+			smallRightWrap = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.MiddleRight, true);
 			faint = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.UpperLeft, true);
 			heading = Make(18, redLight, TextAnchor.MiddleLeft);
 			label = Make(18, new Color(0.55f, 0.92f, 1f), TextAnchor.MiddleCenter);
