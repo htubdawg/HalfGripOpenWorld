@@ -652,6 +652,50 @@ afar), a sky of our own painted in code (sun and moon discs, stars, a gradient),
 storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
 windows and street lamps.
 
+## Junctions and dead ends (0.17.1; asked for after 0.17.0)
+
+The owner reported many junctions messy, not meeting or clipping through each other, and dead ends ending hard. Repairs only: no
+road is moved, added or taken out. Measured with a scratch tool that draws every junction's meshes from above (the new `holes`
+check is its core): of the roads' paving round the 746 junctions, 3.78% had no paved surface on top on 0.17.0 (ground, a verge or a
+sidewalk showing through), now 0.84%. Before and after, the same junctions from above (`docs/junctions.png`).
+
+![Junctions before and after](junctions.png)
+
+What was wrong, and the fixes (`Network.cs`, `RoadMesh.cs`):
+
+- **Wedges of ground in mouths met at a slant.** Each edge of a road ending on another was cut where *any* line from that edge to
+  the centre ran onto the other's paving, and never later than the centre line: the edge reaching the other road last stopped short
+  of it by up to the road's width. Now each edge is cut where it itself runs onto the other's paving, the slant between them
+  following the other's edge; whatever runs on past lies under the other's surface. An edge that never reaches the other (it passes
+  its square end) is cut on the line through the other edge's cut and the centre line's.
+- **Verges and sidewalks missing beside mouths.** A road's verge stopped with its full-width surface, not at its edge's own cut;
+  the road met's verge or sidewalk was left out a whole piece (8) at a time. Both now run to the mouth's edge (to half a unit).
+- **Roads meeting end to end** (about 120 places: a lane on from one farm to the next, a street on from a main road's end) were cut
+  as junctions: a notch, ground each side, a main road's square end standing out across the streets in a village. They are now
+  drawn as one road round the bend (`Network.Joints`): both take the side across the bend at the joint, one height, the narrower
+  widening to the other over 24. With more roads ending there, the biggest carries on into the straightest and the rest meet the
+  two as at a junction. Not where the bend is over 75 degrees, a road hooks round near its end (the hill climb's lane does, at its
+  foot), or a road passes through.
+- **A short street with both ends on other roads** was cut out whole (one cut from its first point on another road to its last).
+  Each stretch is cut on its own, the rest brought under the road it runs alongside.
+- **Cuts against a road not drawn there**: a third road was cut along a main road's stretch already cut away, leaving holes
+  (Redford). Only drawn paving cuts now.
+- **Steps at the seam**: only the sample inside a cut met the other road's surface, so along a long slant the mouth fell up to a
+  unit under it. The samples either side meet it now (held by the regrade), and where the cross-fall is held to 8% the higher side
+  goes under instead of halfway.
+- **Tracks over a lane's mouth**: a mouth brought down to the road it meets left a track meeting it there above it, drawn on top.
+  Tracks and paths are kept 0.04 under any paved surface they run onto (`Network.Tuck`), eased in at their grade.
+- **Dead ends** (178 paved, 68 tracks and paths, from `Network.DeadEnds`): a paved road is rounded off in a half disc with its
+  verge or sidewalk carried round down to the ground; a track's or path's ribbon narrows to a fifth over its last 16.
+- meshcheck: new `holes`, `joints`, `deadends` and `tucked` checks; `poke` and `tucked` read the other road's surface with its
+  cross-fall and only beside the piece the point is on (a point past a piece's end took that end's height).
+
+Left: where a road ends in the corner between two others (a cut is one straight slant, so a little ground can show in the corner),
+and the few places where several main roads end at one point (Redford's middle) are better, not clean. Knock-on: plots at
+junction corners see the mouths and joints now drawn, so a few houses moved or went (483 to 475 buildings round Kingsbridge);
+everything else the same. A town tile builds in 23.9 ms (21.6). Compiled; meshcheck and preview clean; not yet tested in game
+(TESTING.md 24).
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

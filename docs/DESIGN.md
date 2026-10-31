@@ -147,9 +147,20 @@ drainage; and central place theory and rank-size for settlements.
    under any road's paving the ground is held below the lowest such road. Where a new road runs on one already built (at a junction or
    a crossing), it takes that road's height there (`Seat`), and its grade runs on from the paving's edge. Once every road is built
    (`Junctions`), each stretch of a road on one drawn over it (bigger, or of its class and built earlier) is cut out along that
-   road's edges, so two surfaces never overlap; its mouth flares out (up to 4 each side) and over a 16-unit apron its height and
-   cross-fall are brought to meet the other's surface 0.05 under it, with up to a quarter more than its grade. A cut stretch makes no
-   bed: the other road's is the ground. Bigger roads are drawn higher above their line (0.20 for the trunk down to 0.05 for lanes).
+   road's edges, so two surfaces never overlap: each edge where it runs onto the other's paving, the slant between them along the
+   other's edge (a fan), whatever runs on past it lying under the other's surface; an edge that never reaches the other (it passes
+   its square end) is cut on the line through the other edge's cut and the centre line's. Its mouth flares out (up to 4 each side)
+   and its height and cross-fall are brought to meet the other's surface 0.05 under it from the sample before the cut to the one
+   after (then over a 16-unit apron back to its own), with up to half (streets and lanes three quarters) more than its grade there; held to 8% across, the
+   higher side is put under rather than the two averaged. A cut stretch makes no bed: the other road's is the ground. The verges
+   and sidewalks run along each edge to that edge's own cut, and a road's verge or sidewalk stops (to half a unit) where it would
+   lie on a mouth. Where two roads end at one place and carry on (within 75 degrees: a lane on from a farm to the next, a street
+   on from a main road's end), they are drawn as one road (`Joints`): both take the side across the bend there, their surfaces
+   eased to one height, a narrower one widening to the other over 24; the biggest road there carries on into the straightest of
+   the rest, and any others meet the two as at a junction. A road's end with nothing there (a dead end) is rounded off: a paved
+   road's paving in a half disc as wide as the road, its verge or sidewalk carried round it down to the ground; a track's or
+   path's ribbon narrowing to a fifth over its last 16. Tracks and paths are kept 0.04 under any paved surface they run onto
+   (`Tuck`). Bigger roads are drawn higher above their line (0.20 for the trunk down to 0.05 for lanes).
 7. **Land use** (`LandUse`), for each tile's 64 x 64 pixel-art ground (about 4 units a pixel; the texture is 128 x 128, so the farm
    tracks can be painted at 2 units a pixel): snow on peaks, rock on cliffs,
    sand on the shore, paving along town streets and gardens behind, farmyards, wet meadow on floodplains, fields round places (rotated
