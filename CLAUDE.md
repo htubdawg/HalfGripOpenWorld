@@ -91,7 +91,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs, roads under drawn water (flooded), plants in
   the water (plants), ponds, lawns and benches (parks), the events' gates and start boxes (events), paving showing ground or a
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
-  (tucked); exits 1 on a failure. It reads the drawn
+  (tucked), places where three or more roads end drawn as one plate (hubs); exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.

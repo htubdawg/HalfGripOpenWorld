@@ -157,7 +157,14 @@ drainage; and central place theory and rank-size for settlements.
    lie on a mouth. Where two roads end at one place and carry on (within 75 degrees: a lane on from a farm to the next, a street
    on from a main road's end), they are drawn as one road (`Joints`): both take the side across the bend there, their surfaces
    eased to one height, a narrower one widening to the other over 24; the biggest road there carries on into the straightest of
-   the rest, and any others meet the two as at a junction. A road's end with nothing there (a dead end) is rounded off: a paved
+   the rest, and any others meet the two as at a junction. Where three or more paved roads end at one place (a village's middle:
+   every main road through it starts or ends there), with at most one passing through, they are drawn as one plate (`Hub`):
+   each road (an arm) is cut square where it is clear of the arms either side, the plate fills between the cuts, its outline
+   running along the arms' edges and round each corner in a curve from 12 out along each edge from where the edges meet, with
+   the verge or sidewalk all round; plain asphalt of the biggest arm's class. The roads ending there are eased to one height
+   (that of a road passing through). A street leaving the place alongside an arm (a few degrees off it) is left out and meets
+   the arms as at a junction; a road that ran past the place and hooked back onto it starts its arm where it last ran straight;
+   a road passing across the plate without ending there leaves the place as it was. A road's end with nothing there (a dead end) is rounded off: a paved
    road's paving in a half disc as wide as the road, its verge or sidewalk carried round it down to the ground; a track's or
    path's ribbon narrowing to a fifth over its last 16. Tracks and paths are kept 0.04 under any paved surface they run onto
    (`Tuck`). Bigger roads are drawn higher above their line (0.20 for the trunk down to 0.05 for lanes).

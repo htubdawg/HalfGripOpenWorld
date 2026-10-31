@@ -696,6 +696,38 @@ junction corners see the mouths and joints now drawn, so a few houses moved or w
 everything else the same. A town tile builds in 23.9 ms (21.6). Compiled; meshcheck and preview clean; not yet tested in game
 (TESTING.md 24).
 
+### Villages where three or more roads end (0.17.2; the owner's report on 0.17.1)
+
+The owner found junctions still broken at Ashby, Carrow, Elmsted, Kestrel and Millbrook (teleport stops). All five are a village's
+middle, where every main road through it starts or ends at one point (the Gabriel graph's links all end at the village), and often
+a street or a fourth road ends a few units off it. `Joints` drew the biggest pair as one road and cut the rest against them: their
+square ends stood out across each other and a wedge of ground showed in the middle. Where another road's paving covered the point,
+nothing was joined at all and every end was cut as at a T.
+
+Now such a place is a **hub** (`Network.Hub`, `TryHub`/`MakeHub`; drawn by `RoadMesh.Plate`): at least three paved roads ending
+within half a unit, plus any road whose paving is on the point (ending within 24 of it: an arm from its end; passing through: two
+arms, at most one such road). Arms round the place in order; for each pair of neighbours, where the left edge of one meets the right
+edge of the next (out ahead, or back past the place for arms more than half round apart; none for arms about opposite). Each arm is
+cut where the curve between it and its neighbours starts, 12 out along its edge from that meeting point; the plate's outline runs
+cut, down the arm's edge, round the curve (a quadratic from the meeting point), up the next arm's edge; cut into triangles (ear
+clipping, no slivers). Its surface follows the arms' edges; the roads ending there are eased to one height (a through road's). The
+arms' cuts are `Gap`s marked `Hub`: no mouth flare, and the arms still make the ground's bed and count in the lookups (buildings,
+signs keep off). The ground is held 0.5 under the plate; other roads' verges, tracks (`Tuck`) and the plate's own verge or sidewalk
+(round each corner, a sidewalk where both arms have one) stop at paving. Not made, the place left as before: an arm cut further than
+80 or past its road's room, an outline crossing itself, or a road crossing the plate without ending there (one at Kingsbridge,
+(-1.577, -4.254)). Left out of a hub and cut as at any junction: an arm running on alongside its neighbour (a street a few degrees
+off a main road; the hub is made of the rest). Kestrel's main road ran past the village and hooked back onto it in its last 20
+units: its arm starts where it last ran straight (`Unhook`), and the hook is gone under the grass.
+
+18 hubs (67 arms): the five villages, Redford's middle, Westhaven's and Kingsbridge's centres, and the other villages. Measured
+with the junction renderer round each hub (paving with nothing paved on top, and smaller surfaces showing over bigger ones, in
+pixels at 0.4 units): Elmsted 1081 and 68 to 0 and 0, Millbrook 1054/25 to 0/0, Ashby 356/442 to 0/437, Carrow 1374/1611 to
+489/1523; at Ashby and Carrow what is left is a street lying wholly along a main road (hidden under it, the measure counts its
+strip). meshcheck's `holes` 0.84% to 0.66%; new `hubs` check (cuts meet the outline, plate paved, ground under it). A town tile
+24 to 27 ms (22 on this machine before). Compiled; meshcheck and preview clean; not yet tested in game (TESTING.md 24).
+
+![The five villages, 0.17.1 above, 0.17.2 below](hubs.png)
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
