@@ -679,3 +679,61 @@ races), while the rest of the room roams. A proposed shape, smallest useful step
 
 Open questions for the owner: which courses first; whether solo best times should be kept; whether non-entrants should be ghosted
 near a running event; whether to ask the Multiplayer mod for a mod channel.
+
+## Later: traffic (investigated after 0.17.0, to agree with the owner)
+
+AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
+
+**What the game's AI is.** `EnemyController` is a racing driver on one closed lap held in a `PathManager`: every lookup wraps
+with `% count` (`SampleLane`, `ResolveSegment`, the braking speeds), and the speed profile is solved over the whole lap and cached
+per car type. Most of what it does is racing: weaving across three lanes, blockers and overtaking, health and wrecks, its guns,
+nitro and rockets (`EnemyModule.Fit`), resetting itself onto the lap. `TrackManager.SpawnEnemies` fills a grid and registers each
+car with the lap manager. The roads are the opposite: thousands of open polylines (`Network.Road`) meeting at junctions. Driving
+them with `EnemyController` would mean rebuilding a `PathManager` per car as it goes, a window of road ahead; the window's two ends
+join into a false hairpin, the braking worked back from it slows the car for nothing, and re-solving the profile per car costs too
+much. The token loop works only because it is a closed lap.
+
+**Reused:** the game's car prefabs (`enemyCarPrefab`, `devCars`: skins, damage visuals, smoke, engine sound, the "Enemy" layer);
+`CarControllerNew`, driven through `steeringAngleDeg`, `engineAccel` and `brakeAccel`; `EnemyController`'s gear and throttle logic
+(`DriveTowardsSpeed`, `AccelInGear`, `UpdateGearSelection`, about 80 lines, copied); `RemoteCar`'s smoothing as the model for
+stand-ins. On a traffic car `EnemyController` stays, disabled, so player weapons (which look it up with
+`GetComponentInParent<EnemyController>`) can still damage and wreck it; `EnemyGun` and the other `EnemyModule`s are switched off
+so traffic never shoots. Traffic stays out of `tm.enemies`, so the lap manager and race logic never see it. `Origin.Shift` already
+moves every root and rigidbody, so the cars follow a shift with nothing added.
+
+**Written:** a `TrafficDriver` (steers for a point a little ahead in the left lane of a `Network.Road`, keeps a speed set by road
+class and bends, follows the car in front); route choice at junctions from the junction graph `Signs` builds; spawning and
+despawning per tile, density by road class and place. The route logic reads the roads without Unity (as `RoadMesh` does through
+`Network.Point` and `Network.Spans`), so `meshcheck` can check it.
+
+**Cost: two tiers.** Each physics car is a full rigidbody raycasting to the ground from every wheel, so only perhaps 20 to 30 near
+the player (within about 300 m) are physics cars; further out cars move along the road without physics, and are despawned outside
+the loaded tiles.
+
+**In a room, control must be handed between players.** Each player loads tiles, and so ground colliders, only round their own car:
+the host has no ground under a car near a far-away client, so a physics car there falls through the world. Whoever has that ground
+loaded must drive it. The Multiplayer mod's AI sync cannot carry this: the host runs every AI car and sends `AiState`, read for at
+most 8 cars, its list fixed at the scene's start; the others see kinematic stand-ins (`RemoteCar`). The design:
+
+1. **Distant traffic on a timetable, nothing sent.** A car's position is a pure function of (room seed, car id, race clock), as
+   `Storms` is, under the same determinism rules, so every machine draws the same distant traffic.
+2. **Near a player, a physics car with one owner.** The owner simulates it and sends its state (about 45 bytes a car at 10 Hz);
+   everyone else shows a kinematic stand-in.
+3. **Owner per car, not per tile:** the nearest player, with hysteresis, the host settling disputes (everyone already gets every
+   player's position 20 times a second). Hitting someone else's kinematic stand-in feels like hitting a wall; with the nearest
+   player as owner, the player about to hit a car usually owns it, so the hit is real physics. Per tile would be simpler but hands
+   cars over at every tile border and makes collisions worse there.
+4. **Handoff:** the old owner sends a last state and "hand to X"; X spawns a physics car from it.
+5. **Retirement:** a car that has been knocked about cannot rejoin the timetable; once outside every player's reach it is despawned
+   for the rest of that cycle, with one short "retired" message.
+
+This needs the Multiplayer mod's mod channel (step 3 of the events plan above), the Multiplayer mod's owner's change to make.
+
+**Order:**
+
+1. Solo traffic: the driver on the game's car prefabs, per-tile spawning, the two tiers, `meshcheck` checks on the routes. Needs
+   nothing from the Multiplayer mod.
+2. Traffic in a room, once the mod channel is there: the timetable, ownership, handoff and retirement.
+3. AI rivals for solo events can use the game's own `EnemyController` unchanged, since a course is a closed lap, as the token loop is.
+
+Open questions for the owner: whether traffic should be shootable and wreckable; how dense; whether to ask for the mod channel now.
