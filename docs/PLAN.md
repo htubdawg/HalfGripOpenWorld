@@ -456,21 +456,43 @@ The owner found the README bloated. It is now for players and other mods' author
 garages, settings, names, the map API and checking a change. The long "How it works" moved to `docs/DESIGN.md` ("How the code
 works"), and the in-game test checklist to `docs/TESTING.md` (CLAUDE.md points there).
 
-## Game mode: respawn after a wreck (0.14.0; asked for after 0.13.6)
+## Game mode: respawn at the start, no AI (0.14.0; asked for after 0.13.6)
 
-The first part of the Open World's own game mode (`GameMode.cs`). A wreck ended the race, and with it the free roam; now the drive
-goes on:
+The first part of the Open World's own game mode (`GameMode.cs`). The owner chose to keep it in the Open World rather than add a mode
+to the Multiplayer mod's picker (its modes are fixed in its own code, with no way for another mod to add one). What it does:
 
-- **Solo:** the game's end-of-race on a wreck (`TrackManager.OnPlayerDestroyed`) is skipped in the Open World. `GameMode` sees the
-  health reach 0, shows `WRECKED`, and after `RespawnSeconds` (3, a local setting) fills the health and resets the car. The wait is
-  game time, so it holds while paused; a charm or heal that saves the car first cancels it.
-- **Multiplayer room:** the Multiplayer mod already skips that end-of-race and respawns or spectates by the room's settings. As the
-  world loads, every player sets their copy of the room's race (`Room.Race`) to respawn, and a Demolition to a race (`MultiplayerLink.ForceRespawns`,
-  by reflection like the rest): a race with no finish must not put anyone out for good. The room's respawn time counts.
-- **Where:** the reset after a wreck (either way it goes through `PlayerResetLogic.ResetOnTrack`, patched by `ResetInPlace`) puts the
-  car on the nearest road facing along it, since a wreck is often against a house or in the trees; a plain reset (hold R) stays in place.
+- **Forced respawn.** Solo, the game's end-of-race on a wreck (`TrackManager.OnPlayerDestroyed`) is skipped in the Open World;
+  `GameMode` sees the health reach 0, shows `WRECKED`, and after `RespawnSeconds` (3, a local setting) fills the health and resets
+  the car. The wait is game time, so it holds while paused; a charm or heal that saves the car first cancels it. In a Multiplayer room
+  the Multiplayer mod already skips that end-of-race and respawns or spectates by the room's race settings: as the world loads, every
+  player sets their copy (`Room.Race`) to respawn, and a Demolition to a race (`MultiplayerLink.RoomRules`, by reflection like the
+  rest). The room's respawn time counts.
+- **At the spawn.** The reset after a wreck (either way it goes through `PlayerResetLogic.ResetOnTrack`, patched by `ResetInPlace`)
+  puts the car at the spawn facing up the road, on the first of 24 grid slots (`WorldScene.GridSlot`: the spawn, then pairs behind it,
+  18 apart) with no other car within 8. A plain reset (hold R) stays in place.
+- **No AI.** Solo there were none already (`NoRivals`). In a room `RoomRules` also sets the race's AI count to 0 and empties
+  `Room.AiGrid` (the slots the host dealt the AI cars) before the scene's start, when the Multiplayer mod spawns them.
 
 Not tested in game yet (TESTING.md 17b).
+
+### 20 players: investigated, held off
+
+The cap is the Multiplayer mod's, not the Open World's:
+
+- `Room.MaxPlayers` is a `const` 6. The Steam lobby is created with that limit, a 7th player is turned away, and the lobby screen's
+  member and result rows are arrays of that size. A `const` is compiled into every place it is used, so no other mod can raise it:
+  only a change to the Multiplayer mod can (its owner's repo).
+- Its grid: the host deals slots from `Enumerable.Range(0, 6)`, and a race scene gets 6 slots (the player's and 5 more, extra ones
+  added behind the last if the scene has fewer). The AI slider is also `6 - players`. All of that would need to grow with the cap.
+- The Open World is ready for more: `WorldScene.GridSlot` gives any number of slots along the spawn's road (20 cars is 10 rows, about
+  55 m), and the respawn already uses 24. The scene's own start-position objects (that the Multiplayer mod reads) number what Tokyo
+  has; the Open World would add more if the Multiplayer mod asked for more than 6.
+- Traffic: every player sends its car to every other player 20 times a second (about 70 bytes a packet), so with 20 players each
+  sends and receives about 19 x 20 x 70 = 27 KB/s, which Steam's relay handles. Unknown until tried: 19 stand-in cars with full
+  physics on each machine, and the host's share of reliable messages.
+
+So 20 players needs, in the Multiplayer mod: `MaxPlayers` raised (or made a host setting), the lobby screen's lists made to scroll, and
+the grid slots and their dealing sized from it. Worth asking its owner for, along with the mod channel below.
 
 ## Next: events (proposed, to agree with the owner)
 
@@ -485,7 +507,7 @@ races), while the rest of the room roams. A proposed shape, smallest useful step
 2. **Solo events.** Driving into a start box offers the event (as a garage opens: stop, shift into neutral). A countdown, then
    timing through the checkpoints in order (a missed gate is called out, the clock runs on), a finish with the time, and a best time per
    course kept in the mod's own config file (never the game's save). Ghost of the best lap later. A wreck in an event respawns at the
-   last gate passed, not the nearest road (`GameMode.TakeWreck` already lets the reset tell a wreck apart). This needs nothing from
+   last gate passed, not the spawn (`GameMode.TakeWreck` already lets the reset tell a wreck apart). This needs nothing from
    the Multiplayer mod and proves the course data, gates and timing.
 3. **Events in a room.** An event is a small state machine (open, gathering, countdown, running, results) keyed by course, and each
    player has a state in it (entered, gate n, finished in t, out). Several run at once; a player is in at most one. The host is the

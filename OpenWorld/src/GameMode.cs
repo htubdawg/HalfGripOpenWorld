@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -5,13 +6,14 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// The Open World's own game mode: free roam that goes on until the player leaves. A race in the game ends when the car is wrecked;
-	/// here a wrecked car is put back on the nearest road after a few seconds, repaired, and the drive goes on.
+	/// here a wrecked car is put back at the spawn after a few seconds, repaired, and the drive goes on. No AI rivals, solo
+	/// (<see cref="NoRivals"/>) or in a room.
 	///
 	/// Solo, this does it all (the game's end-of-race on a wreck is held off by <see cref="NoWreckEnd"/>). In a Multiplayer room the
 	/// Multiplayer mod already handles a wreck itself (it spectates or respawns by the room's settings, and tells the other players): the
-	/// room's race is set to respawn as the world loads (<see cref="MultiplayerLink.ForceRespawns"/>), so nobody is put out of a race
-	/// that has no finish. Either way the respawn comes through <see cref="PlayerResetLogic.ResetOnTrack"/>, which
-	/// <see cref="ResetInPlace"/> sends to the nearest road after a wreck (see <see cref="TakeWreck"/>).
+	/// room's race is set to respawn, with no AI, as the world loads (<see cref="MultiplayerLink.RoomRules"/>), so nobody is put out of
+	/// a race that has no finish. Either way the respawn comes through <see cref="PlayerResetLogic.ResetOnTrack"/>, which
+	/// <see cref="ResetInPlace"/> sends to the spawn after a wreck (see <see cref="TakeWreck"/>).
 	///
 	/// Later this is where events go: races at the courses (and elsewhere) that a player joins by driving to their start, each with its
 	/// own entrants, timing and results, several running at once in different places while the rest of the room roams (docs/PLAN.md).
@@ -30,7 +32,7 @@ namespace HalfGripOpenWorld
 			tm = trackManager;
 			if (MultiplayerLink.InRoom)
 			{
-				MultiplayerLink.ForceRespawns();
+				MultiplayerLink.RoomRules();
 			}
 		}
 
@@ -42,10 +44,13 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>
-		/// True once after each wreck, for the reset that follows it: a wreck is often against a wall or a house, or in the trees, so the
-		/// car goes back on the road instead of where it is.
-		/// </summary>
+		/// <summary>Grid slots tried for a respawn (<see cref="WorldScene.GridSlot"/>): enough for a full room all wrecked at once.</summary>
+		private const int RespawnSlots = 24;
+
+		/// <summary>How near another car may be to a slot for it to count as taken (a car is about 14 long).</summary>
+		private const float SlotClear = 8f;
+
+		/// <summary>True once after each wreck, for the reset that follows it: that one goes to the spawn (<see cref="ToSpawn"/>).</summary>
 		internal static bool TakeWreck()
 		{
 			if (Instance == null || !Instance.wrecked)
@@ -54,6 +59,51 @@ namespace HalfGripOpenWorld
 			}
 			Instance.wrecked = false;
 			return true;
+		}
+
+		/// <summary>
+		/// Puts the car at the spawn, facing up the road: on the first grid slot no other car is on (another player respawned or waiting
+		/// there), so respawns never land on top of each other.
+		/// </summary>
+		internal static void ToSpawn(Streamer streamer)
+		{
+			// Every other car in the scene: the other players' stand-ins (the Multiplayer mod adds them to the game's own list).
+			List<EnemyController> others = Instance != null && Instance.tm != null ? Traverse.Create(Instance.tm).Field("enemies").GetValue<List<EnemyController>>() : null;
+			double x = Network.SpawnX, z = Network.SpawnZ;
+			for (int n = 0; n < RespawnSlots; n++)
+			{
+				WorldScene.GridSlot(n, out double sx, out double sz);
+				if (!Taken(others, Origin.Local(sx, 0f, sz)))
+				{
+					x = sx;
+					z = sz;
+					break;
+				}
+			}
+			streamer.BuildAround(x, z, 1);
+			streamer.Place(x, z, Quaternion.LookRotation(new Vector3((float)Network.SpawnDirX, 0f, (float)Network.SpawnDirZ), Vector3.up));
+		}
+
+		private static bool Taken(List<EnemyController> others, Vector3 slot)
+		{
+			if (others == null)
+			{
+				return false;
+			}
+			foreach (EnemyController car in others)
+			{
+				if (car == null || !car.gameObject.activeInHierarchy)
+				{
+					continue;
+				}
+				Vector3 d = car.transform.position - slot;
+				d.y = 0f;
+				if (d.sqrMagnitude < SlotClear * SlotClear)
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private void Update()
@@ -91,7 +141,7 @@ namespace HalfGripOpenWorld
 				{
 					link.hp = link.MaxHp;
 					tm.ResetPlayerOnTrack();
-					TextController.EnqueueRandomText(1f, "BACK ON THE ROAD");
+					TextController.EnqueueRandomText(1f, "BACK AT THE START");
 				}
 				catch (System.Exception e)
 				{

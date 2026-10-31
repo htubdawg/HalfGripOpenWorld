@@ -285,7 +285,6 @@ namespace HalfGripOpenWorld
 			}
 			float lift = playerSlot != null ? car.transform.position.y - playerSlot.position.y : 0.5f;
 			forward = new Vector3((float)Network.SpawnDirX, 0f, (float)Network.SpawnDirZ);
-			Vector3 right = Vector3.Cross(Vector3.up, forward);
 			Quaternion heading = Quaternion.LookRotation(forward, Vector3.up);
 			// A slot's grid marking is drawn along the slot's +x (the game's grids face east), a little over the road: the slot is turned
 			// so +x runs along the road, and raised clear of the road's own surface.
@@ -304,11 +303,8 @@ namespace HalfGripOpenWorld
 						slot.position = spawn + raise;
 						continue;
 					}
-					// Pairs behind: the spawn's lane and the other lane beside it.
-					Vector3 at = spawn - forward * (18f * (n / 2 + 1)) + right * (n % 2 == 0 ? 0f : (float)Network.SpawnPair);
-					Origin.World(at, out double wx, out double wz);
+					GridSlot(++n, out double wx, out double wz);
 					slot.position = OnRoad(wx, wz) + raise;
-					n++;
 				}
 			}
 
@@ -342,6 +338,19 @@ namespace HalfGripOpenWorld
 				Vector3 at = spawn + forward * 30f;
 				semaphore.position = new Vector3(at.x, spawn.y + semaphore.position.y, at.z);
 			}
+		}
+
+		/// <summary>
+		/// World (x, z) of grid slot <paramref name="n"/>: 0 is the spawn (the player's slot), then pairs behind it, in the spawn's lane
+		/// and the other lane beside it, 18 apart. Any number of slots: the respawn after a wreck uses more than the scene has.
+		/// </summary>
+		internal static void GridSlot(int n, out double x, out double z)
+		{
+			double back = n == 0 ? 0.0 : 18.0 * ((n - 1) / 2 + 1);
+			double side = n == 0 || (n - 1) % 2 == 0 ? 0.0 : Network.SpawnPair;
+			// The road's right is (dir z, -dir x).
+			x = Network.SpawnX - Network.SpawnDirX * back + Network.SpawnDirZ * side;
+			z = Network.SpawnZ - Network.SpawnDirZ * back - Network.SpawnDirX * side;
 		}
 
 		/// <summary>The scene point on the road surface (or the ground) at world (x, z).</summary>

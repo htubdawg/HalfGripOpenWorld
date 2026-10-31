@@ -41,9 +41,10 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 - You start on the road into Kingsbridge, the main town, just outside it and facing its middle.
 - **Reset** (hold R) puts the car back on its wheels where it is, not back at the spawn. A car that ends up in a river, a lake or the
   sea is put back on the nearest road.
-- **Wrecked:** the drive goes on. After a few seconds the car is put back on the nearest road, repaired. In a Multiplayer room the
-  room's respawn time counts, and an Open World race is always played with respawns (a Demolition is played as a race, and "out,
-  watch" as respawn), since it has no finish.
+- **Wrecked:** the drive goes on. After a few seconds the car is back at the start, repaired (on the first free grid slot, so
+  players respawning together do not land on each other). In a Multiplayer room the room's respawn time counts, and an Open World
+  race is always played with respawns (a Demolition is played as a race, and "out, watch" as respawn), since it has no finish.
+- **No AI rivals**, solo or in a room: the room's AI RIVALS setting is ignored in the Open World.
 - **Weather** is drawn from all the game's weathers each race (in a Multiplayer room from the room's seed, so everyone gets the same).
 
 ## Garages
@@ -67,7 +68,7 @@ the same ground.
 | Section | Key | Default | What it does |
 |---|---|---|---|
 | Map | `TestMode` | false | Every race you start is in the Open World. |
-| Map | `RespawnSeconds` | 3 | Solo: seconds after a wreck before the car is back on the road (1 to 30). |
+| Map | `RespawnSeconds` | 3 | Solo: seconds after a wreck before the car is back at the start (1 to 30). |
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |

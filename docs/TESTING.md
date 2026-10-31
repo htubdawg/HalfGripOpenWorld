@@ -63,9 +63,12 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
 17. Hold R far out: the car is put back on its wheels where it was.
 17b. Get wrecked (into a wall at speed, or the dev console's `kill player` or `hp 0`): `WRECKED`, the car burns, and after 3 seconds (`RespawnSeconds`)
-   it is on the nearest road facing along it, at full health, driving normally (it accelerates, no flames); `BACK ON THE ROAD` shows.
-   The race does not end. Pause while wrecked: the respawn waits. In a Multiplayer room set to Demolition or "out, watch": a wrecked
-   player respawns after the room's time on the nearest road, the others see the car come back there, and nobody is put out.
+   it is at the start, on the spawn's grid slot facing up the road, at full health, driving normally (it accelerates, no flames);
+   `BACK AT THE START` shows. Get wrecked far out (teleport first): the same, and the ground round the start is there. The race does
+   not end. Pause while wrecked: the respawn waits. Hold R: still resets in place. In a Multiplayer room set to Demolition or "out,
+   watch", with AI RIVALS above 0: no AI cars on the grid; a wrecked player respawns after the room's time at the start, the others
+   see the car come back there, and nobody is put out. Two players wrecked together, or one waiting on the grid: the second lands on
+   the next slot back, not on top.
 18. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
 19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.

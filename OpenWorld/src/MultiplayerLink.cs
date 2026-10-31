@@ -36,6 +36,7 @@ namespace HalfGripOpenWorld
 		private static FieldInfo roomActive;
 		private static FieldInfo roomSeed;
 		private static FieldInfo roomRace;
+		private static FieldInfo roomAiGrid;
 
 		/// <summary>The room's seed (the Multiplayer mod's <c>Room.Seed</c>), the same for every player in the room.</summary>
 		internal static bool RoomSeed(out int seed)
@@ -50,11 +51,13 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Makes the room's race in progress (the Multiplayer mod's <c>Room.Race</c>, every player's own copy of the host's settings) one
-		/// where a wrecked player respawns: a Demolition becomes a race, and "out, watch" becomes respawn. An Open World race has no
-		/// finish, so a player put out would watch for ever. Every player in the room does the same as the world loads, so they agree.
+		/// The Open World's rules on the room's race in progress (the Multiplayer mod's <c>Room.Race</c>, every player's own copy of the
+		/// host's settings): a wrecked player respawns (a Demolition becomes a race, "out, watch" becomes respawn), since a race with no
+		/// finish must not put anyone out for good; and no AI rivals (the race's AI count and <c>Room.AiGrid</c>, the slots the host dealt
+		/// them, emptied before the Multiplayer mod spawns the cars at the scene's start). Every player does the same as the world loads,
+		/// so they agree.
 		/// </summary>
-		internal static void ForceRespawns()
+		internal static void RoomRules()
 		{
 			try
 			{
@@ -66,12 +69,13 @@ namespace HalfGripOpenWorld
 				Type settings = race.GetType();
 				FieldInfo mode = AccessTools.Field(settings, "Mode");
 				FieldInfo wreck = AccessTools.Field(settings, "Wreck");
+				FieldInfo ai = AccessTools.Field(settings, "Ai");
 				FieldInfo demolition = AccessTools.Field(settings, "ModeDemolition");
 				FieldInfo modeRace = AccessTools.Field(settings, "ModeRace");
 				FieldInfo respawn = AccessTools.Field(settings, "WreckRespawn");
-				if (mode == null || wreck == null || demolition == null || modeRace == null || respawn == null)
+				if (mode == null || wreck == null || ai == null || demolition == null || modeRace == null || respawn == null)
 				{
-					Mod.Log.LogWarning("The Multiplayer mod's race settings have no Mode or Wreck (another version): a wreck in the Open World follows the room's settings.");
+					Mod.Log.LogWarning("The Multiplayer mod's race settings have no Mode, Wreck or Ai (another version): the Open World follows the room's settings.");
 					return;
 				}
 				if (Equals(mode.GetValue(race), demolition.GetValue(null)))
@@ -79,11 +83,20 @@ namespace HalfGripOpenWorld
 					mode.SetValue(race, modeRace.GetValue(null));
 				}
 				wreck.SetValue(race, respawn.GetValue(null));
-				Mod.Info("The room's race is set to respawn after a wreck");
+				ai.SetValue(race, 0);
+				if (roomAiGrid != null && roomAiGrid.GetValue(null) is System.Collections.IList grid)
+				{
+					grid.Clear();
+				}
+				else
+				{
+					Mod.Log.LogWarning("The Multiplayer mod's Room.AiGrid is missing (another version): AI rivals the host asked for may still race.");
+				}
+				Mod.Info("The room's race: respawn after a wreck, no AI rivals");
 			}
 			catch (Exception e)
 			{
-				Mod.Log.LogWarning("The room's race could not be set to respawn after a wreck: " + e);
+				Mod.Log.LogWarning("The Open World's rules could not be set on the room's race: " + e);
 			}
 		}
 
@@ -128,6 +141,7 @@ namespace HalfGripOpenWorld
 				roomActive = room != null ? AccessTools.Field(room, "Active") : null;
 				roomSeed = room != null ? AccessTools.Field(room, "Seed") : null;
 				roomRace = room != null ? AccessTools.Field(room, "Race") : null;
+				roomAiGrid = room != null ? AccessTools.Field(room, "AiGrid") : null;
 				if (writer == null || reader == null || msg == null || remoteCarType == null)
 				{
 					Mod.Info("No Multiplayer mod found: positions are not converted for the network.");

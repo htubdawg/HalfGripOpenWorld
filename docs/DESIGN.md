@@ -287,8 +287,8 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 - **Free roam** (`Patches.cs`): no laps, no AI rivals in solo, no "wrong way" or "hold R" hints, resets in place, and "fell under the
   map" measured from the ground under the car.
 - **Game mode** (`GameMode.cs`): a wreck never ends the race. Solo, the game's end-of-race on a wreck is held off and the car is put
-  on the nearest road, repaired, after `RespawnSeconds`; in a Multiplayer room the Multiplayer mod respawns it (the room's race is set
-  to respawn as the world loads) through the same reset. The events planned in `docs/PLAN.md` go here.
+  back at the spawn (the first free grid slot), repaired, after `RespawnSeconds`; in a Multiplayer room the Multiplayer mod respawns
+  it (the room's race is set to respawn, with no AI, as the world loads) through the same reset. The events planned in `docs/PLAN.md` go here.
 
 ## Assets
 
