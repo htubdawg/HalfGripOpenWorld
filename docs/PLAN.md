@@ -252,8 +252,7 @@ hill-climb grades.
 
 ## 0.12.0: a bridge's banks, country signs, through ways (reported after 0.11.0)
 
-Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (`clip` now covers bridge decks), not yet tested
-in game.
+Merged (PR #20). Compiled, preview and meshcheck clean (`clip` now covers bridge decks).
 
 - **Ground through a bridge's ends** at (208, -2517): a primary road in a cutting (land 57, road 53) crosses a river in a gorge.
   The deck is held at the road's height, but the ground under a deck was left alone, so the bank tops stood up to 3.3 over the deck
@@ -271,3 +270,62 @@ in game.
   and can climb between its two ends at its grade; a second point is tried if the first fails. Country dead ends: lanes 102 to 55,
   tracks 71 to 39, footpaths 38 to 23. Roads 150 to 166 km real (2.1 km per km²). `tools/preview` reports the country dead ends by
   class.
+
+## Garage in the world (asked for after 0.12.0)
+
+The owner's ask: a garage in the Open World where a player swaps items, gets ammo and gets health, without leaving the Multiplayer
+room (no race end, no scene load). No currency.
+
+### Feasibility test: done (0.12.1, `GarageTest.cs`)
+
+On branch `claude/epic-goodall-zas0pe`, not merged. `Debug.GarageTest` (off by default) lists a key in Settings > Controls
+(`Garage test (Open World)`, F9, through HalfGripTools' `ctx.Keys`; F8 is the game's bug report key; `mod.json` asks for tools
+1.0.2). A press: reads the car's loadout (`PlayerLoadout.Equipped`), empties the car, fits the new loadout (the old one with the next
+gun and steering wheel in the catalog), and 0.25 s later refills. Only the car changes, not the save or the Multiplayer loadout.
+**The owner tested it in a Multiplayer room: every gun (the game's and the modded M1911, Minigun, RPG, Sniper Rifle, Railgun) and
+every wheel swaps and works.** What it took, and what the garage must keep:
+
+- **Fitting and removing** is the game's own live refit, `LoadoutRefit.Swap(off, on, loadout)` (the dev console's giveitem uses it
+  in a race): stats re-applied, item prefabs spawned and removed, gun and shifter activators, sprites, body skin, `CarLink`. Car
+  stats are read live, so engine, tires and body take effect at once. `Empty` removes items one at a time, `Fit` adds them.
+- **Refill**: `Effects.Refill(RefillTarget.AllEffects, 1f)` (ammo, nitro, charges) and `Effects.Refill(RefillTarget.Health, 1f)`,
+  the road pickups' path. Wait a frame or more after a refit: a new gun's rack only listens from its `Start`.
+- **Guns are built into the cockpit**, one per kind (SmgAssembly, ShotgunAssembly, RevolverAssembly, SawedOffAssembly); a gun item
+  only picks which is on, and taking it off only switches it off. A gun reads its item (capacity, magazines, blood-fed) and the gun
+  mods convert it (M1911, Minigun, RPG, Sniper Rifle on the SMG; Railgun on the shotgun) once, as it starts up. So emptying the car
+  also puts every gun back as built:
+  - Copies of each gun and of its held model (`aimModel`, the 3D gun raised to the camera, under the camera, outside the gun)
+    are taken the moment before the gun first wakes: Harmony prefixes at `Priority.First` on `NAutomaticGun`, `NPumpActionGun`,
+    `NBreakActionGun`, `NRevolver` and `MagazineManager` `Awake` (the RPG and Sniper prefixes replace the SMG's Awake, and three
+    of the four guns wake before `GunLoadoutActivator`). Kept under an inactive object moved into the race scene.
+  - On reset, the live gun and held model are detached, unregistered from `Rig` and destroyed, and fresh copies put in their place.
+  - The gun's references into its held model (fire point, the sawed-off's `barrels` array) are remapped by path, arrays and lists
+    included, both when the copy is taken and on each reset.
+  - The copies' sprites are recorded when taken and put back on each fresh copy: the gun mods' `Sprites.Reskin` swaps sprites by
+    name across the whole scene, inactive objects included, and had put the Sniper Rifle's art on the stored SMG copy.
+- **Multiplayer**: nothing new goes over the network. Others see only paint and body (`Skins` re-sends the body each second), PvP
+  damage is applied on the owner's car, and HP goes as a fraction in each `Car` packet. Items stay local.
+
+Known, not handled: what a gun mod builds outside its gun stays after swapping away (the Minigun's roof gun on the car body and its
+remote in the cockpit); the Multiplayer mod looks for the RPG once, at race start, so rockets from an RPG fitted later may not show
+to others. Neither was reported in the test.
+
+### The garage: next, to be agreed with the owner before building
+
+From the feasibility notes; settle these first:
+
+- **Where**: garage zones on the world's existing places, without changing generation: `LotKind.Workshop` and
+  `LotKind.FillingStation` lots (`Town.cs`) and the circuit's pit garages (`Circuit.GaragesA/B`). A visible sign or marker.
+- **When it opens**: in a zone, car nearly stopped; perhaps not within a few seconds of taking damage, so it is not a heal button
+  mid-fight (the only balance without currency). A key to open (through `ctx.Keys`), or opening on stopping in the zone.
+- **The item picker**: the garage scene's drag-and-drop UI (`MenuManager`, `InventorySlot`) exists only in that scene, so an overlay
+  of our own: the slots (`DevCommands.Slots`: Aero, Tires, Servo, Gun, Engine, MediumSlot/MediumSlot2, PassiveSlot, ExternalSlot,
+  ShifterSlot by `UpgradeCategory`), item cards (`item.image`, `item.Name`), fit and remove; free the cursor (the `Grabber` locks it)
+  and hold driving input while open. Then empty, fit and refill as the test does.
+- **Which items**: in a room, the Multiplayer mod's rules: every unlocked item free, minus its `Loadout.Banned` (slow motion, the
+  Inverter, rerolls, run boons, consumables). Solo: the save's owned items, or the same free list (owner's choice).
+- **Remembering the fit**: in a room, write it to the Multiplayer mod's loadout (`Multiplayer.Loadout.Equipped` and `Persist()`,
+  internal: by reflection as `MultiplayerLink` does, falling back to our own ban list) so the next garage visit and race keep it.
+  Solo: the save's `equipped`/`inventory` (`GameManager.SaveEquippedUpgrades`/`SaveInventory`), or not at all.
+- Keep `GarageTest` until the garage replaces it, then remove the debug key.
+
