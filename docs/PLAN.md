@@ -437,3 +437,9 @@ low). The grime stays, neutral grey instead of warm.
 The owner's screenshot of 0.13.3: the grey slot names and tier names could not be read on the grey metal. Now the tiles are a
 darker metal, every line on a slot or card is light (or the item's tier colour) with the hard black shadow, and the title is
 `GARAGE` in red and the garage's name in white.
+
+### The garage: room for the text (0.13.5)
+
+From the owner's screenshot of 0.13.4: the instructions were still grey, and the slots and cards a little small for their two lines.
+The instructions and the leaving hint are now light; the slots are 56 high (59 apart), the cards 64, their pictures and text moved
+to match, and the window 860 high to hold the taller slots.

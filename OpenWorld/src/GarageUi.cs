@@ -47,7 +47,7 @@ namespace HalfGripOpenWorld
 		};
 
 		private const float WindowW = 1180f;
-		private const float WindowH = 800f;
+		private const float WindowH = 860f;
 
 		/// <summary>One of the pixel look's pixels, in window units (screen pixels at 1080 high): chunky, as the game's own UI is.</summary>
 		private const int Px = 3;
@@ -391,7 +391,7 @@ namespace HalfGripOpenWorld
 					Shadowed(new Rect(area.x + 2f, y, area.width, 24f), group.ToUpperInvariant(), heading);
 					y += 26f;
 				}
-				Rect r = new Rect(area.x, y, area.width, 46f);
+				Rect r = new Rect(area.x, y, area.width, 56f);
 				s.Rect = r;
 				bool fits = dragging && pressed.upgradeCategory == s.Category;
 				bool under = r.Contains(mouse);
@@ -432,14 +432,14 @@ namespace HalfGripOpenWorld
 					}
 				}
 				bool lifted = dragging && pressedFrom == i;
-				Box(new Rect(r.x + Px * 2, r.y + Px * 2, 42f - Px, 42f - Px), iconBox);
+				Box(new Rect(r.x + Px * 2, r.y + Px * 2, r.height - Px * 4, r.height - Px * 4), iconBox);
 				if (!lifted)
 				{
-					Icon(new Rect(r.x + 8f, r.y + 8f, 30f, 30f), s.Item);
+					Icon(new Rect(r.x + 11f, r.y + 11f, r.height - 22f, r.height - 22f), s.Item);
 				}
-				Shadowed(new Rect(r.x + 54f, r.y + 3f, r.width - 58f, 18f), s.Label, small);
-				Shadowed(new Rect(r.x + 54f, r.y + 20f, r.width - 58f, 24f), s.Item != null && !lifted ? Titled(s.Item) : "<color=#b4b5ba>Empty</color>", text);
-				y += 49f;
+				Shadowed(new Rect(r.x + 62f, r.y + 6f, r.width - 68f, 20f), s.Label, small);
+				Shadowed(new Rect(r.x + 62f, r.y + 26f, r.width - 68f, 24f), s.Item != null && !lifted ? Titled(s.Item) : "<color=#b4b5ba>Empty</color>", text);
+				y += 59f;
 			}
 		}
 
@@ -449,7 +449,7 @@ namespace HalfGripOpenWorld
 			Event e = Event.current;
 			Slot slot = slots[selected];
 			List<UpgradeComponent> items = offered.TryGetValue(slot.Category, out List<UpgradeComponent> list) ? list : new List<UpgradeComponent>();
-			Shadowed(new Rect(area.x + 2f, area.y, area.width - 170f, 26f), slot.Label.ToUpperInvariant() + "  <color=#a4a5aa>" + items.Count + " to choose from</color>", heading);
+			Shadowed(new Rect(area.x + 2f, area.y, area.width - 170f, 26f), slot.Label.ToUpperInvariant() + "  <color=#c4c5c9>" + items.Count + " to choose from</color>", heading);
 			if (slot.Item != null && Button(new Rect(area.xMax - 160f, area.y - 4f, 160f, 32f), "Take off"))
 			{
 				Place(selected, null);
@@ -459,7 +459,7 @@ namespace HalfGripOpenWorld
 			Rect view = new Rect(area.x, area.y + 34f, area.width, area.height - 34f - detailH - 8f);
 			Box(view, inset);
 			Rect inside = new Rect(view.x + Px * 2, view.y + Px * 2, view.width - Px * 4, view.height - Px * 4);
-			const float cardH = 54f;
+			const float cardH = 64f;
 			Rect content = new Rect(0f, 0f, inside.width - 20f, Math.Max(inside.height, items.Count * (cardH + 4f)));
 			bool inView = inside.Contains(mouse);
 			scroll = GUI.BeginScrollView(inside, scroll, content);
@@ -496,10 +496,10 @@ namespace HalfGripOpenWorld
 					}
 				}
 				Box(new Rect(r.x + Px * 2, r.y + Px * 2, cardH - Px * 4, cardH - Px * 4), iconBox);
-				Icon(new Rect(r.x + 10f, r.y + 10f, cardH - 20f, cardH - 20f), u);
-				Shadowed(new Rect(r.x + 60f, r.y + 5f, r.width - 220f, 26f), Titled(u), text);
-				Shadowed(new Rect(r.x + 60f, r.y + 29f, r.width - 220f, 20f), TierName(u) + (Unlocked(u) ? "" : "  <color=#ff7a6e>not unlocked yet</color>"), small);
-				string tag = fitted ? "<color=#9ccc5a>FITTED</color>" : elsewhere ? "<color=#9ccc5a>FITTED</color> <color=#a4a5aa>(other slot)</color>" : "";
+				Icon(new Rect(r.x + 12f, r.y + 12f, cardH - 24f, cardH - 24f), u);
+				Shadowed(new Rect(r.x + 72f, r.y + 8f, r.width - 240f, 26f), Titled(u), text);
+				Shadowed(new Rect(r.x + 72f, r.y + 34f, r.width - 240f, 22f), TierName(u) + (Unlocked(u) ? "" : "  <color=#ff7a6e>not unlocked yet</color>"), small);
+				string tag = fitted ? "<color=#9ccc5a>FITTED</color>" : elsewhere ? "<color=#9ccc5a>FITTED</color> <color=#c4c5c9>(other slot)</color>" : "";
 				Shadowed(new Rect(r.xMax - 180f, r.y, 168f, cardH), tag, smallRight);
 			}
 			GUI.EndScrollView();
@@ -530,7 +530,7 @@ namespace HalfGripOpenWorld
 		{
 			CarLink link = garage.Link;
 			float hp = link != null ? link.hp : 0f, max = link != null ? Mathf.Max(1f, link.MaxHp) : 1f;
-			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#a4a5aa>(held while open)</color>", small);
+			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#c4c5c9>(held while open)</color>", small);
 			HealthBar(new Rect(area.x, area.y + 20f, 300f, 26f), Mathf.Clamp01(hp / max));
 			bool full = hp >= max - 0.5f;
 			GUI.enabled = !full;
@@ -545,7 +545,7 @@ namespace HalfGripOpenWorld
 				garage.Refill();
 				Say("Ammo, nitro and charges filled");
 			}
-			string right = message != null && Time.realtimeSinceStartup < messageUntil ? "<color=#e8e8e8>" + message + "</color>" : "<color=#a4a5aa>To leave: Close, then shift into gear and drive off.</color>";
+			string right = message != null && Time.realtimeSinceStartup < messageUntil ? "<color=#e8e8e8>" + message + "</color>" : "<color=#d6d7da>To leave: Close, then shift into gear and drive off.</color>";
 			GUI.Label(new Rect(area.x + 770f, area.y + 14f, area.width - 770f, 38f), right, smallRight);
 		}
 
@@ -926,7 +926,7 @@ namespace HalfGripOpenWorld
 			// Light enough to read on the grey metal (it is drawn with a black shadow there).
 			small = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.MiddleLeft);
 			smallRight = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.MiddleRight);
-			faint = Make(18, new Color(0.56f, 0.57f, 0.60f), TextAnchor.UpperLeft, true);
+			faint = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.UpperLeft, true);
 			heading = Make(18, redLight, TextAnchor.MiddleLeft);
 			label = Make(18, new Color(0.55f, 0.92f, 1f), TextAnchor.MiddleCenter);
 			prompt = Make(18, white, TextAnchor.MiddleCenter, true);
