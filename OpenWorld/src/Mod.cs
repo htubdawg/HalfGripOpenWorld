@@ -28,7 +28,8 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<bool> Teleport;
 		internal static ConfigEntry<KeyCode> TeleportKey;
 		internal static ConfigEntry<bool> GarageTest;
-		internal static ConfigEntry<KeyCode> GarageTestKey;
+		/// <summary>The garage test's key, in the game's Settings > Controls (null if its default was taken).</summary>
+		internal static ModKey GarageTestKey;
 		internal static ConfigEntry<bool> ShowCoords;
 		internal static ConfigEntry<bool> Verbose;
 
@@ -55,8 +56,7 @@ namespace HalfGripOpenWorld
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many metres from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
 			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let TeleportKey jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
 			TeleportKey = ctx.Config.Bind("Debug", "TeleportKey", KeyCode.F7, "The key for Teleport.");
-			GarageTest = ctx.Config.Bind("Debug", "GarageTest", false, "Let GarageTestKey fit the next gun and the next steering wheel to the car where it is, then fill the ammo, effects and health (Shift with it: the previous ones). A test of the live refit a garage in the world would use. Only the car changes, not the save, so the next race has the old fit. Works in a Multiplayer room too, so it is off by default.");
-			GarageTestKey = ctx.Config.Bind("Debug", "GarageTestKey", KeyCode.F8, "The key for GarageTest.");
+			GarageTest = ctx.Config.Bind("Debug", "GarageTest", false, "Let the Garage test key (F9 by default, in Settings > Controls) fit the next gun and the next steering wheel to the car where it is, then fill the ammo, effects and health (Shift with it: the previous ones). A test of the live refit a garage in the world would use. Only the car changes, not the save, so the next race has the old fit. Works in a Multiplayer room too, so it is off by default.");
 			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset and the tile count in the top left corner.");
 			Verbose = ctx.Config.Bind("Debug", "VerboseLog", false, "Write the detailed log (each origin shift, tile timings) to the BepInEx log. Off, only the world's build, warnings and errors are logged.");
 
@@ -82,6 +82,8 @@ namespace HalfGripOpenWorld
 				MultiplayerLink.Hook(ctx);
 				WorldScene.OnSceneLoaded(scene);
 			});
+			// In the game's own Controls list, so it can be rebound there and never takes a key the game or another mod has (F8 reports a bug).
+			GarageTestKey = ctx.Keys.Add(KeyCode.F9, "Garage test (Open World)", Controls.Section.Race, () => GarageTest.Value);
 			ctx.OnUnload(MapEntry.Remove);
 			ctx.PatchAll();
 		}

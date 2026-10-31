@@ -6,7 +6,7 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// A test of the garage the world may get: GarageTestKey fits the next gun and the next steering wheel to the car where it stands,
+	/// A test of the garage the world may get: the Garage test key (Settings > Controls, F9 by default) fits the next gun and the next steering wheel to the car where it stands,
 	/// then fills the ammo, the effects and the health. It goes through the game's own live refit (<see cref="LoadoutRefit.Swap"/>,
 	/// which the dev console's giveitem uses in a race), so it shows whether that holds up outside the console, in a Multiplayer room
 	/// too, before any garage is built on it. Only the car changes: the save and the Multiplayer loadout keep what was fitted, so the
@@ -25,7 +25,7 @@ namespace HalfGripOpenWorld
 				refillAt = -1f;
 				Refill();
 			}
-			if (!Mod.GarageTest.Value || !GameInput.GetKeyDown(Mod.GarageTestKey.Value))
+			if (!Mod.GarageTest.Value || Mod.GarageTestKey == null || !Mod.GarageTestKey.Down)
 			{
 				return;
 			}
