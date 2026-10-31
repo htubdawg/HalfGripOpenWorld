@@ -807,8 +807,9 @@ namespace HalfGripOpenWorld
 			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " km   height " + player.transform.position.y.ToString("0") + " m\n"
 				+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
 				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
-				+ (Sky.Status != null ? "\n" + Sky.Status : "");
-			GUI.Label(new Rect(12f, 12f, 900f, 90f), text);
+				+ (Sky.Status != null ? "\n" + Sky.Status : "")
+				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "");
+			GUI.Label(new Rect(12f, 12f, 900f, 110f), text);
 		}
 
 		private void OnDestroy()

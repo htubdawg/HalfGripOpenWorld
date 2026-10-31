@@ -806,6 +806,17 @@ whether the weathers' fogs could go to judgement.
 
 ![The far view's picture of the world, and three views over the country to the horizon on a clear day](farview.png)
 
+### The free-flight camera drew only to 1500 (0.19.1; the owner's report on 0.19.0)
+
+The owner's screenshot on 0.19.0 (taken high over the fields, in the free-flight view): the storms looked right, but past the loaded
+tiles was only a band of the horizon's colour, though the near trees were hardly fogged (so the fog's reach was ours). Nothing in the
+game sets a camera's reach but the rear-view mirror's (`RenderBudget`), and the game applies its fog once. The Tokyo scene has three
+cameras that draw the world (scene dump): the Main Camera, the OutsideCamera and a FreeFlightCamera of its own, off until the dev
+free flight turns it on, reaching 1500. The far view raised only the first two by name. Now it raises every camera that draws the
+world (all but the cockpit's on the INTERIOR layer, the mirror and any drawing into a texture), found at the start and every 2
+seconds (a camera switched on later), with each logged under `VerboseLog`. `ShowCoords` adds a line: the far view's chunks drawn, the
+fog's start and end, and how far the camera in use draws. `WorldScene.RaiseCameras` (far view off) raises the free-flight camera too.
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

@@ -174,3 +174,5 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    way off shows as dark lumpy cloud over its place, grey at its edge, with grey streaked rain hanging under it down to the horizon;
    it grows as it comes, and it is overhead when the rain starts; one behind you is behind you (turn round). Away from storms the
    sky is as in 0.18.0. The frame rate is about as before (with `VerboseLog`, `Tiles: ... ms each` unchanged).
+   In the free-flight view too (0.19.1): the country goes on past the loaded ground to the horizon. With `ShowCoords`, the last line
+   says `far view: N chunks, fog A to B, <camera> draws to C` with C a little over B (thousands on a clear day), in every view.

@@ -422,13 +422,14 @@ namespace HalfGripOpenWorld
 			Mod.Info("Token loop: " + line.sampledPoints.Count + " samples, " + line.trackLength.ToString("0") + " m");
 		}
 
-		/// <summary>The cameras draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never lowered.</summary>
+		/// <summary>The cameras that draw the world (the dev free-flight one too) draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never
+		/// lowered. With the far view on, <see cref="FarView"/> sets them further.</summary>
 		private static void RaiseCameras()
 		{
 			float needed = (Mod.TileRadius.Value + 0.5f) * Streamer.TileSize;
 			foreach (Camera camera in UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
 			{
-				if ((camera.name == "Main Camera" || camera.name == "OutsideCamera") && camera.farClipPlane < needed)
+				if ((camera.name == "Main Camera" || camera.name == "OutsideCamera" || camera.name == "FreeFlightCamera") && camera.farClipPlane < needed)
 				{
 					Mod.Info(camera.name + " draws to " + needed.ToString("0") + " m (was " + camera.farClipPlane.ToString("0") + ")");
 					camera.farClipPlane = needed;

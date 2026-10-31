@@ -86,10 +86,7 @@ namespace HalfGripOpenWorld
 			grid = new Chunk[chunks * chunks];
 			foreach (Camera camera in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
 			{
-				if (camera.name == "Main Camera" || camera.name == "OutsideCamera")
-				{
-					cameras.Add(camera);
-				}
+				Note(camera);
 			}
 		}
 
@@ -180,12 +177,46 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// Keeps a camera in <see cref="cameras"/> if it draws the world: not the cockpit's (on the INTERIOR layer, which draws only the
+		/// cockpit and keeps its own short reach for depth precision), not the rear-view mirror's (the game's render budget sets its reach),
+		/// not one drawing into a texture. The Tokyo scene has three that draw the world: the Main Camera, the OutsideCamera and the dev
+		/// FreeFlightCamera (switched on later, its reach Tokyo's 1500, so the far view stopped at the tiles in it before 0.19.1).
+		/// </summary>
+		private void Note(Camera camera)
+		{
+			if (camera == null || cameras.Contains(camera) || camera.targetTexture != null || camera.name == "RearViewCamera" || camera.name == "InteriorCamera"
+				|| camera.gameObject.layer == LayerMask.NameToLayer("INTERIOR"))
+			{
+				return;
+			}
+			cameras.Add(camera);
+			Mod.Info("Far view: camera " + camera.name + " (reach " + camera.farClipPlane.ToString("0") + ") draws the far view");
+		}
+
+		private Camera[] all = new Camera[16];
+		private float nextScan;
+
 		private void LateUpdate()
 		{
 			// The cameras draw as far as the fog lets one see (Sky sets it), never less than the tiles reach.
 			if (!shown)
 			{
 				return;
+			}
+			// A camera switched on or made after the world was built (the free-flight camera, another mod's) is caught within two seconds.
+			if (Time.unscaledTime >= nextScan)
+			{
+				nextScan = Time.unscaledTime + 2f;
+				if (Camera.allCamerasCount > all.Length)
+				{
+					all = new Camera[Camera.allCamerasCount + 8];
+				}
+				int count = Camera.GetAllCameras(all);
+				for (int i = 0; i < count; i++)
+				{
+					Note(all[i]);
+				}
 			}
 			float needed = Mathf.Max((Mod.TileRadius.Value + 0.5f) * Streamer.TileSize, RenderSettings.fogEndDistance * 1.02f + 50f);
 			foreach (Camera camera in cameras)
@@ -195,7 +226,28 @@ namespace HalfGripOpenWorld
 					camera.farClipPlane = needed;
 				}
 			}
+			if (Mod.ShowCoords.Value)
+			{
+				Camera seeing = null;
+				foreach (Camera camera in cameras)
+				{
+					if (camera != null && camera.isActiveAndEnabled && (seeing == null || camera.depth > seeing.depth))
+					{
+						seeing = camera;
+					}
+				}
+				int drawn = 0;
+				foreach (Chunk c in grid)
+				{
+					drawn += c != null && c.Any && c.Go != null && c.Go.activeSelf ? 1 : 0;
+				}
+				Status = "far view: " + drawn + " chunks, fog " + RenderSettings.fogStartDistance.ToString("0") + " to " + RenderSettings.fogEndDistance.ToString("0")
+					+ (seeing != null ? ", " + seeing.name + " draws to " + seeing.farClipPlane.ToString("0") : "");
+			}
 		}
+
+		/// <summary>One line for the debug overlay (ShowCoords): the chunks drawn, the fog's reach, the camera's reach.</summary>
+		internal static string Status;
 
 		/// <summary>Makes the world's picture into a texture (mipmapped and filtered: at a distance a point-sampled picture shimmers), and the sea.</summary>
 		private void Picture()
@@ -416,6 +468,7 @@ namespace HalfGripOpenWorld
 			if (Instance == this)
 			{
 				Instance = null;
+				Status = null;
 			}
 			foreach (Chunk c in grid ?? new Chunk[0])
 			{
