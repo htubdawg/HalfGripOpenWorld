@@ -171,9 +171,12 @@ dotnet run -c Release --project tools/preview -- world.ppm 1024
 dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000    # west x, north z, side
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
 dotnet run -c Release --project tools/stormview -- storms.ppm 12345 10    # room seed, minutes between pictures
+dotnet run -c Release --project tools/jview -- at junction.ppm -10708 -10113 100    # world x, z, span
 ```
 
 `tools/stormview` checks the storms (how much of the land is under rain over 20 room seeds, that a seed always gives the same
-weather, what a sample costs) and draws the world at six times for one seed.
+weather, what a sample costs) and draws the world at six times for one seed. `tools/jview` draws the tiles' road meshes from above
+round a point, a list of points, random junctions or dead ends, or every hub, with ground showing in a mouth, surfaces poking
+through and steps marked; it also lists the roads near a point and the places (its modes are at the top of its `Program.cs`).
 
 The in-game test checklist is in [docs/TESTING.md](docs/TESTING.md); how the generator and the code work, in [docs/DESIGN.md](docs/DESIGN.md).
