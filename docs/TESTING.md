@@ -73,7 +73,18 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
 20. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-21. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+21. Day, night and storms (0.17.0), in a Multiplayer room. The log has `Weather: <day> by day, <night> by night (from the room's
+   seed)` and `Sky: the race starts at hh:mm, a day lasts 40 minutes; storms: a ... day, wind ..., snow above ...`. With `ShowCoords`
+   the overlay's last line gives the time, the sun's height, the rain, cloud, wetness and grip at the car and the nearest storm; both
+   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press F8 through a whole day
+   (8 presses a day): the shadows swing from east to west, the light goes gold at dusk, the sky darkens and the night sky comes in,
+   the cockpit dims at night (the cabin is not lit at midnight), the headlights go on at dusk and off after dawn, and nothing jumps
+   or flickers at the swaps (the light fades out and back round sunset and sunrise). Note whether the ambient light changes at
+   all (the world's shadows go blue and dark at night): if it stays as bright as day, the probe override did not take. Drive
+   towards the nearest storm: the sky and fog darken first, then rain starts and grows (the sound with it), the road darkens and
+   shines, and the overlay's grip drops; drive out the other side: the rain stops, the road stays wet and dries over about 10
+   minutes. Up in the northern mountains above the snow line it snows instead. Frame time with heavy rain (the graphics budget
+   still cuts the rain on a low setting).
 22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
    filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each
    circle within about 70 m. Drive into a circle: the line at the bottom says to stop and shift into neutral; do it and the garage

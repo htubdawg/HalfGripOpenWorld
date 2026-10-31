@@ -1,0 +1,520 @@
+using System;
+using System.Collections.Generic;
+using HarmonyLib;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+namespace HalfGripOpenWorld
+{
+	/// <summary>
+	/// The sky over an Open World race, every frame: the time of day going round (the sun's and the moon's light, their colours, the sky,
+	/// the ambient light, the fog, the headlights) and the weather where the car is (<see cref="Storms"/>: rain or snow, the cloud that
+	/// darkens everything under a storm, the rain's sound, wet roads that shine and grip less, and dry again).
+	///
+	/// The game sets a weather once, as a scene starts (<c>WeatherController.ApplyProfile</c>), and only moves the rain with the car after
+	/// that, so all of this is done here, on the scene's own light, sky, fog and particles. The day and night looks are the two weathers
+	/// <see cref="Weather"/> drew; this keeps its own copy of the day's as the active weather (so the game's rain follows the car when it is
+	/// on, and the grip it reads is ours).
+	///
+	/// The clock is the race's (<c>TrackManager.TimeSinceRaceStart</c>, started on the host's go for every player) and the hour it starts
+	/// at comes from the room's seed, so everybody in a room has the same time of day, and the same storm over the same place. Nothing here
+	/// is a setting for that reason, but the debug skip.
+	/// </summary>
+	internal sealed class Sky : MonoBehaviour
+	{
+		/// <summary>Seconds of race for a whole day and night (24 hours: 100 seconds an hour).</summary>
+		internal const float DaySeconds = 2400f;
+
+		/// <summary>The highest the sun gets, in degrees (at noon).</summary>
+		private const float NoonElevation = 55f;
+
+		/// <summary>The light is never put lower than this (degrees): long shadows from a sun on the horizon streak and flicker.</summary>
+		private const float LowestLight = 7f;
+
+		/// <summary>The night weathers' moonlight is as bright as their maps need to race at night; a night in the open is darker.</summary>
+		private const float MoonShare = 0.35f;
+
+		/// <summary>The ambient light at night, as a share of the day's in each of red, green and blue (a blue night).</summary>
+		private static readonly Color NightAmbient = new Color(0.28f, 0.31f, 0.42f);
+
+		/// <summary>The sun's colour as it sets or rises.</summary>
+		private static readonly Color Sunset = new Color(1f, 0.6f, 0.36f);
+
+		/// <summary>One line for the debug overlay (ShowCoords): the time, the weather at the car, the nearest storm.</summary>
+		internal static string Status;
+
+		private TrackManager tm;
+		private Material[] paved;
+		private Material[] unpaved;
+		private Storms storms;
+		private float startHour;
+		private float skip;
+
+		private WeatherController controller;
+		private WeatherProfile live;
+		private WeatherProfile dayLook;
+		private WeatherProfile nightLook;
+		private Light sun;
+		private readonly List<(SyncInteriorLight sync, float max)> cabin = new List<(SyncInteriorLight, float)>();
+		private Material daySky;
+		private Material nightSky;
+		private float dayExposure = 1f, nightExposure = 1f;
+		private Color dayTint = Color.gray;
+		private float reflections = 1f;
+		private AmbientProbeKeeper keeper;
+		private SphericalHarmonicsL2 probe;
+		private float nextProbe;
+		private readonly List<(ParticleSystem ps, float rate)> rainParticles = new List<(ParticleSystem, float)>();
+		private readonly List<(ParticleSystem ps, float rate)> snowParticles = new List<(ParticleSystem, float)>();
+		private readonly List<(Material m, string colour, Color baseColour)> fallMaterials = new List<(Material, string, Color)>();
+		private AudioSource rainSound;
+		private readonly List<GameObject> headlights = new List<GameObject>();
+		private int headlightsOn = -1;
+		private readonly List<(Material m, Color colour, float smooth)> roads = new List<(Material, Color, float)>();
+
+		/// <summary>The weather at the car, eased so it never jumps (a teleport, a skip).</summary>
+		private float rain, cloud, wet = -1f, wetTarget, shownWet = -1f;
+		private float nextWet;
+		private bool ready;
+
+		internal void Setup(TrackManager track, Material[] pavedMaterials, Material[] unpavedMaterials)
+		{
+			tm = track;
+			paved = pavedMaterials;
+			unpaved = unpavedMaterials;
+			storms = new Storms(Weather.Seed);
+			// Most races start in the day; a quarter start at any hour.
+			ulong h = Noise.Mix((ulong)(uint)Weather.Seed ^ 0x0E7A_7140UL);
+			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
+			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
+			startHour = (float)(u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v);
+			Mod.Log.LogInfo("Sky: the race starts at " + Clock(startHour) + ", a day lasts " + (DaySeconds / 60f).ToString("0") + " minutes; storms: a "
+				+ (storms.Raininess < 0.35 ? "dry" : storms.Raininess < 0.7 ? "showery" : "wet") + " day (" + storms.Raininess.ToString("0.00") + "), wind "
+				+ storms.WindSpeed.ToString("0.0") + " from " + Compass(-DetMath.Cos(storms.WindAngle), -DetMath.Sin(storms.WindAngle)) + ", snow above " + storms.SnowLine.ToString("0"));
+		}
+
+		private void Start()
+		{
+			try
+			{
+				Take();
+				ready = true;
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("The sky could not take over the scene's weather (the race keeps the weather it started with): " + e);
+			}
+		}
+
+		/// <summary>Takes over the scene's light, sky, ambient light, particles and sounds, keeping what they started as.</summary>
+		private void Take()
+		{
+			controller = FindFirstObjectByType<WeatherController>();
+			if (controller == null || controller.activeProfile == null)
+			{
+				throw new InvalidOperationException("the scene has no weather controller");
+			}
+			dayLook = controller.activeProfile;
+			nightLook = Weather.Night != null ? Weather.Night : dayLook;
+			live = Instantiate(dayLook);
+			live.name = dayLook.name + " (live)";
+			live.hideFlags = HideFlags.HideAndDontSave;
+			live.rain = false;
+			live.snow = false;
+			live.gripExponent = 1f;
+			live.gripMultiplier = 1f;
+			controller.activeProfile = live;
+			WeatherGrip.Current = live;
+
+			sun = controller.directionalLight;
+			foreach (SyncInteriorLight sync in FindObjectsByType<SyncInteriorLight>(FindObjectsSortMode.None))
+			{
+				cabin.Add((sync, sync.maxIntensity));
+			}
+
+			// The skies: copies, since they are the game's own materials (shared with the other maps).
+			if (dayLook.skyboxMaterial != null)
+			{
+				daySky = new Material(dayLook.skyboxMaterial) { hideFlags = HideFlags.HideAndDontSave };
+				dayExposure = daySky.HasProperty("_Exposure") ? daySky.GetFloat("_Exposure") : 1f;
+				dayTint = daySky.HasProperty("_Tint") ? daySky.GetColor("_Tint") : Color.gray;
+			}
+			if (nightLook.skyboxMaterial != null && nightLook != dayLook)
+			{
+				nightSky = new Material(nightLook.skyboxMaterial) { hideFlags = HideFlags.HideAndDontSave };
+				nightExposure = nightSky.HasProperty("_Exposure") ? nightSky.GetFloat("_Exposure") : 1f;
+			}
+			reflections = RenderSettings.reflectionIntensity;
+
+			// The Tokyo scene pins its ambient light (an AmbientProbeKeeper writes a stored probe back every frame), so the ambient colours
+			// alone change nothing: the stored probe is scaled and handed to the keeper.
+			keeper = FindFirstObjectByType<AmbientProbeKeeper>();
+			probe = RenderSettings.ambientProbe;
+
+			Fall(controller.rainEffect, rainParticles);
+			Fall(controller.snowEffect, snowParticles);
+			if (controller.rainEffect != null)
+			{
+				controller.rainEffect.SetActive(false);
+			}
+			if (controller.snowEffect != null)
+			{
+				controller.snowEffect.SetActive(false);
+			}
+
+			// The rain's sound is ours, as loud as it rains (a weather that brought its own is stopped).
+			foreach (AudioSource source in controller.AmbientalAudioSources)
+			{
+				if (source != null && source.clip != null && Weather.IsRain(source.clip))
+				{
+					source.Stop();
+				}
+			}
+			AudioClip clip = Weather.RainClip();
+			if (clip != null)
+			{
+				rainSound = gameObject.AddComponent<AudioSource>();
+				rainSound.clip = clip;
+				rainSound.loop = true;
+				rainSound.spatialBlend = 0f;
+				rainSound.volume = 0f;
+				rainSound.outputAudioMixerGroup = SoundController.AmbientGroup;
+			}
+
+			foreach (HeadLightsController lights in FindObjectsByType<HeadLightsController>(FindObjectsSortMode.None))
+			{
+				if (lights.spotlight != null)
+				{
+					headlights.Add(lights.spotlight);
+				}
+			}
+
+			foreach (Material m in paved)
+			{
+				Road(m, true);
+			}
+			foreach (Material m in unpaved)
+			{
+				Road(m, false);
+			}
+			Mod.Info("Sky: day " + dayLook.name + ", night " + nightLook.name + ", " + rainParticles.Count + " rain and " + snowParticles.Count + " snow particle systems, "
+				+ headlights.Count + " headlights, " + cabin.Count + " cabin lights, ambient keeper " + (keeper != null ? "found" : "none") + ", rain sound " + (clip != null ? clip.name : "none"));
+		}
+
+		/// <summary>Notes a falling effect's particle systems and their rates, and gives its materials copies that can be dimmed at night.</summary>
+		private void Fall(GameObject effect, List<(ParticleSystem, float)> into)
+		{
+			if (effect == null)
+			{
+				return;
+			}
+			foreach (ParticleSystem ps in effect.GetComponentsInChildren<ParticleSystem>(true))
+			{
+				into.Add((ps, ps.emission.rateOverTimeMultiplier));
+				ParticleSystemRenderer r = ps.GetComponent<ParticleSystemRenderer>();
+				if (r == null || r.sharedMaterial == null)
+				{
+					continue;
+				}
+				Material m = new Material(r.sharedMaterial) { hideFlags = HideFlags.HideAndDontSave };
+				r.sharedMaterial = m;
+				string colour = m.HasProperty("_BaseColor") ? "_BaseColor" : m.HasProperty("_Color") ? "_Color" : m.HasProperty("_TintColor") ? "_TintColor" : null;
+				if (colour != null)
+				{
+					fallMaterials.Add((m, colour, m.GetColor(colour)));
+				}
+			}
+		}
+
+		private void Road(Material m, bool shines)
+		{
+			if (m == null || !m.HasProperty("_BaseColor"))
+			{
+				return;
+			}
+			roads.Add((m, m.GetColor("_BaseColor"), shines && m.HasProperty("_Smoothness") ? m.GetFloat("_Smoothness") : -1f));
+		}
+
+		private void Update()
+		{
+			if (!ready || tm == null || tm.playerCarController == null)
+			{
+				return;
+			}
+			if (Mod.WeatherSkip.Value && GameInput.GetKeyDown(Mod.WeatherSkipKey.Value))
+			{
+				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
+				skip += back ? -300f : 300f;
+				TextController.EnqueueRandomText(1f, (back ? "Weather back" : "Weather on") + " 5 min");
+			}
+			try
+			{
+				Step();
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("The sky stopped: " + e);
+				ready = false;
+			}
+		}
+
+		private void Step()
+		{
+			float dt = Time.deltaTime;
+			double t = tm.TimeSinceRaceStart + (double)skip;
+			float hour = Mathf.Repeat(startHour + (float)(t / DaySeconds * 24.0), 24f);
+
+			// ---- the weather at the car ----
+			Transform car = tm.playerCarController.transform;
+			Origin.World(car.position, out double x, out double z);
+			double height = car.position.y - Network.Lift;
+			storms.At(x, z, t, height, out double rainHere, out double cloudHere);
+			float snowShare = (float)storms.SnowShare(height);
+			if (wet < 0f || Time.time >= nextWet)
+			{
+				nextWet = Time.time + 1f;
+				wetTarget = (float)storms.Wetness(x, z, t, height);
+				if (wet < 0f)
+				{
+					wet = wetTarget;
+					rain = (float)rainHere;
+					cloud = (float)cloudHere;
+				}
+			}
+			rain = Mathf.MoveTowards(rain, (float)rainHere, dt * 0.08f);
+			cloud = Mathf.MoveTowards(cloud, (float)cloudHere, dt * 0.05f);
+			wet = Mathf.MoveTowards(wet, wetTarget, dt * 0.03f);
+
+			// ---- the sun and the moon ----
+			// The sun rises in the east at 6, is south at noon and sets in the west at 18; the moon goes round opposite it.
+			float turn = (hour - 6f) / 24f * 360f;
+			float elevation = NoonElevation * Mathf.Sin(turn * Mathf.Deg2Rad);
+			float daylight = Step(-6f, 10f, elevation);
+			float sunUp = Step(-2f, 6f, elevation);
+			float moonUp = Step(-2f, -8f, elevation);
+			float sunset = sunUp * (1f - Step(2f, 20f, elevation));
+			bool moon = elevation < -2f;
+			float shownElevation = Mathf.Max(LowestLight, Mathf.Abs(elevation) * (moon ? 0.8f : 1f));
+			float azimuth = moon ? -turn + 180f : -turn;
+			Vector3 toLight = Quaternion.Euler(0f, -azimuth, 0f) * (Quaternion.Euler(0f, 0f, shownElevation) * Vector3.right);
+			sun.transform.rotation = Quaternion.LookRotation(-toLight, Vector3.up);
+
+			float dim = 1f - 0.55f * cloud;
+			Color sunColour = dayLook.directionalLightColor * Color.Lerp(Color.white, Sunset, sunset);
+			sun.color = moon ? nightLook.directionalLightColor : sunColour;
+			sun.intensity = (sunUp * dayLook.directionalLightIntensity + moonUp * nightLook.directionalLightIntensity * MoonShare) * dim;
+			float level = (sunUp + moonUp * MoonShare * 0.6f) * dim;
+			foreach ((SyncInteriorLight sync, float max) in cabin)
+			{
+				if (sync != null)
+				{
+					sync.maxIntensity = max * level;
+					Light l = sync.GetComponent<Light>();
+					if (l != null)
+					{
+						l.color = sun.color;
+					}
+				}
+			}
+
+			// ---- the ambient light ----
+			Color ambient = Color.Lerp(NightAmbient, Color.white, daylight) * Color.Lerp(Color.white, new Color(1f, 0.82f, 0.68f), sunset * 0.6f) * (1f - 0.4f * cloud);
+			if (Time.time >= nextProbe)
+			{
+				nextProbe = Time.time + 0.2f;
+				SphericalHarmonicsL2 scaled = probe;
+				for (int i = 0; i < 9; i++)
+				{
+					scaled[0, i] *= ambient.r;
+					scaled[1, i] *= ambient.g;
+					scaled[2, i] *= ambient.b;
+				}
+				if (keeper != null)
+				{
+					keeper.Store(scaled);
+				}
+				RenderSettings.ambientProbe = scaled;
+				RenderSettings.reflectionIntensity = reflections * Mathf.Lerp(0.15f, 1f, daylight) * (1f - 0.4f * cloud);
+			}
+
+			// ---- the sky ----
+			bool night = daylight < 0.2f && nightSky != null;
+			Material sky = night ? nightSky : daySky;
+			if (sky != null && RenderSettings.skybox != sky)
+			{
+				RenderSettings.skybox = sky;
+			}
+			if (daySky != null && daySky.HasProperty("_Exposure"))
+			{
+				daySky.SetFloat("_Exposure", dayExposure * Mathf.Max(0.06f, daylight * daylight) * (1f - 0.5f * cloud));
+			}
+			if (daySky != null && daySky.HasProperty("_Tint"))
+			{
+				daySky.SetColor("_Tint", dayTint * Color.Lerp(Color.white, Sunset, sunset * 0.7f));
+			}
+			if (nightSky != null)
+			{
+				if (nightSky.HasProperty("_Exposure"))
+				{
+					nightSky.SetFloat("_Exposure", nightExposure * Mathf.Lerp(1f, 0.3f, daylight * 5f) * (1f - 0.5f * cloud));
+				}
+				if (nightSky.HasProperty("_Rotation"))
+				{
+					// The stars turn through the night.
+					nightSky.SetFloat("_Rotation", hour * 15f);
+				}
+			}
+
+			// ---- the fog ----
+			Color fog = Color.Lerp(nightLook.fogColor, dayLook.fogColor, daylight) * Color.Lerp(Color.white, new Color(1f, 0.75f, 0.6f), sunset * 0.5f);
+			float grey = fog.grayscale;
+			fog = Color.Lerp(fog, new Color(grey, grey, grey), cloud * 0.6f) * (1f - 0.3f * cloud);
+			float thin = Mathf.Lerp(1f, 0.45f, rain);
+			RenderSettings.fog = true;
+			RenderSettings.fogColor = fog;
+			RenderSettings.fogEndDistance = Mathf.Lerp(Mathf.Min(nightLook.fogEnd, dayLook.fogEnd), dayLook.fogEnd, daylight) * thin;
+			RenderSettings.fogStartDistance = Mathf.Lerp(Mathf.Min(nightLook.fogStart, dayLook.fogStart), dayLook.fogStart, daylight) * thin;
+
+			// ---- rain and snow ----
+			float falling = rain < 0.02f ? 0f : rain;
+			Fall(controller.rainEffect, rainParticles, falling * (1f - snowShare), out live.rain);
+			Fall(controller.snowEffect, snowParticles, falling * snowShare, out live.snow);
+			float bright = Mathf.Lerp(0.3f, 1f, daylight) * (1f - 0.3f * cloud);
+			foreach ((Material m, string colour, Color baseColour) in fallMaterials)
+			{
+				m.SetColor(colour, new Color(baseColour.r * bright, baseColour.g * bright, baseColour.b * bright, baseColour.a));
+			}
+			if (rainSound != null)
+			{
+				float loud = 0.3f * falling * (1f - snowShare);
+				rainSound.volume = loud;
+				if (loud > 0f && !rainSound.isPlaying)
+				{
+					rainSound.Play();
+				}
+				else if (loud <= 0f && rainSound.isPlaying)
+				{
+					rainSound.Stop();
+				}
+			}
+
+			// ---- the headlights: on from dusk to dawn, and under a black sky ----
+			int on = daylight < 0.4f || cloud > 0.8f ? 1 : 0;
+			if (on != headlightsOn)
+			{
+				headlightsOn = on;
+				foreach (GameObject spot in headlights)
+				{
+					if (spot != null)
+					{
+						spot.SetActive(on == 1);
+					}
+				}
+			}
+
+			// ---- wet roads: darker, shinier and less grip; snow lying grips less still ----
+			if (Mathf.Abs(wet - shownWet) > 0.01f)
+			{
+				shownWet = wet;
+				foreach ((Material m, Color colour, float smooth) in roads)
+				{
+					float d = smooth >= 0f ? 0.28f : 0.18f;
+					m.SetColor("_BaseColor", colour * (1f - d * wet));
+					if (smooth >= 0f)
+					{
+						m.SetFloat("_Smoothness", Mathf.Lerp(smooth, 0.6f, wet));
+					}
+				}
+			}
+			live.gripExponent = 1f + wet * (0.06f + 0.05f * snowShare);
+			live.gripMultiplier = 1f - wet * (0.04f + 0.02f * snowShare);
+
+			if (Mod.ShowCoords.Value)
+			{
+				string near = "no storm";
+				if (storms.Nearest(x, z, t, out double dx, out double dz, out double edge, out double strength))
+				{
+					near = edge <= 0.0 ? "in a storm (" + strength.ToString("0.00") + ")" : "storm " + (edge / 1000.0).ToString("0.0") + " km " + Compass(dx, dz) + " (" + strength.ToString("0.00") + ")";
+				}
+				Status = Clock(hour) + (moon ? " moon" : " sun") + " " + elevation.ToString("0") + "°   " + (snowShare > 0.5f ? "snow " : "rain ") + rain.ToString("0.00") + "  cloud " + cloud.ToString("0.00")
+					+ "  wet " + wet.ToString("0.00") + "  grip x" + live.gripMultiplier.ToString("0.00") + "^" + live.gripExponent.ToString("0.00") + "   " + near + (skip != 0f ? "   skipped " + (skip / 60f).ToString("0") + " min" : "");
+			}
+		}
+
+		/// <summary>Sets a falling effect going as hard as <paramref name="amount"/> (0 stops it), within the game's graphics budget.</summary>
+		private static void Fall(GameObject effect, List<(ParticleSystem ps, float rate)> systems, float amount, out bool on)
+		{
+			on = amount > 0f && effect != null;
+			if (effect == null)
+			{
+				return;
+			}
+			if (effect.activeSelf != on)
+			{
+				effect.SetActive(on);
+			}
+			if (!on)
+			{
+				return;
+			}
+			foreach ((ParticleSystem ps, float rate) in systems)
+			{
+				if (ps != null)
+				{
+					// Setting the rate takes these systems out of the game's render budget, so its weather cut is applied here.
+					ParticleSystem.EmissionModule emission = ps.emission;
+					emission.rateOverTimeMultiplier = rate * amount * WeatherBudget.Rate(ps);
+				}
+			}
+		}
+
+		private void OnDestroy()
+		{
+			Status = null;
+			if (live != null)
+			{
+				if (WeatherGrip.Current == live)
+				{
+					WeatherGrip.Current = null;
+				}
+				Destroy(live);
+			}
+			if (daySky != null)
+			{
+				Destroy(daySky);
+			}
+			if (nightSky != null)
+			{
+				Destroy(nightSky);
+			}
+			foreach ((Material m, string _, Color _) in fallMaterials)
+			{
+				if (m != null)
+				{
+					Destroy(m);
+				}
+			}
+		}
+
+		/// <summary>0 at or below <paramref name="a"/>, 1 at or beyond <paramref name="b"/> (which may be below a), smooth in between.</summary>
+		private static float Step(float a, float b, float x)
+		{
+			float u = Mathf.Clamp01((x - a) / (b - a));
+			return u * u * (3f - 2f * u);
+		}
+
+		private static string Clock(float hour)
+		{
+			int minutes = (int)(Mathf.Repeat(hour, 24f) * 60f);
+			return (minutes / 60).ToString("00") + ":" + (minutes % 60).ToString("00");
+		}
+
+		/// <summary>The compass point of the direction (dx east, dz north).</summary>
+		private static string Compass(double dx, double dz)
+		{
+			string[] points = { "E", "NE", "N", "NW", "W", "SW", "S", "SE" };
+			double angle = Math.Atan2(dz, dx) / (2.0 * Math.PI) * 8.0;
+			return points[(int)Math.Floor(angle + 8.5) % 8];
+		}
+	}
+}

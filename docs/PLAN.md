@@ -595,6 +595,46 @@ a wreck then comes back to that garage instead of the spawn, for the rest of the
 
 Not tested in game yet (TESTING.md 22b).
 
+## Day and night, and storms (0.17.0; asked for after 0.16.0)
+
+Free roam in a room had one weather for the whole race, with rain or snow everywhere at once. Now the time of day goes round and
+the weather moves across the country. Everything comes from the room's seed and the race clock (`TrackManager.TimeSinceRaceStart`,
+started on the host's go), so every player has the same sky and nothing is sent. Nothing about it is a setting for that reason
+(the Open World is always played from a room); only the debug skip is.
+
+- **Storms (`Storms.cs`).** Rain cells: each 10 minutes of race gives birth to up to 20 (fewer on a drier day, the day's raininess
+  from the seed), 1400 to 4400 across, living 20 to 60 minutes, building up and dying away, drifting with the wind (from the
+  seed, swinging slowly over the race) at 4 to 11 a second, so a car outruns one easily. Rain is hardest in a cell's middle with a
+  ragged edge; its cloud reaches 1.8 times as far, so the sky darkens first. High ground gets a little more. Above the snow line
+  (330 to 480 from sea level, from the seed) it snows, with sleet either side. Wetness looks back 10 minutes, so a road a storm has
+  passed stays wet and dries. Pure arithmetic under the world's determinism rules. `tools/stormview` checks it: over 20 seeds the
+  rain covers 1 to 3 % of the land on a dry day and about 20 % on a wet one (10 % on average), a seed always gives the same weather,
+  and a sample costs about 8 µs (a wetness, every second, 0.2 ms).
+- **Day and night (`Sky.cs`).** A day lasts 40 minutes (100 seconds an hour); three races in four start between 07:00 and 17:00,
+  the rest at any hour. The sun goes from east to south to west, at most 55° up; the light is never put below 7° (long shadows
+  flicker) and fades out round the horizon while the moon takes over opposite. The light turns gold low down. `Weather` now draws a
+  day look (the weathers with a sky and no headlights: Stadium ash, fiery factory, Forest rainy day, red forest, mountain day) and a
+  night look (the night weathers with a sky); the light's and fog's colours and the sky blend from one to the other, the day sky
+  dimmed and tinted at dusk, the night sky (its stars turning) swapped in once it is dark. The night weathers' moonlight is made
+  for racing in an arena, so it is taken at 35 %. Headlights go on from dusk to dawn and under a black sky.
+- **The game's weather taken over.** The game applies a weather once, as the scene starts. `Sky` keeps its own copy of the day
+  look as `WeatherController.activeProfile` (so the game moves our rain with the car) and as `WeatherGrip.Current` (so the grip
+  read is ours), and sets the light, the cabin light (`SyncInteriorLight.maxIntensity`, which ignores the weather), fog, sky
+  exposure and tint and reflections every frame. The Tokyo scene pins its ambient light (`AmbientProbeKeeper`), so its stored probe
+  is scaled per colour (blue at night, darker under cloud) and handed back through `Store`. Rain and snow are the scene's own
+  particles at a rate set by the rain at the car (the game's weather budget cut applied, since setting the rate takes them out of
+  `RenderBudget`), dimmed at night; the rain's sound is ours, as loud as it rains.
+- **Wet roads.** The road, sidewalk and circuit materials darken and shine as the ground at the car is wet; tracks, verges, gravel
+  and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
+  the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
+- **Debug.** `ShowCoords` adds a line: the time, the sun or moon's height, the rain or snow, cloud, wetness and grip at the car,
+  the nearest storm (how far, which way). `WeatherSkip` with F8 moves your own sky 5 minutes on (Shift back).
+
+Not tested in game yet (TESTING.md 21). Next, when it looks right: rain curtains and dark cloud under the storms nearby (seen from
+afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest
+storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
+windows and street lamps.
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

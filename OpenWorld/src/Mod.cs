@@ -29,6 +29,8 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<bool> Teleport;
 		internal static ConfigEntry<KeyCode> TeleportKey;
 		internal static ConfigEntry<bool> ShowCoords;
+		internal static ConfigEntry<bool> WeatherSkip;
+		internal static ConfigEntry<KeyCode> WeatherSkipKey;
 		internal static ConfigEntry<bool> Verbose;
 
 		/// <summary>The map entry the mod adds to the run config, once it exists.</summary>
@@ -55,7 +57,9 @@ namespace HalfGripOpenWorld
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many metres from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
 			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let TeleportKey jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
 			TeleportKey = ctx.Config.Bind("Debug", "TeleportKey", KeyCode.F7, "The key for Teleport.");
-			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset and the tile count in the top left corner.");
+			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset, the tile count and the sky (the time, the rain, cloud and wetness at the car, the grip, the nearest storm) in the top left corner.");
+			WeatherSkip = ctx.Config.Bind("Debug", "WeatherSkip", false, "Let WeatherSkipKey move your own sky 5 minutes on (Shift: back): the time of day (an hour is 100 seconds) and the storms, to test them. Only your own view: in a Multiplayer room your sky is then out of step with the others' until the next race.");
+			WeatherSkipKey = ctx.Config.Bind("Debug", "WeatherSkipKey", KeyCode.F8, "The key for WeatherSkip.");
 			Verbose = ctx.Config.Bind("Debug", "VerboseLog", false, "Write the detailed log (each origin shift, tile timings) to the BepInEx log. Off, only the world's build, warnings and errors are logged.");
 
 			MapEntry.Ensure();
