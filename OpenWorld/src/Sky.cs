@@ -86,6 +86,20 @@ namespace HalfGripOpenWorld
 		private float nextPlanes;
 		private readonly List<(Material m, Color colour, float smooth)> roads = new List<(Material, Color, float)>();
 
+		/// <summary>With the far view on, how far one sees on the clearest day of this race (from the room's seed, under the config's
+		/// FarViewDistance), the reach shown now (eased toward the weather's), and the storms round the car for the painted sky, refilled on a
+		/// worker every few seconds.</summary>
+		private float clearReach;
+		private float reach = -1f;
+		private StormField field;
+		private System.Threading.Tasks.Task<StormField> filling;
+		private float nextField;
+		private bool fieldFailed;
+
+		/// <summary>The storm field's samples a side and their spacing: 51,200 units across, out to where the cloud layer meets the horizon's haze.</summary>
+		private const int FieldN = 64;
+		private const double FieldSpacing = 800.0;
+
 		/// <summary>The weather at the car, eased so it never jumps (a teleport, a skip).</summary>
 		private float rain, cloud, wet = -1f, wetTarget, shownWet = -1f;
 		private float nextWet;
@@ -102,6 +116,9 @@ namespace HalfGripOpenWorld
 			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
 			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
 			startHour = (float)(u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v);
+			// Some days are clearer than others: the clearest see the whole of the config's far view distance, the haziest two thirds of it.
+			double w = (double)(Noise.Mix(h ^ 0xC1EA2UL) >> 11) * (1.0 / 9007199254740992.0);
+			clearReach = Mod.FarReach.Value * (float)(0.65 + 0.35 * w);
 			Mod.Log.LogInfo("Sky: the race starts at " + Clock(startHour) + ", a day lasts " + (DaySeconds / 60f).ToString("0") + " minutes; storms: a "
 				+ (storms.Raininess < 0.35 ? "dry" : storms.Raininess < 0.7 ? "showery" : "wet") + " day (" + storms.Raininess.ToString("0.00") + "), wind "
 				+ storms.WindSpeed.ToString("0.0") + " from " + Compass(-DetMath.Cos(storms.WindAngle), -DetMath.Sin(storms.WindAngle)) + ", snow above " + storms.SnowLine.ToString("0"));
@@ -616,10 +633,27 @@ namespace HalfGripOpenWorld
 				fog = Color.Lerp(fog, new Color(grey, grey, grey), cloud * 0.6f) * (1f - 0.3f * cloud);
 			}
 			float thin = Mathf.Lerp(1f, 0.45f, rain);
+			float fogEnd = Mathf.Lerp(Mathf.Min(nightLook.fogEnd, dayLook.fogEnd), dayLook.fogEnd, daylight) * thin;
+			float fogStart = Mathf.Lerp(Mathf.Min(nightLook.fogStart, dayLook.fogStart), dayLook.fogStart, daylight) * thin;
+			// With the far view, how far one sees is ours, from the weather at the car (the weathers' fogs were made for arenas, some
+			// ending at 300): the day's clear reach, a little less at night, brought in under cloud and closer still in the rain. Eased, so
+			// it never jumps (the far view coming on, a teleport).
+			float target = fogEnd;
+			if (FarView.Showing)
+			{
+				target = clearReach * Mathf.Lerp(0.75f, 1f, daylight) * (1f - 0.5f * cloud) * Mathf.Lerp(1f, 0.08f, rain);
+				target = Mathf.Max(target, fogEnd);
+			}
+			reach = reach < 0f ? target : Mathf.MoveTowards(reach, target, dt * Mathf.Max(600f, reach * 0.4f));
+			if (FarView.Showing || reach > fogEnd + 1f)
+			{
+				fogEnd = reach;
+				fogStart = reach * 0.03f;
+			}
 			RenderSettings.fog = true;
 			RenderSettings.fogColor = fog;
-			RenderSettings.fogEndDistance = Mathf.Lerp(Mathf.Min(nightLook.fogEnd, dayLook.fogEnd), dayLook.fogEnd, daylight) * thin;
-			RenderSettings.fogStartDistance = Mathf.Lerp(Mathf.Min(nightLook.fogStart, dayLook.fogStart), dayLook.fogStart, daylight) * thin;
+			RenderSettings.fogEndDistance = fogEnd;
+			RenderSettings.fogStartDistance = fogStart;
 
 			// ---- rain and snow ----
 			float falling = rain < 0.02f ? 0f : rain;
@@ -706,6 +740,11 @@ namespace HalfGripOpenWorld
 			double wz = z - storms.WindSpeed * DetMath.Sin(storms.WindAngle) * t;
 			state.CloudX = (float)(wx - Math.Floor(wx / tile) * tile);
 			state.CloudZ = (float)(wz - Math.Floor(wz / tile) * tile);
+			Field(x, z, t);
+			state.Storm = field;
+			state.CarX = (float)x;
+			state.CarZ = (float)z;
+			state.Reach = reach > 0f ? reach : RenderSettings.fogEndDistance;
 			bool done;
 			if (!painted)
 			{
@@ -728,6 +767,51 @@ namespace HalfGripOpenWorld
 			}
 			SkyPaint.Palette(state, out _, out SkyPaint.Rgb horizon, out _);
 			return new Color(horizon.R, horizon.G, horizon.B, 1f);
+		}
+
+		/// <summary>
+		/// Keeps <see cref="field"/>, the storms round the car for the painted sky, up to date: refilled on a worker every 3 seconds round
+		/// where the car is (the storms drift at most 33 units in that time, under a texel at a kilometre), the first at once so the first
+		/// picture has them.
+		/// </summary>
+		private void Field(double x, double z, double t)
+		{
+			if (fieldFailed)
+			{
+				return;
+			}
+			if (filling != null && filling.IsCompleted)
+			{
+				if (filling.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
+				{
+					field = filling.Result;
+				}
+				else
+				{
+					fieldFailed = true;
+					Mod.Log.LogWarning("Sky: the storms seen from afar stopped: " + filling.Exception);
+				}
+				filling = null;
+			}
+			if (filling != null || Time.time < nextField)
+			{
+				return;
+			}
+			nextField = Time.time + 3f;
+			Storms st = storms;
+			if (field == null)
+			{
+				StormField first = new StormField(FieldN, FieldSpacing, x, z);
+				st.Fill(first, t);
+				field = first;
+				return;
+			}
+			filling = System.Threading.Tasks.Task.Run(() =>
+			{
+				StormField next = new StormField(FieldN, FieldSpacing, x, z);
+				st.Fill(next, t);
+				return next;
+			});
 		}
 
 		private static SkyPaint.Rgb Rgb(Color c)

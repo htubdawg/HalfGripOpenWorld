@@ -648,7 +648,7 @@ neutral (`ShifterHand`: the grabber's held object under the active shifter's obj
 standing in neutral for 0.6 s. Arming, the prompts and `Garage.Disarm` after a respawn are unchanged.
 
 The owner tested 0.17.0 in game: good (TESTING.md 21, and 22 and 23 with the shifter let go in neutral). Next: rain curtains and dark cloud under the storms nearby (seen from
-afar), a sky of our own painted in code (sun and moon discs, stars, a gradient; done in 0.18.0), wetness per tile, lightning in the hardest
+afar; done in 0.19.0), a sky of our own painted in code (sun and moon discs, stars, a gradient; done in 0.18.0), wetness per tile, lightning in the hardest
 storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
 windows and street lamps.
 
@@ -757,9 +757,54 @@ skies stood still while the light went round, and could be on the other side of 
   1/255 of the fog's colour at eight times and weathers; a seed paints the same sky; the cost), which draws `docs/sky.png`.
   Compiled; not yet tested in game (TESTING.md 25).
 - **Left for later:** the moon is always full (it is opposite the sun, as its light is); clouds are one flat layer, not the storms
-  seen from afar (still the next item below 0.17.0's).
+  seen from afar (done in 0.19.0, below).
 
 ![The painted sky: 10:00, 13:00 with fair weather cloud, 17:20, sunset, dusk, 23:00 with the moon, 02:00 cloudy, under a storm; left the whole turn, right a view from the car](sky.png)
+
+## The far view and storms seen from afar (0.19.0; asked for after 0.18.0)
+
+Before, nothing was drawn past the loaded tiles (TileRadius 5, about 1250 units), and the fog ended there; several of the game's
+weathers end their fog sooner still (300 to 860), made for arenas. The clouds were one flat layer whose amount was the cloud at the
+car, so a storm was never seen until it was overhead. Both done together, as the owner asked; the owner left how far to see and
+whether the weathers' fogs could go to judgement.
+
+- **The world at low detail (`FarGrid.cs`).** `WorldGen.Height` every 50 units over the whole world (641 a side; the tiles' own
+  vertices, so where the far view meets a tile they share them exactly), water lifting a point to its surface (so no far water fights
+  the ground at a distance), woods standing 22 over the ground (a canopy, by the share of woods round each point), and a picture every
+  25 units (1280 a side): the tiles' land use with the water, lots, circuit and roads painted over (each road as much of its pixel as
+  it covers, so a lane is faint and the trunk road solid; tracks and paths left out). Pure arithmetic, built on a worker after the
+  layout in `Mod.Load`: about 1.2 to 2.8 s on four cores here, 10 MB. Height samples cost 1.4 µs, so the world is cheap.
+- **The meshes (`FarView.cs`).** 16 by 16 chunks of 2000 units (8 by 8 tiles), each one mesh, no collider, no shadows, one material
+  (the ground's, with the world's picture, mipmapped and filtered: point-sampled at a distance it shimmers). Within 3500 of the car a
+  chunk takes every sample; to 6500 every second, to 11000 every fourth, past that every eighth. A chunk leaves out the cells of every
+  loaded tile (a 64-bit mask per chunk), and is remade in the same frame the streamer adds or drops a tile in it (`Streamer.Far`, after
+  `Stream`), so the far view never lies over or pokes through the real ground and no hole opens for a frame; changes of detail alone
+  are remade three a frame. Skirts hang from every edge bordering a cell not drawn: along a tile's edge as deep as the real ground (or
+  water) dips under the far view's straight edge between samples (`FarGrid.DipX`/`DipZ`, from the tiles' 5-unit vertices: sharp
+  mountain valleys dip up to 137; 2326 of 18490 tile-edge pieces checked need more than the 24 minimum), so no gap shows; round the
+  chunks, deeper the coarser, where chunks of two details meet. The sea goes on south of the world to the horizon as one flat sheet.
+- **How far one sees is ours.** With the far view showing, `Sky` sets the fog's end from the weather at the car, not the weathers':
+  a clear day sees `FarViewDistance` (14000 by default) times 0.65 to 1 from the room's seed (some days are hazier), less at night
+  (x0.75), under cloud (to x0.5) and in the rain (to x0.08: a few hundred units in a downpour, never less than the old fog). Eased,
+  so it never jumps; the fog starts at 3% of it. The cameras draw to it (`FarView.LateUpdate`). The weathers' fog colours had already
+  gone (the fog is the painted horizon); their distances now go too. Off in the config, everything is as before.
+- **Storms in the painted sky.** `Sky` has the storms round the car filled into a `StormField` (64 by 64 samples 800 apart, 51 km
+  across; `Storms.Fill`, cell by cell, the same values as `Storms.At` for ground at sea level, 1.4 ms) on a worker every 3 seconds.
+  `SkyPaint` looks each sky texel's point on the cloud layer up in it: a storm's cloud builds out of lumps (its edge broken by the
+  cloud pattern and a finer one), dark in its middle and grey toward its edge, hazed by distance (to the horizon's colour over 3.5
+  times the reach). Under it hang rain curtains: per column, stepping out from 1500 to 25,800 from the car, the share of the sky
+  hidden behind the rain so far (the rain falls straight down, so a column's curtains are the same at every height under the cloud),
+  read at each row up to where that way meets the cloud layer; streaked a few columns wide. Both fade out over the horizon's last rows,
+  which stay exactly the fog's colour. With a storm in view a frame's painting costs about 0.2 to 0.35 ms more (about 0.8 to 0.9 ms).
+- **Checked:** meshcheck's new `farview` check (the far view on the tiles' vertices at tile corners; along tile edges across the world
+  the skirt's foot always under the real surface); the new `tools/farview` (build time, memory, the same grid twice, the picture and
+  three views over the country, `docs/farview.png`); `tools/skyview` (two storm scenes: toward the storm the sky differs from the same
+  sky with none, low down in the curtains and where the cloud layer is over the storm; away from it untouched; the horizon still the
+  fog's colour; the cost) and `tools/stormview` (a field equals `At` at its samples). Compiled; not yet tested in game (TESTING.md 26).
+- **Left for later:** towns and towers as shapes in the far view (they are only their colours), lit windows at night, far water
+  that shines (the far view's lakes are matte where the tiles' are glossy), and depth precision at 10 km is only known in game.
+
+![The far view's picture of the world, and three views over the country to the horizon on a clear day](farview.png)
 
 ## Next: events (proposed, to agree with the owner)
 

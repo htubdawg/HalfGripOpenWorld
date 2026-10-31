@@ -160,3 +160,17 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    land as you drive (drive a kilometre: they pass overhead); under a storm the whole sky is grey cloud and the sun and stars are
    hidden. Look straight up and all round: no seam or smear in the sky (the picture's edges meet in the west), no stretched stars at
    the top. The frame rate is as before (the painting costs about 0.7 ms a frame).
+26. The far view and storms seen from afar (0.19.0). The log says `Far view on (the world's grid built in ... ms)` within a few
+   seconds of the race starting, and no `Far view failed` or `chunk ... could not be made` warning. On a clear day (`ShowCoords`: cloud
+   near 0), from the spawn and from the mountain pass and the hill climb's finish (teleport): the country goes on past the loaded
+   ground to the horizon, fading into the sky's colour with no band between: the mountains in the north with snow and rock, the woods
+   standing up dark green, fields, lakes and the sea in the south going on past the coast to the horizon, the main roads as thin grey
+   lines. Where the loaded ground ends (about 1.3 km out with TileRadius 5) there is no gap, no sky showing through, no step, no
+   flicker; buildings and trees appear there (that is expected). Drive a few kilometres fast and teleport: the far ground follows
+   with no hole opening for a frame and nothing poking through the road or the ground near the car. Far mountains and coast do not
+   flicker or shimmer (z-fighting at a distance would show as stripes; report a screenshot if so). Under cloud and in the rain the
+   view closes in smoothly (a few hundred metres in a downpour) and opens again as it clears. With `FarView` off in the cfg, the fog
+   ends at the loaded ground as before. Storms (a showery or wet day in the log; `WeatherSkip` and F2 to find one): a storm some
+   way off shows as dark lumpy cloud over its place, grey at its edge, with grey streaked rain hanging under it down to the horizon;
+   it grows as it comes, and it is overhead when the rain starts; one behind you is behind you (turn round). Away from storms the
+   sky is as in 0.18.0. The frame rate is about as before (with `VerboseLog`, `Tiles: ... ms each` unchanged).

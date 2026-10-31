@@ -141,10 +141,19 @@ namespace HalfGripOpenWorld
 			Material ground = GroundMaterial(lit), verge = RoadMesh.VergeMaterial(lit), sidewalk = RoadMesh.SidewalkMaterial(lit), gravel = CircuitMesh.GravelMaterial(lit);
 			Material[] roads = RoadMesh.Materials(lit), tracks = RoadMesh.TrackMaterials(lit), circuit = CircuitMesh.Materials(lit);
 			streamer.Setup(tm.playerCarController, ground, groundLayer >= 0 ? groundLayer : 0, roads, verge, sidewalk, tracks, WaterMaterial(lit), 0, Buildings.Materials(lit), circuit, gravel, foliage);
+			// The far view past the tiles, with the ground's look (so the wet weather darkens it too) and its own sea.
+			FarView far = root.AddComponent<FarView>();
+			Material farGround = FarView.MakeMaterial(ground, "OpenWorld Far"), farSea = FarView.MakeMaterial(ground, "OpenWorld Far Sea");
+			if (farSea.HasProperty("_Smoothness"))
+			{
+				farSea.SetFloat("_Smoothness", 0.7f);
+			}
+			far.Setup(farGround, farSea, groundLayer >= 0 ? groundLayer : 0);
+			streamer.Far = far;
 			// The sky wets the surfaces: the paved ones shine, the rest only darken.
 			List<Material> paved = new List<Material>(roads) { sidewalk };
 			paved.AddRange(circuit);
-			List<Material> unpaved = new List<Material>(tracks) { verge, gravel, ground };
+			List<Material> unpaved = new List<Material>(tracks) { verge, gravel, ground, farGround };
 			root.AddComponent<Sky>().Setup(tm, paved.ToArray(), unpaved.ToArray());
 
 			PlaceGrid(tm, env, out Vector3 forward);

@@ -49,6 +49,9 @@ using UnityEngine;
 //  22. tucked:  no track or path ribbon over the drawn surface of a paved road it runs onto
 //  23. hubs:    where three or more roads end at one place (Network.Hub), each arm's cut meets the plate's outline (points and
 //                heights), the tiles' paving covers the whole plate, and the drawn ground is under it
+//  24. farview: the far view's grid (FarGrid) on the tiles' own vertices at tile corners; along the edges of tiles across the world, the
+//                far view's straight edge (its canopy too) never more than its skirt above the drawn ground or water, so no gap shows
+//                between a loaded tile and the far view; its build time and what its picture shows
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -88,6 +91,7 @@ internal static class Program
 			("deadends", DeadEnds),
 			("tucked", Tucked),
 			("hubs", HubChecks),
+			("farview", FarChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -2192,5 +2196,119 @@ internal static class Program
 		}
 		Console.WriteLine("tucked:  " + bad + " of " + samples + " track and path ribbon points on a paved road's surface over it, worst " + worst.ToString("0.00"));
 		return bad == 0;
+	}
+
+	/// <summary>The streamer's tile side (Streamer is not built here).</summary>
+	private const double TileSize = 250.0;
+
+	private static bool FarChecks()
+	{
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+		FarGrid.Ensure();
+		Console.WriteLine("farview: grid " + FarGrid.N + " a side, picture " + FarGrid.Pixels + " a side, built in " + watch.ElapsedMilliseconds + " ms (" + FarGrid.BuildMs.ToString("0") + " ms inside)");
+		int n = FarGrid.N;
+		double lift = Network.Lift;
+		bool ok = true;
+
+		// The real surface at a point: the drawn ground, or the water drawn over it.
+		double Real(double x, double z)
+		{
+			double h = Mesh(x, z);
+			if (Rivers.Water(x, z, out double level))
+			{
+				h = Math.Max(h, level + lift);
+			}
+			return h;
+		}
+
+		// 1. At tile corners the far view's ground is the tiles' own vertex (or the water over it).
+		double worstCorner = 0.0;
+		int corners = 0;
+		int per = (int)Math.Round(TileSize / FarGrid.Step);
+		for (int j = 0; j < n; j += per * 3)
+		{
+			for (int i = 0; i < n; i += per * 3)
+			{
+				double x = FarGrid.At(i), z = FarGrid.At(j);
+				worstCorner = Math.Max(worstCorner, Math.Abs(FarGrid.Ground[j * n + i] - Real(x, z)));
+				corners++;
+			}
+		}
+		bool cornerOk = worstCorner < 0.05;
+		Console.WriteLine("farview: " + corners + " tile corners, the far view off the tiles' vertex by at most " + worstCorner.ToString("0.000") + (cornerOk ? "  ok" : "  FAIL"));
+		ok &= cornerOk;
+
+		// 2. Along tile edges: how far the far view's straight edge (with its canopy) stands over the real surface between its samples.
+		List<double> gaps = new List<double>();
+		double worst = double.MinValue, wx = 0.0, wz = 0.0;
+		double short_ = double.MinValue;
+		int deeper = 0, pieces = 0;
+		int tiles = (int)Math.Round(WorldGen.Half * 2.0 / TileSize);
+		for (int tj = 1; tj < tiles; tj += 3)
+		{
+			for (int ti = 1; ti < tiles; ti += 3)
+			{
+				for (int edge = 0; edge < 2; edge++)
+				{
+					// The tile's south edge (along x) or its west edge (along z), sample by 5-unit vertex.
+					int gi = ti * per, gj = tj * per;
+					for (int q = 0; q < per; q++)
+					{
+						int ai = edge == 0 ? gi + q : gi, aj = edge == 0 ? gj : gj + q;
+						int bi = edge == 0 ? ai + 1 : ai, bj = edge == 0 ? aj : aj + 1;
+						float a = FarGrid.Top[aj * n + ai], b = FarGrid.Top[bj * n + bi];
+						float skirt = FarGrid.SkirtAt(ai, aj, bi, bj);
+						pieces++;
+						if (skirt > FarGrid.Skirt)
+						{
+							deeper++;
+						}
+						for (int k = 0; k < 10; k++)
+						{
+							double f = k / 10.0;
+							double x = FarGrid.At(ai) + (FarGrid.At(bi) - FarGrid.At(ai)) * f, z = FarGrid.At(aj) + (FarGrid.At(bj) - FarGrid.At(aj)) * f;
+							double gap = a + (b - a) * f - Real(x, z);
+							gaps.Add(gap);
+							short_ = Math.Max(short_, gap - skirt);
+							if (gap > worst)
+							{
+								worst = gap;
+								wx = x;
+								wz = z;
+							}
+						}
+					}
+				}
+			}
+		}
+		gaps.Sort();
+		bool edgeOk = short_ < -0.5;
+		Console.WriteLine("farview: " + gaps.Count + " points on tile edges, the far view's edge over the real surface: median " + gaps[gaps.Count / 2].ToString("0.00") + ", 99% " + gaps[(int)(gaps.Count * 0.99)].ToString("0.00")
+			+ ", worst " + worst.ToString("0.00") + " at (" + wx.ToString("0") + ", " + wz.ToString("0") + "); skirts " + FarGrid.Skirt.ToString("0") + ", deeper on " + deeper + " of " + pieces
+			+ " pieces; the skirt's foot over the surface by at most " + short_.ToString("0.00") + (edgeOk ? "  ok" : "  FAIL: a gap would show under the skirt"));
+		ok &= edgeOk;
+
+		// 3. What the picture shows.
+		byte[] c = FarGrid.Colours;
+		int water = 0, grey = 0;
+		for (int o = 0; o < c.Length; o += 4)
+		{
+			if (c[o] == 44 && c[o + 1] == 79 && c[o + 2] == 120)
+			{
+				water++;
+			}
+			else if (Math.Abs(c[o] - c[o + 1]) < 6 && Math.Abs(c[o + 1] - c[o + 2]) < 8 && c[o] < 140)
+			{
+				grey++;
+			}
+		}
+		int pixels = c.Length / 4;
+		float woods = 0f;
+		for (int k = 0; k < FarGrid.Top.Length; k++)
+		{
+			woods += (FarGrid.Top[k] - FarGrid.Ground[k]) / FarGrid.Canopy;
+		}
+		Console.WriteLine("farview: picture " + (100.0 * water / pixels).ToString("0.0") + "% water, " + (100.0 * grey / pixels).ToString("0.0") + "% grey (roads, towns, rock); canopy over " + (100.0 * woods / FarGrid.Top.Length).ToString("0.0") + "% of the grid");
+		return ok;
 	}
 }

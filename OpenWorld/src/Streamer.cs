@@ -119,6 +119,15 @@ namespace HalfGripOpenWorld
 
 		internal int Loaded => tiles.Count;
 
+		/// <summary>The far view, which leaves out the loaded tiles; null if there is none.</summary>
+		internal FarView Far;
+
+		/// <summary>True if tile (tx, tz) is built and in the scene.</summary>
+		internal bool IsLoaded(int tx, int tz)
+		{
+			return tiles.ContainsKey(Key(tx, tz));
+		}
+
 		/// <summary>Builds the tiles within <paramref name="radius"/> tiles of world (x, z) now, on this thread (the spawn, a teleport).</summary>
 		internal void BuildAround(double x, double z, int radius)
 		{
@@ -201,6 +210,19 @@ namespace HalfGripOpenWorld
 			catch (Exception e)
 			{
 				Mod.Log.LogError("Tile streaming failed: " + e);
+			}
+			if (Far != null)
+			{
+				try
+				{
+					// After the tiles came and went this frame, so the far view's holes follow them with no frame between.
+					Origin.World(player.transform.position, out double x, out double z);
+					Far.Follow(x, z, this);
+				}
+				catch (Exception e)
+				{
+					Mod.Log.LogWarning("Far view failed: " + e);
+				}
 			}
 		}
 

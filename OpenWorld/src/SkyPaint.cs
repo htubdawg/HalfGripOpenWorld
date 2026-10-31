@@ -43,6 +43,15 @@ namespace HalfGripOpenWorld
 
 		private const int StarCount = 2400;
 
+		/// <summary>The rain curtains are looked for along each column's way from this far out (nearer rain is the fog's and the falling
+		/// particles' job), in steps of <see cref="CurtainStep"/>, <see cref="CurtainSteps"/> of them (out to the storm field's edge).</summary>
+		private const float CurtainFrom = 1500f;
+		private const float CurtainStep = 900f;
+		private const int CurtainSteps = 27;
+
+		/// <summary>How thick rain is to look through: a curtain of a downpour this many units deep hides about two thirds of the sky behind it.</summary>
+		private const float CurtainDensity = 0.0007f;
+
 		/// <summary>The pole the stars turn about leans this far up from the northern horizon (the world's latitude, in degrees).</summary>
 		private const float Latitude = 48f;
 
@@ -89,6 +98,16 @@ namespace HalfGripOpenWorld
 
 			/// <summary>Where the car is in the cloud pattern, in game units within a <see cref="CloudTile"/>: its world position less the wind's drift.</summary>
 			internal float CloudX, CloudZ;
+
+			/// <summary>The storms round the car (<see cref="Storms.Fill"/>), drawn where they are: dark cloud overhead and toward the
+			/// horizon, rain hanging under it. Null for none.</summary>
+			internal StormField Storm;
+
+			/// <summary>The car's world position, where the storms are looked up from.</summary>
+			internal float CarX, CarZ;
+
+			/// <summary>How far one sees on the ground (the fog's end), in game units: storms further off fade into the horizon's haze.</summary>
+			internal float Reach;
 		}
 
 		/// <summary>The picture, RGBA, bottom row first, as <c>Texture2D.SetPixelData</c> takes it. Only whole pictures are in it.</summary>
@@ -117,6 +136,15 @@ namespace HalfGripOpenWorld
 		private float sunVis, moonVis, starVis, cloudMax, threshold, softness;
 		private float sunInner, sunOuter, moonCos, haloCos, invMoonSin;
 		private float ax, ay, az, bx, by, bz;
+
+		// The storms for the picture under way: their colours, how far the haze reaches, and per column the rain curtains' cover and haze
+		// after each step out (the rain falls straight down, so a column's curtains are the same at every height under the cloud).
+		private bool storming, raining;
+		private Rgb stormBase, rainColour;
+		private float haze;
+		private readonly float[] curtainA = new float[W * CurtainSteps];
+		private readonly float[] curtainH = new float[W * CurtainSteps];
+		private readonly float[] streaks = new float[W];
 
 		internal SkyPaint(int seed)
 		{
@@ -316,6 +344,50 @@ namespace HalfGripOpenWorld
 			}
 
 			PlaceStars();
+			Storming();
+		}
+
+		/// <summary>
+		/// Gets the storms ready for the picture: their colours (the cloud's shadow side, darker, and a grey rain toward the horizon's
+		/// colour), and the rain curtains along every column: stepping out from the car, the share of the sky hidden behind the rain so
+		/// far, and how much of that is hazed by distance. Out to <see cref="CurtainSteps"/> steps, about 30,000 lookups a picture.
+		/// </summary>
+		private void Storming()
+		{
+			StormField f = s.Storm;
+			storming = f != null && f.MaxCloud > 0.05f;
+			raining = f != null && f.MaxRain > 0.02f;
+			haze = Math.Max(s.Reach, 6000f) * 3.5f;
+			stormBase = Rgb.Lerp(cloudShadow * 0.6f, horizon * 0.5f, 0.3f);
+			rainColour = Rgb.Lerp(cloudShadow * 0.75f, horizon, 0.45f);
+			if (!raining)
+			{
+				return;
+			}
+			for (int col = 0; col < W; col++)
+			{
+				float dx = cosPhi[col], dz = sinPhi[col];
+				float transmit = 1f, hazed = 0f;
+				for (int k = 0; k < CurtainSteps; k++)
+				{
+					float d = CurtainFrom + (k + 0.5f) * CurtainStep;
+					float rain = f.RainAt(s.CarX + dx * d, s.CarZ + dz * d);
+					if (rain > 0f)
+					{
+						float a = 1f - (float)Math.Exp(-CurtainDensity * rain * CurtainStep);
+						hazed += transmit * a * Step(0f, haze, d);
+						transmit *= 1f - a;
+					}
+					curtainA[col * CurtainSteps + k] = 1f - transmit;
+					curtainH[col * CurtainSteps + k] = hazed;
+				}
+				// Streaks: the rain is heavier in some columns than others, a few texels wide.
+				float u = col / 3f;
+				int i0 = (int)Math.Floor(u);
+				float t = u - i0;
+				double v0 = Lattice(0x5717EAUL, 0, i0, 0), v1 = Lattice(0x5717EAUL, 0, i0 + 1, 0);
+				streaks[col] = 0.7f + 0.3f * (float)(v0 + (v1 - v0) * t);
+			}
 		}
 
 		/// <summary>One row of the upper half: the gradient, the sun's glow, the stars, the discs and the cloud over them.</summary>
@@ -329,6 +401,19 @@ namespace HalfGripOpenWorld
 			float fade = Step(0.03f, 0.22f, y) * cloudMax;
 			float kk = CloudHeight / (y + 0.08f) * (CloudN / CloudTile);
 			float ou = s.CloudX * (CloudN / CloudTile), ov = s.CloudZ * (CloudN / CloudTile);
+			// Where a way up at this height meets the cloud layer, per unit of the way across (in world units); the storms fade out into the
+			// horizon's last rows, which the fog meets, and the curtains are only seen low down, under the cloud.
+			float kc = CloudHeight / (y + 0.08f);
+			float stormFade = storming ? Step(0.004f, 0.05f, y) : 0f;
+			// The storm field's sample coordinates of the car, and how far they move per unit of x or z in this row.
+			float fu0 = 0f, fv0 = 0f, fk = 0f;
+			if (stormFade > 0f)
+			{
+				fu0 = (float)((s.CarX - s.Storm.X0) / s.Storm.Spacing);
+				fv0 = (float)((s.CarZ - s.Storm.Z0) / s.Storm.Spacing);
+				fk = (float)(kc / s.Storm.Spacing);
+			}
+			float curtainFade = raining && y < 0.4f ? Step(0.004f, 0.03f, y) : 0f;
 			float sx = s.SunX, sy = s.SunY, sz = s.SunZ, mx = s.MoonX, my = s.MoonY, mz = s.MoonZ;
 			bool glowing = glow.R + glow.G + glow.B > 0.003f;
 			int o = row * W * 4;
@@ -380,9 +465,9 @@ namespace HalfGripOpenWorld
 						}
 					}
 				}
+				float n = fade > 0f || storming ? CloudAt(x * kk + ou, z * kk + ov) : 0f;
 				if (fade > 0f)
 				{
-					float n = CloudAt(x * kk + ou, z * kk + ov);
 					if (n > threshold)
 					{
 						float a = Math.Min(1f, (n - threshold) / softness) * fade;
@@ -395,6 +480,50 @@ namespace HalfGripOpenWorld
 						cb += (lb - cb) * a;
 					}
 				}
+				if (stormFade > 0f)
+				{
+					// The storm's cloud where this way meets the cloud layer: its edge broken by the fair-weather pattern and a finer one, so it
+					// builds out of lumps of cloud; dark in its middle, grey and lit toward its edge; hazed by distance.
+					float sc = FieldCloud(fu0 + x * fk, fv0 + z * fk);
+					if (sc > 0.05f)
+					{
+						float n2 = CloudAt(x * kk * 3.1f + ou + 37f, z * kk * 3.1f + ov + 91f);
+						float m = sc * 1.3f + (n - 0.5f) * 2.2f + (n2 - 0.5f) * 1.4f;
+						float a = Step(0.3f, 0.7f, m) * 0.97f * stormFade;
+						if (a > 0f)
+						{
+							float core = Step(0.4f, 1.1f, sc + (n - 0.5f) * 1.2f + (n2 - 0.5f) * 1.0f) * (0.8f + 0.4f * n2);
+							float h = Step(0f, haze, r * kc);
+							float lr = cloudLit.R * 0.85f + (stormBase.R - cloudLit.R * 0.85f) * core;
+							float lg = cloudLit.G * 0.85f + (stormBase.G - cloudLit.G * 0.85f) * core;
+							float lb = cloudLit.B * 0.85f + (stormBase.B - cloudLit.B * 0.85f) * core;
+							cr += (lr + (horizon.R - lr) * h - cr) * a;
+							cg += (lg + (horizon.G - lg) * h - cg) * a;
+							cb += (lb + (horizon.B - lb) * h - cb) * a;
+						}
+					}
+				}
+				if (curtainFade > 0f)
+				{
+					// The rain hanging under the cloud between here and where this way meets the cloud layer, in front of all of the above.
+					float steps = (r * kc - CurtainFrom) / CurtainStep;
+					if (steps >= 0f)
+					{
+						int k = Math.Min(CurtainSteps - 1, (int)steps);
+						float a = curtainA[col * CurtainSteps + k];
+						if (a > 0.003f)
+						{
+							float h = curtainH[col * CurtainSteps + k] / a;
+							float lr = rainColour.R + (horizon.R - rainColour.R) * h;
+							float lg = rainColour.G + (horizon.G - rainColour.G) * h;
+							float lb = rainColour.B + (horizon.B - rainColour.B) * h;
+							a *= streaks[col] * curtainFade;
+							cr += (lr - cr) * a;
+							cg += (lg - cg) * a;
+							cb += (lb - cb) * a;
+						}
+					}
+				}
 				float d = (Dither[(row & 3) * 4 + (col & 3)] + 0.5f) / 16f;
 				work[o] = Byte(cr, d);
 				work[o + 1] = Byte(cg, d);
@@ -402,6 +531,25 @@ namespace HalfGripOpenWorld
 				work[o + 3] = 255;
 				o += 4;
 			}
+		}
+
+		/// <summary>The storm field's cloud at sample coordinates (u, v), read between samples; 0 outside it. <see cref="StormField.CloudAt"/>
+		/// in floats on coordinates worked out a row at a time, as it is read for every texel of the sky.</summary>
+		private float FieldCloud(float u, float v)
+		{
+			StormField f = s.Storm;
+			int n = f.N;
+			if (u < 0f || v < 0f || u >= n - 1 || v >= n - 1)
+			{
+				return 0f;
+			}
+			int i = (int)u, j = (int)v;
+			float fu = u - i, fv = v - j;
+			int k = j * n + i;
+			float[] c = f.Cloud;
+			float a = c[k], b = c[k + 1], cc = c[k + n], d = c[k + n + 1];
+			float bottom = a + (b - a) * fu;
+			return bottom + (cc + (d - cc) * fu - bottom) * fv;
 		}
 
 		/// <summary>The moon's disc at a direction inside it: grey, darker toward its edge, with three seas.</summary>

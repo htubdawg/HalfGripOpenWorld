@@ -172,6 +172,70 @@ namespace HalfGripOpenWorld
 			cloud = Math.Max(1.0 - clear, rain);
 		}
 
+		/// <summary>
+		/// Fills <paramref name="field"/> with the weather at time <paramref name="t"/> over all its samples, as <see cref="At"/> gives it
+		/// for ground at sea level (a sky seen from afar needs no high ground's extra rain). Cell by cell, each over the samples it reaches,
+		/// so a whole field of 4096 samples costs about as much as a few dozen calls to <see cref="At"/>. Display only (the painted sky).
+		/// </summary>
+		internal void Fill(StormField field, double t)
+		{
+			int n = field.N;
+			double[] dry = new double[n * n], clear = new double[n * n];
+			for (int k = 0; k < dry.Length; k++)
+			{
+				dry[k] = 1.0;
+				clear[k] = 1.0;
+			}
+			long first = (long)Math.Floor((t - MaxLife) / Slot);
+			long last = (long)Math.Floor(t / Slot);
+			for (long s = first; s <= last; s++)
+			{
+				int count = Count(s);
+				for (int i = 0; i < count; i++)
+				{
+					Cell c = Make(s, i);
+					double env = c.Envelope(t);
+					if (env <= 0.0)
+					{
+						continue;
+					}
+					double cx = c.X(t), cz = c.Z(t), reach = c.Radius * 1.8;
+					int i0 = Math.Max(0, (int)Math.Ceiling((cx - reach - field.X0) / field.Spacing));
+					int i1 = Math.Min(n - 1, (int)Math.Floor((cx + reach - field.X0) / field.Spacing));
+					int j0 = Math.Max(0, (int)Math.Ceiling((cz - reach - field.Z0) / field.Spacing));
+					int j1 = Math.Min(n - 1, (int)Math.Floor((cz + reach - field.Z0) / field.Spacing));
+					for (int j = j0; j <= j1; j++)
+					{
+						for (int q = i0; q <= i1; q++)
+						{
+							double dx = field.X0 + q * field.Spacing - cx, dz = field.Z0 + j * field.Spacing - cz;
+							double d = Math.Sqrt(dx * dx + dz * dz) / c.Radius;
+							if (d >= 1.8)
+							{
+								continue;
+							}
+							int k = j * n + q;
+							double over = c.Strength * env * (1.0 - Noise.Step(0.6, 1.8, d));
+							clear[k] *= 1.0 - Math.Min(1.0, over * 1.2);
+							if (d < 1.0)
+							{
+								double ragged = 0.7 + 0.3 * Noise.Value(c.Salt, dx + c.Radius * 0.37, dz - c.Radius * 0.21, c.Radius * 0.45);
+								double r = c.Strength * env * (1.0 - Noise.Step(0.3, 1.0, d)) * ragged;
+								dry[k] *= 1.0 - Noise.Step(0.1, 0.85, r);
+							}
+						}
+					}
+				}
+			}
+			for (int k = 0; k < dry.Length; k++)
+			{
+				double rain = 1.0 - dry[k];
+				field.Rain[k] = (float)rain;
+				field.Cloud[k] = (float)Math.Max(1.0 - clear[k], rain);
+			}
+			field.Measure();
+		}
+
 		/// <summary>How wet the ground at (x, z) is at time <paramref name="t"/>, 0 to 1: the rain there over the last <see cref="DrySeconds"/>, the older the less.</summary>
 		internal double Wetness(double x, double z, double t, double height)
 		{
