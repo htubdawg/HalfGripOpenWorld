@@ -54,7 +54,7 @@ generated from a fixed seed, the same every time and for every player, the way r
   it can), and the lettering is drawn from the names when the world is built, so a renamed place's signs change with it (see
   [Names](#names)).
 - **Garages:** a glowing cyan circle on the forecourt of every filling station, in every workshop's yard, three along the circuit's
-  pit lane, one in the rally service area and one in the hill climb's paddock (20 in all), with a cyan dot as wide as a road on the map pictures
+  pit lane, one in the rally service area and one in the hill climb's paddock (20 in all), with a big cyan dot on the map pictures
   MiniMap shows (one dot for garages close together, such as the pits). Stop in a circle and shift into neutral, and the garage opens: every item the game offers by normal means (locked
   ones and the gun mods' too; in a Multiplayer room, not the ones the Multiplayer mod bans) can be fitted to the car where it stands,
   dragged onto its slot (or right-clicked) and dragged off (or right-clicked) to take it off, in a window drawn in the game's
@@ -70,7 +70,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.13.1**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.13.2**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -78,7 +78,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.13.1` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.13.2` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -179,8 +179,8 @@ member name). **Do not rename it or change its members' names or signatures.** A
 A tile's map picture is its land use with water and roads painted in, in the colours of `docs/world.png` (trunk orange, primary
 yellow, secondary cream, streets grey, lanes white, tracks brown, footpaths pale tan, the rally stage orange, the hill climb pink), roads at least 2 pixels wide, car parks and yards light grey
 with their buildings dark grey, and the circuit's track dark grey with red kerbs, sand gravel traps, a mid-grey pit apron and its
-garages and stands dark grey, and every garage (see Garages above) a cyan disc in a dark ring, 13 pixels (about 50 units, a main
-road's width) across, over everything; garages within 160 units of each other share one disc. It is made with the tile on a worker
+garages and stands dark grey, and every garage (see Garages above) a cyan disc in a dark ring, 26 pixels (about 100 units, wider than
+the trunk road) across, over everything; garages within 250 units of each other share one disc. It is made with the tile on a worker
 thread and kept only while the tile is loaded. Display only: nothing in the world depends on it.
 
 ## Checking a change
@@ -286,7 +286,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    whole time, including after teleports and resets.
 20. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
 21. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
-22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a cyan dot about as wide as a road at each
+22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
    filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each
    circle within about 70 m. Drive into a circle: the line at the bottom says to stop and shift into neutral; do it and the garage
    opens (shifting through neutral while rolling does not). While it is open the controls and the gun do nothing, the cursor is free,

@@ -514,13 +514,13 @@ internal static class Program
 		}
 	}
 
-	/// <summary>Each group of garages as the map pictures mark it: a cyan disc in a dark ring, about 50 units across, at least 7 pixels.</summary>
+	/// <summary>Each group of garages as the map pictures mark it: a cyan disc in a dark ring, about 100 units across, at least 9 pixels.</summary>
 	private static void Garages(byte[] map, int size, double x0, double z0, double span)
 	{
 		double cell = span / size;
 		foreach (GarageSites.Mark g in GarageSites.Marks)
 		{
-			double cp = (g.X - x0) / cell, cq = (z0 - g.Z) / cell, disc = Math.Max(2.5, 5.5 * 250.0 / 64.0 / cell), ring = disc + Math.Max(1.0, 250.0 / 64.0 / cell);
+			double cp = (g.X - x0) / cell, cq = (z0 - g.Z) / cell, disc = Math.Max(3.5, 11.0 * 250.0 / 64.0 / cell), ring = disc + Math.Max(1.0, 2.0 * 250.0 / 64.0 / cell);
 			for (int q = (int)Math.Floor(cq - ring); q <= (int)Math.Floor(cq + ring); q++)
 			{
 				for (int p = (int)Math.Floor(cp - ring); p <= (int)Math.Floor(cp + ring); p++)

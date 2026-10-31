@@ -410,3 +410,16 @@ the Minigun's roof gun comes off. Asked for, and done on the same branch:
   with cut corners, a light top-left edge and a dark bottom-right one; sunk for wells and a pressed button), the game's dark greys
   and its orange for the chosen slot and a pointed-at button, cyan for what is fitted; headings and names with a hard drop shadow;
   health as a row of blocks, green, red under 30%.
+
+### The garage: second test (0.13.2)
+
+The owner's second test (screenshots): the window works. Asked for, and done:
+
+- **Map marks doubled**: 11 pixels round and a 2 pixel ring, 26 pixels (about 100 units) across; garages within 250 units share one
+  (15 marks for 20 garages); meshcheck's marks are at least 110 apart.
+- **The prompt raised** to 56% of the screen's height, clear of the steering wheel and the shifter.
+- **The health row no longer overlaps the slots**: the window is 800 high (the ten slots and three headings take 568).
+- **Less cyberpunk, more grungy**: no cyan in the window or the prompt (only the world's `GARAGE` labels, which match the rings);
+  oily warm greys, the HUD's orange for the chosen slot and a pointed-at button, a dirty mustard for what is fitted and drop targets,
+  cream lettering, an olive health bar (rust red when low), and a tiled grime texture (specks, blotches, the odd scratch, an integer
+  hash) over every box and button.

@@ -44,9 +44,9 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Garages nearer each other than this share one mark on the map (the circuit's three pits, a filling station across the road
-		/// from a workshop): the marks are as wide as a road, so two that close would run into one blot anyway.
+		/// from a workshop): the marks are about 100 units across, so two that close would run into one blot anyway.
 		/// </summary>
-		internal const double MarkGroup = 160.0;
+		internal const double MarkGroup = 250.0;
 
 		/// <summary>One mark on the map: the middle of a group of garages within <see cref="MarkGroup"/> of each other.</summary>
 		internal struct Mark

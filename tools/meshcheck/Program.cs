@@ -1417,14 +1417,14 @@ internal static class Program
 				}
 			}
 		}
-		// The map's marks: every garage in one, and no two marks (about 50 units across) running into each other.
+		// The map's marks: every garage in one, and no two marks (about 100 units across) running into each other.
 		List<GarageSites.Mark> marks = GarageSites.Marks;
 		int marked = marks.Sum(m => m.Count), blots = 0;
 		for (int i = 0; i < marks.Count; i++)
 		{
 			for (int j = i + 1; j < marks.Count; j++)
 			{
-				if (Math.Sqrt((marks[i].X - marks[j].X) * (marks[i].X - marks[j].X) + (marks[i].Z - marks[j].Z) * (marks[i].Z - marks[j].Z)) < 60.0)
+				if (Math.Sqrt((marks[i].X - marks[j].X) * (marks[i].X - marks[j].X) + (marks[i].Z - marks[j].Z) * (marks[i].Z - marks[j].Z)) < 110.0)
 				{
 					blots++;
 				}
