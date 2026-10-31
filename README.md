@@ -28,7 +28,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 ## Install
 
-1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
+1. Install BepInEx and HalfGripTools with the mod launcher from [HalfGripMods](https://github.com/4l3x4nd3r0/HalfGripMods).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
 3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.17.0` and `Open World map made from TokyoNeon`.
 
