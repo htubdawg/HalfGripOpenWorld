@@ -101,7 +101,7 @@ namespace HalfGripOpenWorld
 		private int shownNext = -1;
 		private Courses.Course shownCourse;
 		private Rigidbody held;
-		private RigidbodyConstraints heldConstraints;
+		private double heldX, heldZ;
 
 		private static readonly Dictionary<string, ConfigEntry<float>> bests = new Dictionary<string, ConfigEntry<float>>();
 
@@ -376,7 +376,7 @@ namespace HalfGripOpenWorld
 			streamer.Place(course.GridX, course.GridZ, Quaternion.LookRotation(new Vector3((float)course.GridDx, 0f, (float)course.GridDz), Vector3.up));
 			placedFrame = Time.frameCount;
 			havePrev = false;
-			Hold(tm.playerCarController);
+			Hold(tm.playerCarController, course.GridX, course.GridZ);
 		}
 
 		/// <summary>
@@ -431,34 +431,51 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Holds the car on its grid spot: its rigidbody may not move across the ground or turn about the vertical, while the suspension
-		/// still works (it settles onto the road) and the wheels still turn. The game itself holds its grid by leaving the car's controller
-		/// off until the start, but that controller is the suspension too, and here the car must stand on its wheels. Set as the car is
-		/// put there, so it drops straight down onto the road.
+		/// Holds the car on its grid spot, world (<paramref name="x"/>, <paramref name="z"/>), until green (<see cref="FixedUpdate"/>):
+		/// the suspension still works (it settles onto the road) and the wheels still turn. The game itself holds its grid by leaving the
+		/// car's controller off until the start, but that controller is the suspension too. Not by the rigidbody's constraints either: a
+		/// frozen axis zeroes the body's inertia about it, and the controller's tyre forces divide by that inertia, which made the car's
+		/// position NaN (and the floating origin with it).
 		/// </summary>
-		private void Hold(CarControllerNew car)
+		private void Hold(CarControllerNew car, double x, double z)
 		{
-			Rigidbody rb = car != null ? car.rb : null;
-			if (rb == null)
-			{
-				return;
-			}
-			Release();
-			held = rb;
-			heldConstraints = rb.constraints;
-			rb.linearVelocity = new Vector3(0f, rb.linearVelocity.y, 0f);
-			rb.angularVelocity = new Vector3(rb.angularVelocity.x, 0f, rb.angularVelocity.z);
-			rb.constraints = heldConstraints | RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezePositionZ | RigidbodyConstraints.FreezeRotationY;
+			held = car != null ? car.rb : null;
+			heldX = x;
+			heldZ = z;
 		}
 
 		/// <summary>Lets the held car go: at green, and whenever the event ends before it.</summary>
 		private void Release()
 		{
-			if (held != null)
-			{
-				held.constraints = heldConstraints;
-			}
 			held = null;
+		}
+
+		/// <summary>
+		/// Each physics step while held, the car is put back on its spot and loses its speed across the ground and about the vertical,
+		/// keeping its height, pitch and roll: whatever the engine pushed it in one step is undone in the next. The spot is kept in world
+		/// coordinates and turned into the scene's each step, so a floating origin shift on the grid does not move it.
+		/// </summary>
+		private void FixedUpdate()
+		{
+			if (held == null)
+			{
+				return;
+			}
+			if (state != State.Countdown)
+			{
+				Release();
+				return;
+			}
+			Vector3 p = held.position;
+			if (float.IsNaN(p.x) || float.IsNaN(p.y) || float.IsNaN(p.z))
+			{
+				Release();
+				return;
+			}
+			held.position = Origin.Local(heldX, p.y, heldZ);
+			Vector3 v = held.linearVelocity, w = held.angularVelocity;
+			held.linearVelocity = new Vector3(0f, v.y, 0f);
+			held.angularVelocity = new Vector3(w.x, 0f, w.z);
 		}
 
 		/// <summary>The game's start lights, moved over the course's start line and turned to face the grid.</summary>

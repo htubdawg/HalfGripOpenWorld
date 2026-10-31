@@ -550,12 +550,28 @@ From the owner's notes on 0.15.1:
   `EventRace.Prompt`): the course, length, laps, checkpoints, best, and what to do. The cockpit's board no longer shows the offer:
   it stays tucked away until the car is on the grid. "EVENT" (orange) floats over each box as "GARAGE" over each circle.
 - **No jump start.** The car is held on the grid from the moment it is put there until green: its rigidbody's x and z and its turn
-  about the vertical are frozen (`EventRace.Hold`), so the suspension settles it and the wheels turn, and it goes on the green.
+  about the vertical are frozen (`EventRace.Hold`; that broke the car's physics, see 0.15.3), so the suspension settles it and the
+  wheels turn, and it goes on the green.
   The game holds its own grid by leaving the car's controller off, but that controller is the suspension. A move of more than 30
   from the spot (a reset after a wreck goes to the spawn) or a wreck gives the event up and lets the car go.
-- **The map.** Each start box has a chequered flag on the map pictures (`Courses.MapFlag`, drawn by `Streamer.MapEvents` over the
-  garages' marks and by the preview): 4 by 3 squares of 6 pixels on an orange pole 34 pixels tall whose foot is on the box, in a
-  dark outline, 32 by 38 pixels in all (the garages' discs are 26 across).
+- **The map.** Each start box has a mark on the map pictures (`Courses.MapMark`, drawn by `Streamer.MapEvents` over the garages'
+  marks and by the preview).
+
+### 0.15.3: the grid hold made the car NaN; a chequered disc on the map
+
+From the owner's try of 0.15.2 (log): just after `Event: signed on at the Circuit, on the grid` every frame logged an origin shift
+`by (NaN, NaN)`, and the world was lost.
+
+- **The cause.** 0.15.2 held the car on the grid by freezing its rigidbody's x, z and yaw. A frozen rotation axis zeroes the body's
+  inertia about it, and the game's tyre code (`CarControllerNew`, the grip impulse) divides by `rb.inertiaTensor.y`: the forces went
+  NaN and so did the car's position. `Origin.Follow` then shifted the scene by NaN each frame (a NaN fails every `< limit` test).
+- **The hold now** (`EventRace.Hold` and `FixedUpdate`): no constraints. The spot is kept in world coordinates; each physics step
+  while held the car is put back on it (turned into the scene's coordinates then, so an origin shift on the grid cannot move it) and
+  loses its velocity across the ground and its yaw rate, keeping its height, pitch and roll, so the suspension and the wheels work.
+- **A guard.** `Origin.Follow` never shifts by a NaN or infinite car position (one warning in the log instead), so a car whose
+  physics breaks can no longer take the world with it.
+- **The map's mark** is a chequered disc, laid out like the garages' discs (the flag reached out of its tile and over the road
+  above it): squares of 5 pixels in a disc 26 across, an orange ring and a thin dark one, 33 pixels across in all, centred on the box.
 
 Not tested in game yet (TESTING.md 23).
 

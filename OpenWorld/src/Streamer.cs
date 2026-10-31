@@ -525,8 +525,8 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>An event's mark: the pole in the events' orange, the flag's black and white squares, the outline near black.</summary>
-		private static readonly Color32[] MapFlagColours =
+		/// <summary>An event's mark: the dark outline, the events' orange ring, the squares' white and black.</summary>
+		private static readonly Color32[] MapMarkColours =
 		{
 			default,
 			new Color32(18, 18, 22, 255),
@@ -536,27 +536,27 @@ namespace HalfGripOpenWorld
 		};
 
 		/// <summary>
-		/// Marks each event's start box on the map picture with a chequered flag (<see cref="Courses.MapFlag"/>), over the garages' marks
-		/// (a box is often beside a garage). The pole's foot stands on the box; the flag may reach into the tile above or beside, which
-		/// draws its own part of it.
+		/// Marks each event's start box on the map picture with a chequered disc (<see cref="Courses.MapMark"/>), over the garages' marks
+		/// (a box is often beside a garage). A disc near a tile's edge reaches into the next tile, which draws its own part of it.
 		/// </summary>
 		private static void MapEvents(double ox, double oz, double pixel, Color32[] map)
 		{
+			double reach = Courses.MarkReach;
 			foreach (Courses.Course c in Courses.All)
 			{
-				int cp = (int)Math.Floor((c.BoxX - ox) / pixel), cq = (int)Math.Floor((c.BoxZ - oz) / pixel);
-				if (cp + Courses.FlagRight < 0 || cq + Courses.FlagUp < 0 || cp - Courses.FlagLeft >= Pixels || cq - Courses.FlagDown >= Pixels)
+				double cp = (c.BoxX - ox) / pixel, cq = (c.BoxZ - oz) / pixel;
+				if (cp < -reach || cq < -reach || cp > Pixels + reach || cq > Pixels + reach)
 				{
 					continue;
 				}
-				for (int q = Math.Max(0, cq - Courses.FlagDown); q <= Math.Min(Pixels - 1, cq + Courses.FlagUp); q++)
+				for (int q = Math.Max(0, (int)Math.Floor(cq - reach)); q <= Math.Min(Pixels - 1, (int)Math.Floor(cq + reach)); q++)
 				{
-					for (int p = Math.Max(0, cp - Courses.FlagLeft); p <= Math.Min(Pixels - 1, cp + Courses.FlagRight); p++)
+					for (int p = Math.Max(0, (int)Math.Floor(cp - reach)); p <= Math.Min(Pixels - 1, (int)Math.Floor(cp + reach)); p++)
 					{
-						int part = Courses.MapFlag(p - cp, q - cq);
-						if (part != Courses.FlagNone)
+						int part = Courses.MapMark(p + 0.5 - cp, q + 0.5 - cq);
+						if (part != Courses.MarkNone)
 						{
-							map[q * Pixels + p] = MapFlagColours[part];
+							map[q * Pixels + p] = MapMarkColours[part];
 						}
 					}
 				}

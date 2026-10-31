@@ -176,35 +176,37 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The map mark's parts: <see cref="MapFlag"/> gives one of these for each pixel.</summary>
-		internal const int FlagNone = 0, FlagOutline = 1, FlagPole = 2, FlagWhite = 3, FlagBlack = 4;
+		/// <summary>The map mark's parts: <see cref="MapMark"/> gives one of these for each pixel.</summary>
+		internal const int MarkNone = 0, MarkOutline = 1, MarkRing = 2, MarkWhite = 3, MarkBlack = 4;
 
-		/// <summary>The map mark's reach from its pixel: left, right, down, up.</summary>
-		internal const int FlagLeft = 4, FlagRight = 28, FlagDown = 2, FlagUp = 36;
+		/// <summary>The map mark's reach from the start box, in pixels.</summary>
+		internal const double MarkReach = 16.5;
 
 		/// <summary>
-		/// A start box's mark on the map pictures, in pixels: a chequered flag (4 by 3 squares of 6 pixels) on a pole 34 pixels tall
-		/// whose foot stands on the box, all in a dark outline 2 pixels wide, a little larger than the garages' discs, so it
-		/// still reads when a minimap shrinks the picture. <paramref name="dp"/> is pixels right of the box's pixel, <paramref name="dq"/>
-		/// pixels up from it. Shared by the map pictures (Streamer) and the preview, so both draw the same flag.
+		/// A start box's mark on the map pictures: a disc of black and white squares 5 pixels on a side, 26 pixels across, in an orange
+		/// ring and a thin dark one, 33 pixels across in all, a little larger than the garages' discs (26 with their ring) and laid out
+		/// the same way, centred on the box, so it stays inside the round mark a minimap expects. <paramref name="dp"/> and
+		/// <paramref name="dq"/> are the pixel's middle less the box's, in pixels (either way up: the squares meet at the middle, so the
+		/// disc looks the same flipped). Shared by the map pictures (Streamer) and the preview.
 		/// </summary>
-		internal static int MapFlag(int dp, int dq)
+		internal static int MapMark(double dp, double dq)
 		{
-			// The pole is 4 wide with the box's pixel by its middle; the flag hangs from its top, to the right.
-			const int poleL = -2, poleR = 2, poleTop = 34, flagR = poleR + 24, flagBottom = poleTop - 18;
-			bool InPole(int p, int q) => p >= poleL && p < poleR && q >= 0 && q < poleTop;
-			bool InFlag(int p, int q) => p >= poleR && p < flagR && q >= flagBottom && q < poleTop;
-			if (InPole(dp, dq))
+			const double disc = 13.0, ring = 15.0, square = 5.0;
+			double d = Math.Sqrt(dp * dp + dq * dq);
+			if (d > MarkReach)
 			{
-				return FlagPole;
+				return MarkNone;
 			}
-			if (InFlag(dp, dq))
+			if (d > ring)
 			{
-				return ((dp - poleR) / 6 + (dq - flagBottom) / 6) % 2 == 0 ? FlagBlack : FlagWhite;
+				return MarkOutline;
 			}
-			bool nearPole = dp >= poleL - 2 && dp < poleR + 2 && dq >= -2 && dq < poleTop + 2;
-			bool nearFlag = dp >= poleR - 2 && dp < flagR + 2 && dq >= flagBottom - 2 && dq < poleTop + 2;
-			return nearPole || nearFlag ? FlagOutline : FlagNone;
+			if (d > disc)
+			{
+				return MarkRing;
+			}
+			long i = (long)Math.Floor(dp / square) + (long)Math.Floor(dq / square);
+			return (i & 1) == 0 ? MarkWhite : MarkBlack;
 		}
 
 		private static List<Course> Build()

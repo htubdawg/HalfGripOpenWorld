@@ -537,20 +537,20 @@ internal static class Program
 		}
 	}
 
-	/// <summary>Each event's start box as the map pictures mark it: the chequered flag of <see cref="Courses.MapFlag"/>, at least 0.4 of its size.</summary>
+	/// <summary>Each event's start box as the map pictures mark it: the chequered disc of <see cref="Courses.MapMark"/>, at least 0.4 of its size.</summary>
 	private static void Events(byte[] map, int size, double x0, double z0, double span)
 	{
 		byte[][] colours = { null, new byte[] { 18, 18, 22 }, new byte[] { 255, 140, 26 }, new byte[] { 245, 245, 245 }, new byte[] { 30, 30, 34 } };
-		double cell = span / size, k = Math.Max(0.4, 250.0 / 64.0 / cell);
+		double cell = span / size, k = Math.Max(0.4, 250.0 / 64.0 / cell), reach = Courses.MarkReach * k;
 		foreach (Courses.Course c in Courses.All)
 		{
 			double cp = (c.BoxX - x0) / cell, cq = (z0 - c.BoxZ) / cell;
-			for (int q = (int)Math.Floor(cq - Courses.FlagUp * k); q <= (int)Math.Ceiling(cq + Courses.FlagDown * k); q++)
+			for (int q = (int)Math.Floor(cq - reach); q <= (int)Math.Floor(cq + reach); q++)
 			{
-				for (int p = (int)Math.Floor(cp - Courses.FlagLeft * k); p <= (int)Math.Ceiling(cp + Courses.FlagRight * k); p++)
+				for (int p = (int)Math.Floor(cp - reach); p <= (int)Math.Floor(cp + reach); p++)
 				{
-					int part = Courses.MapFlag((int)Math.Floor((p + 0.5 - cp) / k), (int)Math.Floor((cq - (q + 0.5)) / k));
-					if (part != Courses.FlagNone)
+					int part = Courses.MapMark((p + 0.5 - cp) / k, (q + 0.5 - cq) / k);
+					if (part != Courses.MarkNone)
 					{
 						Pixel(map, size, p, q, colours[part]);
 					}
@@ -559,7 +559,7 @@ internal static class Program
 		}
 	}
 
-		private static void Pixel(byte[] map, int size, int x, int y, byte[] c)
+	private static void Pixel(byte[] map, int size, int x, int y, byte[] c)
 	{
 		if (x >= 0 && y >= 0 && x < size && y < size)
 		{
