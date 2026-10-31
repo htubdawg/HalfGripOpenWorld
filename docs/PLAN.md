@@ -474,7 +474,7 @@ to the Multiplayer mod's picker (its modes are fixed in its own code, with no wa
 - **No AI.** Solo there were none already (`NoRivals`). In a room `RoomRules` also sets the race's AI count to 0 and empties
   `Room.AiGrid` (the slots the host dealt the AI cars) before the scene's start, when the Multiplayer mod spawns them.
 
-Not tested in game yet (TESTING.md 17b).
+The owner tested it with 0.17.0: good (TESTING.md 17b).
 
 ### 20 players: investigated, held off
 
@@ -574,7 +574,7 @@ From the owner's try of 0.15.2 (log): just after `Event: signed on at the Circui
 - **The map's mark** is a chequered disc, laid out like the garages' discs (the flag reached out of its tile and over the road
   above it): squares of 5 pixels in a disc 26 across, an orange ring and a thin dark one, 33 pixels across in all, centred on the box.
 
-Not tested in game yet (TESTING.md 23).
+The owner tested it with 0.17.0: good (TESTING.md 23, with the shifter let go in neutral).
 
 ## Respawn at a garage (0.16.0; asked for after 0.15.3)
 
@@ -647,7 +647,7 @@ started on the host's go), so every player has the same sky and nothing is sent.
 neutral (`ShifterHand`: the grabber's held object under the active shifter's object), stopped and armed as before, in place of
 standing in neutral for 0.6 s. Arming, the prompts and `Garage.Disarm` after a respawn are unchanged.
 
-Not tested in game yet (TESTING.md 21). Next, when it looks right: rain curtains and dark cloud under the storms nearby (seen from
+The owner tested 0.17.0 in game: good (TESTING.md 21, and 22 and 23 with the shifter let go in neutral). Next: rain curtains and dark cloud under the storms nearby (seen from
 afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest
 storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
 windows and street lamps.

@@ -2,6 +2,8 @@
 
 Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and `VerboseLog`, then:
 
+Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not run that time: 2 to 6, 13, 14, 18 and 22b.
+
 1. The race loads on the road into Kingsbridge, just outside the town, facing it; none of Tokyo's arena, city or train is left.
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
    or seams between tiles. Where roads meet, the smaller one stops at the bigger one's edge with a flared mouth, level with it (no
