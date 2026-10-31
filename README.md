@@ -284,6 +284,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    (centring, self-aligning, free-spinning, gyro), the health bar is full, and the other players still see the car and can hit it.
    Each new gun comes as it would at the start of a race: a gun of the same kind (shotgun to Buckshot) does not keep the rounds
    loaded in the last one, the SMG has its magazines after the BloodDrainer, and the M1911, Minigun, RPG and Sniper Rifle are
-   themselves, not a plain SMG. At the start of the race the log should say `Garage test: copies of` the four guns, with no
+   themselves, not a plain SMG, each with its own model when raised (no Sniper Rifle model left on the guns after it) and each one
+   can be raised and fired. At the start of the race the log should say `Garage test: copies of` the four guns, with no
    `had already started` warning. Anything odd (a gun that does not show or fire, two wheels, an error in the log) is what a garage
    would have to work round.

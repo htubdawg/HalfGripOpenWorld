@@ -213,15 +213,46 @@ namespace HalfGripOpenWorld
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The garage test keeps an untouched copy of each of the cockpit's guns, taken here, before the fitted one is switched on and
-	/// starts up (see <see cref="GarageTest.CaptureGuns"/>).
+	/// The garage test keeps an untouched copy of each of the cockpit's guns (see <see cref="GarageTest.CaptureGun"/>), taken the moment
+	/// before the gun first starts up: guns start as the scene loads, some before the gun activator wakes. First, ahead of the gun mods,
+	/// which convert the gun and its rack in these same methods (the RPG's prefix replaces the SMG's Awake altogether).
 	/// </summary>
-	[HarmonyPatch(typeof(GunLoadoutActivator), "Awake")]
+	[HarmonyPatch]
 	internal static class GunTemplates
+	{
+		private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+		{
+			yield return AccessTools.Method(typeof(NAutomaticGun), "Awake");
+			yield return AccessTools.Method(typeof(NPumpActionGun), "Awake");
+			yield return AccessTools.Method(typeof(NBreakActionGun), "Awake");
+			yield return AccessTools.Method(typeof(NRevolver), "Awake");
+		}
+
+		[HarmonyPriority(Priority.First)]
+		private static void Prefix(Gun __instance)
+		{
+			GarageTest.CaptureGun(__instance);
+		}
+	}
+
+	/// <summary>A gun's rack may wake before the gun does; the gun is copied then.</summary>
+	[HarmonyPatch(typeof(MagazineManager), "Awake")]
+	internal static class RackTemplates
+	{
+		[HarmonyPriority(Priority.First)]
+		private static void Prefix(MagazineManager __instance)
+		{
+			GarageTest.CaptureGun(__instance.GetComponentInParent<Gun>(true));
+		}
+	}
+
+	/// <summary>As the cockpit wakes: the guns not copied yet, and the log line saying which were.</summary>
+	[HarmonyPatch(typeof(GunLoadoutActivator), "Awake")]
+	internal static class GunTemplatesCheck
 	{
 		private static void Prefix(GunLoadoutActivator __instance)
 		{
-			GarageTest.CaptureGuns(__instance);
+			GarageTest.CheckGuns(__instance);
 		}
 	}
 }
