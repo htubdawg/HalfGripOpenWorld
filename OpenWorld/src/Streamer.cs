@@ -150,6 +150,7 @@ namespace HalfGripOpenWorld
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				TeleportNext(back ? -1 : 1);
 			}
+			GarageTest.Tick();
 			// A car that has gone into a river, a lake or the sea is put back on the nearest road after a moment (nothing here floats).
 			Origin.World(player.transform.position, out double wx, out double wz);
 			if (Rivers.Water(wx, wz, out double level) && player.transform.position.y < level + Network.Lift - 1.0)

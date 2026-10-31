@@ -62,7 +62,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.12.0**, made for game version 0.418.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.12.1**, made for game version 0.418.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -70,7 +70,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.12.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.12.1` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -96,6 +96,7 @@ the same ground.
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `GarageTest` | false | `GarageTestKey` (F8) fits the next gun and the next steering wheel to the car where it is, then fills the ammo, effects and health; Shift+F8 the previous ones. A test of the live refit a garage in the world would use: only the car changes, not the save, so the next race has the old fit. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 
@@ -277,3 +278,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    whole time, including after teleports and resets.
 20. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
 21. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+22. Garage test (`GarageTest` on): press F8 a few times, standing and while driving, alone and in a Multiplayer room. Each press
+   should show the new gun and steering wheel in the cockpit at once, name both at the top of the screen, and log `Garage test: ... -> ...`
+   twice and `Garage test: refilled`. The new gun fires and reloads, its magazines are full, the wheel steers as its kind should
+   (centring, self-aligning, free-spinning, gyro), the health bar is full, and the other players still see the car and can hit it.
+   Anything odd (a gun that does not show or fire, two wheels, an error in the log) is what a garage would have to work round.
