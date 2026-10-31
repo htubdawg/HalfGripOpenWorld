@@ -729,11 +729,9 @@ most 8 cars, its list fixed at the scene's start; the others see kinematic stand
 
 This needs the Multiplayer mod's mod channel (step 3 of the events plan above), the Multiplayer mod's owner's change to make.
 
-**Order:**
+**Waiting on the Multiplayer mod.** No solo traffic first (the owner's call): traffic is built once, for rooms, when the
+Multiplayer mod has the mod channel. Then all of it together: the driver on the game's car prefabs, per-tile spawning, the two
+tiers, `meshcheck` checks on the routes, the timetable, ownership, handoff and retirement. (AI rivals for solo events are a
+separate thing: they can use the game's own `EnemyController` unchanged, since a course is a closed lap, as the token loop is.)
 
-1. Solo traffic: the driver on the game's car prefabs, per-tile spawning, the two tiers, `meshcheck` checks on the routes. Needs
-   nothing from the Multiplayer mod.
-2. Traffic in a room, once the mod channel is there: the timetable, ownership, handoff and retirement.
-3. AI rivals for solo events can use the game's own `EnemyController` unchanged, since a course is a closed lap, as the token loop is.
-
-Open questions for the owner: whether traffic should be shootable and wreckable; how dense; whether to ask for the mod channel now.
+Open questions for the owner: whether traffic should be shootable and wreckable; how dense.
