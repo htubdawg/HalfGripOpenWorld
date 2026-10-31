@@ -40,6 +40,13 @@ using UnityEngine;
 //  18. signs:   place-name signs and fingerposts laid out; every post and board off the roads' paving (a name sign's off the verge
 //                too), out of the water; no other building's footprint on a sign; every face inside the lettering atlas, none
 //                overlapping another; the boards drawn in their tiles' meshes
+//  19. holes:   round every junction (each paved road's ends and crossings), the tiles' road, verge, sidewalk and track meshes drawn
+//                from above at half a unit a pixel: the share of the roads' paving (each road's own strip, its cuts ignored) where no
+//                paved surface is on top (the ground, a verge or a sidewalk showing through a mouth), under 1%, and the worst place
+//  20. joints:  where two roads carry on end to end (Network.Joints), their ends' edges meet: the same points and heights
+//  21. deadends: every dead end rounded off: a paved road's paving reaching on past its end, nothing past its verge; a track's or
+//                path's ribbon narrowed to a fifth
+//  22. tucked:  no track or path ribbon over the drawn surface of a paved road it runs onto
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -74,6 +81,10 @@ internal static class Program
 			("signs", SignChecks),
 			("garages", GarageChecks),
 			("events", EventChecks),
+			("holes", Holes),
+			("joints", Joints),
+			("deadends", DeadEnds),
+			("tucked", Tucked),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -178,7 +189,7 @@ internal static class Program
 		return grid.TryGetValue(Key(x, z), out List<(int r, int i)> found) ? found : new List<(int, int)>();
 	}
 
-	/// <summary>The drawn surface's height of road o at (x, z), if (x, z) is well inside its drawn paving (NaN if not).</summary>
+	/// <summary>The drawn surface's height of road o at (x, z), if (x, z) is well inside its drawn paving (NaN if not), with its cross-fall.</summary>
 	private static double SurfaceOf(int o, double x, double z)
 	{
 		Network.Road road = Network.Roads[o];
@@ -190,16 +201,24 @@ internal static class Program
 				continue;
 			}
 			Lines.Project(road.X, road.Z, i, x, z, out double t, out double d);
-			if ((i == 0 && t <= 0.0) || (i == road.Count - 2 && t >= 1.0) || d >= bestD || !Drawn(road, i, out double t0, out double t1) || t < t0 || t > t1)
+			// Only beside the piece: a point past its end is not on it there (the piece's end height is not the road's beyond), nor
+			// past the road's ends (its end itself is).
+			double ex = road.X[i + 1] - road.X[i], ez = road.Z[i + 1] - road.Z[i];
+			double raw = ((x - road.X[i]) * ex + (z - road.Z[i]) * ez) / Math.Max(1e-9, ex * ex + ez * ez);
+			if (raw < -0.001 || raw > 1.001 || d >= bestD || !Drawn(road, i, out double t0, out double t1) || t < t0 || t > t1)
 			{
 				continue;
 			}
 			double s = road.S[i] + (road.S[i + 1] - road.S[i]) * t;
 			// Half a unit in: a cut overlaps the other road by a quarter unit on purpose (no ground shows at the seam).
-			if (d < Network.HalfAt(road, s) - 0.5)
+			double half = Network.HalfAt(road, s);
+			if (d < half - 0.5)
 			{
+				// At the point across it, with its own cross-fall (a mouth's surface is tilted to meet the road it joins).
+				double sx = road.X[i + 1] - road.X[i], sz = road.Z[i + 1] - road.Z[i];
+				double across = ((z - road.Z[i]) * sx - (x - road.X[i]) * sz) / Math.Max(1e-9, Math.Sqrt(sx * sx + sz * sz));
 				bestD = d;
-				Network.Point(road, i, t, 0, 0.0, out double _, out double _, out best);
+				Network.Point(road, i, t, across / half, 0.0, out double _, out double _, out best);
 			}
 		}
 		return best;
@@ -235,7 +254,7 @@ internal static class Program
 						{
 							Network.Road other = Network.Roads[o];
 							// Only against a road this one should be under: bigger, or of its class and built before it.
-							if (o == r || !seen.Add(o) || other.Kind > road.Kind || (other.Kind == road.Kind && o > r))
+							if (o == r || !seen.Add(o) || other.Kind > road.Kind || (other.Kind == road.Kind && o > r) || Network.Joined(r, o, x, z))
 							{
 								continue;
 							}
@@ -1700,5 +1719,417 @@ internal static class Program
 			default:
 				return false;
 		}
+	}
+
+	/// <summary>Tile meshes' triangles in world coordinates, by tile, with each triangle's kind: 0 paving, 1 verge, 2 sidewalk, 3 track or path.</summary>
+	private static readonly Dictionary<long, List<(Vector3 a, Vector3 b, Vector3 c, int kind)>> tileTris = new Dictionary<long, List<(Vector3, Vector3, Vector3, int)>>();
+
+	private static List<(Vector3 a, Vector3 b, Vector3 c, int kind)> TileTris(int tx, int tz)
+	{
+		long key = ((long)tx << 32) | (uint)tz;
+		if (tileTris.TryGetValue(key, out List<(Vector3, Vector3, Vector3, int)> found))
+		{
+			return found;
+		}
+		List<(Vector3, Vector3, Vector3, int)> list = new List<(Vector3, Vector3, Vector3, int)>();
+		RoadMeshData road = RoadMesh.Build(tx, tz, 250f, Terrain, out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
+		Vector3 o = new Vector3(tx * 250f, 0f, tz * 250f);
+		int kind = 0;
+		foreach (RoadMeshData d in new[] { road, verges, sidewalks, tracks })
+		{
+			if (d != null)
+			{
+				foreach (int[] t in d.Triangles)
+				{
+					for (int k = 0; k < t.Length; k += 3)
+					{
+						list.Add((d.Vertices[t[k]] + o, d.Vertices[t[k + 1]] + o, d.Vertices[t[k + 2]] + o, kind));
+					}
+				}
+			}
+			kind++;
+		}
+		tileTris[key] = list;
+		return list;
+	}
+
+	/// <summary>
+	/// The meshes round (cx, cz) drawn from above, <paramref name="px"/> pixels a side over <paramref name="span"/>: per pixel the kind
+	/// of the topmost triangle over the drawn ground (-1 for the ground), and its height.
+	/// </summary>
+	private static void Raster(double cx, double cz, double span, int px, int[] kind, float[] top)
+	{
+		double x0 = cx - span * 0.5, z0 = cz - span * 0.5, step = span / px;
+		for (int k = 0; k < kind.Length; k++)
+		{
+			kind[k] = -1;
+			top[k] = float.NegativeInfinity;
+		}
+		for (int tz = (int)Math.Floor(z0 / 250.0) - 1; tz <= (int)Math.Floor((z0 + span) / 250.0) + 1; tz++)
+		{
+			for (int tx = (int)Math.Floor(x0 / 250.0) - 1; tx <= (int)Math.Floor((x0 + span) / 250.0) + 1; tx++)
+			{
+				foreach ((Vector3 a, Vector3 b, Vector3 c, int tk) in TileTris(tx, tz))
+				{
+					double minx = Math.Min(a.x, Math.Min(b.x, c.x)), maxx = Math.Max(a.x, Math.Max(b.x, c.x));
+					double minz = Math.Min(a.z, Math.Min(b.z, c.z)), maxz = Math.Max(a.z, Math.Max(b.z, c.z));
+					if (maxx < x0 || minx > x0 + span || maxz < z0 || minz > z0 + span)
+					{
+						continue;
+					}
+					double det = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
+					if (Math.Abs(det) < 1e-9)
+					{
+						continue;
+					}
+					int i0 = Math.Max(0, (int)((minx - x0) / step)), i1 = Math.Min(px - 1, (int)((maxx - x0) / step));
+					int j0 = Math.Max(0, (int)((minz - z0) / step)), j1 = Math.Min(px - 1, (int)((maxz - z0) / step));
+					for (int j = j0; j <= j1; j++)
+					{
+						double z = z0 + (j + 0.5) * step;
+						for (int i = i0; i <= i1; i++)
+						{
+							double x = x0 + (i + 0.5) * step;
+							double u = ((x - a.x) * (c.z - a.z) - (c.x - a.x) * (z - a.z)) / det;
+							double v = ((b.x - a.x) * (z - a.z) - (x - a.x) * (b.z - a.z)) / det;
+							if (u < -1e-6 || v < -1e-6 || u + v > 1.0 + 1e-6)
+							{
+								continue;
+							}
+							float y = (float)(a.y + (b.y - a.y) * u + (c.y - a.y) * v);
+							int p = j * px + i;
+							if (y > top[p])
+							{
+								top[p] = y;
+								kind[p] = tk;
+							}
+						}
+					}
+				}
+			}
+		}
+		for (int j = 0; j < px; j++)
+		{
+			for (int i = 0; i < px; i++)
+			{
+				int p = j * px + i;
+				if (kind[p] >= 0 && top[p] < Mesh(x0 + (i + 0.5) * step, z0 + (j + 0.5) * step) + Network.Lift - 0.005)
+				{
+					kind[p] = -1;
+				}
+			}
+		}
+	}
+
+	/// <summary>Where junctions are: each paved road's ends and the middles of its crossings, one a 20-unit square.</summary>
+	private static List<(double x, double z)> JunctionSpots()
+	{
+		List<(double x, double z)> spots = new List<(double, double)>();
+		HashSet<long> taken = new HashSet<long>();
+		void Add(double x, double z)
+		{
+			if (taken.Add(((long)Math.Floor(x / 20.0) << 32) | (uint)(int)Math.Floor(z / 20.0)))
+			{
+				spots.Add((x, z));
+			}
+		}
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (Network.Unpaved(road.Kind) || road.Kind > RoadKind.Lane)
+			{
+				continue;
+			}
+			double length = road.S[road.Count - 1];
+			Add(road.X[0], road.Z[0]);
+			Add(road.X[road.Count - 1], road.Z[road.Count - 1]);
+			foreach (Network.Gap g in road.Gaps)
+			{
+				if (g.C0 > 0.0 && g.C1 < length)
+				{
+					Network.Locate(road, (g.C0 + g.C1) * 0.5, out int i, out double t);
+					Add(road.X[i] + (road.X[i + 1] - road.X[i]) * t, road.Z[i] + (road.Z[i + 1] - road.Z[i]) * t);
+				}
+			}
+		}
+		return spots;
+	}
+
+	/// <summary>Whether a tunnel mouth into the world's edge is within <paramref name="reach"/> of (x, z): its road ends in the wall there.</summary>
+	private static bool NearPortal(double x, double z, double reach)
+	{
+		foreach (Network.Portal p in Network.Portals)
+		{
+			if (Math.Abs(p.X - x) < reach + p.Half && Math.Abs(p.Z - z) < reach + p.Half)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static bool Holes()
+	{
+		const double span = 60.0;
+		const int px = 120;
+		int[] kind = new int[px * px];
+		float[] top = new float[px * px];
+		bool[] paving = new bool[px * px];
+		long nominal = 0, holes = 0;
+		int worstHoles = 0;
+		(double x, double z) worstAt = (0.0, 0.0);
+		List<(double x, double z)> spots = JunctionSpots();
+		foreach ((double cx, double cz) in spots)
+		{
+			if (NearPortal(cx, cz, span))
+			{
+				continue;
+			}
+			Raster(cx, cz, span, px, kind, top);
+			double x0 = cx - span * 0.5, z0 = cz - span * 0.5, step = span / px;
+			Array.Clear(paving, 0, paving.Length);
+			// Each road's own strip: within its half width (half a unit in) of a piece, beside it (not past its ends, nor round its
+			// samples' corners).
+			foreach (Network.Road road in Network.Roads)
+			{
+				if (Network.Unpaved(road.Kind))
+				{
+					continue;
+				}
+				for (int i = 0; i + 1 < road.Count; i++)
+				{
+					double ax = road.X[i], az = road.Z[i], sx = road.X[i + 1] - ax, sz = road.Z[i + 1] - az;
+					if (Math.Max(ax, ax + sx) + road.Half < x0 || Math.Min(ax, ax + sx) - road.Half > x0 + span || Math.Max(az, az + sz) + road.Half < z0 || Math.Min(az, az + sz) - road.Half > z0 + span)
+					{
+						continue;
+					}
+					double len2 = sx * sx + sz * sz;
+					if (len2 < 1e-9)
+					{
+						continue;
+					}
+					int i0 = Math.Max(0, (int)((Math.Min(ax, ax + sx) - road.Half - x0) / step)), i1 = Math.Min(px - 1, (int)((Math.Max(ax, ax + sx) + road.Half - x0) / step));
+					int j0 = Math.Max(0, (int)((Math.Min(az, az + sz) - road.Half - z0) / step)), j1 = Math.Min(px - 1, (int)((Math.Max(az, az + sz) + road.Half - z0) / step));
+					for (int j = j0; j <= j1; j++)
+					{
+						double z = z0 + (j + 0.5) * step;
+						for (int k = i0; k <= i1; k++)
+						{
+							double x = x0 + (k + 0.5) * step;
+							double t = ((x - ax) * sx + (z - az) * sz) / len2;
+							if (t < 0.0 || t > 1.0)
+							{
+								continue;
+							}
+							double dx = ax + sx * t - x, dz = az + sz * t - z;
+							if (dx * dx + dz * dz < (road.Half - 0.5) * (road.Half - 0.5))
+							{
+								paving[j * px + k] = true;
+							}
+						}
+					}
+				}
+			}
+			int here = 0;
+			for (int p = 0; p < paving.Length; p++)
+			{
+				if (!paving[p])
+				{
+					continue;
+				}
+				nominal++;
+				if (kind[p] != 0)
+				{
+					holes++;
+					here++;
+				}
+			}
+			if (here > worstHoles)
+			{
+				worstHoles = here;
+				worstAt = (cx, cz);
+			}
+		}
+		Console.WriteLine("holes:   " + spots.Count + " junctions; " + holes + " of " + nominal + " pixels of the roads' paving with no paved surface on top (" + (100.0 * holes / Math.Max(1, nominal)).ToString("0.00") + "%), the most " + worstHoles + " at (" + worstAt.x.ToString("0") + ", " + worstAt.z.ToString("0") + ")");
+		return holes * 100 < nominal;
+	}
+
+	private static bool Joints()
+	{
+		int joints = 0, apart = 0;
+		double worst = 0.0;
+		List<(int r, int end)> joined = new List<(int, int)>();
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (road.Joined0)
+			{
+				joined.Add((r, 0));
+			}
+			if (road.Joined1)
+			{
+				joined.Add((r, 1));
+			}
+		}
+		foreach ((int r, int end) in joined)
+		{
+			Network.Road a = Network.Roads[r];
+			int ka = end == 0 ? 0 : a.Count - 1;
+			foreach ((int o, int eo) in joined)
+			{
+				Network.Road b = Network.Roads[o];
+				int kb = eo == 0 ? 0 : b.Count - 1;
+				if (o <= r || Math.Abs(a.X[ka] - b.X[kb]) > 0.5 || Math.Abs(a.Z[ka] - b.Z[kb]) > 0.5)
+				{
+					continue;
+				}
+				joints++;
+				double bad = 0.0;
+				for (int side = -1; side <= 1; side += 2)
+				{
+					Network.Edge(a, a.S[ka], side, 0.0, out double ax, out double az, out double ay);
+					// The same edge of b: its left if it runs on the way a does (one's end on the other's start), else its right.
+					int bs = end != eo ? side : -side;
+					Network.Edge(b, b.S[kb], bs, 0.0, out double bx, out double bz, out double by);
+					bad = Math.Max(bad, Math.Max(Math.Sqrt((ax - bx) * (ax - bx) + (az - bz) * (az - bz)), Math.Abs(ay - by)));
+				}
+				worst = Math.Max(worst, bad);
+				if (bad > 0.02)
+				{
+					apart++;
+				}
+			}
+		}
+		Console.WriteLine("joints:  " + joints + " roads carrying on end to end; " + apart + " whose ends' edges are apart (points or heights), worst " + worst.ToString("0.000"));
+		return apart == 0;
+	}
+
+	/// <summary>Whether the paving triangles of the tiles round (x, z) cover it.</summary>
+	private static bool Paved(double x, double z)
+	{
+		int tx0 = (int)Math.Floor(x / 250.0), tz0 = (int)Math.Floor(z / 250.0);
+		for (int tz = tz0 - 1; tz <= tz0 + 1; tz++)
+		{
+			for (int tx = tx0 - 1; tx <= tx0 + 1; tx++)
+			{
+				foreach ((Vector3 a, Vector3 b, Vector3 c, int kind) in TileTris(tx, tz))
+				{
+					if (kind != 0)
+					{
+						continue;
+					}
+					double det = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
+					if (Math.Abs(det) < 1e-9)
+					{
+						continue;
+					}
+					double u = ((x - a.x) * (c.z - a.z) - (c.x - a.x) * (z - a.z)) / det;
+					double v = ((b.x - a.x) * (z - a.z) - (x - a.x) * (b.z - a.z)) / det;
+					if (u >= 0.0 && v >= 0.0 && u + v <= 1.0)
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	private static bool DeadEnds()
+	{
+		int paved = 0, unpaved = 0, bad = 0;
+		foreach (Network.Road road in Network.Roads)
+		{
+			for (int end = 0; end < 2; end++)
+			{
+				if (!(end == 0 ? road.Dead0 : road.Dead1))
+				{
+					continue;
+				}
+				int k = end == 0 ? 0 : road.Count - 1;
+				if (Network.Unpaved(road.Kind))
+				{
+					unpaved++;
+					if (Network.HalfAt(road, road.S[k]) > road.Half * 0.21)
+					{
+						bad++;
+					}
+					continue;
+				}
+				paved++;
+				// Out from the end along the road's way there.
+				int nk = end == 0 ? 1 : road.Count - 2;
+				double dx = road.X[k] - road.X[nk], dz = road.Z[k] - road.Z[nk], len = Math.Sqrt(dx * dx + dz * dz);
+				dx /= len;
+				dz /= len;
+				double half = Network.HalfAt(road, road.S[k]);
+				bool on = Paved(road.X[k] + dx * half * 0.6, road.Z[k] + dz * half * 0.6);
+				bool past = Paved(road.X[k] + dx * (half + Network.Verge + 1.0), road.Z[k] + dz * (half + Network.Verge + 1.0)) && !OnOtherRoad(road, road.X[k] + dx * (half + Network.Verge + 1.0), road.Z[k] + dz * (half + Network.Verge + 1.0));
+				if (!on || past)
+				{
+					bad++;
+				}
+			}
+		}
+		Console.WriteLine("deadends: " + paved + " paved roads rounded off, " + unpaved + " tracks and paths narrowed; " + bad + " not");
+		return bad == 0;
+	}
+
+	/// <summary>Whether (x, z) is within the paving of a road other than <paramref name="self"/>.</summary>
+	private static bool OnOtherRoad(Network.Road self, double x, double z)
+	{
+		foreach ((int o, int i) in Near(x, z))
+		{
+			Network.Road road = Network.Roads[o];
+			Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
+			if (road != self && d < road.Half + 2.0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static bool Tucked()
+	{
+		int samples = 0, bad = 0;
+		double worst = 0.0;
+		foreach (Network.Road r in Network.Roads)
+		{
+			if (!Network.Unpaved(r.Kind) || r.Kind == RoadKind.Rally)
+			{
+				continue;
+			}
+			for (int i = 0; i + 1 < r.Count; i++)
+			{
+				foreach (double t in new[] { 0.0, 0.5 })
+				{
+					foreach (double f in new[] { -1.0, 0.0, 1.0 })
+					{
+						Network.Point(r, i, t, f, 0.0, out double x, out double z, out double y);
+						HashSet<int> seen = new HashSet<int>();
+						foreach ((int o, int _) in Near(x, z))
+						{
+							if (!seen.Add(o))
+							{
+								continue;
+							}
+							double surface = SurfaceOf(o, x, z);
+							if (double.IsNaN(surface))
+							{
+								continue;
+							}
+							samples++;
+							if (y > surface - 0.02)
+							{
+								bad++;
+								worst = Math.Max(worst, y - surface);
+							}
+						}
+					}
+				}
+			}
+		}
+		Console.WriteLine("tucked:  " + bad + " of " + samples + " track and path ribbon points on a paved road's surface over it, worst " + worst.ToString("0.00"));
+		return bad == 0;
 	}
 }

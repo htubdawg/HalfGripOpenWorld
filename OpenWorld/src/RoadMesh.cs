@@ -126,18 +126,21 @@ namespace HalfGripOpenWorld
 					{
 						double a = t0 + (t1 - t0) * c / cuts, b = c == cuts - 1 ? t1 : t0 + (t1 - t0) * (c + 1) / cuts;
 						Strip(roads, road, i, a, b, bridge);
-						if (verge)
+					}
+				}
+				if (verge)
+				{
+					// Each side's verge or sidewalk along its own edge, which runs on past the full width to its own cut.
+					for (int side = -1; side <= 1; side += 2)
+					{
+						bool walk = Sidewalk(road, i, side);
+						Network.EdgeSpans(road, i, side, spans);
+						foreach ((double t0, double t1) in spans)
 						{
-							for (int side = -1; side <= 1; side += 2)
+							for (int c = 0; c < cuts; c++)
 							{
-								if (Sidewalk(road, i, side))
-								{
-									Pavement(walks, road, r, i, a, b, side, terrain);
-								}
-								else
-								{
-									Verge(sides, road, r, i, a, b, side, terrain);
-								}
+								double a = t0 + (t1 - t0) * c / cuts, b = c == cuts - 1 ? t1 : t0 + (t1 - t0) * (c + 1) / cuts;
+								Beside(walk ? walks : sides, walk, road, r, i, a, b, side, terrain);
 							}
 						}
 					}
@@ -147,11 +150,146 @@ namespace HalfGripOpenWorld
 				{
 					Fan(roads, road, apex, side, from, to);
 				}
+				if ((i == 0 && road.Dead0) || (i == road.Count - 2 && road.Dead1))
+				{
+					Cap(roads, sides, walks, road, i == 0 ? 0 : 1, terrain);
+				}
 			}
 			verges = sides.Done();
 			sidewalks = walks.Done();
 			tracks = ribbons.Done();
 			return roads.Done();
+		}
+
+		/// <summary>Steps round a dead end's rounded end (each 15 degrees).</summary>
+		private const int CapSteps = 12;
+
+		/// <summary>
+		/// A paved road's dead end at its start (0) or end (1): the paving rounded off in a half disc as wide as the road, level with
+		/// its end, and round it the verge (or, where both sides have one, the sidewalk) carried on from the sides down to the ground,
+		/// so the road gives way to the ground all round instead of ending in a square edge.
+		/// </summary>
+		private static void Cap(Mesher paved, Mesher verges, Mesher walks, Network.Road road, int end, TerrainGrid terrain)
+		{
+			int n = road.Count, k = end == 0 ? 0 : n - 1, i = end == 0 ? 0 : n - 2;
+			double t = end == 0 ? 0.0 : 1.0, s = road.S[k];
+			Network.Side(road, k, out double sx, out double sz);
+			// Outward from the end: the road's forward way at its end, back along it at its start.
+			double fx = sz, fz = -sx;
+			if (end == 0)
+			{
+				fx = -fx;
+				fz = -fz;
+			}
+			double half = Network.HalfAt(road, s);
+			Network.Point(road, i, t, 0, 0.0, out double cx, out double cz, out double cy);
+			Network.Point(road, i, t, 1, 0.0, out double _, out double _, out double ly);
+			// The surface's cross-fall at the end, carried round the half disc.
+			double tilt = (ly - cy) / Math.Max(1e-6, half);
+			bool walk = Sidewalk(road, i, 1) && Sidewalk(road, i, -1);
+			Mesher ring = walk ? walks : verges;
+			Vector3 centre = new Vector3((float)(cx - paved.Ox), (float)(cy + Network.Lift), (float)(cz - paved.Oz));
+			float vc = (float)(s / TextureLength);
+			Vector3 prevRim = default, prevMid = default, prevOut = default;
+			float prevU = 0f, prevV = 0f;
+			for (int step = 0; step <= CapSteps; step++)
+			{
+				// From the left edge round the end to the right edge.
+				double a = DetMath.Pi * step / CapSteps;
+				double across = DetMath.Cos(a), ahead = DetMath.Sin(a);
+				double dx = sx * across + fx * ahead, dz = sz * across + fz * ahead;
+				double rimY = cy + tilt * half * across;
+				Vector3 rim = new Vector3((float)(cx + dx * half - paved.Ox), (float)(rimY + Network.Lift), (float)(cz + dz * half - paved.Oz));
+				float u = (float)(0.5 - 0.5 * across), v = (float)((s + (end == 0 ? -1.0 : 1.0) * half * ahead) / TextureLength);
+				double wx = cx + dx * (half + Network.Verge), wz = cz + dz * (half + Network.Verge);
+				double mx = cx + dx * (half + Network.Verge * 0.5), mz = cz + dz * (half + Network.Verge * 0.5);
+				Vector3 mid, outer;
+				if (walk)
+				{
+					// Flat to its back, then the kerb down under the ground (as PavementSection).
+					double back = Math.Max(rimY + Network.Lift - 0.02, terrain.At(wx, wz) + VergeLift);
+					double fx2 = cx + dx * (half + Network.Verge + KerbOut), fz2 = cz + dz * (half + Network.Verge + KerbOut);
+					mid = new Vector3((float)(wx - paved.Ox), (float)back, (float)(wz - paved.Oz));
+					outer = new Vector3((float)(fx2 - paved.Ox), (float)Math.Min(back, terrain.At(fx2, fz2) - 0.25), (float)(fz2 - paved.Oz));
+				}
+				else
+				{
+					double outerY = terrain.At(wx, wz) + VergeLift;
+					double middleY = Math.Max((rimY + Network.Lift + outerY) * 0.5, terrain.At(mx, mz) + VergeLift);
+					mid = new Vector3((float)(mx - paved.Ox), (float)middleY, (float)(mz - paved.Oz));
+					outer = new Vector3((float)(wx - paved.Ox), (float)outerY, (float)(wz - paved.Oz));
+				}
+				if (step > 0)
+				{
+					paved.Triangle(Paving(road.Kind), centre, prevRim, rim, new Vector2(0.5f, vc), new Vector2(prevU, prevV), new Vector2(u, v));
+					float va = prevV * TextureLength / 4f, vb = v * TextureLength / 4f;
+					if (walk)
+					{
+						ring.Quad(0, prevRim, rim, prevMid, mid, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+						ring.Quad(0, prevMid, mid, prevOut, outer, new Vector2(0.9f, va), new Vector2(0.9f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+					}
+					else
+					{
+						ring.Quad(0, prevRim, rim, prevMid, mid, new Vector2(0f, prevV), new Vector2(0f, v), new Vector2(0.5f, prevV), new Vector2(0.5f, v));
+						ring.Quad(0, prevMid, mid, prevOut, outer, new Vector2(0.5f, prevV), new Vector2(0.5f, v), new Vector2(1f, prevV), new Vector2(1f, v));
+					}
+				}
+				prevRim = rim;
+				prevMid = mid;
+				prevOut = outer;
+				prevU = u;
+				prevV = v;
+			}
+		}
+
+		/// <summary>Length of the bits a verge or sidewalk is cut into where it reaches another road, so it stops at that road's edge.</summary>
+		private const double Trim = 0.5;
+
+		/// <summary>
+		/// The verge or sidewalk on one side over fractions a to b of piece i, left out where it would lie on another road's paving
+		/// (the mouth of a road meeting this one): where that is near, in bits of <see cref="Trim"/>, so it stops at the mouth's edge.
+		/// (Whole pieces were left out, so up to a piece of ground showed beside every mouth.)
+		/// </summary>
+		private static void Beside(Mesher m, bool walk, Network.Road road, int r, int i, double a, double b, int side, TerrainGrid terrain)
+		{
+			if (!Clear(road, r, i, a, side) || !Clear(road, r, i, (a + b) * 0.5, side) || !Clear(road, r, i, b, side))
+			{
+				double len = (road.S[i + 1] - road.S[i]) * (b - a);
+				int bits = Math.Max(1, (int)Math.Ceiling(len / Trim));
+				bool was = Clear(road, r, i, a, side);
+				for (int k = 0; k < bits; k++)
+				{
+					double p = a + (b - a) * k / bits, q = k == bits - 1 ? b : a + (b - a) * (k + 1) / bits;
+					bool now = Clear(road, r, i, q, side);
+					if (was && now)
+					{
+						Side(m, walk, road, i, p, q, side, terrain);
+					}
+					was = now;
+				}
+				return;
+			}
+			Side(m, walk, road, i, a, b, side, terrain);
+		}
+
+		/// <summary>Whether the verge's or sidewalk's outer edge and middle at fraction t of piece i are off every other road's paving.</summary>
+		private static bool Clear(Network.Road road, int r, int i, double t, int side)
+		{
+			Network.Point(road, i, t, side, Network.Verge, out double x, out double z, out double _);
+			Network.Point(road, i, t, side, Network.Verge * 0.5, out double mx, out double mz, out double _);
+			return !Network.OnOtherPaving(x, z, r) && !Network.OnOtherPaving(mx, mz, r);
+		}
+
+		private static void Side(Mesher m, bool walk, Network.Road road, int i, double a, double b, int side, TerrainGrid terrain)
+		{
+			if (walk)
+			{
+				Pavement(m, road, i, a, b, side, terrain);
+			}
+			else
+			{
+				Verge(m, road, i, a, b, side, terrain);
+			}
 		}
 
 		/// <summary>
@@ -183,10 +321,12 @@ namespace HalfGripOpenWorld
 			Vector3 la = m.At(road, i, 0.0, 1, 0.0), lb = m.At(road, i, 1.0, 1, 0.0);
 			Vector3 ra = m.At(road, i, 0.0, -1, 0.0), rb = m.At(road, i, 1.0, -1, 0.0);
 			m.Quad(material, la, lb, ra, rb, new Vector2(inner, va), new Vector2(inner, vb), new Vector2(1f - inner, va), new Vector2(1f - inner, vb));
+			// At a dead end the soft edges narrow with the ribbon (Network.Fade).
+			double ea = edge * Network.Fade(road, road.S[i]), eb = edge * Network.Fade(road, road.S[i + 1]);
 			for (int side = -1; side <= 1; side += 2)
 			{
 				Vector3 ia = side > 0 ? la : ra, ib = side > 0 ? lb : rb;
-				Vector3 oa = Ground(m, road, i, 0.0, side, edge, terrain), ob = Ground(m, road, i, 1.0, side, edge, terrain);
+				Vector3 oa = Ground(m, road, i, 0.0, side, ea, terrain), ob = Ground(m, road, i, 1.0, side, eb, terrain);
 				float u = side > 0 ? 0f : 1f;
 				m.Quad(material, ia, ib, oa, ob, new Vector2(side > 0 ? inner : 1f - inner, va), new Vector2(side > 0 ? inner : 1f - inner, vb), new Vector2(u, va), new Vector2(u, vb));
 			}
@@ -202,16 +342,11 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// A sidewalk on one side over fractions a to b of piece i: flat from the road's edge, at its surface's height, to
 		/// <see cref="Network.Verge"/> beyond it, then a kerb down under the ground (where the ground there is higher, it lies on it).
-		/// None where it would lie on another road.
 		/// </summary>
-		private static void Pavement(Mesher m, Network.Road road, int r, int i, double a, double b, int side, TerrainGrid terrain)
+		private static void Pavement(Mesher m, Network.Road road, int i, double a, double b, int side, TerrainGrid terrain)
 		{
-			PavementSection(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 oa, out Vector3 ka, out double xa, out double za);
-			PavementSection(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 ob, out Vector3 kb, out double xb, out double zb);
-			if (Network.OnOtherPaving(xa, za, r) || Network.OnOtherPaving(xb, zb, r))
-			{
-				return;
-			}
+			PavementSection(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 oa, out Vector3 ka, out double _, out double _);
+			PavementSection(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 ob, out Vector3 kb, out double _, out double _);
 			float va = (float)((road.S[i] * (1.0 - a) + road.S[i + 1] * a) / 4.0), vb = (float)((road.S[i] * (1.0 - b) + road.S[i + 1] * b) / 4.0);
 			m.Quad(0, ia, ib, oa, ob, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
 			m.Quad(0, oa, ob, ka, kb, new Vector2(0.9f, va), new Vector2(0.9f, vb), new Vector2(1f, va), new Vector2(1f, vb));
@@ -307,16 +442,12 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// The verge on one side over fractions a to b of piece i: from the road's edge to <see cref="Network.Verge"/> beyond it, where it
-		/// lies just over the drawn ground, with a middle row that never dips under the ground. None where it would lie on another road.
+		/// lies just over the drawn ground, with a middle row that never dips under the ground.
 		/// </summary>
-		private static void Verge(Mesher m, Network.Road road, int r, int i, double a, double b, int side, TerrainGrid terrain)
+		private static void Verge(Mesher m, Network.Road road, int i, double a, double b, int side, TerrainGrid terrain)
 		{
-			Section(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 ma, out Vector3 oa, out double xa, out double za);
-			Section(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 mb, out Vector3 ob, out double xb, out double zb);
-			if (Network.OnOtherPaving(xa, za, r) || Network.OnOtherPaving(xb, zb, r))
-			{
-				return;
-			}
+			Section(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 ma, out Vector3 oa, out double _, out double _);
+			Section(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 mb, out Vector3 ob, out double _, out double _);
 			float va = V(road, i, a), vb = V(road, i, b);
 			m.Quad(0, ia, ib, ma, mb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(0.5f, va), new Vector2(0.5f, vb));
 			m.Quad(0, ma, mb, oa, ob, new Vector2(0.5f, va), new Vector2(0.5f, vb), new Vector2(1f, va), new Vector2(1f, vb));
