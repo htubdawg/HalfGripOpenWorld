@@ -241,7 +241,7 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			if (Mod.WeatherSkip.Value && GameInput.GetKeyDown(Mod.WeatherSkipKey.Value))
+			if (Mod.WeatherSkip.Value && Mod.WeatherSkipKey != null && Mod.WeatherSkipKey.Down)
 			{
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				skip += back ? -300f : 300f;

@@ -145,7 +145,7 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			if (Mod.Teleport.Value && GameInput.GetKeyDown(Mod.TeleportKey.Value))
+			if (Mod.Teleport.Value && Mod.TeleportKey != null && Mod.TeleportKey.Down)
 			{
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				TeleportNext(back ? -1 : 1);

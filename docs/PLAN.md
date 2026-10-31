@@ -628,7 +628,7 @@ started on the host's go), so every player has the same sky and nothing is sent.
   and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
   the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
 - **Debug.** `ShowCoords` adds a line: the time, the sun or moon's height, the rain or snow, cloud, wetness and grip at the car,
-  the nearest storm (how far, which way). `WeatherSkip` with F8 moves your own sky 5 minutes on (Shift back).
+  the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back).
 
 Not tested in game yet (TESTING.md 21). Next, when it looks right: rain curtains and dark cloud under the storms nearby (seen from
 afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest

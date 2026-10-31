@@ -76,7 +76,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 21. Day, night and storms (0.17.0), in a Multiplayer room. The log has `Weather: <day> by day, <night> by night (from the room's
    seed)` and `Sky: the race starts at hh:mm, a day lasts 40 minutes; storms: a ... day, wind ..., snow above ...`. With `ShowCoords`
    the overlay's last line gives the time, the sun's height, the rain, cloud, wetness and grip at the car and the nearest storm; both
-   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press F8 through a whole day
+   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press the Weather skip key (F5) through a whole day
    (8 presses a day): the shadows swing from east to west, the light goes gold at dusk, the sky darkens and the night sky comes in,
    the cockpit dims at night (the cabin is not lit at midnight), the headlights go on at dusk and off after dawn, and nothing jumps
    or flickers at the swaps (the light fades out and back round sunset and sunrise). Note whether the ambient light changes at

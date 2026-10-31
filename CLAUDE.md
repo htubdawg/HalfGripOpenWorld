@@ -70,6 +70,11 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   `Network.Lift` for the scene). Mixing the two sank every building once.
 - Match the style: tabs, `///` summaries that explain *why*, `Mod.Info(...)` for verbose logging, `Mod.Log.LogWarning` and a try/catch
   around risky scene work.
+- **Keys.** Every key the mod reads (debug ones too) goes through HalfGripTools' `ctx.Keys.Add(key, label, section, shown)` in
+  `Mod.Load`, so it is listed in the game's Settings > Controls and can be rebound there; read it with `ModKey.Down`/`Held`. Never a
+  `ConfigEntry<KeyCode>` or a raw `Input`/`GameInput` read of a fixed key. Pick a default the game does not use: its keys include F1,
+  F3, F4, F6, **F8 (bug report)**, F9, F10 and F12 (see `Controls.cs`, `DevBinds.cs`, `ReportBugKey.cs` in the decompile). `Add`
+  returns null if the key is taken, so check for null.
 - Do not invent an `ObjectiveKind` (a saved run with one is deleted).
 - `HalfGripOpenWorld.MapView` is a public API that other mods (MiniMap) read by reflection: never rename it or change its members'
   names or signatures. It is left out of `tools/meshcheck` (it needs `Streamer`).
