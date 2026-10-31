@@ -8,19 +8,18 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// A test of the garage the world may get: the Garage test key (Settings > Controls, F9 by default) fits the next gun and the next steering wheel to the car where it stands,
-	/// then fills the ammo, the effects and the health. It goes through the game's own live refit (<see cref="LoadoutRefit.Swap"/>,
-	/// which the dev console's giveitem uses in a race), so it shows whether that holds up outside the console, in a Multiplayer room
-	/// too, before any garage is built on it. Only the car changes: the save and the Multiplayer loadout keep what was fitted, so the
-	/// next race starts with the old fit.
+	/// The garage's refit: puts a new loadout on the car where it stands, through the game's own live refit (<see cref="LoadoutRefit.Swap"/>,
+	/// which the dev console's giveitem uses in a race; tested in Multiplayer rooms with every gun and wheel). Only the car changes: the
+	/// save and the Multiplayer loadout keep what was fitted, and <see cref="Garage"/> puts the game's own record of the loadout back
+	/// when the race ends, so the next race starts with the old fit.
 	///
-	/// A press reads the car's loadout, empties the car and fits the new loadout (the old one with the next gun and wheel), as a garage
-	/// would. Emptying includes the cockpit's guns: there is one built-in gun per kind (SMG, pump shotgun, revolver, sawed-off), and
-	/// taking a gun item off only switches its gun off. A gun reads its item and the gun mods convert it (the M1911, Minigun, RPG and
-	/// Sniper Rifle all turn the SMG into theirs, building their models into its held model under the camera) once, when it first
-	/// starts up, so each gun and its held model are put back as the scene built them, from copies taken before they started.
+	/// A refit reads the car's loadout, empties the car and fits the new loadout. Emptying includes the cockpit's guns: there is one
+	/// built-in gun per kind (SMG, pump shotgun, revolver, sawed-off), and taking a gun item off only switches its gun off. A gun reads
+	/// its item and the gun mods convert it (the M1911, Minigun, RPG and Sniper Rifle all turn the SMG into theirs, building their models
+	/// into its held model under the camera) once, when it first starts up, so each gun and its held model are put back as the scene
+	/// built them, from copies taken before they started.
 	/// </summary>
-	internal static class GarageTest
+	internal static class GarageRefit
 	{
 		/// <summary>The protected field <c>Gun.Awake</c> fills in: still null on a gun that has never started up.</summary>
 		private static readonly FieldInfo GunGrabber = AccessTools.Field(typeof(Gun), "grabber");
@@ -44,72 +43,25 @@ namespace HalfGripOpenWorld
 		private static GameObject holder;
 		private static int holderScene = -1;
 
-		/// <summary>When the refill is due: the new gun's magazines only listen for a refill from their Start, the frame after the swap.</summary>
-		private static float refillAt = -1f;
+		/// <summary>True in an Open World race, where the guns are copied as they wake.</summary>
+		private static bool InWorld => Mod.Map != null && RunState.ActiveMap == Mod.Map;
 
-		/// <summary>Every frame of an Open World race (from the streamer).</summary>
-		internal static void Tick()
-		{
-			if (refillAt >= 0f && Time.realtimeSinceStartup >= refillAt)
-			{
-				refillAt = -1f;
-				Refill();
-			}
-			if (!Mod.GarageTest.Value || Mod.GarageTestKey == null || !Mod.GarageTestKey.Down)
-			{
-				return;
-			}
-			int step = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift) ? -1 : 1;
-			try
-			{
-				Swap(step);
-			}
-			catch (Exception e)
-			{
-				Mod.Log.LogWarning("Garage test: the swap failed: " + e);
-			}
-		}
-
-		/// <summary>The three steps: read the car's loadout, empty the car, fit the new loadout (the old one with the next gun and wheel).</summary>
-		private static void Swap(int step)
+		/// <summary>
+		/// Puts <paramref name="wanted"/> on the car in place of what is on it. False (and the car left alone) when the game does not know
+		/// what is fitted, which only happens in a race not started from the menu or a room.
+		/// </summary>
+		internal static bool Apply(List<UpgradeComponent> wanted)
 		{
 			if (!PlayerLoadout.Known)
 			{
-				Mod.Log.LogWarning("Garage test: the game does not know what is fitted (the race was not started from the menu).");
-				return;
+				Mod.Log.LogWarning("Garage: the game does not know what is fitted (the race was not started from the menu), so nothing was changed.");
+				return false;
 			}
 			List<UpgradeComponent> loadout = new List<UpgradeComponent>(PlayerLoadout.Equipped);
-			List<UpgradeComponent> wanted = new List<UpgradeComponent>(loadout);
-			GunUpgrade gun = Next<GunUpgrade>(wanted, step);
-			ServoUpgrade wheel = Next<ServoUpgrade>(wanted, step);
 			Empty(loadout);
 			Fit(wanted);
-			Mod.Log.LogInfo("Garage test: emptied " + loadout.Count + " item(s), fitted " + string.Join(", ", wanted.Select(u => u.id).ToArray()));
-			TextController.EnqueueRandomText(1f, (gun != null ? gun.Name : "no gun") + " / " + (wheel != null ? wheel.Name : "no wheel"));
-			refillAt = Time.realtimeSinceStartup + 0.25f;
-		}
-
-		/// <summary>Puts the next (or previous) item of this kind in the catalog, by id, in the loadout in place of the one there; returns it.</summary>
-		private static T Next<T>(List<UpgradeComponent> loadout, int step) where T : UpgradeComponent
-		{
-			List<T> all = Catalog().OfType<T>().Where(u => !u.disabled).GroupBy(u => u.id).Select(g => g.First()).OrderBy(u => u.id, StringComparer.Ordinal).ToList();
-			T off = loadout.OfType<T>().FirstOrDefault();
-			if (all.Count == 0)
-			{
-				return off;
-			}
-			int at = off == null ? -1 : all.FindIndex(u => u.id == off.id);
-			T on = all[((at < 0 ? (step > 0 ? -1 : 0) : at) + step + all.Count) % all.Count];
-			int index = off == null ? -1 : loadout.IndexOf(off);
-			if (index >= 0)
-			{
-				loadout[index] = on;
-			}
-			else
-			{
-				loadout.Add(on);
-			}
-			return on;
+			Mod.Log.LogInfo("Garage: emptied " + loadout.Count + " item(s), fitted " + string.Join(", ", wanted.Select(u => u.id).ToArray()));
+			return true;
 		}
 
 		/// <summary>
@@ -175,7 +127,7 @@ namespace HalfGripOpenWorld
 			}
 			if (removed > 0)
 			{
-				Mod.Info("Garage test: took " + removed + " Minigun roof gun(s) off the car");
+				Mod.Info("Garage: took " + removed + " Minigun roof gun(s) off the car");
 			}
 		}
 
@@ -197,7 +149,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static void CaptureGun(Gun gun)
 		{
-			if (gun == null || !Mod.GarageTest.Value || Mod.Map == null || RunState.ActiveMap != Mod.Map)
+			if (gun == null || !InWorld)
 			{
 				return;
 			}
@@ -231,18 +183,18 @@ namespace HalfGripOpenWorld
 					Remap(t.Gun, gun.aimModel, t.Held.transform);
 				}
 				templates[gun.RequiredGunType] = t;
-				Mod.Info("Garage test: copied " + gun.name + " (" + gun.RequiredGunType + ")" + (t.Held != null ? " and " + t.Held.name : ""));
+				Mod.Info("Garage: copied " + gun.name + " (" + gun.RequiredGunType + ")" + (t.Held != null ? " and " + t.Held.name : ""));
 			}
 			catch (Exception e)
 			{
-				Mod.Log.LogWarning("Garage test: " + gun.name + " could not be copied: " + e);
+				Mod.Log.LogWarning("Garage: " + gun.name + " could not be copied: " + e);
 			}
 		}
 
 		/// <summary>As the cockpit wakes (the gun activator, before it switches the fitted gun on): copies what is left and says what is missing.</summary>
 		internal static void CheckGuns(GunLoadoutActivator activator)
 		{
-			if (!Mod.GarageTest.Value || Mod.Map == null || RunState.ActiveMap != Mod.Map)
+			if (!InWorld)
 			{
 				return;
 			}
@@ -257,10 +209,10 @@ namespace HalfGripOpenWorld
 				}
 				else
 				{
-					Mod.Log.LogWarning("Garage test: " + gun.name + " (" + gun.RequiredGunType + ") had already started, so swaps to that kind of gun keep its state.");
+					Mod.Log.LogWarning("Garage: " + gun.name + " (" + gun.RequiredGunType + ") had already started, so swaps to that kind of gun keep its state.");
 				}
 			}
-			Mod.Log.LogInfo("Garage test: copies of " + string.Join(", ", copied.ToArray()));
+			Mod.Log.LogInfo("Garage: copies of " + string.Join(", ", copied.ToArray()));
 		}
 
 		private static Sprite[] Sprites(GameObject root)
@@ -376,7 +328,7 @@ namespace HalfGripOpenWorld
 			Gun old = UnityEngine.Object.FindObjectsByType<Gun>(FindObjectsInactive.Include, FindObjectsSortMode.None).FirstOrDefault(g => g.RequiredGunType == type && g.transform.root != holder.transform);
 			if (old == null)
 			{
-				Mod.Log.LogWarning("Garage test: no " + type + " gun in the car to replace.");
+				Mod.Log.LogWarning("Garage: no " + type + " gun in the car to replace.");
 				return;
 			}
 			Transform oldHeld = old.aimModel;
@@ -386,7 +338,7 @@ namespace HalfGripOpenWorld
 				GameObject held = Replace(oldHeld.gameObject, template.Held, template.HeldSprites);
 				Remap(gun, template.Held.transform, held.transform);
 			}
-			Mod.Info("Garage test: " + gun.name + " back as built");
+			Mod.Info("Garage: " + gun.name + " back as built");
 		}
 
 		/// <summary>Swaps an object in the scene for a copy of the template, in the same place among its siblings, with the template's sprites as copied.</summary>
@@ -414,12 +366,12 @@ namespace HalfGripOpenWorld
 			}
 			else
 			{
-				Mod.Log.LogWarning("Garage test: " + fresh.name + " has " + renderers.Length + " sprites, its copy had " + (sprites == null ? 0 : sprites.Length) + "; its art is left as it is.");
+				Mod.Log.LogWarning("Garage: " + fresh.name + " has " + renderers.Length + " sprites, its copy had " + (sprites == null ? 0 : sprites.Length) + "; its art is left as it is.");
 			}
 			return fresh;
 		}
 
-		private static List<UpgradeComponent> Catalog()
+		internal static List<UpgradeComponent> Catalog()
 		{
 			ItemCatalog catalog = ItemCatalog.Instance;
 			if (catalog != null && catalog.items != null)
@@ -430,18 +382,17 @@ namespace HalfGripOpenWorld
 			return mapper == null ? new List<UpgradeComponent>() : mapper.allUpgrades;
 		}
 
-		/// <summary>What a garage would give: a full tank of every effect (ammo, nitro, charges) and a full repair, the road pickups' way.</summary>
-		private static void Refill()
+		/// <summary>A full tank of every effect (ammo, nitro, charges), the road pickups' way. Wait a frame after a refit: a new gun's rack only listens from its Start.</summary>
+		internal static void RefillEffects()
 		{
 			try
 			{
 				float effects = Effects.Refill(RefillTarget.AllEffects, 1f);
-				float health = Effects.Refill(RefillTarget.Health, 1f);
-				Mod.Log.LogInfo("Garage test: refilled (effects " + effects.ToString("0.##") + ", health " + health.ToString("0.##") + ")");
+				Mod.Info("Garage: refilled (effects " + effects.ToString("0.##") + ")");
 			}
 			catch (Exception e)
 			{
-				Mod.Log.LogWarning("Garage test: the refill failed: " + e);
+				Mod.Log.LogWarning("Garage: the refill failed: " + e);
 			}
 		}
 	}

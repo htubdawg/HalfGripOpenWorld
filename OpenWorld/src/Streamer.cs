@@ -150,7 +150,6 @@ namespace HalfGripOpenWorld
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				TeleportNext(back ? -1 : 1);
 			}
-			GarageTest.Tick();
 			// A car that has gone into a river, a lake or the sea is put back on the nearest road after a moment (nothing here floats).
 			Origin.World(player.transform.position, out double wx, out double wz);
 			if (Rivers.Water(wx, wz, out double level) && player.transform.position.y < level + Network.Lift - 1.0)
@@ -478,6 +477,44 @@ namespace HalfGripOpenWorld
 							{
 								map[q * Pixels + p] = MapRoads[kind];
 							}
+						}
+					}
+				}
+			}
+			MapGarages(ox, oz, pixel, map);
+		}
+
+		/// <summary>A garage's mark: a filled disc, a colour nothing else on the map has, in a dark ring.</summary>
+		private static readonly Color32 MapGarage = new Color32(40, 220, 255, 255);
+		private static readonly Color32 MapGarageRing = new Color32(16, 36, 52, 255);
+
+		/// <summary>
+		/// Marks every garage on the map picture over everything else (MiniMap draws these pictures as they are, so a mark here is a mark
+		/// on its map). The disc is 2.5 pixels round and the ring 1 more, whatever the garage's circle, so it is 7 pixels across and still
+		/// shows when a minimap shrinks the picture.
+		/// </summary>
+		private static void MapGarages(double ox, double oz, double pixel, Color32[] map)
+		{
+			const double disc = 2.5, ring = 3.5;
+			foreach (GarageSites.Site site in GarageSites.All)
+			{
+				double cp = (site.X - ox) / pixel, cq = (site.Z - oz) / pixel;
+				if (cp < -ring || cq < -ring || cp > Pixels + ring || cq > Pixels + ring)
+				{
+					continue;
+				}
+				for (int q = Math.Max(0, (int)Math.Floor(cq - ring)); q <= Math.Min(Pixels - 1, (int)Math.Floor(cq + ring)); q++)
+				{
+					for (int p = Math.Max(0, (int)Math.Floor(cp - ring)); p <= Math.Min(Pixels - 1, (int)Math.Floor(cp + ring)); p++)
+					{
+						double dp = p + 0.5 - cp, dq = q + 0.5 - cq, d = Math.Sqrt(dp * dp + dq * dq);
+						if (d <= disc)
+						{
+							map[q * Pixels + p] = MapGarage;
+						}
+						else if (d <= ring)
+						{
+							map[q * Pixels + p] = MapGarageRing;
 						}
 					}
 				}

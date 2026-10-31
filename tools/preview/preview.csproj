@@ -25,5 +25,6 @@
     <Compile Include="../../OpenWorld/src/Names.cs" />
     <Compile Include="../../OpenWorld/src/Lettering.cs" />
     <Compile Include="../../OpenWorld/src/Signs.cs" />
+    <Compile Include="../../OpenWorld/src/GarageSites.cs" />
   </ItemGroup>
 </Project>

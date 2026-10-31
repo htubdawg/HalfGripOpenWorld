@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using HalfGripOpenWorld;
 
 // Checks the world generator without the game and draws it.
@@ -48,6 +49,7 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("  " + lots[1] + " shops, " + lots[2] + " workshops, " + lots[3] + " filling stations on the main roads");
+		Console.WriteLine("  " + GarageSites.All.Count + " garages: " + string.Join(", ", GarageSites.All.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()));
 		int ponds = 0;
 		foreach (Parks.Park park in Parks.All)
 		{
@@ -269,6 +271,7 @@ internal static class Program
 		}
 
 		byte[] map = Draw(size, x0, z0, span);
+		Garages(map, size, x0, z0, span);
 		Write(output, size, size, map, false);
 		Console.WriteLine("wrote " + output);
 		// The same map with the places and courses named, in the signs' lettering.
@@ -506,6 +509,27 @@ internal static class Program
 					map[k * 4] = ink[k * 4];
 					map[k * 4 + 1] = ink[k * 4 + 1];
 					map[k * 4 + 2] = ink[k * 4 + 2];
+				}
+			}
+		}
+	}
+
+	/// <summary>Each garage as the map pictures mark it (a cyan disc in a dark ring), at least 7 pixels across.</summary>
+	private static void Garages(byte[] map, int size, double x0, double z0, double span)
+	{
+		double cell = span / size;
+		foreach (GarageSites.Site g in GarageSites.All)
+		{
+			double cp = (g.X - x0) / cell, cq = (z0 - g.Z) / cell, disc = Math.Max(2.5, g.Radius / cell), ring = disc + 1.0;
+			for (int q = (int)Math.Floor(cq - ring); q <= (int)Math.Floor(cq + ring); q++)
+			{
+				for (int p = (int)Math.Floor(cp - ring); p <= (int)Math.Floor(cp + ring); p++)
+				{
+					double d = Math.Sqrt((p + 0.5 - cp) * (p + 0.5 - cp) + (q + 0.5 - cq) * (q + 0.5 - cq));
+					if (d <= ring)
+					{
+						Pixel(map, size, p, q, d <= disc ? new byte[] { 40, 220, 255 } : new byte[] { 16, 36, 52 });
+					}
 				}
 			}
 		}

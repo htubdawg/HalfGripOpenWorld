@@ -144,6 +144,7 @@ namespace HalfGripOpenWorld
 			Tunnels(lit);
 			Rewire(tm, forward);
 			streamer.BuildAround(Network.SpawnX, Network.SpawnZ, 2);
+			root.AddComponent<Garage>().Setup(tm, lit);
 			RaiseCameras();
 
 			Mod.Log.LogInfo("Open World built: " + (WorldGen.Half * 2.0 / 1000.0).ToString("0") + " km square, seed " + WorldGen.Seed.ToString("X") + ", " + streamer.Loaded + " tiles at the spawn, "

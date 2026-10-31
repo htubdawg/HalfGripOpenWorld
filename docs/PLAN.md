@@ -356,3 +356,37 @@ them (two medium slots), each item card with `item.image` and `item.Name`, fit a
 (the `Grabber` locks it) and driving input held while open. Changes apply on Close or on each pick (to decide in the first build:
 each refit empties and refits the whole car, under a frame). Gun copies are taken in every Open World race, not only with
 `Debug.GarageTest`; `GarageTest` and its key go when the garage replaces it.
+
+### The garage: built (0.13.0)
+
+On branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a new `garages` check), not yet tested in game.
+
+- **Sites** (`GarageSites.cs`, no Unity, read from the layout): 20 in this world, 5 filling stations (34 back on the forecourt,
+  between the canopy's posts and the kiosk), 10 workshops (13 back, mid-yard), 3 in the circuit's pit lane in front of the garages
+  (radius 8), the rally service area and the hill climb paddock (three tenths of the way back, clear of the vans); radius 9.
+  `meshcheck garages`: every circle's edge and middle on its own lot's surface or the pit lane, off buildings, pumps, posts, vans and
+  awnings, at the surface's height, its ring over the ground, none overlapping.
+- **Map**: `Streamer.MapGarages` paints a cyan disc (2.5 pixels) in a dark ring (1 more) over everything in each tile's map picture,
+  so MiniMap shows it as it is; `tools/preview` draws the same on `world.png` and lists the sites.
+- **In the world** (`Garage.cs`): a cyan emissive ring on the surface (following its slope, 0.14 over it) with four dashes pointing
+  in, under the world's root so the origin shift moves it; `GARAGE` over each circle within 220 units.
+- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, for 0.6 s.
+  Then `CarLink.godMode` (set back only if the garage set it) and the health held each `LateUpdate` (capped at the new maximum after a
+  refit); input muted (`GameInput.Mute`), the cursor freed and the hand hidden, as the Multiplayer mod's pause does. Closed by Close or
+  Esc (the controls back the frame after, so the Esc does not open the pause menu), or if the car is pushed out or knocked moving. It
+  does not open again until the car leaves the circle, moves or goes into gear.
+- **Window** (`GarageUi.cs`, IMGUI scaled to the screen's height, the game's m6x11 font if found): slots down the left in category
+  order under Car (chassis, tires, engine, shifter), Cockpit (steering wheel, gun, two medium slots) and Extras (passive, exterior);
+  the chosen slot's items on the right, best tier first then by name, in tier colours, "not unlocked yet" on locked ones, the fitted
+  one marked; the hovered item's picture, name and the game's own description (its stat lines; TextMeshPro tags removed) underneath;
+  Leave empty; health bar with Repair; Refill ammo and nitro; Close. An item fits as it is clicked (the whole car is emptied and
+  refitted, `GarageRefit.Apply`), ammo and nitro filled 0.25 s later. A medium item picked for one slot leaves the other. Items on the
+  car no slot takes are carried through untouched. Mouse only: no gamepad navigation.
+- **Items**: `Garage.Offered`: not `disabled`, not consumable, unique id; in a room not `Multiplayer.Loadout.Banned` (by reflection;
+  the same four types if it cannot be found).
+- **Not remembered**: the first refit keeps `PlayerLoadout.Equipped`; when the world goes (`Garage.OnDestroy`), or before the next
+  car is fitted (a prefix on `LoadoutSpawner.Awake`), the stats and `PlayerLoadout` are put back, unless the game set or dropped the
+  loadout itself in between (postfixes on `PlayerLoadout.Set`/`Forget`): in a room the next race starts without the menu and is
+  fitted from `PlayerLoadout`.
+- **Refit** (`GarageRefit.cs`, was `GarageTest.cs`): the guns are copied in every Open World race; the debug key and `Debug.GarageTest`
+  are gone. `tools/meshcheck` no longer compiles the garage's game-side files (the test had broken its build).

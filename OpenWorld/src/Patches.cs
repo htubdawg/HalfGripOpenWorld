@@ -213,7 +213,7 @@ namespace HalfGripOpenWorld
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The garage test keeps an untouched copy of each of the cockpit's guns (see <see cref="GarageTest.CaptureGun"/>), taken the moment
+	/// The garage keeps an untouched copy of each of the cockpit's guns (see <see cref="GarageRefit.CaptureGun"/>), taken the moment
 	/// before the gun first starts up: guns start as the scene loads, some before the gun activator wakes. First, ahead of the gun mods,
 	/// which convert the gun and its rack in these same methods (the RPG's prefix replaces the SMG's Awake altogether).
 	/// </summary>
@@ -231,7 +231,7 @@ namespace HalfGripOpenWorld
 		[HarmonyPriority(Priority.First)]
 		private static void Prefix(Gun __instance)
 		{
-			GarageTest.CaptureGun(__instance);
+			GarageRefit.CaptureGun(__instance);
 		}
 	}
 
@@ -242,7 +242,7 @@ namespace HalfGripOpenWorld
 		[HarmonyPriority(Priority.First)]
 		private static void Prefix(MagazineManager __instance)
 		{
-			GarageTest.CaptureGun(__instance.GetComponentInParent<Gun>(true));
+			GarageRefit.CaptureGun(__instance.GetComponentInParent<Gun>(true));
 		}
 	}
 
@@ -252,7 +252,38 @@ namespace HalfGripOpenWorld
 	{
 		private static void Prefix(GunLoadoutActivator __instance)
 		{
-			GarageTest.CheckGuns(__instance);
+			GarageRefit.CheckGuns(__instance);
+		}
+	}
+
+	/// <summary>
+	/// The game keeps the loadout of the race in hand in <see cref="PlayerLoadout"/>, and the next race's car is fitted from it when it
+	/// is known: a garage's refit changes it, so before any car is fitted the loadout the race started with is put back (see
+	/// <see cref="Garage.RestoreLoadout"/>). Garage changes last for one race.
+	/// </summary>
+	[HarmonyPatch(typeof(LoadoutSpawner), "Awake")]
+	internal static class GarageForgets
+	{
+		[HarmonyPriority(Priority.First)]
+		private static void Prefix()
+		{
+			Garage.RestoreLoadout();
+		}
+	}
+
+	/// <summary>The game (the menu, a room's next race) set or dropped the loadout itself: that one stands, the garage has nothing to put back.</summary>
+	[HarmonyPatch]
+	internal static class GarageLoadoutSet
+	{
+		private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+		{
+			yield return AccessTools.Method(typeof(PlayerLoadout), nameof(PlayerLoadout.Set));
+			yield return AccessTools.Method(typeof(PlayerLoadout), nameof(PlayerLoadout.Forget));
+		}
+
+		private static void Postfix()
+		{
+			Garage.Forget();
 		}
 	}
 }
