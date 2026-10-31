@@ -62,6 +62,10 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 16. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
 17. Hold R far out: the car is put back on its wheels where it was.
+17b. Get wrecked (into a wall at speed, or the dev console's `kill player` or `hp 0`): `WRECKED`, the car burns, and after 3 seconds (`RespawnSeconds`)
+   it is on the nearest road facing along it, at full health, driving normally (it accelerates, no flames); `BACK ON THE ROAD` shows.
+   The race does not end. Pause while wrecked: the respawn waits. In a Multiplayer room set to Demolition or "out, watch": a wrecked
+   player respawns after the room's time on the nearest road, the others see the car come back there, and nobody is put out.
 18. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
 19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.

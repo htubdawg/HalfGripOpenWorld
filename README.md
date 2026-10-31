@@ -22,7 +22,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.13.6**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.14.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -30,7 +30,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.13.6` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.14.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -41,6 +41,9 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 - You start on the road into Kingsbridge, the main town, just outside it and facing its middle.
 - **Reset** (hold R) puts the car back on its wheels where it is, not back at the spawn. A car that ends up in a river, a lake or the
   sea is put back on the nearest road.
+- **Wrecked:** the drive goes on. After a few seconds the car is put back on the nearest road, repaired. In a Multiplayer room the
+  room's respawn time counts, and an Open World race is always played with respawns (a Demolition is played as a race, and "out,
+  watch" as respawn), since it has no finish.
 - **Weather** is drawn from all the game's weathers each race (in a Multiplayer room from the room's seed, so everyone gets the same).
 
 ## Garages
@@ -64,6 +67,7 @@ the same ground.
 | Section | Key | Default | What it does |
 |---|---|---|---|
 | Map | `TestMode` | false | Every race you start is in the Open World. |
+| Map | `RespawnSeconds` | 3 | Solo: seconds after a wreck before the car is back on the road (1 to 30). |
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |

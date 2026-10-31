@@ -168,14 +168,16 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Puts the car on the nearest road to world (x, z), facing along it.</summary>
-		internal void ToRoad(double x, double z)
+		/// <summary>Puts the car on the nearest road to world (x, z), facing along it. False (and the car left alone) if no road is near.</summary>
+		internal bool ToRoad(double x, double z)
 		{
-			if (Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz))
+			if (!Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz))
 			{
-				BuildAround(rx, rz, 1);
-				Place(rx, rz, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));
+				return false;
 			}
+			BuildAround(rx, rz, 1);
+			Place(rx, rz, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));
+			return true;
 		}
 
 		private void LateUpdate()

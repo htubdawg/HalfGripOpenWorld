@@ -455,3 +455,47 @@ it does nothing when health is full) are the same light grey-white.
 The owner found the README bloated. It is now for players and other mods' authors: a short feature list, install, playing, the
 garages, settings, names, the map API and checking a change. The long "How it works" moved to `docs/DESIGN.md` ("How the code
 works"), and the in-game test checklist to `docs/TESTING.md` (CLAUDE.md points there).
+
+## Game mode: respawn after a wreck (0.14.0; asked for after 0.13.6)
+
+The first part of the Open World's own game mode (`GameMode.cs`). A wreck ended the race, and with it the free roam; now the drive
+goes on:
+
+- **Solo:** the game's end-of-race on a wreck (`TrackManager.OnPlayerDestroyed`) is skipped in the Open World. `GameMode` sees the
+  health reach 0, shows `WRECKED`, and after `RespawnSeconds` (3, a local setting) fills the health and resets the car. The wait is
+  game time, so it holds while paused; a charm or heal that saves the car first cancels it.
+- **Multiplayer room:** the Multiplayer mod already skips that end-of-race and respawns or spectates by the room's settings. As the
+  world loads, every player sets their copy of the room's race (`Room.Race`) to respawn, and a Demolition to a race (`MultiplayerLink.ForceRespawns`,
+  by reflection like the rest): a race with no finish must not put anyone out for good. The room's respawn time counts.
+- **Where:** the reset after a wreck (either way it goes through `PlayerResetLogic.ResetOnTrack`, patched by `ResetInPlace`) puts the
+  car on the nearest road facing along it, since a wreck is often against a house or in the trees; a plain reset (hold R) stays in place.
+
+Not tested in game yet (TESTING.md 17b).
+
+## Next: events (proposed, to agree with the owner)
+
+The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
+races), while the rest of the room roams. A proposed shape, smallest useful step first:
+
+1. **Courses as data.** An `EventCourse` per course, made from the layout already built (`Circuit`, `Rally`, `HillClimb`; later
+   routes along the road graph from `Signs`): a start box with grid slots, checkpoints as gates across the road (point, heading,
+   width) every few hundred metres, a finish (the start again for a lap course), and laps. Deterministic, from the layout, so every
+   player has the same course without sending it. Drawn as start lights, gate posts and a finish arch; checkpoint gates only show
+   for a player in that event.
+2. **Solo events.** Driving into a start box offers the event (as a garage opens: stop, shift into neutral). A countdown, then
+   timing through the checkpoints in order (a missed gate is called out, the clock runs on), a finish with the time, and a best time per
+   course kept in the mod's own config file (never the game's save). Ghost of the best lap later. A wreck in an event respawns at the
+   last gate passed, not the nearest road (`GameMode.TakeWreck` already lets the reset tell a wreck apart). This needs nothing from
+   the Multiplayer mod and proves the course data, gates and timing.
+3. **Events in a room.** An event is a small state machine (open, gathering, countdown, running, results) keyed by course, and each
+   player has a state in it (entered, gate n, finished in t, out). Several run at once; a player is in at most one. The host is the
+   authority: it starts the countdown when the entrants are ready, and takes each player's finish time as reported. The
+   Multiplayer mod has no way for another mod to send its own messages, and its classes are internal; patching its packet
+   handler by name (as `MultiplayerLink` does for positions) is fragile. Best is a small public hook in the Multiplayer mod: a mod
+   channel (`Send(modId, bytes)`, `OnReceive(modId, handler)`), which is the Multiplayer mod's owner's change to make (its repo is
+   not ours). To be asked for once step 2 is in.
+4. **Rules per event.** Weapons off or on, collisions with players not in the event (ghosted, as the Multiplayer mod's spectators),
+   AI rivals for a solo event (the game's own `EnemyController` on the course's line, as the token loop's are now). Later.
+
+Open questions for the owner: which courses first; whether solo best times should be kept; whether non-entrants should be ghosted
+near a running event; whether to ask the Multiplayer mod for a mod channel.
