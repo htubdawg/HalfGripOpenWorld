@@ -452,6 +452,7 @@ namespace HalfGripOpenWorld
 			}
 			Abutments();
 			Index();
+			FinishHubs();
 			Tuck();
 			Lift = 0.5 - SpawnY;
 
@@ -1330,6 +1331,8 @@ namespace HalfGripOpenWorld
 			public double L1;
 			public double R0;
 			public double R1;
+			/// <summary>An arm's end cut where a hub's plate takes over (<see cref="Hub"/>): no mouth, and its ground and lookups stay as the road's.</summary>
+			public bool Hub;
 		}
 
 		/// <summary>
@@ -1374,6 +1377,7 @@ namespace HalfGripOpenWorld
 					Regrade(road);
 				}
 			}
+			HubCuts();
 		}
 
 		/// <summary>
@@ -1551,6 +1555,10 @@ namespace HalfGripOpenWorld
 		private static bool PavedTop(double x, double z, out double y)
 		{
 			y = double.MaxValue;
+			if (OnHub(x, z, out double plate))
+			{
+				y = plate;
+			}
 			int c = CellOf(z) * Cells + CellOf(x);
 			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
 			{
@@ -1608,6 +1616,7 @@ namespace HalfGripOpenWorld
 		private static void Joints()
 		{
 			joints.Clear();
+			Hubs.Clear();
 			// Road ends by unit cell.
 			Dictionary<long, List<(int r, int end)>> ends = new Dictionary<long, List<(int, int)>>();
 			for (int r = 0; r < Roads.Count; r++)
@@ -1665,7 +1674,16 @@ namespace HalfGripOpenWorld
 						}
 					}
 					here.Sort((p, q) => p.r != q.r ? p.r.CompareTo(q.r) : p.end.CompareTo(q.end));
-					if (here.Count < 2 || here[0].r != r || here[0].end != ea || Covered(here, x, z, Unpaved(a.Kind)))
+					if (here.Count < 2 || here[0].r != r || here[0].end != ea)
+					{
+						continue;
+					}
+					// Three or more paved roads, counting one through the place twice: one plate for them all, if they make one.
+					if (!Unpaved(a.Kind) && TryHub(here, x, z))
+					{
+						continue;
+					}
+					if (Covered(here, x, z, Unpaved(a.Kind)))
 					{
 						continue;
 					}
@@ -1857,7 +1875,15 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static bool Joined(int a, int b, double x, double z)
 		{
-			if (a < 0 || b < 0 || !(Roads[a].Joined0 || Roads[a].Joined1) || !(Roads[b].Joined0 || Roads[b].Joined1))
+			if (a < 0 || b < 0)
+			{
+				return false;
+			}
+			if (Hubs.Count > 0 && HubMates(a, b, x, z))
+			{
+				return true;
+			}
+			if (!(Roads[a].Joined0 || Roads[a].Joined1) || !(Roads[b].Joined0 || Roads[b].Joined1))
 			{
 				return false;
 			}
@@ -1874,6 +1900,754 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return false;
+		}
+
+		// ---- hubs: three or more roads ending at one place ---------------------------------------------------------
+
+		/// <summary>
+		/// Where three or more roads end at one place (a village's middle, where every main road through it starts or ends), one paved
+		/// plate (<see cref="Joints"/>): each road (an arm) is cut square where it is clear of the arms either side of it, and the plate
+		/// fills the place between the cuts, its outline running along the arms' edges and round each corner between two arms in a
+		/// curve, with a verge or sidewalk all round. The arms were drawn as one pair carrying on and the rest cut against them: square
+		/// ends stood out across the others, and a wedge of ground showed between them in the middle of every such village.
+		/// </summary>
+		internal sealed class Hub
+		{
+			public double X;
+			public double Z;
+			/// <summary>
+			/// Per arm, in order round the place (anticlockwise, x right and z up): the road, the distance along it at the place, the way
+			/// out along it (1 on along the road, -1 back), and how far out it is cut. A road through the place is two arms.
+			/// </summary>
+			public int[] Arm;
+			public double[] At;
+			public int[] Dir;
+			public double[] Cut;
+			/// <summary>
+			/// The plate's outline, anticlockwise: points, their surface heights (from sea level), and for a point on an arm's edge the arm
+			/// (-1 for a point of a corner's curve), its distance out from the place (negative: back past it) and its
+			/// side (1 the arm's left looking out from the place).
+			/// </summary>
+			public double[] PX, PZ, PY;
+			public int[] VArm;
+			public double[] VU;
+			public int[] VSide;
+			/// <summary>Per outline edge (point k to k + 1): the corner it lies in (the arm whose left side starts it), or -1 across an arm's cut.</summary>
+			public int[] Corner;
+			/// <summary>The plate's triangles, three outline points each.</summary>
+			public int[] Tris;
+			public double MinX, MaxX, MinZ, MaxZ;
+			/// <summary>How far from the place the arms' cuts and the plate reach, with their mouths (see <see cref="Joined"/>).</summary>
+			public double Reach;
+			/// <summary>The biggest arm's class: the plate is surfaced as it is.</summary>
+			public RoadKind Kind;
+		}
+
+		internal static readonly List<Hub> Hubs = new List<Hub>();
+
+		/// <summary>The corner's curve between two arms starts this far out along each arm's edge from where the edges meet.</summary>
+		private const double HubCorner = 12.0;
+
+		/// <summary>The arms' edges are looked along this far out from the place for where they meet, and this far back past it.</summary>
+		private const double HubAhead = 100.0, HubBehind = 60.0;
+
+		/// <summary>A road whose paving is on the place and whose end is this near it along the road ends there (an arm from its end).</summary>
+		private const double HubNear = 24.0;
+
+		/// <summary>How far in from its end a road is looked along for a hook (<see cref="Unhook"/>).</summary>
+		private const double HubHook = 32.0;
+
+		/// <summary>No arm is cut further than this from the place (a plate that big is no junction: the roads stay as they were).</summary>
+		private const double HubMost = 80.0;
+
+		/// <summary>
+		/// Makes a hub of the road ends in <paramref name="here"/> at (x, z) (all within half a unit of it) and any road whose paving
+		/// is on the place: one ending near it is an arm from its end, one passing through two arms. At least three roads must end
+		/// there, and at most one pass through. False: nothing is changed.
+		/// </summary>
+		private static bool TryHub(List<(int r, int end)> here, double x, double z)
+		{
+			List<(int r, double at, int dir)> found = new List<(int, double, int)>();
+			foreach ((int r, int end) in here)
+			{
+				Road road = Roads[r];
+				found.Add((r, Unhook(road, end), end == 0 ? 1 : -1));
+			}
+			// Roads through the place (their paving on it, the place well inside their length): an arm each way.
+			int through = 0, ends = here.Count;
+			foreach (int o in segments.RoadsNear(x, z, 40.0))
+			{
+				Road road = Roads[o];
+				if (here.Exists(h => h.r == o) || Unpaved(road.Kind) || road.Kind >= RoadKind.Rally || road.Count < 3)
+				{
+					continue;
+				}
+				if (!segments.Nearest(o, x, z, road.Half + 1.0, out double d, out int k, out double t) || d >= road.Half + 1.0)
+				{
+					continue;
+				}
+				double at = road.S[k] + (road.S[k + 1] - road.S[k]) * t, length = road.S[road.Count - 1];
+				// A road ending just short of the place or just past it (its end on another's paving there) is an arm from its end.
+				if (at <= HubNear || at >= length - HubNear)
+				{
+					found.Add((o, Unhook(road, at <= HubNear ? 0 : 1), at <= HubNear ? 1 : -1));
+					ends++;
+					continue;
+				}
+				if (at < HubMost + 2.0 * Step || at > length - HubMost - 2.0 * Step)
+				{
+					return false;
+				}
+				found.Add((o, at, 1));
+				found.Add((o, at, -1));
+				through++;
+			}
+			if (ends < 3 || through > 1)
+			{
+				return false;
+			}
+			// Ends a few units from a place already made a hub are in it (taken there as roads ending near it).
+			foreach ((int r, double _, int _) in found)
+			{
+				if (HubMates(r, r, x, z))
+				{
+					return false;
+				}
+			}
+			// An arm running on alongside the next one round (a street leaving the place at a few degrees to a main road) is left out,
+			// to meet the plate's arms as at any junction, and the hub made of the rest.
+			while (found.Count >= 3)
+			{
+				if (MakeHub(found, x, z, through > 0, out (int r, double at, int dir) drop))
+				{
+					return true;
+				}
+				if (drop.r < 0)
+				{
+					return false;
+				}
+				found.Remove(drop);
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// Makes a hub of the arms <paramref name="found"/> at (x, z) (<paramref name="through"/>: one road passes through, and keeps its
+		/// height), if every arm is clear of the next within <see cref="HubMost"/> and the plate's outline is a simple loop; the roads
+		/// ending there are eased to one surface at the place. False: nothing is changed, and <paramref name="drop"/> is the arm that
+		/// ran on alongside the next one (its road -1 if none did).
+		/// </summary>
+		private static bool MakeHub(List<(int r, double at, int dir)> found, double x, double z, bool through, out (int r, double at, int dir) drop)
+		{
+			drop = (-1, 0.0, 0);
+			int n = found.Count;
+			// Round the place by the way each arm leaves it.
+			List<(int r, double at, int dir, double angle)> arms = new List<(int, double, int, double)>();
+			foreach ((int r, double at, int dir) in found)
+			{
+				ArmEdge(Roads[r], at, dir, 0.0, 0, out double ax, out double az, out double _);
+				ArmEdge(Roads[r], at, dir, 6.0, 0, out double bx, out double bz, out double _);
+				arms.Add((r, at, dir, Atan2(bz - az, bx - ax)));
+			}
+			arms.Sort((p, q) => p.angle != q.angle ? p.angle.CompareTo(q.angle) : p.r != q.r ? p.r.CompareTo(q.r) : p.dir.CompareTo(q.dir));
+			// Each corner (arm i's left edge and arm i + 1's right edge): where the curve starts on each, the point the edges meet at
+			// (the curve's control point), or none (edges about parallel, a straight side).
+			double[] fromLeft = new double[n], fromRight = new double[n], cx = new double[n], cz = new double[n];
+			bool[] curved = new bool[n];
+			for (int i = 0; i < n; i++)
+			{
+				int j = (i + 1) % n;
+				Road a = Roads[arms[i].r], b = Roads[arms[j].r];
+				if (!EdgesMeet(a, arms[i].at, arms[i].dir, b, arms[j].at, arms[j].dir, out double ua, out double ub, out cx[i], out cz[i]))
+				{
+					// No meeting: only a side about straight across (arms about opposite) may do without one.
+					double turn = arms[j].angle - arms[i].angle + (j == 0 ? 2.0 * DetMath.Pi : 0.0);
+					if (turn < 0.5 * DetMath.Pi || turn > 1.5 * DetMath.Pi)
+					{
+						// The one drawn under the other, unless it is a road through the place.
+						Road ri = Roads[arms[i].r], rj = Roads[arms[j].r];
+						bool under = ri.Kind > rj.Kind || (ri.Kind == rj.Kind && arms[i].r > arms[j].r);
+						bool iThrough = Twice(arms, arms[i].r), jThrough = Twice(arms, arms[j].r);
+						int k = (under && !iThrough) || jThrough ? i : j;
+						if (Twice(arms, arms[k].r))
+						{
+							return false;
+						}
+						drop = (arms[k].r, arms[k].at, arms[k].dir);
+						return false;
+					}
+					fromLeft[i] = 0.0;
+					fromRight[j] = 0.0;
+					continue;
+				}
+				curved[i] = true;
+				fromLeft[i] = ua + HubCorner;
+				fromRight[j] = ub + HubCorner;
+			}
+			double[] cut = new double[n];
+			for (int i = 0; i < n; i++)
+			{
+				Road road = Roads[arms[i].r];
+				cut[i] = Math.Max(1.0, Math.Max(fromLeft[i], fromRight[i]));
+				double room = arms[i].dir > 0 ? road.S[road.Count - 1] - arms[i].at : arms[i].at;
+				if (cut[i] > HubMost || cut[i] > room - 2.0 * Step)
+				{
+					return false;
+				}
+			}
+			// The outline: each arm's cut (right to left), down its left edge to the corner's curve, round the curve, up the next arm's
+			// right edge to its cut.
+			List<(double x, double z, int arm, double u, int side, int corner)> outline = new List<(double, double, int, double, int, int)>();
+			void OnArm(int i, double u, int side, int corner)
+			{
+				ArmEdge(Roads[arms[i].r], arms[i].at, arms[i].dir, u, side, out double px, out double pz, out double _);
+				outline.Add((px, pz, i, u, side, corner));
+			}
+			for (int i = 0; i < n; i++)
+			{
+				int j = (i + 1) % n;
+				OnArm(i, cut[i], -1, -1);
+				OnArm(i, cut[i], 1, i);
+				for (double u = cut[i]; u > fromLeft[i] + 1e-6;)
+				{
+					u = Math.Max(fromLeft[i], u - 2.0);
+					OnArm(i, u, 1, i);
+				}
+				if (curved[i])
+				{
+					ArmEdge(Roads[arms[i].r], arms[i].at, arms[i].dir, fromLeft[i], 1, out double ax, out double az, out double _);
+					ArmEdge(Roads[arms[j].r], arms[j].at, arms[j].dir, fromRight[j], -1, out double bx, out double bz, out double _);
+					const int steps = 10;
+					for (int k = 1; k < steps; k++)
+					{
+						double t = k / (double)steps;
+						double px = (1.0 - t) * (1.0 - t) * ax + 2.0 * (1.0 - t) * t * cx[i] + t * t * bx;
+						double pz = (1.0 - t) * (1.0 - t) * az + 2.0 * (1.0 - t) * t * cz[i] + t * t * bz;
+						outline.Add((px, pz, -1, double.NaN, 0, i));
+					}
+				}
+				for (double u = fromRight[j]; u < cut[j] - 1e-6; u += 2.0)
+				{
+					OnArm(j, u, -1, i);
+				}
+			}
+			// Points closer than a twentieth of a unit are one.
+			for (int k = outline.Count - 1; k >= 0 && outline.Count > 3; k--)
+			{
+				var p = outline[k];
+				var q = outline[(k + 1) % outline.Count];
+				if (Math.Abs(p.x - q.x) < 0.05 && Math.Abs(p.z - q.z) < 0.05)
+				{
+					outline.RemoveAt(p.arm >= 0 && q.arm < 0 ? (k + 1) % outline.Count : k);
+				}
+			}
+			int m = outline.Count;
+			double[] xs = new double[m], zs = new double[m];
+			for (int k = 0; k < m; k++)
+			{
+				xs[k] = outline[k].x;
+				zs[k] = outline[k].z;
+			}
+			if (!Simple(xs, zs) || Crossed(arms, xs, zs, x, z))
+			{
+				return false;
+			}
+			Hub hub = new Hub
+			{
+				X = x,
+				Z = z,
+				Arm = new int[n],
+				At = new double[n],
+				Dir = new int[n],
+				Cut = cut,
+				PX = xs,
+				PZ = zs,
+				PY = new double[m],
+				VArm = new int[m],
+				VU = new double[m],
+				VSide = new int[m],
+				Corner = new int[m],
+				Kind = RoadKind.Lane,
+			};
+			double reach = 0.0, surface = 0.0, ends = 0.0;
+			for (int i = 0; i < n; i++)
+			{
+				Road road = Roads[arms[i].r];
+				hub.Arm[i] = arms[i].r;
+				hub.At[i] = arms[i].at;
+				hub.Dir[i] = arms[i].dir;
+				hub.Kind = road.Kind < hub.Kind ? road.Kind : hub.Kind;
+				reach = Math.Max(reach, cut[i] + road.Half + Flare + FlareLength);
+				Locate(road, arms[i].at, out int k, out double t);
+				double top = road.Y[k] + (road.Y[k + 1] - road.Y[k]) * t + Top(road.Kind);
+				// A road through the place keeps its height; the roads ending there are eased to it (else to the mean of theirs).
+				if (!through || Twice(arms, arms[i].r))
+				{
+					surface = through ? top : surface + top;
+					ends = through ? 1.0 : ends + 1.0;
+				}
+			}
+			hub.Reach = reach;
+			for (int k = 0; k < m; k++)
+			{
+				hub.VArm[k] = outline[k].arm;
+				hub.VU[k] = outline[k].u;
+				hub.VSide[k] = outline[k].side;
+				hub.Corner[k] = outline[k].corner;
+			}
+			// One surface height at the place, eased into each arm that ends there.
+			surface /= ends;
+			for (int i = 0; i < n; i++)
+			{
+				Road road = Roads[arms[i].r];
+				if (!Twice(arms, arms[i].r))
+				{
+					int k = arms[i].dir > 0 ? 0 : road.Count - 1;
+					Ease(road, arms[i].dir > 0 ? 0 : 1, surface - Top(road.Kind) - road.Y[k]);
+				}
+			}
+			Hubs.Add(hub);
+			return true;
+		}
+
+		/// <summary>Whether road r is two of the arms (it passes through the place).</summary>
+		private static bool Twice(List<(int r, double at, int dir, double angle)> arms, int r)
+		{
+			int count = 0;
+			foreach (var arm in arms)
+			{
+				count += arm.r == r ? 1 : 0;
+			}
+			return count > 1;
+		}
+
+		/// <summary>
+		/// Where an arm from the road's start (0) or end (1) begins: the end itself, or, where the road hooks round in its last
+		/// <see cref="HubHook"/> (it ran past the place and turned back onto it), the first sample in from the end after which it keeps
+		/// within 20 degrees of its way there. The plate covers the hook.
+		/// </summary>
+		private static double Unhook(Road road, int end)
+		{
+			int n = road.Count;
+			double length = road.S[n - 1];
+			if (length < 2.0 * HubHook)
+			{
+				return end == 0 ? 0.0 : length;
+			}
+			// The way in at the hook's reach, and the innermost piece within it that turns from it.
+			Locate(road, end == 0 ? HubHook : length - HubHook, out int lead, out double _);
+			double lx = road.X[lead + 1] - road.X[lead], lz = road.Z[lead + 1] - road.Z[lead];
+			double ll = Math.Sqrt(lx * lx + lz * lz);
+			double at = end == 0 ? 0.0 : length;
+			for (int i = 0; i + 1 < n; i++)
+			{
+				double from = end == 0 ? road.S[i + 1] : length - road.S[i];
+				if (from > HubHook)
+				{
+					continue;
+				}
+				double px = road.X[i + 1] - road.X[i], pz = road.Z[i + 1] - road.Z[i];
+				double pl = Math.Sqrt(px * px + pz * pz);
+				if (pl > 1e-6 && ll > 1e-6 && (px * lx + pz * lz) / (pl * ll) < 0.9397)
+				{
+					at = end == 0 ? Math.Max(at, road.S[i + 1]) : Math.Min(at, road.S[i]);
+				}
+			}
+			return at;
+		}
+
+		/// <summary>
+		/// A point of an arm's edge: <paramref name="u"/> out from distance <paramref name="at"/> along the road, on along it
+		/// (<paramref name="dir"/> 1) or back (-1), on <paramref name="side"/> (1 the left looking out, 0 the centre); back past
+		/// <paramref name="at"/> (u negative), carried on straight from there, square to the road.
+		/// </summary>
+		private static void ArmEdge(Road road, double at, int dir, double u, int side, out double x, out double z, out double y, double beyond = 0.0)
+		{
+			double length = road.S[road.Count - 1];
+			if (u >= 0.0)
+			{
+				Locate(road, Math.Max(0.0, Math.Min(length, at + dir * u)), out int i, out double t);
+				Point(road, i, t, dir * side, side == 0 ? 0.0 : beyond, out x, out z, out y);
+				return;
+			}
+			Locate(road, at, out int k, out double f);
+			double ox = (road.X[k + 1] - road.X[k]) * dir, oz = (road.Z[k + 1] - road.Z[k]) * dir;
+			double ol = Math.Sqrt(ox * ox + oz * oz);
+			ox /= Math.Max(1e-9, ol);
+			oz /= Math.Max(1e-9, ol);
+			Point(road, k, f, 0, 0.0, out double cx, out double cz, out y);
+			double off = side * HalfAt(road, at) + (side == 0 ? 0.0 : side * beyond);
+			// The arm's left, looking out: the way out turned a quarter anticlockwise.
+			x = cx - oz * off + ox * u;
+			z = cz + ox * off + oz * u;
+		}
+
+		/// <summary>
+		/// Where arm a's left edge meets arm b's right edge (b next round from a), nearest the place: the distances along each from
+		/// its end (negative behind the place, for arms more than half round apart) and the point. False if they do not meet within
+		/// <see cref="HubAhead"/> out or <see cref="HubBehind"/> back.
+		/// </summary>
+		private static bool EdgesMeet(Road a, double aAt, int aDir, Road b, double bAt, int bDir, out double ua, out double ub, out double x, out double z)
+		{
+			ua = ub = x = z = 0.0;
+			int count = (int)((HubAhead + HubBehind) / 2.0) + 1;
+			double[] axs = new double[count], azs = new double[count], bxs = new double[count], bzs = new double[count];
+			for (int k = 0; k < count; k++)
+			{
+				double u = -HubBehind + 2.0 * k;
+				ArmEdge(a, aAt, aDir, u, 1, out axs[k], out azs[k], out double _);
+				ArmEdge(b, bAt, bDir, u, -1, out bxs[k], out bzs[k], out double _);
+			}
+			double best = double.MaxValue;
+			for (int i = 0; i + 1 < count; i++)
+			{
+				double minX = Math.Min(axs[i], axs[i + 1]), maxX = Math.Max(axs[i], axs[i + 1]), minZ = Math.Min(azs[i], azs[i + 1]), maxZ = Math.Max(azs[i], azs[i + 1]);
+				for (int j = 0; j + 1 < count; j++)
+				{
+					if (Math.Max(bxs[j], bxs[j + 1]) < minX || Math.Min(bxs[j], bxs[j + 1]) > maxX || Math.Max(bzs[j], bzs[j + 1]) < minZ || Math.Min(bzs[j], bzs[j + 1]) > maxZ)
+					{
+						continue;
+					}
+					if (!Segments.Cross(axs[i], azs[i], axs[i + 1], azs[i + 1], bxs[j], bzs[j], bxs[j + 1], bzs[j + 1], out double t, out double w))
+					{
+						continue;
+					}
+					double pa = -HubBehind + 2.0 * (i + t), pb = -HubBehind + 2.0 * (j + w);
+					if (Math.Abs(pa) + Math.Abs(pb) < best)
+					{
+						best = Math.Abs(pa) + Math.Abs(pb);
+						ua = pa;
+						ub = pb;
+						x = axs[i] + (axs[i + 1] - axs[i]) * t;
+						z = azs[i] + (azs[i + 1] - azs[i]) * t;
+					}
+				}
+			}
+			return best < double.MaxValue;
+		}
+
+		/// <summary>
+		/// Whether a paved road that is not one of the arms, and does not end on one (it meets that arm as at any junction, cut at its
+		/// edge), has its paving on the plate (an outline point well inside it, or a sample of its line inside the outline): it passes
+		/// across the place, and the two surfaces would overlap at different heights.
+		/// </summary>
+		private static bool Crossed(List<(int r, double at, int dir, double angle)> arms, double[] xs, double[] zs, double x, double z)
+		{
+			foreach (int o in segments.RoadsNear(x, z, HubMost + 40.0))
+			{
+				Road road = Roads[o];
+				if (arms.Exists(a => a.r == o) || Unpaved(road.Kind) || road.Kind >= RoadKind.Rally || OnArm(arms, road, 0) || OnArm(arms, road, road.Count - 1))
+				{
+					continue;
+				}
+				for (int k = 0; k < xs.Length; k++)
+				{
+					if (segments.Nearest(o, xs[k], zs[k], road.Half, out double d, out int _, out double _) && d < road.Half - 1.0)
+					{
+						return true;
+					}
+				}
+				for (int k = 0; k < road.Count; k++)
+				{
+					if (Math.Abs(road.X[k] - x) < HubMost + 40.0 && Math.Abs(road.Z[k] - z) < HubMost + 40.0 && Inside(xs, zs, road.X[k], road.Z[k]))
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>Whether sample k of the road is on the paving of one of the arms.</summary>
+		private static bool OnArm(List<(int r, double at, int dir, double angle)> arms, Road road, int k)
+		{
+			foreach (var arm in arms)
+			{
+				Road other = Roads[arm.r];
+				if (segments.Nearest(arm.r, road.X[k], road.Z[k], other.Half + 1.0, out double d, out int _, out double _) && d < other.Half + 1.0)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>Whether (x, z) is inside the closed outline (crossings of a ray to +x).</summary>
+		private static bool Inside(double[] xs, double[] zs, double x, double z)
+		{
+			bool inside = false;
+			for (int i = 0, j = xs.Length - 1; i < xs.Length; j = i++)
+			{
+				if ((zs[i] > z) != (zs[j] > z) && x < xs[j] + (xs[i] - xs[j]) * (z - zs[j]) / (zs[i] - zs[j]))
+				{
+					inside = !inside;
+				}
+			}
+			return inside;
+		}
+
+		/// <summary>Whether the closed outline crosses itself nowhere (no two edges but neighbours meet).</summary>
+		private static bool Simple(double[] xs, double[] zs)
+		{
+			int m = xs.Length;
+			if (m < 3)
+			{
+				return false;
+			}
+			for (int i = 0; i < m; i++)
+			{
+				int i1 = (i + 1) % m;
+				for (int j = i + 2; j < m; j++)
+				{
+					int j1 = (j + 1) % m;
+					if (j1 == i)
+					{
+						continue;
+					}
+					if (Segments.Cross(xs[i], zs[i], xs[i1], zs[i1], xs[j], zs[j], xs[j1], zs[j1], out double _, out double _))
+					{
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		/// <summary>
+		/// Once every road is final: the hubs' outline points on the arms put on their drawn edges (heights and all), the corners'
+		/// curves given heights between the arm points either side, and the plates cut into triangles.
+		/// </summary>
+		private static void FinishHubs()
+		{
+			foreach (Hub hub in Hubs)
+			{
+				int m = hub.PX.Length;
+				for (int k = 0; k < m; k++)
+				{
+					if (hub.VArm[k] >= 0)
+					{
+						int i = hub.VArm[k];
+						ArmEdge(Roads[hub.Arm[i]], hub.At[i], hub.Dir[i], hub.VU[k], hub.VSide[k], out hub.PX[k], out hub.PZ[k], out hub.PY[k]);
+					}
+				}
+				// A run of curve points takes its height along its length between the arm points at its ends.
+				for (int k = 0; k < m; k++)
+				{
+					if (hub.VArm[k] >= 0 || hub.VArm[(k + m - 1) % m] < 0)
+					{
+						continue;
+					}
+					int a = (k + m - 1) % m, b = k;
+					while (hub.VArm[b] < 0)
+					{
+						b = (b + 1) % m;
+					}
+					double total = 0.0;
+					for (int p = a; p != b; p = (p + 1) % m)
+					{
+						int q = (p + 1) % m;
+						total += Math.Sqrt((hub.PX[q] - hub.PX[p]) * (hub.PX[q] - hub.PX[p]) + (hub.PZ[q] - hub.PZ[p]) * (hub.PZ[q] - hub.PZ[p]));
+					}
+					double along = 0.0;
+					for (int p = a; p != b; p = (p + 1) % m)
+					{
+						int q = (p + 1) % m;
+						along += Math.Sqrt((hub.PX[q] - hub.PX[p]) * (hub.PX[q] - hub.PX[p]) + (hub.PZ[q] - hub.PZ[p]) * (hub.PZ[q] - hub.PZ[p]));
+						if (q != b)
+						{
+							hub.PY[q] = hub.PY[a] + (hub.PY[b] - hub.PY[a]) * along / Math.Max(1e-9, total);
+						}
+					}
+				}
+				hub.MinX = hub.MinZ = double.MaxValue;
+				hub.MaxX = hub.MaxZ = double.MinValue;
+				for (int k = 0; k < m; k++)
+				{
+					hub.MinX = Math.Min(hub.MinX, hub.PX[k]);
+					hub.MaxX = Math.Max(hub.MaxX, hub.PX[k]);
+					hub.MinZ = Math.Min(hub.MinZ, hub.PZ[k]);
+					hub.MaxZ = Math.Max(hub.MaxZ, hub.PZ[k]);
+				}
+				hub.Tris = EarClip(hub.PX, hub.PZ);
+			}
+		}
+
+		/// <summary>
+		/// The triangles of an anticlockwise simple outline, cut off one ear at a time (the first in order that has no other point in
+		/// it and, while there is one, is not all but flat: no slivers along the arms' edges); what is left if none is fanned from its
+		/// first point.
+		/// </summary>
+		private static int[] EarClip(double[] xs, double[] zs)
+		{
+			List<int> left = new List<int>();
+			for (int k = 0; k < xs.Length; k++)
+			{
+				left.Add(k);
+			}
+			List<int> tris = new List<int>();
+			int guard = 0;
+			double flat = 0.02;
+			while (left.Count > 3 && guard < xs.Length * xs.Length)
+			{
+				guard++;
+				bool cut = false;
+				for (int k = 0; k < left.Count; k++)
+				{
+					int a = left[(k + left.Count - 1) % left.Count], b = left[k], c = left[(k + 1) % left.Count];
+					// Not an ear that is all but flat (three points about in a line, along an arm's edge): a sliver.
+					double cross = (xs[b] - xs[a]) * (zs[c] - zs[a]) - (zs[b] - zs[a]) * (xs[c] - xs[a]);
+					double ab = Math.Sqrt((xs[b] - xs[a]) * (xs[b] - xs[a]) + (zs[b] - zs[a]) * (zs[b] - zs[a]));
+					double bc = Math.Sqrt((xs[c] - xs[b]) * (xs[c] - xs[b]) + (zs[c] - zs[b]) * (zs[c] - zs[b]));
+					if (cross <= flat * ab * bc || cross <= 1e-12)
+					{
+						continue;
+					}
+					bool empty = true;
+					foreach (int p in left)
+					{
+						if (p != a && p != b && p != c && InTriangle(xs[p], zs[p], xs[a], zs[a], xs[b], zs[b], xs[c], zs[c]))
+						{
+							empty = false;
+							break;
+						}
+					}
+					if (!empty)
+					{
+						continue;
+					}
+					tris.Add(a);
+					tris.Add(b);
+					tris.Add(c);
+					left.RemoveAt(k);
+					cut = true;
+					break;
+				}
+				if (!cut && flat > 0.0)
+				{
+					// Only flat ears left: any will do.
+					flat = 0.0;
+				}
+				else if (!cut)
+				{
+					break;
+				}
+			}
+			// What could not be cut (a sliver) is fanned from its first point.
+			for (int k = 1; k + 1 < left.Count; k++)
+			{
+				tris.Add(left[0]);
+				tris.Add(left[k]);
+				tris.Add(left[k + 1]);
+			}
+			return tris.ToArray();
+		}
+
+		private static bool InTriangle(double x, double z, double ax, double az, double bx, double bz, double cx, double cz)
+		{
+			double d1 = (bx - ax) * (z - az) - (bz - az) * (x - ax);
+			double d2 = (cx - bx) * (z - bz) - (cz - bz) * (x - bx);
+			double d3 = (ax - cx) * (z - cz) - (az - cz) * (x - cx);
+			return d1 >= 0.0 && d2 >= 0.0 && d3 >= 0.0;
+		}
+
+		/// <summary>
+		/// The point <paramref name="beyond"/> out from outline point k of a hub (one on an arm's edge: across the arm, as the arm's
+		/// own verge runs), and whether it has a way out of its own (false for a curve's point: the caller takes it from the outline).
+		/// </summary>
+		internal static bool HubOut(Hub hub, int k, double beyond, out double x, out double z)
+		{
+			x = z = 0.0;
+			if (hub.VArm[k] < 0)
+			{
+				return false;
+			}
+			int i = hub.VArm[k];
+			ArmEdge(Roads[hub.Arm[i]], hub.At[i], hub.Dir[i], hub.VU[k], hub.VSide[k], out x, out z, out double _, beyond);
+			return true;
+		}
+
+		/// <summary>The piece of an arm's road at its cut and the road's side for the arm's <paramref name="side"/> (for the verge or sidewalk there).</summary>
+		internal static void HubArmPiece(Hub hub, int arm, int side, out Road road, out int piece, out int roadSide)
+		{
+			road = Roads[hub.Arm[arm]];
+			Locate(road, hub.At[arm] + hub.Dir[arm] * hub.Cut[arm], out piece, out double _);
+			roadSide = hub.Dir[arm] * side;
+		}
+
+		/// <summary>The hub plate's surface (from sea level) at (x, z), if a plate is there.</summary>
+		internal static bool OnHub(double x, double z, out double y)
+		{
+			y = 0.0;
+			foreach (Hub hub in Hubs)
+			{
+				if (hub.Tris == null || x < hub.MinX || x > hub.MaxX || z < hub.MinZ || z > hub.MaxZ)
+				{
+					continue;
+				}
+				int[] t = hub.Tris;
+				for (int k = 0; k + 2 < t.Length; k += 3)
+				{
+					double ax = hub.PX[t[k]], az = hub.PZ[t[k]], bx = hub.PX[t[k + 1]], bz = hub.PZ[t[k + 1]], cx = hub.PX[t[k + 2]], cz = hub.PZ[t[k + 2]];
+					double det = (bx - ax) * (cz - az) - (cx - ax) * (bz - az);
+					if (Math.Abs(det) < 1e-12)
+					{
+						continue;
+					}
+					double u = ((x - ax) * (cz - az) - (cx - ax) * (z - az)) / det;
+					double v = ((bx - ax) * (z - az) - (x - ax) * (bz - az)) / det;
+					if (u >= -1e-9 && v >= -1e-9 && u + v <= 1.0 + 1e-9)
+					{
+						y = hub.PY[t[k]] + (hub.PY[t[k + 1]] - hub.PY[t[k]]) * u + (hub.PY[t[k + 2]] - hub.PY[t[k]]) * v;
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>Whether roads a and b are arms of one hub and (x, z) is within its reach (so neither is cut for the other there).</summary>
+		private static bool HubMates(int a, int b, double x, double z)
+		{
+			foreach (Hub hub in Hubs)
+			{
+				double dx = x - hub.X, dz = z - hub.Z;
+				if (dx * dx + dz * dz > hub.Reach * hub.Reach || Array.IndexOf(hub.Arm, a) < 0 || Array.IndexOf(hub.Arm, b) < 0)
+				{
+					continue;
+				}
+				return true;
+			}
+			return false;
+		}
+
+		/// <summary>Each hub's arms cut where the plate takes over (no mouth flare: the plate's corners are the curve).</summary>
+		private static void HubCuts()
+		{
+			foreach (Hub hub in Hubs)
+			{
+				for (int i = 0; i < hub.Arm.Length; i++)
+				{
+					Road road = Roads[hub.Arm[i]];
+					double length = road.S[road.Count - 1];
+					// A road through the place: one cut from its arm back to its arm on (taken once, at the arm on).
+					int back = -1;
+					for (int j = 0; j < hub.Arm.Length; j++)
+					{
+						back = j != i && hub.Arm[j] == hub.Arm[i] ? j : back;
+					}
+					if (back >= 0 && hub.Dir[i] < 0)
+					{
+						continue;
+					}
+					double lo = back >= 0 ? hub.At[i] - hub.Cut[back] : hub.Dir[i] > 0 ? -1.0 : hub.At[i] - hub.Cut[i];
+					double hi = back >= 0 || hub.Dir[i] > 0 ? hub.At[i] + hub.Cut[i] : length + 1.0;
+					Gap gap = new Gap { C0 = lo, C1 = hi, Hub = true };
+					gap.L0 = gap.R0 = gap.C0;
+					gap.L1 = gap.R1 = gap.C1;
+					road.Gaps.Add(gap);
+					road.Gaps.Sort((p, q) => p.C0.CompareTo(q.C0));
+				}
+			}
 		}
 
 		/// <summary>
@@ -2368,7 +3142,7 @@ namespace HalfGripOpenWorld
 				road.To = new double[n - 1];
 				for (int i = 0; i + 1 < n; i++)
 				{
-					Spans(road, i, spans);
+					Spans(road, i, spans, false);
 					road.From[i] = spans.Count > 0 ? spans[0].t0 : 0.0;
 					road.To[i] = spans.Count > 0 ? spans[spans.Count - 1].t1 : 1.0;
 				}
@@ -2461,6 +3235,10 @@ namespace HalfGripOpenWorld
 			double flare = 0.0;
 			foreach (Gap g in road.Gaps)
 			{
+				if (g.Hub)
+				{
+					continue;
+				}
 				flare = Math.Max(flare, s < g.C0 ? Bell((g.C0 - s) / FlareLength) : s > g.C1 ? Bell((s - g.C1) / FlareLength) : 1.0);
 			}
 			double half = road.Half;
@@ -2516,7 +3294,7 @@ namespace HalfGripOpenWorld
 		/// The stretches of piece i drawn across the road's whole width, as fractions along it, into <paramref name="spans"/> (cleared
 		/// first). Where one edge is cut further than the other, the rest of the cut's slant is a fan (<see cref="Fans"/>).
 		/// </summary>
-		internal static void Spans(Road road, int i, List<(double t0, double t1)> spans)
+		internal static void Spans(Road road, int i, List<(double t0, double t1)> spans, bool hubs = true)
 		{
 			spans.Clear();
 			double s0 = road.S[i], s1 = road.S[i + 1], len = s1 - s0;
@@ -2528,7 +3306,7 @@ namespace HalfGripOpenWorld
 			foreach (Gap g in road.Gaps)
 			{
 				double lo = Math.Min(g.L0, g.R0), hi = Math.Max(g.L1, g.R1);
-				if (hi <= at || lo >= s1)
+				if ((g.Hub && !hubs) || hi <= at || lo >= s1)
 				{
 					continue;
 				}
@@ -2630,7 +3408,7 @@ namespace HalfGripOpenWorld
 			double f = Math.Max(0.0, Math.Min(1.0, 0.5 + 0.5 * across / Math.Max(1e-6, HalfAt(road, s))));
 			foreach (Gap g in road.Gaps)
 			{
-				if (s > g.R0 + (g.L0 - g.R0) * f && s < g.R1 + (g.L1 - g.R1) * f)
+				if (!g.Hub && s > g.R0 + (g.L0 - g.R0) * f && s < g.R1 + (g.L1 - g.R1) * f)
 				{
 					return false;
 				}
@@ -3216,7 +3994,7 @@ namespace HalfGripOpenWorld
 		{
 			foreach (Gap g in road.Gaps)
 			{
-				if (road.S[i] >= Math.Min(g.L0, g.R0) && road.S[i + 1] <= Math.Max(g.L1, g.R1))
+				if (!g.Hub && road.S[i] >= Math.Min(g.L0, g.R0) && road.S[i + 1] <= Math.Max(g.L1, g.R1))
 				{
 					return true;
 				}
@@ -3353,6 +4131,11 @@ namespace HalfGripOpenWorld
 			{
 				ground = unpaved;
 			}
+			// Under a hub's plate (its corners lie outside the arms' paving) the ground stays below it.
+			if (Hubs.Count > 0 && OnHub(x, z, out double plate))
+			{
+				ground = Math.Min(ground, plate - BedDepth);
+			}
 			// The embankment up to a bridge stops at the water: the river keeps its channel under the deck.
 			if (bestAbut && ground > land && Rivers.Channel(x, z, 2.0, out double _))
 			{
@@ -3452,6 +4235,10 @@ namespace HalfGripOpenWorld
 			if (cellStart == null)
 			{
 				return false;
+			}
+			if (OnHub(x, z, out double _))
+			{
+				return true;
 			}
 			int c = CellOf(z) * Cells + CellOf(x);
 			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
@@ -3915,7 +4702,7 @@ namespace HalfGripOpenWorld
 				pins.Sort((p, q) => p.idx.CompareTo(q.idx));
 			}
 
-			private static bool Cross(double ax, double az, double bx, double bz, double cx, double cz, double dx, double dz, out double t, out double u)
+			internal static bool Cross(double ax, double az, double bx, double bz, double cx, double cz, double dx, double dz, out double t, out double u)
 			{
 				t = u = 0.0;
 				double den = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx);

@@ -155,6 +155,13 @@ namespace HalfGripOpenWorld
 					Cap(roads, sides, walks, road, i == 0 ? 0 : 1, terrain);
 				}
 			}
+			foreach (Network.Hub hub in Network.Hubs)
+			{
+				if (hub.Tris != null && Math.Floor(hub.X / tileSize) == tx && Math.Floor(hub.Z / tileSize) == tz)
+				{
+					Plate(roads, sides, walks, hub, terrain);
+				}
+			}
 			verges = sides.Done();
 			sidewalks = walks.Done();
 			tracks = ribbons.Done();
@@ -240,6 +247,152 @@ namespace HalfGripOpenWorld
 				prevU = u;
 				prevV = v;
 			}
+		}
+
+		/// <summary>
+		/// A hub's plate (<see cref="Network.Hub"/>), drawn by the tile its place is in: plain asphalt of its biggest arm's class (no
+		/// markings: the arms' lines stop at their cuts, as at a real junction), and round it, except across the arms' cuts, the verge
+		/// or (where both arms of a corner have one) the sidewalk, carried on from the arms' own.
+		/// </summary>
+		private static void Plate(Mesher paved, Mesher verges, Mesher walks, Network.Hub hub, TerrainGrid terrain)
+		{
+			int m = hub.PX.Length, arms = hub.Arm.Length;
+			int material = Paving(hub.Kind);
+			// Columns of the class's texture clear of its lines, stretched across the plate.
+			float lo, hi;
+			switch (hub.Kind)
+			{
+				case RoadKind.Trunk: lo = 5.5f / 66f; hi = 14.5f / 66f; break;
+				case RoadKind.Primary: lo = 3.5f / 28f; hi = 12.5f / 28f; break;
+				case RoadKind.Secondary: lo = 2.5f / 24f; hi = 10.5f / 24f; break;
+				case RoadKind.Street: lo = 0.5f / 20f; hi = 8.5f / 20f; break;
+				default: lo = 1.5f / 15f; hi = 12.5f / 15f; break;
+			}
+			double spanX = Math.Max(1e-6, hub.MaxX - hub.MinX);
+			Vector3[] p = new Vector3[m];
+			Vector2[] uv = new Vector2[m];
+			for (int k = 0; k < m; k++)
+			{
+				p[k] = new Vector3((float)(hub.PX[k] - paved.Ox), (float)(hub.PY[k] + Network.Lift), (float)(hub.PZ[k] - paved.Oz));
+				uv[k] = new Vector2(lo + (hi - lo) * (float)((hub.PX[k] - hub.MinX) / spanX), (float)(hub.PZ[k] / TextureLength));
+			}
+			int[] t = hub.Tris;
+			for (int k = 0; k + 2 < t.Length; k += 3)
+			{
+				paved.Triangle(material, p[t[k]], p[t[k + 1]], p[t[k + 2]], uv[t[k]], uv[t[k + 1]], uv[t[k + 2]]);
+			}
+			// Each corner's sidewalk, if both its arms have one there.
+			bool[] walk = new bool[arms];
+			for (int i = 0; i < arms; i++)
+			{
+				Network.HubArmPiece(hub, i, 1, out Network.Road ra, out int pa, out int sa);
+				Network.HubArmPiece(hub, (i + 1) % arms, -1, out Network.Road rb, out int pb, out int sb);
+				walk[i] = Sidewalk(ra, pa, sa) && Sidewalk(rb, pb, sb);
+			}
+			// The way out at each point: across the arm on an arm's edge; else between its outline edges' outward sides.
+			double[] ox = new double[m], oz = new double[m];
+			for (int k = 0; k < m; k++)
+			{
+				if (Network.HubOut(hub, k, 1.0, out double ax, out double az))
+				{
+					ox[k] = ax - hub.PX[k];
+					oz[k] = az - hub.PZ[k];
+					continue;
+				}
+				int a = (k + m - 1) % m, b = (k + 1) % m;
+				double nx = (hub.PZ[k] - hub.PZ[a]) + (hub.PZ[b] - hub.PZ[k]), nz = -(hub.PX[k] - hub.PX[a]) - (hub.PX[b] - hub.PX[k]);
+				double l = Math.Sqrt(nx * nx + nz * nz);
+				ox[k] = nx / Math.Max(1e-9, l);
+				oz[k] = nz / Math.Max(1e-9, l);
+			}
+			double along = 0.0;
+			for (int k = 0; k < m; k++)
+			{
+				int q = (k + 1) % m;
+				double len = Math.Sqrt((hub.PX[q] - hub.PX[k]) * (hub.PX[q] - hub.PX[k]) + (hub.PZ[q] - hub.PZ[k]) * (hub.PZ[q] - hub.PZ[k]));
+				if (hub.Corner[k] < 0)
+				{
+					along += len;
+					continue;
+				}
+				bool w = walk[hub.Corner[k]];
+				// Left out where it would lie on another road's paving (one meeting an arm within the plate's reach), in bits of
+				// Trim there, as a road's verge is (see Beside).
+				int bits = KerbClear(hub, k, q, ox, oz, 0.0) && KerbClear(hub, k, q, ox, oz, 0.5) && KerbClear(hub, k, q, ox, oz, 1.0) ? 1 : Math.Max(1, (int)Math.Ceiling(len / Trim));
+				bool was = bits == 1 || KerbClear(hub, k, q, ox, oz, 0.0);
+				for (int b = 0; b < bits; b++)
+				{
+					double f0 = b / (double)bits, f1 = (b + 1) / (double)bits;
+					bool now = bits == 1 || KerbClear(hub, k, q, ox, oz, f1);
+					if (was && now)
+					{
+						KerbBit(paved, verges, walks, hub, p, ox, oz, k, q, f0, f1, along, len, w, terrain);
+					}
+					was = now;
+				}
+				along += len;
+			}
+		}
+
+		/// <summary>Whether the plate's verge or sidewalk, at fraction f of outline edge k to q, is off every road's paving (its middle and outer edge).</summary>
+		private static bool KerbClear(Network.Hub hub, int k, int q, double[] ox, double[] oz, double f)
+		{
+			double x = hub.PX[k] + (hub.PX[q] - hub.PX[k]) * f, z = hub.PZ[k] + (hub.PZ[q] - hub.PZ[k]) * f;
+			double nx = ox[k] + (ox[q] - ox[k]) * f, nz = oz[k] + (oz[q] - oz[k]) * f;
+			double nl = Math.Sqrt(nx * nx + nz * nz);
+			nx /= Math.Max(1e-9, nl);
+			nz /= Math.Max(1e-9, nl);
+			return !Network.OnOtherPaving(x + nx * Network.Verge, z + nz * Network.Verge, -1) && !Network.OnOtherPaving(x + nx * Network.Verge * 0.5, z + nz * Network.Verge * 0.5, -1);
+		}
+
+		/// <summary>The plate's verge or sidewalk over fractions f0 to f1 of outline edge k to q (<paramref name="along"/> the outline to k, <paramref name="len"/> the edge's length).</summary>
+		private static void KerbBit(Mesher paved, Mesher verges, Mesher walks, Network.Hub hub, Vector3[] p, double[] ox, double[] oz, int k, int q, double f0, double f1, double along, double len, bool walk, TerrainGrid terrain)
+		{
+			Vector3[] inner = new Vector3[2], middle = new Vector3[2], outer = new Vector3[2];
+			float[] v = new float[2];
+			for (int e = 0; e < 2; e++)
+			{
+				double f = e == 0 ? f0 : f1;
+				double x = hub.PX[k] + (hub.PX[q] - hub.PX[k]) * f, z = hub.PZ[k] + (hub.PZ[q] - hub.PZ[k]) * f;
+				double nx = ox[k] + (ox[q] - ox[k]) * f, nz = oz[k] + (oz[q] - oz[k]) * f;
+				double nl = Math.Sqrt(nx * nx + nz * nz);
+				inner[e] = Vector3.Lerp(p[k], p[q], (float)f);
+				KerbSection(inner[e], x, z, nx / Math.Max(1e-9, nl), nz / Math.Max(1e-9, nl), walk, terrain, paved, out middle[e], out outer[e]);
+				v[e] = (float)((along + len * f) / (walk ? 4.0 : TextureLength));
+			}
+			if (walk)
+			{
+				walks.Quad(0, inner[0], inner[1], middle[0], middle[1], new Vector2(0f, v[0]), new Vector2(0f, v[1]), new Vector2(1f, v[0]), new Vector2(1f, v[1]));
+				walks.Quad(0, middle[0], middle[1], outer[0], outer[1], new Vector2(0.9f, v[0]), new Vector2(0.9f, v[1]), new Vector2(1f, v[0]), new Vector2(1f, v[1]));
+			}
+			else
+			{
+				verges.Quad(0, inner[0], inner[1], middle[0], middle[1], new Vector2(0f, v[0]), new Vector2(0f, v[1]), new Vector2(0.5f, v[0]), new Vector2(0.5f, v[1]));
+				verges.Quad(0, middle[0], middle[1], outer[0], outer[1], new Vector2(0.5f, v[0]), new Vector2(0.5f, v[1]), new Vector2(1f, v[0]), new Vector2(1f, v[1]));
+			}
+		}
+
+		/// <summary>
+		/// A plate's verge or sidewalk section out from an outline point (inner, in the mesher's frame; world x, z; the unit way out):
+		/// as <see cref="Section"/> (middle, outer) or <see cref="PavementSection"/> (back, kerb's foot) do for a road's edge.
+		/// </summary>
+		private static void KerbSection(Vector3 inner, double x, double z, double ox, double oz, bool walk, TerrainGrid terrain, Mesher m, out Vector3 middle, out Vector3 outer)
+		{
+			if (walk)
+			{
+				double wx = x + ox * Network.Verge, wz = z + oz * Network.Verge;
+				double fx = x + ox * (Network.Verge + KerbOut), fz = z + oz * (Network.Verge + KerbOut);
+				double y = Math.Max(inner.y - 0.02, terrain.At(wx, wz) + VergeLift);
+				middle = new Vector3((float)(wx - m.Ox), (float)y, (float)(wz - m.Oz));
+				outer = new Vector3((float)(fx - m.Ox), (float)Math.Min(y, terrain.At(fx, fz) - 0.25), (float)(fz - m.Oz));
+				return;
+			}
+			double mx = x + ox * Network.Verge * 0.5, mz = z + oz * Network.Verge * 0.5;
+			double ex = x + ox * Network.Verge, ez = z + oz * Network.Verge;
+			double outerY = terrain.At(ex, ez) + VergeLift;
+			double middleY = Math.Max((inner.y + outerY) * 0.5, terrain.At(mx, mz) + VergeLift);
+			middle = new Vector3((float)(mx - m.Ox), (float)middleY, (float)(mz - m.Oz));
+			outer = new Vector3((float)(ex - m.Ox), (float)outerY, (float)(ez - m.Oz));
 		}
 
 		/// <summary>Length of the bits a verge or sidewalk is cut into where it reaches another road, so it stops at that road's edge.</summary>

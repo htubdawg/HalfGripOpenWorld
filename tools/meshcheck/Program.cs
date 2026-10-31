@@ -47,6 +47,8 @@ using UnityEngine;
 //  21. deadends: every dead end rounded off: a paved road's paving reaching on past its end, nothing past its verge; a track's or
 //                path's ribbon narrowed to a fifth
 //  22. tucked:  no track or path ribbon over the drawn surface of a paved road it runs onto
+//  23. hubs:    where three or more roads end at one place (Network.Hub), each arm's cut meets the plate's outline (points and
+//                heights), the tiles' paving covers the whole plate, and the drawn ground is under it
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -85,6 +87,7 @@ internal static class Program
 			("joints", Joints),
 			("deadends", DeadEnds),
 			("tucked", Tucked),
+			("hubs", HubChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -2001,6 +2004,64 @@ internal static class Program
 		}
 		Console.WriteLine("joints:  " + joints + " roads carrying on end to end; " + apart + " whose ends' edges are apart (points or heights), worst " + worst.ToString("0.000"));
 		return apart == 0;
+	}
+
+	private static bool HubChecks()
+	{
+		int arms = 0, apart = 0, samples = 0, bare = 0, under = 0;
+		double worstApart = 0.0, worstUnder = 0.0;
+		foreach (Network.Hub hub in Network.Hubs)
+		{
+			arms += hub.Arm.Length;
+			// The outline's points at each arm's cut, against the arm's drawn edge there (where its ribbon stops).
+			for (int k = 0; k < hub.PX.Length; k++)
+			{
+				int i = hub.VArm[k];
+				if (i < 0 || hub.VU[k] != hub.Cut[i])
+				{
+					continue;
+				}
+				Network.Road road = Network.Roads[hub.Arm[i]];
+				Network.Edge(road, hub.At[i] + hub.Dir[i] * hub.Cut[i], hub.Dir[i] * hub.VSide[k], 0.0, out double x, out double z, out double y);
+				double bad = Math.Max(Math.Sqrt((x - hub.PX[k]) * (x - hub.PX[k]) + (z - hub.PZ[k]) * (z - hub.PZ[k])), Math.Abs(y - hub.PY[k]));
+				worstApart = Math.Max(worstApart, bad);
+				if (bad > 0.02)
+				{
+					apart++;
+				}
+			}
+			// Points over each of the plate's triangles: paved in the tiles' meshes, the drawn ground under them. (A sliver along an
+			// arm's edge, under a twentieth of a square unit, has nothing to show.)
+			int[] t = hub.Tris;
+			for (int k = 0; k + 2 < t.Length; k += 3)
+			{
+				double area = 0.5 * Math.Abs((hub.PX[t[k + 1]] - hub.PX[t[k]]) * (hub.PZ[t[k + 2]] - hub.PZ[t[k]]) - (hub.PX[t[k + 2]] - hub.PX[t[k]]) * (hub.PZ[t[k + 1]] - hub.PZ[t[k]]));
+				if (area < 0.05)
+				{
+					continue;
+				}
+				foreach ((double wa, double wb) in new[] { (1.0 / 3.0, 1.0 / 3.0), (0.7, 0.15), (0.15, 0.7), (0.15, 0.15) })
+				{
+					double wc = 1.0 - wa - wb;
+					double x = hub.PX[t[k]] * wa + hub.PX[t[k + 1]] * wb + hub.PX[t[k + 2]] * wc;
+					double z = hub.PZ[t[k]] * wa + hub.PZ[t[k + 1]] * wb + hub.PZ[t[k + 2]] * wc;
+					double y = hub.PY[t[k]] * wa + hub.PY[t[k + 1]] * wb + hub.PY[t[k + 2]] * wc + Network.Lift;
+					samples++;
+					if (!Paved(x, z))
+					{
+						bare++;
+					}
+					double over = Terrain.At(x, z) - y;
+					worstUnder = Math.Max(worstUnder, over);
+					if (over > 0.0)
+					{
+						under++;
+					}
+				}
+			}
+		}
+		Console.WriteLine("hubs:    " + Network.Hubs.Count + " places where three or more roads end (" + arms + " arms); " + apart + " cut points off the plate's outline (worst " + worstApart.ToString("0.000") + "); of " + samples + " plate points " + bare + " not paved, " + under + " with the ground over them (worst " + worstUnder.ToString("0.00") + ")");
+		return apart == 0 && bare == 0 && under == 0;
 	}
 
 	/// <summary>Whether the paving triangles of the tiles round (x, z) cover it.</summary>
