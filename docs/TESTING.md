@@ -91,7 +91,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
    filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each
    circle within about 70 m. Drive into a circle: the line at the bottom says to stop and shift into neutral; do it and the garage
-   opens (shifting through neutral while rolling does not). While it is open the controls and the gun do nothing, the cursor is free,
+   opens when you let go of the shifter (standing in neutral still holding it does not, nor does shifting through neutral while rolling). While it is open the controls and the gun do nothing, the cursor is free,
    crashes, hazards and other players' shots do no damage, and the health shown stays put. Drag an item from the list onto a slot (the slots it fits light up), or right-click it: it is on the
    car at once (the new gun, wheel or shifter in the cockpit, the body's look outside), ammo and nitro full a moment later. Every
    gun (the game's and the modded M1911, Minigun, RPG, Sniper Rifle, Railgun) swaps and fires as at the start of a race, with its own
@@ -116,7 +116,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    hill climb paddock (beside the garage's circle), off the course, with orange `EVENT` over it from up to about 70 m, and a
    chequered disc in an orange ring on the map (MiniMap) at each, a little larger than a garage's and over the one beside it. Drive
    into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Stop and shift into neutral to
-   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral: the panel goes, the car is put
+   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral and let go of the shifter (holding it in neutral does nothing): the panel goes, the car is put
    on the grid (pole on the circuit, just behind the start arch elsewhere), facing up the course, and the board slides out; the
    start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2, 1, GO in the cockpit's
    text, each on time. Before green, shift into gear and floor it: the car stays on its spot (the wheels may spin, the car should

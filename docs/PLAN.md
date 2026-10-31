@@ -370,7 +370,8 @@ On branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a
   so MiniMap shows it as it is; `tools/preview` draws the same on `world.png` and lists the sites.
 - **In the world** (`Garage.cs`): a cyan emissive ring on the surface (following its slope, 0.14 over it) with four dashes pointing
   in, under the world's root so the origin shift moves it; `GARAGE` over each circle within 220 units.
-- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, for 0.6 s.
+- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, when the hand
+  lets go of it (`ShifterHand`; until 0.17.0 it was neutral for 0.6 s).
   Then `CarLink.godMode` (set back only if the garage set it) and the health held each `LateUpdate` (capped at the new maximum after a
   refit); input muted (`GameInput.Mute`), the cursor freed and the hand hidden, as the Multiplayer mod's pause does. Closed by Close or
   Esc (the controls back the frame after, so the Esc does not open the pause menu), or if the car is pushed out or knocked moving. It
@@ -504,7 +505,7 @@ Step 2 of the events plan below, begun. What is in:
   two, its radius cut to fit a narrow road) and checkpoint gates spaced evenly, about 1000 units (300 m) apart, the last of each lap
   on its line. Read from the layout, so the same for everyone and nothing changes in generation. A best time's key holds the course,
   its length and laps, so a course a new version lays out differently starts afresh.
-- **The event** (`EventRace.cs`): stop in a start box in neutral for 0.6 s (as a garage) and a countdown runs (the name, 3, 2, 1);
+- **The event** (`EventRace.cs`): stop in a start box in neutral and let go of the shifter (as a garage) and a countdown runs (the name, 3, 2, 1);
   leaving the box or rolling before GO is a jump start. Then the clock (game time: it stops on pause) runs; a gate counts when the car
   crosses its line going forwards within its reach (the road's half width, the circuit's kerbs, and 10 more). The next three gates
   past the expected one are watched too: crossing one of them calls out the gates missed and goes on from it; a run with any missed
@@ -641,6 +642,10 @@ started on the host's go), so every player has the same sky and nothing is sent.
   the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
 - **Debug.** `ShowCoords` adds a line: the time, the sun or moon's height, the rain or snow, cloud, wetness and grip at the car,
   the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back).
+
+**Garages and start boxes on letting go of the shifter** (0.17.0, asked for): they act when the hand lets go of the active shifter in
+neutral (`ShifterHand`: the grabber's held object under the active shifter's object), stopped and armed as before, in place of
+standing in neutral for 0.6 s. Arming, the prompts and `Garage.Disarm` after a respawn are unchanged.
 
 Not tested in game yet (TESTING.md 21). Next, when it looks right: rain curtains and dark cloud under the storms nearby (seen from
 afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest
