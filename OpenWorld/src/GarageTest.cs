@@ -244,19 +244,42 @@ namespace HalfGripOpenWorld
 				{
 					foreach (FieldInfo f in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
 					{
-						if (!typeof(UnityEngine.Object).IsAssignableFrom(f.FieldType) || !(f.IsPublic || f.IsDefined(typeof(SerializeField), false)))
+						if (!(f.IsPublic || f.IsDefined(typeof(SerializeField), false)))
 						{
 							continue;
 						}
-						UnityEngine.Object value = f.GetValue(c) as UnityEngine.Object;
-						UnityEngine.Object mapped = value == null ? null : Mapped(value, from, to);
-						if (mapped != null)
+						if (typeof(UnityEngine.Object).IsAssignableFrom(f.FieldType))
 						{
-							f.SetValue(c, mapped);
+							UnityEngine.Object value = f.GetValue(c) as UnityEngine.Object;
+							UnityEngine.Object mapped = value == null ? null : Mapped(value, from, to);
+							if (mapped != null)
+							{
+								f.SetValue(c, mapped);
+							}
+						}
+						else if (IsObjectList(f.FieldType) && f.GetValue(c) is System.Collections.IList list)
+						{
+							// Arrays and lists too: the sawed-off fires from its barrels, a Transform[] on its held model.
+							for (int i = 0; i < list.Count; i++)
+							{
+								UnityEngine.Object value = list[i] as UnityEngine.Object;
+								UnityEngine.Object mapped = value == null ? null : Mapped(value, from, to);
+								if (mapped != null)
+								{
+									list[i] = mapped;
+								}
+							}
 						}
 					}
 				}
 			}
+		}
+
+		/// <summary>An array or List&lt;T&gt; of Unity objects, the collections Unity serializes.</summary>
+		private static bool IsObjectList(Type type)
+		{
+			Type element = type.IsArray ? type.GetElementType() : type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) ? type.GetGenericArguments()[0] : null;
+			return element != null && typeof(UnityEngine.Object).IsAssignableFrom(element);
 		}
 
 		/// <summary>The object in the <paramref name="to"/> tree standing where <paramref name="value"/> stands in the <paramref name="from"/> tree, or null.</summary>
