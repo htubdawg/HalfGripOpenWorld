@@ -40,7 +40,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
 | `GarageSites.cs` | Where the garages are (filling stations, workshops, the circuit's pits, the rally service area, the hill climb paddock), read from the layout |
-| `Garage.cs`, `GarageUi.cs`, `GarageRefit.cs` | The garages in a race: circles, opening on stop in neutral, god mode; the window; the live refit (gun copies) |
+| `Garage.cs`, `GarageUi.cs`, `GarageRefit.cs` | The garages in a race: circles, opening on the shifter let go in neutral, god mode; the window; the live refit (gun copies) |
+| `ShifterHand.cs` | Whether the hand holds the active shifter, and the frame it lets go of it in neutral (opens a garage, signs on to an event) |
 | `GameMode.cs` | The Open World's game mode: a wreck respawns the car at the spawn (in an event, at its last gate), no AI (solo; in a room, the room's race set so) |
 | `Courses.cs` | The events' courses read from the layout: centre line, start box off the course, grid spot, checkpoint gates (pure arithmetic: the preview lists them, meshcheck checks them) |
 | `EventRace.cs` | Solo events: the start boxes and gates drawn, sign-on to the grid, the start lights, timing through the gates, respawn at the last gate, best times in the config |

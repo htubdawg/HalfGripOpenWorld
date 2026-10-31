@@ -293,7 +293,7 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
   is never saved; the car is put in its circle facing out (`GarageSites.Site.Hx`, `Hz`), or at the spawn if another car is in it.
 - **Events** (`Courses.cs`, `EventRace.cs`, `EventBoard.cs`): each course as data read from the layout (centre line, a start box
   off the course, the grid spot, checkpoint gates about 1000 units apart, the last on the finish line), the same for everyone; solo,
-  a stop in neutral in a start box (offered in a panel like the garage's) puts the car on the grid, held there until green, the game's start lights (moved over the line) count down, and it times
+  a stop in a start box with the shifter let go in neutral (offered in a panel like the garage's) puts the car on the grid, held there until green, the game's start lights (moved over the line) count down, and it times
   the run through the gates in order (a crossing counts going forwards within the gate's reach of the road); a wreck in
   one goes back to its last gate (`GameMode.ToSpawn` asks `EventRace.Respawn` first). Best times go in the mod's config file. The cockpit's leaderboard
   and lap counter show the event, and are tucked into the screen's edge out of one (the hand over them brings them out).

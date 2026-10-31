@@ -57,8 +57,9 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 ## Garages
 
 A glowing cyan circle marks a garage on the forecourt of every filling station, in every workshop's yard, in the circuit's pit lane,
-the rally service area and the hill climb paddock (20 in all); each shows as a cyan dot on MiniMap's map. Stop in a circle and shift
-into neutral to open it:
+the rally service area and the hill climb paddock (20 in all); each shows as a cyan dot on MiniMap's map. Stop in a circle, shift
+into neutral and let go of the shifter to open it (you can let go while still rolling in the circle; it opens as the car stops).
+Shifting through neutral without letting go does not open it, and after closing it, take the shifter and let go again to reopen:
 
 - Every item the game offers by normal means (locked ones and the gun mods' too) can be fitted. Drag an item onto a slot or
   right-click it to fit it; drag it off its slot or right-click it again to take it off. In a Multiplayer room, the items the
@@ -79,7 +80,7 @@ the rally service area and in the hill climb paddock, next to the garage's circl
 and each one has a chequered disc on the map.
 
 - Drive into the box: a panel like the garage's shows the event, its length, laps, checkpoints and your best time.
-- Stop in it and shift into neutral: the car is put on the grid behind the start line and held there while the start lights over
+- Stop in it, shift into neutral and let go of the shifter: the car is put on the grid behind the start line and held there while the start lights over
   the line count down (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green.
   The cockpit's board (top right) slides out with the event.
 - The clock runs through the checkpoints: an orange gate across the road, lit only while the event runs (the next one and the one

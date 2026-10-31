@@ -331,9 +331,9 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			string words = garage.Armed
-				? "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nStop and shift into neutral to open it"
-				: "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nShift into gear or drive out of the circle to open it again";
+			string words = garage.Pending
+				? "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nStop to open it"
+				: "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nShift into neutral and let go of the shifter to open it";
 			Rect r = new Rect(Mathf.Round(w * 0.5f - 330f), Mathf.Round(h * 0.56f), 660f, 78f);
 			Box(r, panel);
 			Shadowed(r, words, prompt);

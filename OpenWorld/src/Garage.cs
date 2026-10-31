@@ -9,7 +9,7 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// The garages in the world (<see cref="GarageSites"/>): a glowing circle on the ground at each, and a garage that opens when the car
-	/// stops in one with the gearbox in neutral. While it is open nothing hurts the car (the game's own god mode, which crashes, hazards
+	/// stops in one and the player lets go of the shifter in neutral (<see cref="ShifterHand"/>). While it is open nothing hurts the car (the game's own god mode, which crashes, hazards
 	/// and the Multiplayer mod's hits all go through) and its health is held where it was, so a garage is no heal button unless Repair is
 	/// pressed. Items are fitted through <see cref="GarageRefit"/> as they are picked, ammo and nitro filled a moment after.
 	///
@@ -22,9 +22,6 @@ namespace HalfGripOpenWorld
 
 		/// <summary>The car must be slower than this (units a second, a car is 14 long) to count as stopped.</summary>
 		private const float Stopped = 1.2f;
-
-		/// <summary>How long the car must stand stopped in neutral before the garage opens: a gear change through neutral does not open it.</summary>
-		private const float Settle = 0.6f;
 
 		/// <summary>The circle's line: this wide, inside its radius.</summary>
 		private const float RingWidth = 0.9f;
@@ -46,10 +43,12 @@ namespace HalfGripOpenWorld
 		/// <summary>The garage that is open, or null.</summary>
 		internal GarageSites.Site OpenAt { get; private set; }
 
-		/// <summary>False after the garage is closed until the car leaves the circle, moves or goes into gear, so it does not open again at once.</summary>
-		internal bool Armed { get; private set; } = true;
+		/// <summary>
+		/// True from the shifter being let go in neutral in a circle until the garage opens, so the car may still roll to a stop; false
+		/// again once it leaves the circle, goes into gear or the shifter is taken.
+		/// </summary>
+		internal bool Pending { get; private set; }
 
-		private float readySince = -1f;
 		private bool setGodMode;
 		private float heldHp;
 		private UnityEngine.Object muteKey;
@@ -191,9 +190,6 @@ namespace HalfGripOpenWorld
 			}
 			Here = Inside(car);
 			float speed = car.rb != null ? car.rb.linearVelocity.magnitude : 0f;
-			// Neutral: the active shifter (H-pattern, sequential, automatic, Lenco: every kind reports here) in no gear.
-			bool neutral = link.sa != null && (link.sa.gear == 0 || !link.sa.inGear);
-			bool ready = Here != null && speed < Stopped && neutral;
 			if (OpenAt != null)
 			{
 				// Pushed out of the circle or knocked moving (another player's car): the garage closes.
@@ -203,21 +199,19 @@ namespace HalfGripOpenWorld
 				}
 				return;
 			}
-			if (!ready)
+			// The garage opens on the player letting go of the shifter in neutral, not on neutral alone: a shift through neutral, or a
+			// car standing in the circle in neutral after a respawn or after the garage closed, opens nothing.
+			// Asked every frame (the garage always runs), so the hand is followed even out of the circles and the boxes.
+			bool holding = ShifterHand.Holding(link);
+			if (Here == null || !ShifterHand.Neutral(link) || holding)
 			{
-				Armed = true;
-				readySince = -1f;
-				return;
+				Pending = false;
 			}
-			if (!Armed)
+			else if (ShifterHand.ReleasedInNeutral(link))
 			{
-				return;
+				Pending = true;
 			}
-			if (readySince < 0f)
-			{
-				readySince = Time.time;
-			}
-			else if (Time.time - readySince >= Settle && link.hp > 0f)
+			if (Pending && speed < Stopped && link.hp > 0f)
 			{
 				Open(Here);
 			}
@@ -252,8 +246,7 @@ namespace HalfGripOpenWorld
 		{
 			CarLink link = Link;
 			OpenAt = site;
-			Armed = false;
-			readySince = -1f;
+			Pending = false;
 			heldHp = link.hp;
 			setGodMode = !CarLink.godMode;
 			CarLink.godMode = true;
@@ -294,13 +287,6 @@ namespace HalfGripOpenWorld
 				}
 			}
 			Mod.Log.LogInfo("Garage closed");
-		}
-
-		/// <summary>Keeps the garage shut until the car goes into gear or leaves the circle: after a respawn into the circle.</summary>
-		internal void Disarm()
-		{
-			Armed = false;
-			readySince = -1f;
 		}
 
 		// ---- what the garage does ----------------------------------------------------------------------------------

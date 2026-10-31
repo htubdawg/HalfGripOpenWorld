@@ -7,7 +7,8 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// Solo events at the courses (<see cref="Courses"/>): a glowing box beside each course near its start, with a panel like the
-	/// garage's (<see cref="GarageUi"/>) offering the event while the car is in it; stopping in it in neutral signs the car on and puts
+	/// garage's (<see cref="GarageUi"/>) offering the event while the car is in it; stopping in it and letting go of the shifter in neutral
+	/// (<see cref="ShifterHand"/>) signs the car on and puts
 	/// it on the grid behind the start line, held there until the game's own start lights (moved over the line) count it down, then the
 	/// clock runs through the checkpoint gates in order to the finish. The next gate stands across the road, lit, only while an event
 	/// runs. The cockpit's board at the top right (<see cref="EventBoard"/>) shows the event once it has begun. A missed gate is called out and the clock runs on, but that run sets no best time. A wreck puts the car
@@ -29,9 +30,8 @@ namespace HalfGripOpenWorld
 			Finished,
 		}
 
-		/// <summary>As the garage's: slower than this counts as stopped, and the car must stand this long in neutral before the countdown.</summary>
+		/// <summary>As the garage's: slower than this counts as stopped.</summary>
 		private const float Stopped = 1.2f;
-		private const float Settle = 0.6f;
 
 		/// <summary>
 		/// The countdown, in seconds from being put on the grid: the red light at <see cref="ReadyAt"/>, the amber one a second later,
@@ -73,8 +73,8 @@ namespace HalfGripOpenWorld
 		private State state = State.Idle;
 		private Courses.Course course;
 		private Courses.Course here;
-		private bool armed = true;
-		private float readySince = -1f;
+		/// <summary>As the garage's: the shifter let go in neutral in a box, the car maybe still rolling to a stop there.</summary>
+		private bool pending;
 		private float countdownAt;
 		private int countdownShown;
 		private float greenUntil = -1f;
@@ -329,35 +329,26 @@ namespace HalfGripOpenWorld
 			return c;
 		}
 
-		/// <summary>Stopped in a start box in neutral, and held there a moment: the car is signed on and put on the grid.</summary>
+		/// <summary>
+		/// Stopped in a start box with the shifter let go in neutral (it may be let go while the car still rolls, in the box): the car is
+		/// signed on and put on the grid. Neutral alone signs nothing on, so a shift through neutral, or standing in the box after a
+		/// finish, does not start the event again.
+		/// </summary>
 		private void Waiting(CarControllerNew car, CarLink link, float speed)
 		{
-			bool neutral = link.sa != null && (link.sa.gear == 0 || !link.sa.inGear);
 			bool garage = Garage.Instance != null && Garage.Instance.OpenAt != null;
-			bool ready = here != null && speed < Stopped && neutral && !garage && link.hp > 0f;
-			if (!ready)
+			if (here == null || garage || !ShifterHand.Neutral(link) || ShifterHand.Holding(link))
 			{
-				readySince = -1f;
-				// Out of the box or moving again: the next stop in it signs on.
-				if (here == null || speed > Stopped * 3f)
-				{
-					armed = true;
-				}
-				return;
+				pending = false;
 			}
-			if (!armed)
+			else if (ShifterHand.ReleasedInNeutral(link))
 			{
-				return;
+				pending = true;
 			}
-			if (readySince < 0f)
-			{
-				readySince = Time.time;
-			}
-			else if (Time.time - readySince >= Settle && Streamer.Instance != null)
+			if (pending && speed < Stopped && link.hp > 0f && Streamer.Instance != null)
 			{
 				course = here;
-				armed = false;
-				readySince = -1f;
+				pending = false;
 				next = 0;
 				ToGrid(Streamer.Instance);
 				state = State.Countdown;
@@ -774,9 +765,8 @@ namespace HalfGripOpenWorld
 				return null;
 			}
 			string what = Info(here) + ", " + here.Gates.Count + " checkpoints     " + BestLine(here);
-			string how = !armed ? "Drive out of the box to start it again"
-				: readySince >= 0f ? "Starting..."
-				: "Stop and shift into neutral to start";
+			string how = pending ? "Stop to start"
+				: "Shift into neutral and let go of the shifter to start";
 			return "<color=#ff8c1a>EVENT</color>  " + here.Name + "\n" + what + "\n" + how;
 		}
 

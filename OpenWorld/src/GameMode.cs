@@ -105,11 +105,7 @@ namespace HalfGripOpenWorld
 				{
 					streamer.BuildAround(garage.X, garage.Z, 1);
 					streamer.Place(garage.X, garage.Z, Quaternion.LookRotation(new Vector3((float)garage.Hx, 0f, (float)garage.Hz), Vector3.up));
-					// Standing still in the circle, maybe in neutral: the garage waits for a gear change, as after closing it.
-					if (Garage.Instance != null)
-					{
-						Garage.Instance.Disarm();
-					}
+					// Standing still in the circle, maybe in neutral: the garage waits for the shifter to be taken and let go (ShifterHand).
 					CallOut("BACK AT THE GARAGE");
 					return;
 				}
