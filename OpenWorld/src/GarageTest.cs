@@ -25,11 +25,18 @@ namespace HalfGripOpenWorld
 		/// <summary>The protected field <c>Gun.Awake</c> fills in: still null on a gun that has never started up.</summary>
 		private static readonly FieldInfo GunGrabber = AccessTools.Field(typeof(Gun), "grabber");
 
-		/// <summary>An untouched copy of one of the cockpit's guns and of its held model; the gun's references into the held model point at the copy.</summary>
+		/// <summary>
+		/// An untouched copy of one of the cockpit's guns and of its held model (the gun's references into the held model point at the
+		/// copy), and their sprites as copied. The copies are in the scene, and the gun mods reskin by sprite name across the whole scene
+		/// as their gun starts (HalfGripTools' Sprites.Reskin, which reaches inactive objects too): the Sniper Rifle's art landed on the
+		/// SMG's copy and so on every SMG after it. Each fresh gun gets the sprites back.
+		/// </summary>
 		private sealed class Template
 		{
 			internal GameObject Gun;
+			internal Sprite[] GunSprites;
 			internal GameObject Held;
+			internal Sprite[] HeldSprites;
 		}
 
 		/// <summary>The copies, by kind, under an inactive object so they never start up; and the scene they were taken in.</summary>
@@ -167,9 +174,11 @@ namespace HalfGripOpenWorld
 				}
 				Template t = new Template();
 				t.Gun = Copy(gun.gameObject, holder.transform);
+				t.GunSprites = Sprites(t.Gun);
 				if (gun.aimModel != null)
 				{
 					t.Held = Copy(gun.aimModel.gameObject, holder.transform);
+					t.HeldSprites = Sprites(t.Held);
 					Remap(t.Gun, gun.aimModel, t.Held.transform);
 				}
 				templates[gun.RequiredGunType] = t;
@@ -203,6 +212,11 @@ namespace HalfGripOpenWorld
 				}
 			}
 			Mod.Log.LogInfo("Garage test: copies of " + string.Join(", ", copied.ToArray()));
+		}
+
+		private static Sprite[] Sprites(GameObject root)
+		{
+			return root.GetComponentsInChildren<SpriteRenderer>(true).Select(r => r.sprite).ToArray();
 		}
 
 		private static GameObject Copy(GameObject original, Transform parent)
@@ -294,17 +308,17 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Transform oldHeld = old.aimModel;
-			GameObject gun = Replace(old.gameObject, template.Gun);
+			GameObject gun = Replace(old.gameObject, template.Gun, template.GunSprites);
 			if (template.Held != null && oldHeld != null)
 			{
-				GameObject held = Replace(oldHeld.gameObject, template.Held);
+				GameObject held = Replace(oldHeld.gameObject, template.Held, template.HeldSprites);
 				Remap(gun, template.Held.transform, held.transform);
 			}
 			Mod.Info("Garage test: " + gun.name + " back as built");
 		}
 
-		/// <summary>Swaps an object in the scene for a copy of the template, in the same place among its siblings.</summary>
-		private static GameObject Replace(GameObject dead, GameObject template)
+		/// <summary>Swaps an object in the scene for a copy of the template, in the same place among its siblings, with the template's sprites as copied.</summary>
+		private static GameObject Replace(GameObject dead, GameObject template, Sprite[] sprites)
 		{
 			Transform parent = dead.transform.parent;
 			int index = dead.transform.GetSiblingIndex();
@@ -318,6 +332,18 @@ namespace HalfGripOpenWorld
 			GameObject fresh = UnityEngine.Object.Instantiate(template, parent, false);
 			fresh.name = template.name;
 			fresh.transform.SetSiblingIndex(index);
+			SpriteRenderer[] renderers = fresh.GetComponentsInChildren<SpriteRenderer>(true);
+			if (sprites != null && renderers.Length == sprites.Length)
+			{
+				for (int i = 0; i < renderers.Length; i++)
+				{
+					renderers[i].sprite = sprites[i];
+				}
+			}
+			else
+			{
+				Mod.Log.LogWarning("Garage test: " + fresh.name + " has " + renderers.Length + " sprites, its copy had " + (sprites == null ? 0 : sprites.Length) + "; its art is left as it is.");
+			}
 			return fresh;
 		}
 
