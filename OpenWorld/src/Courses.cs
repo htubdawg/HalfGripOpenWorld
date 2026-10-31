@@ -176,6 +176,37 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>The map mark's parts: <see cref="MapFlag"/> gives one of these for each pixel.</summary>
+		internal const int FlagNone = 0, FlagOutline = 1, FlagPole = 2, FlagWhite = 3, FlagBlack = 4;
+
+		/// <summary>The map mark's reach from its pixel: left, right, down, up.</summary>
+		internal const int FlagLeft = 4, FlagRight = 28, FlagDown = 2, FlagUp = 36;
+
+		/// <summary>
+		/// A start box's mark on the map pictures, in pixels: a chequered flag (4 by 3 squares of 6 pixels) on a pole 34 pixels tall
+		/// whose foot stands on the box, all in a dark outline 2 pixels wide, a little larger than the garages' discs, so it
+		/// still reads when a minimap shrinks the picture. <paramref name="dp"/> is pixels right of the box's pixel, <paramref name="dq"/>
+		/// pixels up from it. Shared by the map pictures (Streamer) and the preview, so both draw the same flag.
+		/// </summary>
+		internal static int MapFlag(int dp, int dq)
+		{
+			// The pole is 4 wide with the box's pixel by its middle; the flag hangs from its top, to the right.
+			const int poleL = -2, poleR = 2, poleTop = 34, flagR = poleR + 24, flagBottom = poleTop - 18;
+			bool InPole(int p, int q) => p >= poleL && p < poleR && q >= 0 && q < poleTop;
+			bool InFlag(int p, int q) => p >= poleR && p < flagR && q >= flagBottom && q < poleTop;
+			if (InPole(dp, dq))
+			{
+				return FlagPole;
+			}
+			if (InFlag(dp, dq))
+			{
+				return ((dp - poleR) / 6 + (dq - flagBottom) / 6) % 2 == 0 ? FlagBlack : FlagWhite;
+			}
+			bool nearPole = dp >= poleL - 2 && dp < poleR + 2 && dq >= -2 && dq < poleTop + 2;
+			bool nearFlag = dp >= poleR - 2 && dp < flagR + 2 && dq >= flagBottom - 2 && dq < poleTop + 2;
+			return nearPole || nearFlag ? FlagOutline : FlagNone;
+		}
+
 		private static List<Course> Build()
 		{
 			List<Course> list = new List<Course>();

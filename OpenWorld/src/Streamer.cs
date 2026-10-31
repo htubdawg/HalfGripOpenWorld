@@ -484,6 +484,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			MapGarages(ox, oz, pixel, map);
+			MapEvents(ox, oz, pixel, map);
 		}
 
 		/// <summary>A garage's mark: a filled disc, a colour nothing else on the map has, in a dark ring.</summary>
@@ -518,6 +519,44 @@ namespace HalfGripOpenWorld
 						else if (d <= ring)
 						{
 							map[q * Pixels + p] = MapGarageRing;
+						}
+					}
+				}
+			}
+		}
+
+		/// <summary>An event's mark: the pole in the events' orange, the flag's black and white squares, the outline near black.</summary>
+		private static readonly Color32[] MapFlagColours =
+		{
+			default,
+			new Color32(18, 18, 22, 255),
+			new Color32(255, 140, 26, 255),
+			new Color32(245, 245, 245, 255),
+			new Color32(30, 30, 34, 255),
+		};
+
+		/// <summary>
+		/// Marks each event's start box on the map picture with a chequered flag (<see cref="Courses.MapFlag"/>), over the garages' marks
+		/// (a box is often beside a garage). The pole's foot stands on the box; the flag may reach into the tile above or beside, which
+		/// draws its own part of it.
+		/// </summary>
+		private static void MapEvents(double ox, double oz, double pixel, Color32[] map)
+		{
+			foreach (Courses.Course c in Courses.All)
+			{
+				int cp = (int)Math.Floor((c.BoxX - ox) / pixel), cq = (int)Math.Floor((c.BoxZ - oz) / pixel);
+				if (cp + Courses.FlagRight < 0 || cq + Courses.FlagUp < 0 || cp - Courses.FlagLeft >= Pixels || cq - Courses.FlagDown >= Pixels)
+				{
+					continue;
+				}
+				for (int q = Math.Max(0, cq - Courses.FlagDown); q <= Math.Min(Pixels - 1, cq + Courses.FlagUp); q++)
+				{
+					for (int p = Math.Max(0, cp - Courses.FlagLeft); p <= Math.Min(Pixels - 1, cp + Courses.FlagRight); p++)
+					{
+						int part = Courses.MapFlag(p - cp, q - cq);
+						if (part != Courses.FlagNone)
+						{
+							map[q * Pixels + p] = MapFlagColours[part];
 						}
 					}
 				}

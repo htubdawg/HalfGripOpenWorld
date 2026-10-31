@@ -22,7 +22,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.15.1**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.15.2**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -30,7 +30,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.15.1` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.15.2` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -64,11 +64,13 @@ into neutral to open it:
 
 Each course has a timed event: 3 laps of the circuit from pole, once round the rally stage, and the hill climb from its foot to the
 finish below the col. A glowing orange box beside each course marks where to sign on: in the circuit's pit lane past the garages, in
-the rally service area and in the hill climb paddock, next to the garage's circle.
+the rally service area and in the hill climb paddock, next to the garage's circle. "EVENT" floats over each box when you are near,
+and each one has a chequered flag on the map.
 
-- Drive into the box: the cockpit's board (top right) slides out with the course, its length and your best time.
-- Stop in it and shift into neutral: the car is put on the grid behind the start line, and the start lights over the line count
-  down (red, amber, both, green; 3, 2, 1, GO). Rolling off before green is a jump start and calls it off.
+- Drive into the box: a panel like the garage's shows the event, its length, laps, checkpoints and your best time.
+- Stop in it and shift into neutral: the car is put on the grid behind the start line and held there while the start lights over
+  the line count down (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green.
+  The cockpit's board (top right) slides out with the event.
 - The clock runs through the checkpoints: an orange gate across the road, lit only while the event runs (the next one and the one
   after; the finish line's is white). The board shows the time, the checkpoints passed and your best; the lap counter beside it the
   lap (on the circuit) or the checkpoint. A missed gate is called out and the clock runs on, but that run sets no best time.

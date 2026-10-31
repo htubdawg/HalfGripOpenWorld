@@ -542,6 +542,21 @@ with the car then put on the grid, and the countdown and green light were not se
 - meshcheck's `events` now checks the grid spot on the road and the box off the course, whole on its lot's open surface (clear of
   the vans and awnings) or the pit lane.
 
+From the owner's notes on 0.15.1:
+
+### Solo events: the start box's panel, held on the grid, the map's flags (0.15.2)
+
+- **The panel.** In a start box the event is offered in a panel like the garage's (`GarageUi.EventPrompt`, text from
+  `EventRace.Prompt`): the course, length, laps, checkpoints, best, and what to do. The cockpit's board no longer shows the offer:
+  it stays tucked away until the car is on the grid. "EVENT" (orange) floats over each box as "GARAGE" over each circle.
+- **No jump start.** The car is held on the grid from the moment it is put there until green: its rigidbody's x and z and its turn
+  about the vertical are frozen (`EventRace.Hold`), so the suspension settles it and the wheels turn, and it goes on the green.
+  The game holds its own grid by leaving the car's controller off, but that controller is the suspension. A move of more than 30
+  from the spot (a reset after a wreck goes to the spawn) or a wreck gives the event up and lets the car go.
+- **The map.** Each start box has a chequered flag on the map pictures (`Courses.MapFlag`, drawn by `Streamer.MapEvents` over the
+  garages' marks and by the preview): 4 by 3 squares of 6 pixels on an orange pole 34 pixels tall whose foot is on the box, in a
+  dark outline, 32 by 38 pixels in all (the garages' discs are 26 across).
+
 Not tested in game yet (TESTING.md 23).
 
 ## Next: events (proposed, to agree with the owner)

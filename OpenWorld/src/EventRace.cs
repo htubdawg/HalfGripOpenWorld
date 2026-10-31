@@ -6,10 +6,11 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// Solo events at the courses (<see cref="Courses"/>): a glowing box beside each course near its start; stopping in it in neutral
-	/// signs the car on and puts it on the grid behind the start line, where the game's own start lights (moved over the line) count it
-	/// down, then the clock runs through the checkpoint gates in order to the finish. The next gate stands across the road, lit, only
-	/// while an event runs. The cockpit's board at the top right (<see cref="EventBoard"/>) shows the event. A missed gate is called out and the clock runs on, but that run sets no best time. A wreck puts the car
+	/// Solo events at the courses (<see cref="Courses"/>): a glowing box beside each course near its start, with a panel like the
+	/// garage's (<see cref="GarageUi"/>) offering the event while the car is in it; stopping in it in neutral signs the car on and puts
+	/// it on the grid behind the start line, held there until the game's own start lights (moved over the line) count it down, then the
+	/// clock runs through the checkpoint gates in order to the finish. The next gate stands across the road, lit, only while an event
+	/// runs. The cockpit's board at the top right (<see cref="EventBoard"/>) shows the event once it has begun. A missed gate is called out and the clock runs on, but that run sets no best time. A wreck puts the car
 	/// back at the last gate passed (<see cref="Respawn"/>), not the spawn. The best time of each course is kept in the mod's own config
 	/// file, never the game's save.
 	///
@@ -39,9 +40,8 @@ namespace HalfGripOpenWorld
 		private const float ReadyAt = 1f;
 		private const float GoAt = ReadyAt + 3f;
 
-		/// <summary>On the grid, the car may creep this far (or roll this fast) before the green light before it counts as a jump start.</summary>
-		private const double Creep = 4.0;
-		private const float Rolling = 3.6f;
+		/// <summary>On the grid the car is held where it was put; a move further than this from there (the reset after a wreck) gives the event up.</summary>
+		private const double OffGrid = 30.0;
 
 		/// <summary>How long the green light stays on after the start.</summary>
 		private const float GreenSeconds = 3f;
@@ -100,6 +100,8 @@ namespace HalfGripOpenWorld
 		private int placedFrame = -1;
 		private int shownNext = -1;
 		private Courses.Course shownCourse;
+		private Rigidbody held;
+		private RigidbodyConstraints heldConstraints;
 
 		private static readonly Dictionary<string, ConfigEntry<float>> bests = new Dictionary<string, ConfigEntry<float>>();
 
@@ -278,9 +280,7 @@ namespace HalfGripOpenWorld
 			}
 			Vector3 p = car.transform.position;
 			Origin.World(p, out double x, out double z);
-			Vector3 v = car.rb != null ? car.rb.linearVelocity : Vector3.zero;
-			float speed = v.magnitude;
-			v.y = 0f;
+			float speed = car.rb != null ? car.rb.linearVelocity.magnitude : 0f;
 			here = InBox(p, x, z);
 			try
 			{
@@ -295,7 +295,7 @@ namespace HalfGripOpenWorld
 						Waiting(car, link, speed);
 						break;
 					case State.Countdown:
-						Counting(link, x, z, v.magnitude);
+						Counting(link, x, z);
 						break;
 					case State.Running:
 						Timing(link, x, z);
@@ -369,31 +369,30 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Puts the car on the course's grid spot, stopped, facing up the course.</summary>
+		/// <summary>Puts the car on the course's grid spot, stopped, facing up the course, and holds it there.</summary>
 		private void ToGrid(Streamer streamer)
 		{
 			streamer.BuildAround(course.GridX, course.GridZ, 1);
 			streamer.Place(course.GridX, course.GridZ, Quaternion.LookRotation(new Vector3((float)course.GridDx, 0f, (float)course.GridDz), Vector3.up));
 			placedFrame = Time.frameCount;
 			havePrev = false;
+			Hold(tm.playerCarController);
 		}
 
 		/// <summary>
-		/// The countdown on the grid: red, amber, both, then green and the clock starts, with 3, 2, 1, GO called out. Creeping off the
-		/// spot or rolling before green is a jump start.
+		/// The countdown on the grid: red, amber, both, then green and the clock starts, with 3, 2, 1, GO called out. The car is held on
+		/// its spot until green (<see cref="Hold"/>), so there is no jump start: the gear can be put in and the engine revved, and it
+		/// goes on the green.
 		/// </summary>
-		private void Counting(CarLink link, double x, double z, float flatSpeed)
+		private void Counting(CarLink link, double x, double z)
 		{
 			float since = Time.time - countdownAt;
 			double dx = x - course.GridX, dz = z - course.GridZ;
-			bool jumped = since > ReadyAt * 0.5f && (dx * dx + dz * dz > Creep * Creep || flatSpeed > Rolling);
-			if (jumped || link.hp <= 0f)
+			bool moved = placedFrame != Time.frameCount && dx * dx + dz * dz > OffGrid * OffGrid;
+			if (moved || link.hp <= 0f)
 			{
-				Say(link.hp <= 0f ? "EVENT OVER" : "JUMP START", 1.5f);
-				Lights(false, false, false);
-				Mod.Log.LogInfo("Event: " + (jumped ? "jump start" : "wrecked") + " at the " + course.Name);
-				state = State.Idle;
-				course = null;
+				Mod.Log.LogInfo("Event: " + (moved ? "moved off the grid" : "wrecked") + " before the start at the " + course.Name);
+				Stop("EVENT OVER");
 				return;
 			}
 			int step = since < ReadyAt ? -1 : (int)Math.Floor(since - ReadyAt);
@@ -405,6 +404,7 @@ namespace HalfGripOpenWorld
 			}
 			if (since >= GoAt)
 			{
+				Release();
 				Lights(false, false, true);
 				greenUntil = Time.time + GreenSeconds;
 				Say("GO!", 1f);
@@ -428,6 +428,37 @@ namespace HalfGripOpenWorld
 		{
 			TextController.ClearAll();
 			TextController.EnqueueRandomText(seconds, text);
+		}
+
+		/// <summary>
+		/// Holds the car on its grid spot: its rigidbody may not move across the ground or turn about the vertical, while the suspension
+		/// still works (it settles onto the road) and the wheels still turn. The game itself holds its grid by leaving the car's controller
+		/// off until the start, but that controller is the suspension too, and here the car must stand on its wheels. Set as the car is
+		/// put there, so it drops straight down onto the road.
+		/// </summary>
+		private void Hold(CarControllerNew car)
+		{
+			Rigidbody rb = car != null ? car.rb : null;
+			if (rb == null)
+			{
+				return;
+			}
+			Release();
+			held = rb;
+			heldConstraints = rb.constraints;
+			rb.linearVelocity = new Vector3(0f, rb.linearVelocity.y, 0f);
+			rb.angularVelocity = new Vector3(rb.angularVelocity.x, 0f, rb.angularVelocity.z);
+			rb.constraints = heldConstraints | RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezePositionZ | RigidbodyConstraints.FreezeRotationY;
+		}
+
+		/// <summary>Lets the held car go: at green, and whenever the event ends before it.</summary>
+		private void Release()
+		{
+			if (held != null)
+			{
+				held.constraints = heldConstraints;
+			}
+			held = null;
 		}
 
 		/// <summary>The game's start lights, moved over the course's start line and turned to face the grid.</summary>
@@ -582,6 +613,7 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogInfo("Event: given up at the " + course.Name);
 			}
+			Release();
 			Lights(false, false, false);
 			state = State.Idle;
 			course = null;
@@ -671,8 +703,7 @@ namespace HalfGripOpenWorld
 		private const string Green = "<color=#00FF00>";
 
 		/// <summary>
-		/// What the cockpit's board shows (<see cref="EventBoard"/>): the course on offer while the car is in its start box, the
-		/// countdown, the clock with the checkpoints and the best, and the result; nothing otherwise (the board tucks away and shows the
+		/// What the cockpit's board shows (<see cref="EventBoard"/>): the countdown, the clock with the checkpoints and the best, and the result; nothing otherwise (the board tucks away and shows the
 		/// players under the hand). The lap counter beside it shows the lap, or the checkpoint on a course of one lap.
 		/// </summary>
 		private void Board()
@@ -685,12 +716,6 @@ namespace HalfGripOpenWorld
 			string text = null, lapLine = null;
 			switch (state)
 			{
-				case State.Idle:
-					if (here != null && armed)
-					{
-						text = here.Name + "\n" + Info(here) + "\n" + BestLine(here) + "\nStop, neutral";
-					}
-					break;
 				case State.Countdown:
 				{
 					float since = Time.time - countdownAt;
@@ -719,6 +744,29 @@ namespace HalfGripOpenWorld
 			}
 			board.Text = text;
 			board.Lap = lapLine;
+		}
+
+		/// <summary>
+		/// The panel offering the event while the car is in a start box and none is running, drawn by <see cref="GarageUi"/> in the
+		/// garage's look: the course, its length, laps, checkpoints and best time, and what to do. Null when there is nothing to offer.
+		/// </summary>
+		internal string Prompt()
+		{
+			if (here == null || (state != State.Idle && state != State.Finished))
+			{
+				return null;
+			}
+			string what = Info(here) + ", " + here.Gates.Count + " checkpoints     " + BestLine(here);
+			string how = !armed ? "Drive out of the box to start it again"
+				: readySince >= 0f ? "Starting..."
+				: "Stop and shift into neutral to start";
+			return "<color=#ff8c1a>EVENT</color>  " + here.Name + "\n" + what + "\n" + how;
+		}
+
+		/// <summary>The scene position of a course's start box, for the label over it.</summary>
+		internal static Vector3 ScenePoint(Courses.Course c)
+		{
+			return Origin.Local(c.BoxX, (float)(c.BoxY + Network.Lift), c.BoxZ);
 		}
 
 		/// <summary>The lap counter's line: the lap on the circuit, the checkpoint on a course of one lap.</summary>
@@ -750,6 +798,7 @@ namespace HalfGripOpenWorld
 
 		private void OnDestroy()
 		{
+			Release();
 			foreach (Material m in new[] { boxMaterial, gateMaterial, finishMaterial })
 			{
 				if (m != null)

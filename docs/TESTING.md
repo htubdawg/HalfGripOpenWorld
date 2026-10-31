@@ -88,14 +88,18 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    Refill the ammo and nitro.
    Esc or Close closes it; it does not open again until you shift into gear or leave the circle. The next race starts with the
    loadout from the menu or the room, not the garage's (the log says `Garage: the race's own loadout is back`).
-23. Events, solo (0.15.1). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
+23. Events, solo (0.15.2). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
    5 gates`. Out of an event the cockpit's board (top right) is tucked into the screen's right edge with a sliver showing; the hand
    over the sliver slides it out with the cars in the race (`cars 1` solo, `players N` in a room, on the lap counter), and it goes
    back when the hand leaves. An orange ring is in the circuit's pit lane past the last garage, in the rally service area and in the
-   hill climb paddock (beside the garage's circle), off the course. Drive into one: the board slides out with the course, its length
-   and the best. Stop in it in neutral: the car is put on the grid (pole on the circuit, just behind the start arch elsewhere),
-   facing up the course; the start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2,
-   1, GO in the cockpit's text, each on time. Roll off before green: `JUMP START`, the lights go out. Drive the course: the first
+   hill climb paddock (beside the garage's circle), off the course, with orange `EVENT` over it from up to about 70 m, and a
+   chequered flag on an orange pole on the map (MiniMap) at each, its foot on the box, over the garage's disc beside it. Drive
+   into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Stop and shift into neutral to
+   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral: the panel goes, the car is put
+   on the grid (pole on the circuit, just behind the start arch elsewhere), facing up the course, and the board slides out; the
+   start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2, 1, GO in the cockpit's
+   text, each on time. Before green, shift into gear and floor it: the car stays on its spot (the wheels may spin, the car should
+   not slide or turn) and leaves on the green. Drive the course: the first
    orange gate (posts and a bar, no collision) stands across the road ahead with the next one beyond it, each gate passed moves the
    pair on, the board counts the checkpoints (the lap counter the lap on the circuit, with each lap's time on the board), the finish
    gate is white. Cut a corner past a gate: `MISSED A CHECKPOINT`, the run finishes with no best time. A clean run: `NEW BEST`, and

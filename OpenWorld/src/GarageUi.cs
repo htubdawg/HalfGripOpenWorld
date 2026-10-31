@@ -8,7 +8,8 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// What the player sees of a garage: a "GARAGE" label over each circle nearby, a line telling them how to open it while they are in
-	/// one, and the garage's own window while it is open. The game's drag-and-drop garage exists only in the menu scene, so this is drawn
+	/// one, and the garage's own window while it is open. The events' start boxes are offered the same way ("EVENT" over each box, the
+	/// event's panel while the car is in one, from <see cref="EventRace.Prompt"/>), so the two read as one kind of place. The game's drag-and-drop garage exists only in the menu scene, so this is drawn
 	/// with Unity's immediate-mode GUI, as the debug overlay is, at a size that follows the screen's height, in the game's pixel look:
 	/// bevelled panels made of chunky pixels (<see cref="Px"/> units each) in the vanilla garage's colours (worn grey metal, black
 	/// wells, red and the unlock bar's green for accents) with grime over them, and the m6x11 font.
@@ -78,7 +79,7 @@ namespace HalfGripOpenWorld
 		private Rect listArea;
 
 		private bool styled;
-		private GUIStyle title, text, small, smallRight, faint, heading, label, prompt, detailName, detail, dropLabel;
+		private GUIStyle title, text, small, smallRight, faint, heading, label, eventLabel, prompt, detailName, detail, dropLabel;
 		private GUIStyle button, panel, inset, slotOff, slotOn, slotDrop, cardOff, cardHover, cardOn, iconBox, barBack;
 		private Texture2D dark, healthFill, healthLow, dropTint, grime;
 
@@ -265,6 +266,7 @@ namespace HalfGripOpenWorld
 					EndPress();
 					Labels(scale);
 					Prompt(w, h);
+					EventPrompt(w, h);
 				}
 			}
 			catch (Exception e)
@@ -279,7 +281,7 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>"GARAGE" over each circle within reach in front of the camera, so they can be found from the road.</summary>
+		/// <summary>"GARAGE" over each circle and "EVENT" over each start box within reach in front of the camera, so they can be found from the road.</summary>
 		private void Labels(float scale)
 		{
 			Camera cam = Camera.main;
@@ -289,23 +291,35 @@ namespace HalfGripOpenWorld
 			}
 			foreach (GarageSites.Site site in GarageSites.All)
 			{
-				Vector3 p = Garage.ScenePoint(site) + Vector3.up * 6f;
-				float distance = Vector3.Distance(cam.transform.position, p);
-				if (distance > 220f)
-				{
-					continue;
-				}
-				Vector3 s = cam.WorldToScreenPoint(p);
-				if (s.z <= 0f)
-				{
-					continue;
-				}
-				float x = s.x / scale, y = (Screen.height - s.y) / scale;
-				Color c = GUI.color;
-				GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((220f - distance) / 60f));
-				Shadowed(new Rect(x - 80f, y - 14f, 160f, 28f), "GARAGE", label);
-				GUI.color = c;
+				Label(cam, scale, Garage.ScenePoint(site), "GARAGE", label);
 			}
+			if (EventRace.Instance != null)
+			{
+				foreach (Courses.Course c in Courses.All)
+				{
+					Label(cam, scale, EventRace.ScenePoint(c), "EVENT", eventLabel);
+				}
+			}
+		}
+
+		private void Label(Camera cam, float scale, Vector3 at, string words, GUIStyle style)
+		{
+			Vector3 p = at + Vector3.up * 6f;
+			float distance = Vector3.Distance(cam.transform.position, p);
+			if (distance > 220f)
+			{
+				return;
+			}
+			Vector3 s = cam.WorldToScreenPoint(p);
+			if (s.z <= 0f)
+			{
+				return;
+			}
+			float x = s.x / scale, y = (Screen.height - s.y) / scale;
+			Color c = GUI.color;
+			GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((220f - distance) / 60f));
+			Shadowed(new Rect(x - 80f, y - 14f, 160f, 28f), words, style);
+			GUI.color = c;
 		}
 
 		/// <summary>While the car is in a circle: what to do to open the garage.</summary>
@@ -320,6 +334,20 @@ namespace HalfGripOpenWorld
 				? "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nStop and shift into neutral to open it"
 				: "<color=#e23a3a>GARAGE</color>  " + here.Name + "\nShift into gear or drive out of the circle to open it again";
 			Rect r = new Rect(Mathf.Round(w * 0.5f - 330f), Mathf.Round(h * 0.56f), 660f, 78f);
+			Box(r, panel);
+			Shadowed(r, words, prompt);
+		}
+
+		/// <summary>While the car is in an event's start box: the event on offer and how to start it, in the garage's panel (below the garage's, if both show).</summary>
+		private void EventPrompt(float w, float h)
+		{
+			string words = EventRace.Instance != null ? EventRace.Instance.Prompt() : null;
+			if (words == null)
+			{
+				return;
+			}
+			float y = Mathf.Round(h * 0.56f) + (garage.Here != null ? 90f : 0f);
+			Rect r = new Rect(Mathf.Round(w * 0.5f - 330f), y, 660f, 104f);
 			Box(r, panel);
 			Shadowed(r, words, prompt);
 		}
@@ -948,6 +976,8 @@ namespace HalfGripOpenWorld
 			faint = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.UpperLeft, true);
 			heading = Make(18, redLight, TextAnchor.MiddleLeft);
 			label = Make(18, new Color(0.55f, 0.92f, 1f), TextAnchor.MiddleCenter);
+			// The events' orange, as their boxes and gates glow.
+			eventLabel = Make(18, new Color(1f, 0.62f, 0.25f), TextAnchor.MiddleCenter);
 			prompt = Make(18, white, TextAnchor.MiddleCenter, true);
 			detailName = Make(27, white, TextAnchor.MiddleLeft);
 			detail = Make(18, new Color(0.84f, 0.85f, 0.87f), TextAnchor.UpperLeft, true);
