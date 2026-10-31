@@ -73,6 +73,7 @@ internal static class Program
 			("climb", ClimbChecks),
 			("signs", SignChecks),
 			("garages", GarageChecks),
+			("events", EventChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -1353,17 +1354,70 @@ internal static class Program
 	}
 
 	/// <summary>
+	/// A car respawned at a garage: its heading a unit vector pointing out (a point ahead nearer the lot's front, or further along the
+	/// start straight in the pits), its footprint (14 by 6) inside the circle, and the ground <c>Streamer.Place</c> drops it on within
+	/// half a unit of the garage's surface under each corner and the middle.
+	/// </summary>
+	private static bool RespawnFits(GarageSites.Site g, Town.Lot lot)
+	{
+		bool ok = true;
+		if (Math.Abs(g.Hx * g.Hx + g.Hz * g.Hz - 1.0) > 1e-6)
+		{
+			Console.WriteLine("  garage " + g.Name + ": its respawn heading is not a unit vector");
+			return false;
+		}
+		double ax = g.X + g.Hx * 10.0, az = g.Z + g.Hz * 10.0;
+		bool outward;
+		if (lot != null)
+		{
+			Town.Local(lot, g.X, g.Z, out _, out double v0);
+			Town.Local(lot, ax, az, out _, out double v1);
+			outward = v1 < v0 - 9.0;
+		}
+		else
+		{
+			Circuit.Local(g.X, g.Z, out double u0, out _);
+			Circuit.Local(ax, az, out double u1, out _);
+			outward = u1 > u0 + 9.0;
+		}
+		if (!outward)
+		{
+			Console.WriteLine("  garage " + g.Name + ": a car respawned there would not face out");
+			ok = false;
+		}
+		for (int k = 0; k < 5; k++)
+		{
+			double along = k == 0 ? 0.0 : (k < 3 ? 7.0 : -7.0), across = k == 0 ? 0.0 : (k % 2 == 0 ? 3.0 : -3.0);
+			double x = g.X + g.Hx * along + g.Hz * across, z = g.Z + g.Hz * along - g.Hx * across;
+			double dx = x - g.X, dz = z - g.Z;
+			double drop = WorldGen.Height(x, z) - (GarageSites.SurfaceAt(g, x, z) + Network.Lift);
+			if (dx * dx + dz * dz > g.Radius * g.Radius || Math.Abs(drop) > 0.5)
+			{
+				Console.WriteLine("  garage " + g.Name + ": a respawned car's corner at (" + x.ToString("0") + ", " + z.ToString("0") + ") is out of the circle or " + drop.ToString("0.00") + " off the surface");
+				ok = false;
+			}
+		}
+		return ok;
+	}
+
+	/// <summary>
 	/// Every garage's circle on clear, drivable ground: round its edge and at its middle, on its own lot's surface and off its building
 	/// (pumps, canopy posts, vans and awnings too), or on the circuit's pit lane off the garages; at the surface's height (the ring
-	/// follows the slope); its ring over the drawn ground; no two circles overlapping.
+	/// follows the slope); its ring over the drawn ground; no two circles overlapping. A car respawned there (<c>GameMode.ToSpawn</c>,
+	/// put at <c>WorldGen.Height</c> by <c>Streamer.Place</c>) lands on the surface, faces out (to the lot's road, or along the pit lane
+	/// to its exit) and fits in the circle.
 	/// </summary>
 	private static bool GarageChecks()
 	{
-		int samples = 0, off = 0, blocked = 0, height = 0, sunk = 0, overlap = 0;
+		int samples = 0, off = 0, blocked = 0, height = 0, sunk = 0, overlap = 0, respawn = 0;
 		List<GarageSites.Site> all = GarageSites.All;
 		foreach (GarageSites.Site g in all)
 		{
 			Town.Lot lot = g.Kind == GarageKind.Pits ? null : Town.Lots.OrderBy(l => (l.X - g.X) * (l.X - g.X) + (l.Z - g.Z) * (l.Z - g.Z)).First();
+			if (!RespawnFits(g, lot))
+			{
+				respawn++;
+			}
 			for (int k = -1; k < 32; k++)
 			{
 				double a = k * Math.PI / 16.0, r = k < 0 ? 0.0 : g.Radius;
@@ -1430,10 +1484,201 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0 && marked == all.Count && blots == 0;
+		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0 && respawn == 0 && marked == all.Count && blots == 0;
 		Console.WriteLine("garages: " + all.Count + " (" + string.Join(", ", all.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "), " + samples + " samples: " + off + " off their surface, " + blocked + " on a building or in the way, "
-			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping; " + marks.Count + " map marks with " + marked + " garages, " + blots + " running into each other " + (ok ? "ok" : "FAIL"));
+			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping, " + respawn + " bad respawn spots; " + marks.Count + " map marks with " + marked + " garages, " + blots + " running into each other " + (ok ? "ok" : "FAIL"));
 		return ok;
+	}
+
+	/// <summary>
+	/// The events' courses: gates in order to the finish (the last on the finish line), each at the road's height and reaching over
+	/// its own stretch of road only (never over another part of the course, where a car would pass it out of turn); each gate's
+	/// respawn point off any bridge (the reset puts the car on the ground); the grid spot on the road; the start box off the course,
+	/// whole on its lot's open surface (the circuit's pit lane), its ring just over it, clear of the garages' circles.
+	/// </summary>
+	private static bool EventChecks()
+	{
+		int order = 0, height = 0, reach = 0, bridged = 0, grid = 0, off = 0, sunk = 0, floating = 0, garages = 0, gateCount = 0;
+		List<Courses.Course> all = Courses.All;
+		foreach (Courses.Course c in all)
+		{
+			Network.Road road = c.Kind == Courses.Kind.Rally ? Rally.Road : c.Kind == Courses.Kind.HillClimb ? HillClimb.Road : null;
+			double last = 0.0;
+			for (int k = 0; k < c.Gates.Count; k++)
+			{
+				Courses.Gate g = c.Gates[k];
+				gateCount++;
+				if (g.Along <= last || (k == c.Gates.Count - 1 && Math.Abs(g.Along - c.Distance) > 0.01))
+				{
+					order++;
+					Console.WriteLine("  event " + c.Name + ": gate " + k + " out of order (" + g.Along.ToString("0") + ")");
+				}
+				last = g.Along;
+				bool bridge = false;
+				c.At(c.StartS + g.Along + 6.0, out double rx, out double rz, out double _, out double _, out double _);
+				if (road != null)
+				{
+					int near = 0;
+					double best = double.MaxValue;
+					for (int i = 0; i < road.Count; i++)
+					{
+						double d = (road.X[i] - rx) * (road.X[i] - rx) + (road.Z[i] - rz) * (road.Z[i] - rz);
+						if (d < best)
+						{
+							best = d;
+							near = i;
+						}
+					}
+					bridge = road.Bridge[near] || road.Bridge[Math.Max(0, near - 1)] || road.Bridge[Math.Min(road.Count - 1, near + 1)];
+				}
+				if (bridge)
+				{
+					bridged++;
+					Console.WriteLine("  event " + c.Name + ": gate " + k + "'s respawn (" + rx.ToString("0") + ", " + rz.ToString("0") + ") is on a bridge");
+				}
+				else if (Math.Abs(g.Y - Drawn(c, road, g.X, g.Z)) > 0.05)
+				{
+					height++;
+					Console.WriteLine("  event " + c.Name + ": gate " + k + " at " + g.Y.ToString("0.00") + ", the drawn surface " + Drawn(c, road, g.X, g.Z).ToString("0.00"));
+				}
+				// Along the gate's line: the nearest point of the course is always on the gate's own stretch.
+				for (double a = -g.Half; a <= g.Half + 0.01; a += 2.0)
+				{
+					double x = g.X + g.Dz * a, z = g.Z - g.Dx * a;
+					double own = double.MaxValue, other = double.MaxValue;
+					int pieces = c.Loop ? c.Count : c.Count - 1;
+					double gs = c.StartS + g.Along;
+					for (int i = 0; i < pieces; i++)
+					{
+						int q = (i + 1) % c.Count;
+						double sx = c.X[q] - c.X[i], sz = c.Z[q] - c.Z[i];
+						double len2 = sx * sx + sz * sz;
+						double f = len2 > 0.0 ? Math.Max(0.0, Math.Min(1.0, ((x - c.X[i]) * sx + (z - c.Z[i]) * sz) / len2)) : 0.0;
+						double px = c.X[i] + sx * f - x, pz = c.Z[i] + sz * f - z;
+						double d = px * px + pz * pz;
+						double ds = Math.Abs(c.S[i] - gs);
+						if (c.Loop)
+						{
+							ds = Math.Min(ds % c.Length, c.Length - ds % c.Length);
+						}
+						if (ds < g.Half * 2.0 + 20.0)
+						{
+							own = Math.Min(own, d);
+						}
+						else
+						{
+							other = Math.Min(other, d);
+						}
+					}
+					if (other <= own)
+					{
+						reach++;
+						Console.WriteLine("  event " + c.Name + ": gate " + k + " reaches over another stretch of the course at (" + x.ToString("0") + ", " + z.ToString("0") + ")");
+						break;
+					}
+				}
+			}
+			// The grid spot: a car's length round it on the course's road.
+			for (int k = -1; k < 16; k++)
+			{
+				double a = k * Math.PI / 8.0, r = k < 0 ? 0.0 : 7.0;
+				double x = c.GridX + Math.Cos(a) * r, z = c.GridZ + Math.Sin(a) * r;
+				if (Math.Sqrt(c.Distance2(x, z)) > c.Half)
+				{
+					grid++;
+					Console.WriteLine("  event " + c.Name + ": the grid spot's (" + x.ToString("0") + ", " + z.ToString("0") + ") is off the road");
+				}
+			}
+			if (Math.Abs(c.GridY - Drawn(c, road, c.GridX, c.GridZ)) > 0.05)
+			{
+				grid++;
+				Console.WriteLine("  event " + c.Name + ": the grid spot at " + c.GridY.ToString("0.00") + ", the road " + Drawn(c, road, c.GridX, c.GridZ).ToString("0.00"));
+			}
+			// The start box: on its lot's open surface (the circuit's pit lane), off the course, its ring just over the surface.
+			Town.Lot lot = road == null ? null : Town.Lots.FirstOrDefault(l => l.Kind == (c.Kind == Courses.Kind.Rally ? LotKind.Service : LotKind.Paddock));
+			for (int k = -1; k < 32; k++)
+			{
+				double a = k * Math.PI / 16.0, r = k < 0 ? 0.0 : c.BoxRadius;
+				double x = c.BoxX + Math.Cos(a) * r, z = c.BoxZ + Math.Sin(a) * r;
+				double surface;
+				if (lot != null)
+				{
+					Town.Lot on = Town.At(x, z, out bool building);
+					Town.Local(lot, x, z, out double u, out double v);
+					surface = Town.Surface(lot, u);
+					if (on != lot || building || Obstacle(lot, u, v))
+					{
+						off++;
+						Console.WriteLine("  event " + c.Name + ": the start box's (" + x.ToString("0") + ", " + z.ToString("0") + ") is off its lot's open surface");
+					}
+				}
+				else
+				{
+					Circuit.Local(x, z, out double u, out double v);
+					surface = Circuit.PlaneAt(x, z) + Circuit.Lift;
+					if (Circuit.SurfaceAt(x, z) == CircuitSurface.None || Circuit.Building(x, z) || v < Circuit.PitWallOut || v > Circuit.PitLaneOut || u < Circuit.PitA || u > Circuit.PitB)
+					{
+						off++;
+						Console.WriteLine("  event " + c.Name + ": the start box's (" + x.ToString("0") + ", " + z.ToString("0") + ") is off the pit lane");
+					}
+				}
+				if (Math.Sqrt(c.Distance2(x, z)) < c.Half + 2.0)
+				{
+					off++;
+					Console.WriteLine("  event " + c.Name + ": the start box's (" + x.ToString("0") + ", " + z.ToString("0") + ") is on the course");
+				}
+				// The ring is drawn 0.2 over the box's surface: over the ground, never far over the surface.
+				double ring = c.BoxSurface(x, z) + 0.2;
+				if (ring + Network.Lift < Mesh(x, z) + 0.05 || ring < surface + 0.05)
+				{
+					sunk++;
+					Console.WriteLine("  event " + c.Name + ": the start box's ring at (" + x.ToString("0") + ", " + z.ToString("0") + ") is under the ground or its surface");
+				}
+				else if (ring > surface + 0.4)
+				{
+					floating++;
+					Console.WriteLine("  event " + c.Name + ": the start box's ring at (" + x.ToString("0") + ", " + z.ToString("0") + ") is " + (ring - surface).ToString("0.00") + " over its surface");
+				}
+			}
+			foreach (GarageSites.Site g in GarageSites.All)
+			{
+				if (Math.Sqrt((g.X - c.BoxX) * (g.X - c.BoxX) + (g.Z - c.BoxZ) * (g.Z - c.BoxZ)) < g.Radius + c.BoxRadius + 2.0)
+				{
+					garages++;
+				}
+			}
+		}
+		bool ok = all.Count == 3 && order == 0 && height == 0 && reach == 0 && bridged == 0 && grid == 0 && off == 0 && sunk == 0 && floating == 0 && garages == 0;
+		List<string> names = all.Select(c => c.Name + " " + c.Gates.Count + " gates over " + c.Distance.ToString("0")).ToList();
+		Console.WriteLine("events:  " + string.Join(", ", names) + "; " + gateCount + " gates: " + order + " out of order, " + height + " off the road's height, " + reach + " reaching over another stretch, " + bridged + " respawning on a bridge; " + grid + " grid spot samples off the road; start boxes: "
+			+ off + " samples off their surface or on the course, " + sunk + " ring under the ground, " + floating + " floating, " + garages + " on a garage " + (ok ? "ok" : "FAIL"));
+		return ok;
+	}
+
+	/// <summary>The course's drawn surface at (x, z), from sea level: its road's centre line at the nearest point (as RoadMesh draws it), or the circuit's track.</summary>
+	private static double Drawn(Courses.Course c, Network.Road road, double x, double z)
+	{
+		if (road == null)
+		{
+			return Circuit.PlaneAt(x, z) + Circuit.Lift;
+		}
+		int piece = 0;
+		double best = double.MaxValue, at = 0.0;
+		for (int i = 0; i + 1 < road.Count; i++)
+		{
+			double sx = road.X[i + 1] - road.X[i], sz = road.Z[i + 1] - road.Z[i];
+			double len2 = sx * sx + sz * sz;
+			double f = len2 > 0.0 ? Math.Max(0.0, Math.Min(1.0, ((x - road.X[i]) * sx + (z - road.Z[i]) * sz) / len2)) : 0.0;
+			double px = road.X[i] + sx * f - x, pz = road.Z[i] + sz * f - z;
+			if (px * px + pz * pz < best)
+			{
+				best = px * px + pz * pz;
+				piece = i;
+				at = f;
+			}
+		}
+		Network.Point(road, piece, at, 0.0, 0.0, out double _, out double _, out double y);
+		return y;
 	}
 
 	/// <summary>Whether lot-frame (u, v) is on one of the things standing on a lot's open surface (as Buildings lays them out), with a unit to spare.</summary>

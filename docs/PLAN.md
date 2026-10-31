@@ -455,3 +455,170 @@ it does nothing when health is full) are the same light grey-white.
 The owner found the README bloated. It is now for players and other mods' authors: a short feature list, install, playing, the
 garages, settings, names, the map API and checking a change. The long "How it works" moved to `docs/DESIGN.md` ("How the code
 works"), and the in-game test checklist to `docs/TESTING.md` (CLAUDE.md points there).
+
+## Game mode: respawn at the start, no AI (0.14.0; asked for after 0.13.6)
+
+The first part of the Open World's own game mode (`GameMode.cs`). The owner chose to keep it in the Open World rather than add a mode
+to the Multiplayer mod's picker (its modes are fixed in its own code, with no way for another mod to add one). What it does:
+
+- **Forced respawn.** Solo, the game's end-of-race on a wreck (`TrackManager.OnPlayerDestroyed`) is skipped in the Open World;
+  `GameMode` sees the health reach 0, shows `WRECKED`, and after `RespawnSeconds` (3, a local setting) fills the health and resets
+  the car. The wait is game time, so it holds while paused; a charm or heal that saves the car first cancels it. In a Multiplayer room
+  the Multiplayer mod already skips that end-of-race and respawns or spectates by the room's race settings: as the world loads, every
+  player sets their copy (`Room.Race`) to respawn, and a Demolition to a race (`MultiplayerLink.RoomRules`, by reflection like the
+  rest). The room's respawn time counts.
+- **At the spawn.** The reset after a wreck (either way it goes through `PlayerResetLogic.ResetOnTrack`, patched by `ResetInPlace`)
+  puts the car at the spawn facing up the road, on the first of 24 grid slots (`WorldScene.GridSlot`: the spawn, then pairs behind it,
+  18 apart) with no other car within 8. A plain reset (hold R) stays in place.
+- **No AI.** Solo there were none already (`NoRivals`). In a room `RoomRules` also sets the race's AI count to 0 and empties
+  `Room.AiGrid` (the slots the host dealt the AI cars) before the scene's start, when the Multiplayer mod spawns them.
+
+Not tested in game yet (TESTING.md 17b).
+
+### 20 players: investigated, held off
+
+The cap is the Multiplayer mod's, not the Open World's:
+
+- `Room.MaxPlayers` is a `const` 6. The Steam lobby is created with that limit, a 7th player is turned away, and the lobby screen's
+  member and result rows are arrays of that size. A `const` is compiled into every place it is used, so no other mod can raise it:
+  only a change to the Multiplayer mod can (its owner's repo).
+- Its grid: the host deals slots from `Enumerable.Range(0, 6)`, and a race scene gets 6 slots (the player's and 5 more, extra ones
+  added behind the last if the scene has fewer). The AI slider is also `6 - players`. All of that would need to grow with the cap.
+- The Open World is ready for more: `WorldScene.GridSlot` gives any number of slots along the spawn's road (20 cars is 10 rows, about
+  55 m), and the respawn already uses 24. The scene's own start-position objects (that the Multiplayer mod reads) number what Tokyo
+  has; the Open World would add more if the Multiplayer mod asked for more than 6.
+- Traffic: every player sends its car to every other player 20 times a second (about 70 bytes a packet), so with 20 players each
+  sends and receives about 19 x 20 x 70 = 27 KB/s, which Steam's relay handles. Unknown until tried: 19 stand-in cars with full
+  physics on each machine, and the host's share of reliable messages.
+
+So 20 players needs, in the Multiplayer mod: `MaxPlayers` raised (or made a host setting), the lobby screen's lists made to scroll, and
+the grid slots and their dealing sized from it. Worth asking its owner for, along with the mod channel below.
+
+## Solo events (0.15.0; asked for after 0.14.0)
+
+Step 2 of the events plan below, begun. What is in:
+
+- **Courses as data** (`Courses.cs`): the circuit (3 laps from pole), the rally stage (start line once round to the finish line) and
+  the hill climb (start line to the finish below the col), each a centre line with the drawn surface's heights (the circuit's track,
+  the other two their road's, `Network.Top` included), a start box (the circuit's pole slot; 20 behind the start line on the other
+  two, its radius cut to fit a narrow road) and checkpoint gates spaced evenly, about 1000 units (300 m) apart, the last of each lap
+  on its line. Read from the layout, so the same for everyone and nothing changes in generation. A best time's key holds the course,
+  its length and laps, so a course a new version lays out differently starts afresh.
+- **The event** (`EventRace.cs`): stop in a start box in neutral for 0.6 s (as a garage) and a countdown runs (the name, 3, 2, 1);
+  leaving the box or rolling before GO is a jump start. Then the clock (game time: it stops on pause) runs; a gate counts when the car
+  crosses its line going forwards within its reach (the road's half width, the circuit's kerbs, and 10 more). The next three gates
+  past the expected one are watched too: crossing one of them calls out the gates missed and goes on from it; a run with any missed
+  sets no best. The next two gates are drawn (orange posts and a bar, no collider; the finish white), placed only when the next gate
+  changes. A wreck resets to just past the last gate (`GameMode.ToSpawn` asks `EventRace.Respawn` first). More than 500 units off the
+  centre line for 10 s, or a jump of more than 150 in a frame not made by the respawn (a teleport), gives the event up. The best time
+  of each course goes in the mod's config file under `[Best times]`.
+- **Checked** in meshcheck (`events`): gates in order to the finish, at the drawn surface's height, each reaching over its own stretch
+  only (a hairpin's other leg is never in a gate's reach), no gate's respawn point on a bridge (the reset puts the car on the ground);
+  each start box whole on the road, its ring just over the drawn surface, clear of the garages. The preview lists the courses.
+
+Not yet: a ghost of the best run, split times against the best at each gate, AI rivals, and the room's events (step 3).
+
+### Solo events: off the course, the start lights, the cockpit's board (0.15.1)
+
+From the owner's first try of 0.15.0: the timer (a panel drawn over the screen) looked basic, the start box should be off the track
+with the car then put on the grid, and the countdown and green light were not seen.
+
+- **The countdown.** The game's text queue takes a line only while it holds one or none, and types each out a letter at a time:
+  the course's name was still showing when 3 came, so 2 and 1 were dropped and the rest came late. Each call-out now clears the
+  queue first. And the game's own start lights (`RaceStarter`, which WorldScene hangs over the road at the spawn) are moved over
+  the course's start line as the car is put on the grid, turned about the vertical so the green sprite faces up the course: red,
+  amber, both, green, a second apart.
+- **Off the course.** The start box is in the circuit's pit lane between the last garage's circle and the end of the lane's full
+  width, and in the rally service area and the hill climb paddock at 0.3 of the lot's width to the side of the garage's circle nearer
+  the grid. Stopping in it in neutral puts the car on the grid spot (the circuit's pole slot, 20 behind the start line elsewhere);
+  creeping more than 4 off it or rolling at 3.6 before green is a jump start. A wreck before the first gate goes back to the grid.
+- **The cockpit's board** (`EventBoard.cs`): the game's leaderboard (`StatusInfo`) and lap counter at the top right. In an event the
+  leaderboard's updates are switched off and its text is the event's (course, clock, checkpoints or the last lap, best in the game's
+  purple; the result after the finish), and the lap counter shows the lap or the checkpoint; the clock is green while the lights are.
+  Out of one the board slides into the right edge, a sliver left on the screen (its outline measured on the screen each frame through
+  the hand's camera, and moved along the camera's right); the hand over the sliver (not while holding something) slides it out with
+  the game's leaderboard, the cars in the race. The lap counter, which counted the token loop's meaningless laps, now always shows
+  what the board sets (the count of cars out of an event).
+- meshcheck's `events` now checks the grid spot on the road and the box off the course, whole on its lot's open surface (clear of
+  the vans and awnings) or the pit lane.
+
+From the owner's notes on 0.15.1:
+
+### Solo events: the start box's panel, held on the grid, the map's flags (0.15.2)
+
+- **The panel.** In a start box the event is offered in a panel like the garage's (`GarageUi.EventPrompt`, text from
+  `EventRace.Prompt`): the course, length, laps, checkpoints, best, and what to do. The cockpit's board no longer shows the offer:
+  it stays tucked away until the car is on the grid. "EVENT" (orange) floats over each box as "GARAGE" over each circle.
+- **No jump start.** The car is held on the grid from the moment it is put there until green: its rigidbody's x and z and its turn
+  about the vertical are frozen (`EventRace.Hold`; that broke the car's physics, see 0.15.3), so the suspension settles it and the
+  wheels turn, and it goes on the green.
+  The game holds its own grid by leaving the car's controller off, but that controller is the suspension. A move of more than 30
+  from the spot (a reset after a wreck goes to the spawn) or a wreck gives the event up and lets the car go.
+- **The map.** Each start box has a mark on the map pictures (`Courses.MapMark`, drawn by `Streamer.MapEvents` over the garages'
+  marks and by the preview).
+
+### 0.15.3: the grid hold made the car NaN; a chequered disc on the map
+
+From the owner's try of 0.15.2 (log): just after `Event: signed on at the Circuit, on the grid` every frame logged an origin shift
+`by (NaN, NaN)`, and the world was lost.
+
+- **The cause.** 0.15.2 held the car on the grid by freezing its rigidbody's x, z and yaw. A frozen rotation axis zeroes the body's
+  inertia about it, and the game's tyre code (`CarControllerNew`, the grip impulse) divides by `rb.inertiaTensor.y`: the forces went
+  NaN and so did the car's position. `Origin.Follow` then shifted the scene by NaN each frame (a NaN fails every `< limit` test).
+- **The hold now** (`EventRace.Hold` and `FixedUpdate`): no constraints. The spot is kept in world coordinates; each physics step
+  while held the car is put back on it (turned into the scene's coordinates then, so an origin shift on the grid cannot move it) and
+  loses its velocity across the ground and its yaw rate, keeping its height, pitch and roll, so the suspension and the wheels work.
+- **A guard.** `Origin.Follow` never shifts by a NaN or infinite car position (one warning in the log instead), so a car whose
+  physics breaks can no longer take the world with it.
+- **The map's mark** is a chequered disc, laid out like the garages' discs (the flag reached out of its tile and over the road
+  above it): squares of 5 pixels in a disc 26 across, an orange ring and a thin dark one, 33 pixels across in all, centred on the box.
+
+Not tested in game yet (TESTING.md 23).
+
+## Respawn at a garage (0.16.0; asked for after 0.15.3)
+
+The last addition before the branch is merged into main. A garage's window has a third button along the bottom, **Respawn here**:
+a wreck then comes back to that garage instead of the spawn, for the rest of the race.
+
+- **Not saved.** The choice is a field of `GameMode`, which is made with the world and goes with the scene: every race (solo, or the
+  room's next race) starts with the spawn again. Nothing goes in the config file or the game's save.
+- **Where.** `GameMode.ToSpawn` puts the car at the circle's middle, facing out (`GarageSites.Site.Hx`, `Hz`: towards the lot's road,
+  or along the pit lane to its exit), and keeps the garage shut until the car goes into gear (`Garage.Disarm`), as after closing
+  it. If another car is within 8 of the middle (another player respawned or parked there) it goes to the spawn's grid slots instead.
+  An event's wreck still goes back to its last gate first. The call-out says where: `BACK AT THE GARAGE`, `BACK AT THE START` or
+  `BACK AT THE LAST CHECKPOINT`.
+- **The window.** Pressed again on the same garage it reads **Respawn at start** and clears the choice. The bottom right says where a
+  wreck goes (the start, this garage, another garage) when no other message shows; the old "To leave" hint made way (the prompt
+  after closing says to shift into gear).
+- meshcheck's `garages` now checks each respawn spot: the heading a unit vector pointing out, the car's 14 by 6 footprint in the
+  circle and the ground `Streamer.Place` drops it on within 0.5 of the garage's surface.
+
+Not tested in game yet (TESTING.md 22b).
+
+## Next: events (proposed, to agree with the owner)
+
+The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
+races), while the rest of the room roams. A proposed shape, smallest useful step first:
+
+1. **Courses as data.** An `EventCourse` per course, made from the layout already built (`Circuit`, `Rally`, `HillClimb`; later
+   routes along the road graph from `Signs`): a start box with grid slots, checkpoints as gates across the road (point, heading,
+   width) every few hundred metres, a finish (the start again for a lap course), and laps. Deterministic, from the layout, so every
+   player has the same course without sending it. Drawn as start lights, gate posts and a finish arch; checkpoint gates only show
+   for a player in that event.
+2. **Solo events** (begun in 0.15.0, above). Driving into a start box offers the event (as a garage opens: stop, shift into neutral). A countdown, then
+   timing through the checkpoints in order (a missed gate is called out, the clock runs on), a finish with the time, and a best time per
+   course kept in the mod's own config file (never the game's save). Ghost of the best lap later. A wreck in an event respawns at the
+   last gate passed, not the spawn (`GameMode.TakeWreck` already lets the reset tell a wreck apart). This needs nothing from
+   the Multiplayer mod and proves the course data, gates and timing.
+3. **Events in a room.** An event is a small state machine (open, gathering, countdown, running, results) keyed by course, and each
+   player has a state in it (entered, gate n, finished in t, out). Several run at once; a player is in at most one. The host is the
+   authority: it starts the countdown when the entrants are ready, and takes each player's finish time as reported. The
+   Multiplayer mod has no way for another mod to send its own messages, and its classes are internal; patching its packet
+   handler by name (as `MultiplayerLink` does for positions) is fragile. Best is a small public hook in the Multiplayer mod: a mod
+   channel (`Send(modId, bytes)`, `OnReceive(modId, handler)`), which is the Multiplayer mod's owner's change to make (its repo is
+   not ours). To be asked for once step 2 is in.
+4. **Rules per event.** Weapons off or on, collisions with players not in the event (ghosted, as the Multiplayer mod's spectators),
+   AI rivals for a solo event (the game's own `EnemyController` on the course's line, as the token loop's are now). Later.
+
+Open questions for the owner: which courses first; whether solo best times should be kept; whether non-entrants should be ghosted
+near a running event; whether to ask the Multiplayer mod for a mod channel.

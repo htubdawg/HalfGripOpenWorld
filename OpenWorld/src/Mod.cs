@@ -22,6 +22,7 @@ namespace HalfGripOpenWorld
 		internal static ModContext Ctx;
 
 		internal static ConfigEntry<bool> TestMode;
+		internal static ConfigEntry<float> RespawnSeconds;
 		internal static ConfigEntry<int> TileRadius;
 		internal static ConfigEntry<float> ShiftDistance;
 		internal static ConfigEntry<int> GrassReach;
@@ -48,6 +49,7 @@ namespace HalfGripOpenWorld
 			Ctx = ctx;
 
 			TestMode = ctx.Config.Bind("Map", "TestMode", false, "Every race you start is in the Open World, whatever the run map says. For trying it out. Off, the Open World is only reached from a Multiplayer room's map list (it is never dealt on a run map: a free-roam race has no finish).");
+			RespawnSeconds = ctx.Config.Bind("Map", "RespawnSeconds", 3f, new ConfigDescription("Solo: how many seconds after a wreck the car is put back on the nearest road, repaired. (In a Multiplayer room the room's own respawn time counts.)", new AcceptableValueRange<float>(1f, 30f)));
 			TileRadius = ctx.Config.Bind("World", "TileRadius", 5, new ConfigDescription("How many 250 m tiles of ground are kept loaded around the car in each direction. 5 is about 1.3 km, which the fog hides. More draws further and costs memory and frame time. Only changes your own view.", new AcceptableValueRange<int>(2, 10)));
 			GrassReach = ctx.Config.Bind("World", "GrassReach", 2, new ConfigDescription("Grass is drawn on the tiles this many tiles round the car's (2 is about 600 m). 0 turns grass off. Only changes your own view (grass has no collision).", new AcceptableValueRange<int>(0, 4)));
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many metres from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));

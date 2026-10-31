@@ -75,12 +75,24 @@ namespace HalfGripOpenWorld
 			return new Vector3((float)(x - X), y, (float)(z - Z));
 		}
 
+		private static bool warnedBadFocus;
+
 		/// <summary>Shifts the scene if <paramref name="focus"/> (the player car) is further than the limit from 0,0. Called once a frame.</summary>
 		internal static void Follow(Vector3 focus, float limit, float step)
 		{
 			RestoreInterpolation();
 			if (Mathf.Abs(focus.x) < limit && Mathf.Abs(focus.z) < limit)
 			{
+				return;
+			}
+			// A car whose physics went to NaN (or infinity) must not take the origin with it: that would lose the world for good.
+			if (float.IsNaN(focus.x) || float.IsNaN(focus.z) || float.IsInfinity(focus.x) || float.IsInfinity(focus.z))
+			{
+				if (!warnedBadFocus)
+				{
+					warnedBadFocus = true;
+					Mod.Log.LogWarning("Origin: the car's position is not a number (" + focus + "); the scene is not shifted");
+				}
 				return;
 			}
 			// Whole tiles, so the tile grid stays on whole numbers in the scene and nothing drifts from rounding.

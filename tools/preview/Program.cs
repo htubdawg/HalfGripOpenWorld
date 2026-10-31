@@ -50,6 +50,7 @@ internal static class Program
 		}
 		Console.WriteLine("  " + lots[1] + " shops, " + lots[2] + " workshops, " + lots[3] + " filling stations on the main roads");
 		Console.WriteLine("  " + GarageSites.All.Count + " garages: " + string.Join(", ", GarageSites.All.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "; " + GarageSites.Marks.Count + " marks on the map (" + string.Join(", ", GarageSites.Marks.Where(m => m.Count > 1).Select(m => m.Count + " at (" + m.X.ToString("0") + ", " + m.Z.ToString("0") + ")").ToArray()) + " grouped)");
+		Console.WriteLine("  events: " + string.Join(", ", Courses.All.Select(c => c.Name + " " + (c.Distance / 3300.0).ToString("0.0") + " km" + (c.Laps > 1 ? " (" + c.Laps + " laps)" : "") + ", " + c.Gates.Count + " checkpoints, start box at (" + c.BoxX.ToString("0") + ", " + c.BoxZ.ToString("0") + ")").ToArray()));
 		int ponds = 0;
 		foreach (Parks.Park park in Parks.All)
 		{
@@ -272,6 +273,7 @@ internal static class Program
 
 		byte[] map = Draw(size, x0, z0, span);
 		Garages(map, size, x0, z0, span);
+		Events(map, size, x0, z0, span);
 		Write(output, size, size, map, false);
 		Console.WriteLine("wrote " + output);
 		// The same map with the places and courses named, in the signs' lettering.
@@ -529,6 +531,28 @@ internal static class Program
 					if (d <= ring)
 					{
 						Pixel(map, size, p, q, d <= disc ? new byte[] { 40, 220, 255 } : new byte[] { 16, 36, 52 });
+					}
+				}
+			}
+		}
+	}
+
+	/// <summary>Each event's start box as the map pictures mark it: the chequered disc of <see cref="Courses.MapMark"/>, at least 0.4 of its size.</summary>
+	private static void Events(byte[] map, int size, double x0, double z0, double span)
+	{
+		byte[][] colours = { null, new byte[] { 18, 18, 22 }, new byte[] { 255, 140, 26 }, new byte[] { 245, 245, 245 }, new byte[] { 30, 30, 34 } };
+		double cell = span / size, k = Math.Max(0.4, 250.0 / 64.0 / cell), reach = Courses.MarkReach * k;
+		foreach (Courses.Course c in Courses.All)
+		{
+			double cp = (c.BoxX - x0) / cell, cq = (z0 - c.BoxZ) / cell;
+			for (int q = (int)Math.Floor(cq - reach); q <= (int)Math.Floor(cq + reach); q++)
+			{
+				for (int p = (int)Math.Floor(cp - reach); p <= (int)Math.Floor(cp + reach); p++)
+				{
+					int part = Courses.MapMark((p + 0.5 - cp) / k, (q + 0.5 - cq) / k);
+					if (part != Courses.MarkNone)
+					{
+						Pixel(map, size, p, q, colours[part]);
 					}
 				}
 			}

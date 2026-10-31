@@ -168,14 +168,16 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Puts the car on the nearest road to world (x, z), facing along it.</summary>
-		internal void ToRoad(double x, double z)
+		/// <summary>Puts the car on the nearest road to world (x, z), facing along it. False (and the car left alone) if no road is near.</summary>
+		internal bool ToRoad(double x, double z)
 		{
-			if (Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz))
+			if (!Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz))
 			{
-				BuildAround(rx, rz, 1);
-				Place(rx, rz, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));
+				return false;
 			}
+			BuildAround(rx, rz, 1);
+			Place(rx, rz, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));
+			return true;
 		}
 
 		private void LateUpdate()
@@ -482,6 +484,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			MapGarages(ox, oz, pixel, map);
+			MapEvents(ox, oz, pixel, map);
 		}
 
 		/// <summary>A garage's mark: a filled disc, a colour nothing else on the map has, in a dark ring.</summary>
@@ -516,6 +519,44 @@ namespace HalfGripOpenWorld
 						else if (d <= ring)
 						{
 							map[q * Pixels + p] = MapGarageRing;
+						}
+					}
+				}
+			}
+		}
+
+		/// <summary>An event's mark: the dark outline, the events' orange ring, the squares' white and black.</summary>
+		private static readonly Color32[] MapMarkColours =
+		{
+			default,
+			new Color32(18, 18, 22, 255),
+			new Color32(255, 140, 26, 255),
+			new Color32(245, 245, 245, 255),
+			new Color32(30, 30, 34, 255),
+		};
+
+		/// <summary>
+		/// Marks each event's start box on the map picture with a chequered disc (<see cref="Courses.MapMark"/>), over the garages' marks
+		/// (a box is often beside a garage). A disc near a tile's edge reaches into the next tile, which draws its own part of it.
+		/// </summary>
+		private static void MapEvents(double ox, double oz, double pixel, Color32[] map)
+		{
+			double reach = Courses.MarkReach;
+			foreach (Courses.Course c in Courses.All)
+			{
+				double cp = (c.BoxX - ox) / pixel, cq = (c.BoxZ - oz) / pixel;
+				if (cp < -reach || cq < -reach || cp > Pixels + reach || cq > Pixels + reach)
+				{
+					continue;
+				}
+				for (int q = Math.Max(0, (int)Math.Floor(cq - reach)); q <= Math.Min(Pixels - 1, (int)Math.Floor(cq + reach)); q++)
+				{
+					for (int p = Math.Max(0, (int)Math.Floor(cp - reach)); p <= Math.Min(Pixels - 1, (int)Math.Floor(cp + reach)); p++)
+					{
+						int part = Courses.MapMark(p + 0.5 - cp, q + 0.5 - cq);
+						if (part != Courses.MarkNone)
+						{
+							map[q * Pixels + p] = MapMarkColours[part];
 						}
 					}
 				}

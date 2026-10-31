@@ -286,6 +286,17 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
   reader are patched to convert them. The packet format stays the same.
 - **Free roam** (`Patches.cs`): no laps, no AI rivals in solo, no "wrong way" or "hold R" hints, resets in place, and "fell under the
   map" measured from the ground under the car.
+- **Game mode** (`GameMode.cs`): a wreck never ends the race. Solo, the game's end-of-race on a wreck is held off and the car is put
+  back at the spawn (the first free grid slot), repaired, after `RespawnSeconds`; in a Multiplayer room the Multiplayer mod respawns
+  it (the room's race is set to respawn, with no AI, as the world loads) through the same reset. A garage's window can make it the
+  respawn point (`GameMode.SetRespawn`): kept on the `GameMode` component, which goes with the scene, so it lasts for that race and
+  is never saved; the car is put in its circle facing out (`GarageSites.Site.Hx`, `Hz`), or at the spawn if another car is in it.
+- **Events** (`Courses.cs`, `EventRace.cs`, `EventBoard.cs`): each course as data read from the layout (centre line, a start box
+  off the course, the grid spot, checkpoint gates about 1000 units apart, the last on the finish line), the same for everyone; solo,
+  a stop in neutral in a start box (offered in a panel like the garage's) puts the car on the grid, held there until green, the game's start lights (moved over the line) count down, and it times
+  the run through the gates in order (a crossing counts going forwards within the gate's reach of the road); a wreck in
+  one goes back to its last gate (`GameMode.ToSpawn` asks `EventRace.Respawn` first). Best times go in the mod's config file. The cockpit's leaderboard
+  and lap counter show the event, and are tucked into the screen's edge out of one (the hand over them brings them out).
 
 ## Assets
 

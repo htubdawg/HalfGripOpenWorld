@@ -62,6 +62,13 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 16. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
 17. Hold R far out: the car is put back on its wheels where it was.
+17b. Get wrecked (into a wall at speed, or the dev console's `kill player` or `hp 0`): `WRECKED`, the car burns, and after 3 seconds (`RespawnSeconds`)
+   it is at the start, on the spawn's grid slot facing up the road, at full health, driving normally (it accelerates, no flames);
+   `BACK AT THE START` shows. Get wrecked far out (teleport first): the same, and the ground round the start is there. The race does
+   not end. Pause while wrecked: the respawn waits. Hold R: still resets in place. In a Multiplayer room set to Demolition or "out,
+   watch", with AI RIVALS above 0: no AI cars on the grid; a wrecked player respawns after the room's time at the start, the others
+   see the car come back there, and nobody is put out. Two players wrecked together, or one waiting on the grid: the second lands on
+   the next slot back, not on top.
 18. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
 19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
@@ -81,3 +88,30 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    Refill the ammo and nitro.
    Esc or Close closes it; it does not open again until you shift into gear or leave the circle. The next race starts with the
    loadout from the menu or the room, not the garage's (the log says `Garage: the race's own loadout is back`).
+22b. Respawn at a garage (0.16.0), alone and in a Multiplayer room. The garage window's bottom right says `Respawn after a wreck: the
+   start`. Press Respawn here: `A wreck comes back here`, the log says `Respawn point: <garage>`, the button reads Respawn at start
+   and the bottom right `this garage`; another garage's window says `another garage`. Close, drive off, get wrecked: after the wait
+   the car is in that garage's circle, facing out of the lot (along the pit lane to its exit in the pits), repaired, on its wheels,
+   `BACK AT THE GARAGE`; the garage does not open until you shift into gear and back to neutral. In a room, with another player's
+   car parked in that circle: you come back at the start instead. Press Respawn at start and get wrecked: back at the start. Wrecked
+   in an event: still back at the last checkpoint. Start the next race (or a new run): a wreck goes back to the start again.
+23. Events, solo (0.15.3). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
+   5 gates`. Out of an event the cockpit's board (top right) is tucked into the screen's right edge with a sliver showing; the hand
+   over the sliver slides it out with the cars in the race (`cars 1` solo, `players N` in a room, on the lap counter), and it goes
+   back when the hand leaves. An orange ring is in the circuit's pit lane past the last garage, in the rally service area and in the
+   hill climb paddock (beside the garage's circle), off the course, with orange `EVENT` over it from up to about 70 m, and a
+   chequered disc in an orange ring on the map (MiniMap) at each, a little larger than a garage's and over the one beside it. Drive
+   into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Stop and shift into neutral to
+   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral: the panel goes, the car is put
+   on the grid (pole on the circuit, just behind the start arch elsewhere), facing up the course, and the board slides out; the
+   start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2, 1, GO in the cockpit's
+   text, each on time. Before green, shift into gear and floor it: the car stays on its spot (the wheels may spin, the car should
+   not slide or turn, and the log has no `Origin shift ... NaN`) and leaves on the green. An `Origin shift` logged just after
+   `Event: signed on` (the grid is often far enough from the box for one) must leave the car on its spot. Drive the course: the first
+   orange gate (posts and a bar, no collision) stands across the road ahead with the next one beyond it, each gate passed moves the
+   pair on, the board counts the checkpoints (the lap counter the lap on the circuit, with each lap's time on the board), the finish
+   gate is white. Cut a corner past a gate: `MISSED A CHECKPOINT`, the run finishes with no best time. A clean run: `NEW BEST`, and
+   `halfgrip.openworld.cfg` has the time under `[Best times]`; a slower one shows the gap in red. Get wrecked mid-event: after the
+   respawn the car is just past the last gate passed, facing on along the course, `BACK AT THE LAST CHECKPOINT`, and the clock ran
+   on. Drive far off the course: `BACK TO THE COURSE`, then `EVENT OVER` after 10 s; teleport mid-event: `EVENT OVER`. Pause: the
+   clock stops. In a Multiplayer room the same works for yourself.

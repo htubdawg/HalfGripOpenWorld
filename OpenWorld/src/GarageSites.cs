@@ -34,6 +34,9 @@ namespace HalfGripOpenWorld
 			public double Gz;
 			public double Radius;
 			public string Name;
+			/// <summary>The way a car put in the circle faces (a unit vector, world x and z): towards the road off a lot, along the pit lane to its exit in the pits.</summary>
+			public double Hx;
+			public double Hz;
 		}
 
 		/// <summary>The circle's radius: room for a car (about 14 long) to stop in it without aiming.</summary>
@@ -165,7 +168,8 @@ namespace HalfGripOpenWorld
 					default: continue;
 				}
 				Town.World(lot, u, v, out double x, out double z);
-				list.Add(new Site { Kind = kind, X = x, Z = z, Y = Town.Surface(lot, u), Gx = lot.Grade * lot.Dx, Gz = lot.Grade * lot.Dz, Radius = Radius, Name = name });
+				// The lot's depth runs back from its road along (-Dz, Dx): facing out of it is the other way.
+				list.Add(new Site { Kind = kind, X = x, Z = z, Y = Town.Surface(lot, u), Gx = lot.Grade * lot.Dx, Gz = lot.Grade * lot.Dz, Radius = Radius, Name = name, Hx = lot.Dz, Hz = -lot.Dx });
 			}
 			if (Circuit.Exists)
 			{
@@ -175,7 +179,7 @@ namespace HalfGripOpenWorld
 				{
 					double u = Circuit.GaragesA + (Circuit.GaragesB - Circuit.GaragesA) * i / 4.0;
 					Circuit.Straight(u, v, out double x, out double z);
-					list.Add(new Site { Kind = GarageKind.Pits, X = x, Z = z, Y = Circuit.PlaneAt(x, z) + Circuit.Lift, Gx = Circuit.Px, Gz = Circuit.Pz, Radius = PitRadius, Name = Names.Circuit + " pits" });
+					list.Add(new Site { Kind = GarageKind.Pits, X = x, Z = z, Y = Circuit.PlaneAt(x, z) + Circuit.Lift, Gx = Circuit.Px, Gz = Circuit.Pz, Radius = PitRadius, Name = Names.Circuit + " pits", Hx = Circuit.DirX, Hz = Circuit.DirZ });
 				}
 			}
 			return list;

@@ -131,8 +131,8 @@ namespace HalfGripOpenWorld
 	}
 
 	/// <summary>
-	/// A reset (holding R, or the Multiplayer mod's respawn after a wreck) puts the car back on its wheels where it is, on the ground,
-	/// facing the way it was going (or on the nearest road, if it is in water). The game's own reset would carry it back to the token loop at the spawn, kilometres away.
+	/// A reset (holding R) puts the car back on its wheels where it is, on the ground, facing the way it was going (or on the nearest road,
+	/// if it is in water). The respawn after a wreck (<see cref="GameMode"/>'s, or the Multiplayer mod's) puts it back at the spawn, or at the garage chosen as the respawn point. The game's own reset would carry it back to the token loop at the spawn, kilometres away.
 	/// </summary>
 	[HarmonyPatch(typeof(PlayerResetLogic), nameof(PlayerResetLogic.ResetOnTrack))]
 	internal static class ResetInPlace
@@ -152,12 +152,14 @@ namespace HalfGripOpenWorld
 			{
 				heading = Vector3.forward;
 			}
-			if (Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level)
+			if (GameMode.TakeWreck())
 			{
-				// In a river, a lake or the sea: back on the nearest road instead.
-				streamer.ToRoad(x, z);
+				GameMode.ToSpawn(streamer);
+				return false;
 			}
-			else
+			bool wet = Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level;
+			// In a river, a lake or the sea: back on the nearest road instead (where it is, if there is none near).
+			if (!(wet && streamer.ToRoad(x, z)))
 			{
 				streamer.BuildAround(x, z, 1);
 				streamer.Place(x, z, Quaternion.LookRotation(heading.normalized, Vector3.up));
