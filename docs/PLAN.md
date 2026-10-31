@@ -494,6 +494,31 @@ The cap is the Multiplayer mod's, not the Open World's:
 So 20 players needs, in the Multiplayer mod: `MaxPlayers` raised (or made a host setting), the lobby screen's lists made to scroll, and
 the grid slots and their dealing sized from it. Worth asking its owner for, along with the mod channel below.
 
+## Solo events (0.15.0; asked for after 0.14.0)
+
+Step 2 of the events plan below, begun. What is in:
+
+- **Courses as data** (`Courses.cs`): the circuit (3 laps from pole), the rally stage (start line once round to the finish line) and
+  the hill climb (start line to the finish below the col), each a centre line with the drawn surface's heights (the circuit's track,
+  the other two their road's, `Network.Top` included), a start box (the circuit's pole slot; 20 behind the start line on the other
+  two, its radius cut to fit a narrow road) and checkpoint gates spaced evenly, about 1000 units (300 m) apart, the last of each lap
+  on its line. Read from the layout, so the same for everyone and nothing changes in generation. A best time's key holds the course,
+  its length and laps, so a course a new version lays out differently starts afresh.
+- **The event** (`EventRace.cs`): stop in a start box in neutral for 0.6 s (as a garage) and a countdown runs (the name, 3, 2, 1);
+  leaving the box or rolling before GO is a jump start. Then the clock (game time: it stops on pause) runs; a gate counts when the car
+  crosses its line going forwards within its reach (the road's half width, the circuit's kerbs, and 10 more). The next three gates
+  past the expected one are watched too: crossing one of them calls out the gates missed and goes on from it; a run with any missed
+  sets no best. The next two gates are drawn (orange posts and a bar, no collider; the finish white), placed only when the next gate
+  changes. A wreck resets to just past the last gate (`GameMode.ToSpawn` asks `EventRace.Respawn` first). More than 500 units off the
+  centre line for 10 s, or a jump of more than 150 in a frame not made by the respawn (a teleport), gives the event up. The best time
+  of each course goes in the mod's config file under `[Best times]`.
+- **Checked** in meshcheck (`events`): gates in order to the finish, at the drawn surface's height, each reaching over its own stretch
+  only (a hairpin's other leg is never in a gate's reach), no gate's respawn point on a bridge (the reset puts the car on the ground);
+  each start box whole on the road, its ring just over the drawn surface, clear of the garages. The preview lists the courses.
+
+Not yet: a ghost of the best run, split times against the best at each gate, AI rivals, and the room's events (step 3). Not tested
+in game yet (TESTING.md 23).
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
@@ -504,7 +529,7 @@ races), while the rest of the room roams. A proposed shape, smallest useful step
    width) every few hundred metres, a finish (the start again for a lap course), and laps. Deterministic, from the layout, so every
    player has the same course without sending it. Drawn as start lights, gate posts and a finish arch; checkpoint gates only show
    for a player in that event.
-2. **Solo events.** Driving into a start box offers the event (as a garage opens: stop, shift into neutral). A countdown, then
+2. **Solo events** (begun in 0.15.0, above). Driving into a start box offers the event (as a garage opens: stop, shift into neutral). A countdown, then
    timing through the checkpoints in order (a missed gate is called out, the clock runs on), a finish with the time, and a best time per
    course kept in the mod's own config file (never the game's save). Ghost of the best lap later. A wreck in an event respawns at the
    last gate passed, not the spawn (`GameMode.TakeWreck` already lets the reset tell a wreck apart). This needs nothing from

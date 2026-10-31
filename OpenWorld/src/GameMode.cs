@@ -15,8 +15,9 @@ namespace HalfGripOpenWorld
 	/// a race that has no finish. Either way the respawn comes through <see cref="PlayerResetLogic.ResetOnTrack"/>, which
 	/// <see cref="ResetInPlace"/> sends to the spawn after a wreck (see <see cref="TakeWreck"/>).
 	///
-	/// Later this is where events go: races at the courses (and elsewhere) that a player joins by driving to their start, each with its
-	/// own entrants, timing and results, several running at once in different places while the rest of the room roams (docs/PLAN.md).
+	/// The events at the courses are <see cref="EventRace"/>'s: solo time trials for now; a wreck in one goes back to its last gate.
+	/// Later, events a room runs together, each with its own entrants, timing and results, several at once in different places while
+	/// the rest of the room roams (docs/PLAN.md).
 	/// </summary>
 	internal sealed class GameMode : MonoBehaviour
 	{
@@ -67,6 +68,11 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static void ToSpawn(Streamer streamer)
 		{
+			// In an event: back on the course at its last gate instead.
+			if (EventRace.Respawn(streamer))
+			{
+				return;
+			}
 			// Every other car in the scene: the other players' stand-ins (the Multiplayer mod adds them to the game's own list).
 			List<EnemyController> others = Instance != null && Instance.tm != null ? Traverse.Create(Instance.tm).Field("enemies").GetValue<List<EnemyController>>() : null;
 			double x = Network.SpawnX, z = Network.SpawnZ;
@@ -140,8 +146,9 @@ namespace HalfGripOpenWorld
 				try
 				{
 					link.hp = link.MaxHp;
+					bool inEvent = EventRace.Running;
 					tm.ResetPlayerOnTrack();
-					TextController.EnqueueRandomText(1f, "BACK AT THE START");
+					TextController.EnqueueRandomText(1f, inEvent ? "BACK AT THE LAST CHECKPOINT" : "BACK AT THE START");
 				}
 				catch (System.Exception e)
 				{

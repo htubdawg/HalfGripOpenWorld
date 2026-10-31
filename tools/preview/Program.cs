@@ -50,6 +50,7 @@ internal static class Program
 		}
 		Console.WriteLine("  " + lots[1] + " shops, " + lots[2] + " workshops, " + lots[3] + " filling stations on the main roads");
 		Console.WriteLine("  " + GarageSites.All.Count + " garages: " + string.Join(", ", GarageSites.All.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "; " + GarageSites.Marks.Count + " marks on the map (" + string.Join(", ", GarageSites.Marks.Where(m => m.Count > 1).Select(m => m.Count + " at (" + m.X.ToString("0") + ", " + m.Z.ToString("0") + ")").ToArray()) + " grouped)");
+		Console.WriteLine("  events: " + string.Join(", ", Courses.All.Select(c => c.Name + " " + (c.Distance / 3300.0).ToString("0.0") + " km" + (c.Laps > 1 ? " (" + c.Laps + " laps)" : "") + ", " + c.Gates.Count + " checkpoints, start box at (" + c.BoxX.ToString("0") + ", " + c.BoxZ.ToString("0") + ")").ToArray()));
 		int ponds = 0;
 		foreach (Parks.Park park in Parks.All)
 		{

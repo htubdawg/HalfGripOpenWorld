@@ -88,3 +88,15 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    Refill the ammo and nitro.
    Esc or Close closes it; it does not open again until you shift into gear or leave the circle. The next race starts with the
    loadout from the menu or the room, not the garage's (the log says `Garage: the race's own loadout is back`).
+23. Events, solo (0.15.0). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
+   5 gates`. Teleport to the circuit's grid, the rally stage's start and the hill climb's start: an orange ring with a chevron
+   pointing up the course is on the road at each, and driving into it shows the course, its length and checkpoints at the top of
+   the screen. Stop in it and shift into neutral: the course's name, 3, 2, 1, GO, and the first orange gate (posts and a bar, no
+   collision) stands across the road ahead with the next one beyond it. Roll off before GO: `JUMP START`, and nothing starts
+   until you leave the box or move and stop again. Drive the course: each gate passed moves the lit pair on, the panel counts the
+   checkpoints (and laps on the circuit, with each lap's time), the finish gate is white. Cut a corner past a gate: `MISSED A
+   CHECKPOINT`, the run finishes with no best time. A clean run: `NEW BEST`, and `halfgrip.openworld.cfg` has the time under
+   `[Best times]`; a slower one shows the gap. Get wrecked mid-event: after the respawn the car is just past the last gate passed,
+   facing on along the course, `BACK AT THE LAST CHECKPOINT`, and the clock ran on. Drive far off the course: `BACK TO THE COURSE`,
+   then `EVENT OVER` after 10 s; teleport mid-event: `EVENT OVER`. Pause: the clock stops. Open a garage mid-event (the circuit's
+   pits): the panel hides while it is open, the clock runs on. In a Multiplayer room the same works for yourself.

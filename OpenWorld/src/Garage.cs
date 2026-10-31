@@ -67,7 +67,7 @@ namespace HalfGripOpenWorld
 			ui = new GarageUi(this);
 			try
 			{
-				ringMaterial = RingMaterial(lit);
+				ringMaterial = RingMaterial(lit, new Color(0.16f, 0.86f, 1f), "OpenWorld Garage");
 				foreach (GarageSites.Site site in GarageSites.All)
 				{
 					rings.Add(Ring(site));
@@ -82,10 +82,10 @@ namespace HalfGripOpenWorld
 
 		// ---- the circles ------------------------------------------------------------------------------------------
 
-		private static Material RingMaterial(Shader shader)
+		/// <summary>A glowing material for marks on the ground (the garages' circles, the events' start boxes and gates).</summary>
+		internal static Material RingMaterial(Shader shader, Color colour, string name)
 		{
-			Color colour = new Color(0.16f, 0.86f, 1f);
-			Material m = new Material(shader) { name = "OpenWorld Garage", hideFlags = HideFlags.HideAndDontSave };
+			Material m = new Material(shader) { name = name, hideFlags = HideFlags.HideAndDontSave };
 			if (m.HasProperty("_BaseColor"))
 			{
 				m.SetColor("_BaseColor", colour);

@@ -41,7 +41,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
 | `GarageSites.cs` | Where the garages are (filling stations, workshops, the circuit's pits, the rally service area, the hill climb paddock), read from the layout |
 | `Garage.cs`, `GarageUi.cs`, `GarageRefit.cs` | The garages in a race: circles, opening on stop in neutral, god mode; the window; the live refit (gun copies) |
-| `GameMode.cs` | The Open World's game mode: a wreck respawns the car at the spawn, no AI (solo; in a room, the room's race set so); later the events |
+| `GameMode.cs` | The Open World's game mode: a wreck respawns the car at the spawn (in an event, at its last gate), no AI (solo; in a room, the room's race set so) |
+| `Courses.cs` | The events' courses read from the layout: centre line, start box, checkpoint gates (pure arithmetic: the preview lists them, meshcheck checks them) |
+| `EventRace.cs` | Solo events: the start boxes and gates drawn, countdown, timing through the gates, respawn at the last gate, best times in the config |
 | `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
 | `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
@@ -77,7 +79,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   the terrain (clip), roads poking through the roads drawn over them (poke), roads floating (float), grades, bridges clear of the
   water, river water meeting its banks (water), verges meeting the ground, farm track beds, building bases (bases), mesh faces
   (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs, roads under drawn water (flooded), plants in
-  the water (plants), ponds, lawns and benches (parks); exits 1 on a failure. It reads the drawn
+  the water (plants), ponds, lawns and benches (parks), the events' gates and start boxes (events); exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - In game: see the test checklist in `docs/TESTING.md`. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
