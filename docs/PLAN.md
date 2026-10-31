@@ -449,3 +449,9 @@ to match, and the window 860 high to hold the taller slots.
 The game's descriptions grey their flavour line (for its own light card): every grey or dark colour in them is now lifted to the
 window's light text, the stat lines' colours kept. The other secondary text and the full-health button's label (no longer dimmed;
 it does nothing when health is full) are the same light grey-white.
+
+### README trimmed (with 0.13.6)
+
+The owner found the README bloated. It is now for players and other mods' authors: a short feature list, install, playing, the
+garages, settings, names, the map API and checking a change. The long "How it works" moved to `docs/DESIGN.md` ("How the code
+works"), and the in-game test checklist to `docs/TESTING.md` (CLAUDE.md points there).

@@ -242,6 +242,51 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 
 ![Kingsbridge from above: grown streets, houses along them (roofs), gardens with trees behind, fields round the town](town.png)
 
+## How the code works (by file)
+
+- **Land** (`WorldGen.cs`, `Noise.cs`): height is a pure function of world x, z from integer-hash gradient noise, using only additions
+  and multiplications (no `System.Random`, `UnityEngine.Random` or `sin`), so it comes out identical on every machine.
+- **Rivers and lakes** (`Rivers.cs`): a priority flood drains every cell of a 100-unit grid to the sea; catchments give the rivers,
+  which are smoothed, given meanders and a falling water level a unit under the lowest land along both banks (as cut by the bigger
+  rivers), and cut into the land: the nearest river shapes the ground, and a low bank keeps a river's water from hanging over a
+  lower river beside it.
+- **Places** (`Places.cs`): every spot is scored for settling; a town, villages and farms are taken best first, each tier keeping its
+  distance.
+- **Roads** (`Network.cs`): routed by A* over the land, costed by grade per class, with bridges dear and road-sharing cheap; built in
+  order of importance; town streets grown with local rules (stop at a crossing, join a road nearby). See [World](#world).
+- **Parks and trails** (`Parks.cs`): a town's blocks are the connected ground left between its roads; a few compact ones near the
+  middle become parks (a pond dug in the big ones), and a river's bank through the built-up town another; their paths are footpaths
+  added to the network. Each lake's shore is traced and a trail laid a little way up from it.
+- **Circuit** (`Circuit.cs`, `CircuitMesh.cs`): sited before the villages and farms on the flattest open box of ground, clear of
+  towns, rivers, the coast and the mountains; its lap is a chain of corners round a ring squashed to the box, the best of 40 that fit,
+  and its ground is levelled to a plane with banks back to the land. The router keeps every other road out of it.
+- **Rally stage** (`Rally.cs`): sited after the villages and before the farms on the open upland whose land rolls most like a forest
+  stage, clear of water, mountains and places; its loop is a straight and waypoints round a ring, routed leg by leg by A* (grade and
+  a slow noise make it wind; each leg keeps off the ones before it), rounded, the best of 30 that fit. It is a road of its own class
+  (`RoadKind.Rally`), unpaved like a track, made before every other road; the router keeps them out of it, and the land use keeps
+  forest round it.
+- **Hill climb** (`HillClimb.cs`): sited after the rally stage and before the farms. The cols (saddles) in the mountains are found,
+  each given a straight at the top with room for the turning area, and paired with valley floors below that have a start straight
+  with room for the paddock; the best pairs are routed on a coarse grid, then on a 25-unit grid whose states carry a heading (45
+  degrees a step at most, so bends and hairpins have a real radius), costed by grade so a steep slope is climbed in zigzags, and
+  never across a river (it has no bridges). It is a road of its own class (`RoadKind.Climb`), paved and surfaced like a lane, made
+  before every other road and kept out of the network's junctions; the router keeps other roads out of it, and its lane is routed
+  from just behind its foot.
+- **Road signs** (`Signs.cs`, `Lettering.cs`): the roads are turned into a graph of junctions (a road's end on another road, two
+  roads crossing); the shortest way by road from each town, village and course to every junction (main roads counted a little
+  shorter) says which way each finger points and how many miles it gives. Name signs go where a road crosses a place's edge. Every
+  board's face is drawn into one texture from the names, in a pixel font made in code, and each board is sized to its words.
+- **Meshes** (`RoadMesh.cs`, `WaterMesh.cs`, `LandUse.cs`, `Buildings.cs`): each tile draws its roads, verges, water, buildings and
+  ground texture, all worked out on worker threads.
+- **Trees and grass** (`Foliage.cs`): scattered from each tile's ground pixels and drawn GPU-instanced; the pines are captured from
+  the main menu (as the Highway mod does), with simple pines made in code as a fallback.
+- **Floating origin** (`Origin.cs`, `GameCaches.cs`): past `ShiftDistance`, every root object in the scene moves back by whole tiles,
+  along with world-space particles and trails and the positions the game keeps in fields; the cockpit stays where it is.
+- **Multiplayer** (`MultiplayerLink.cs`): positions go over the network in world coordinates; the Multiplayer mod's packet writer and
+  reader are patched to convert them. The packet format stays the same.
+- **Free roam** (`Patches.cs`): no laps, no AI rivals in solo, no "wrong way" or "hold R" hints, resets in place, and "fell under the
+  map" measured from the ground under the car.
+
 ## Assets
 
 Only one race scene is loaded at a time, plus the main menu (always loaded before a race; its objects can be kept alive, as the

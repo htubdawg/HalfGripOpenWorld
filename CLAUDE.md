@@ -78,7 +78,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs, roads under drawn water (flooded), plants in
   the water (plants), ponds, lawns and benches (parks); exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
-- In game: see the test checklist in README. The owner tests in game and reports with screenshots and `LogOutput.log`.
+- In game: see the test checklist in `docs/TESTING.md`. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next
 
