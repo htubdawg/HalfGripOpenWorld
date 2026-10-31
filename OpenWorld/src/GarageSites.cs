@@ -42,8 +42,23 @@ namespace HalfGripOpenWorld
 		/// <summary>The pit lane's circles are a little smaller: the lane is 35 wide between the pit wall and the garages.</summary>
 		internal const double PitRadius = 8.0;
 
+		/// <summary>
+		/// Garages nearer each other than this share one mark on the map (the circuit's three pits, a filling station across the road
+		/// from a workshop): the marks are as wide as a road, so two that close would run into one blot anyway.
+		/// </summary>
+		internal const double MarkGroup = 160.0;
+
+		/// <summary>One mark on the map: the middle of a group of garages within <see cref="MarkGroup"/> of each other.</summary>
+		internal struct Mark
+		{
+			public double X;
+			public double Z;
+			public int Count;
+		}
+
 		private static readonly object gate = new object();
 		private static List<Site> all;
+		private static List<Mark> marks;
 
 		/// <summary>Every garage in the world, once the layout is built.</summary>
 		internal static List<Site> All
@@ -60,6 +75,74 @@ namespace HalfGripOpenWorld
 					return all;
 				}
 			}
+		}
+
+		/// <summary>The map's marks, one for each group of garages near each other, in the order of their first garage.</summary>
+		internal static List<Mark> Marks
+		{
+			get
+			{
+				List<Site> sites = All;
+				lock (gate)
+				{
+					if (marks == null)
+					{
+						marks = Group(sites);
+					}
+					return marks;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Joins garages within <see cref="MarkGroup"/> of each other (and so on along a chain), each group marked at its middle. Each
+		/// garage takes the lowest group of any it is near, so the result follows the sites' order and is the same on every machine.
+		/// </summary>
+		private static List<Mark> Group(List<Site> sites)
+		{
+			int n = sites.Count;
+			int[] group = new int[n];
+			for (int i = 0; i < n; i++)
+			{
+				group[i] = i;
+			}
+			bool changed = true;
+			while (changed)
+			{
+				changed = false;
+				for (int i = 0; i < n; i++)
+				{
+					for (int j = 0; j < n; j++)
+					{
+						double dx = sites[i].X - sites[j].X, dz = sites[i].Z - sites[j].Z;
+						if (group[j] < group[i] && dx * dx + dz * dz <= MarkGroup * MarkGroup)
+						{
+							group[i] = group[j];
+							changed = true;
+						}
+					}
+				}
+			}
+			List<Mark> list = new List<Mark>();
+			for (int g = 0; g < n; g++)
+			{
+				double x = 0.0, z = 0.0;
+				int count = 0;
+				for (int i = 0; i < n; i++)
+				{
+					if (group[i] == g)
+					{
+						x += sites[i].X;
+						z += sites[i].Z;
+						count++;
+					}
+				}
+				if (count > 0)
+				{
+					list.Add(new Mark { X = x / count, Z = z / count, Count = count });
+				}
+			}
+			return list;
 		}
 
 		private static List<Site> Build()

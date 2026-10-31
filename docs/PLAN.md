@@ -390,3 +390,23 @@ On branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a
   fitted from `PlayerLoadout`.
 - **Refit** (`GarageRefit.cs`, was `GarageTest.cs`): the guns are copied in every Open World race; the debug key and `Debug.GarageTest`
   are gone. `tools/meshcheck` no longer compiles the garage's game-side files (the test had broken its build).
+
+### The garage: first test and changes (0.13.1)
+
+The owner tested 0.13.0 alone (no second player, so nothing yet on what other players see): the circles on the ground look right and
+the Minigun's roof gun comes off. Asked for, and done on the same branch:
+
+- **Map marks as wide as a road**, hiding what is under them: the disc is 5.5 pixels round and the ring 1 more, 13 pixels (about 50
+  units, between a primary road and a trunk road) across. Garages within 160 units of each other (`GarageSites.MarkGroup`, joined
+  along chains, in the sites' order) share one mark at their middle (`GarageSites.Marks`): 16 marks for the 20 garages (the three pits,
+  and two places where a filling station and a workshop face each other). `meshcheck garages` checks every garage is in a mark and no
+  two marks run into each other; `tools/preview` draws the marks and lists the groups.
+- **Drag and drop**: an item dragged from the list onto a slot it fits (lit while dragging) is fitted; a fitted item dragged off its
+  slot (anywhere but another slot) comes off; dragged onto the other medium slot, the two swap. Dropped on a slot it does not fit, it
+  says so. A left click on a slot chooses it; on a list item, keeps its description shown.
+- **Right click** on a list item fits it (into the chosen slot, or the empty medium slot if the chosen one is full) or takes it off if
+  it is fitted; on a slot, takes its item off.
+- **Pixel look**: panels, slots, cards, icon wells and buttons are nine-sliced pixel-art boxes (3-unit pixels, a near-black outline
+  with cut corners, a light top-left edge and a dark bottom-right one; sunk for wells and a pressed button), the game's dark greys
+  and its orange for the chosen slot and a pointed-at button, cyan for what is fitted; headings and names with a hard drop shadow;
+  health as a row of blocks, green, red under 30%.

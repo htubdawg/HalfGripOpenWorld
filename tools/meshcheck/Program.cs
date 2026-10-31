@@ -1417,9 +1417,22 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0;
+		// The map's marks: every garage in one, and no two marks (about 50 units across) running into each other.
+		List<GarageSites.Mark> marks = GarageSites.Marks;
+		int marked = marks.Sum(m => m.Count), blots = 0;
+		for (int i = 0; i < marks.Count; i++)
+		{
+			for (int j = i + 1; j < marks.Count; j++)
+			{
+				if (Math.Sqrt((marks[i].X - marks[j].X) * (marks[i].X - marks[j].X) + (marks[i].Z - marks[j].Z) * (marks[i].Z - marks[j].Z)) < 60.0)
+				{
+					blots++;
+				}
+			}
+		}
+		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0 && marked == all.Count && blots == 0;
 		Console.WriteLine("garages: " + all.Count + " (" + string.Join(", ", all.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "), " + samples + " samples: " + off + " off their surface, " + blocked + " on a building or in the way, "
-			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping " + (ok ? "ok" : "FAIL"));
+			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping; " + marks.Count + " map marks with " + marked + " garages, " + blots + " running into each other " + (ok ? "ok" : "FAIL"));
 		return ok;
 	}
 

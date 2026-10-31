@@ -49,7 +49,7 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("  " + lots[1] + " shops, " + lots[2] + " workshops, " + lots[3] + " filling stations on the main roads");
-		Console.WriteLine("  " + GarageSites.All.Count + " garages: " + string.Join(", ", GarageSites.All.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()));
+		Console.WriteLine("  " + GarageSites.All.Count + " garages: " + string.Join(", ", GarageSites.All.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "; " + GarageSites.Marks.Count + " marks on the map (" + string.Join(", ", GarageSites.Marks.Where(m => m.Count > 1).Select(m => m.Count + " at (" + m.X.ToString("0") + ", " + m.Z.ToString("0") + ")").ToArray()) + " grouped)");
 		int ponds = 0;
 		foreach (Parks.Park park in Parks.All)
 		{
@@ -514,13 +514,13 @@ internal static class Program
 		}
 	}
 
-	/// <summary>Each garage as the map pictures mark it (a cyan disc in a dark ring), at least 7 pixels across.</summary>
+	/// <summary>Each group of garages as the map pictures mark it: a cyan disc in a dark ring, about 50 units across, at least 7 pixels.</summary>
 	private static void Garages(byte[] map, int size, double x0, double z0, double span)
 	{
 		double cell = span / size;
-		foreach (GarageSites.Site g in GarageSites.All)
+		foreach (GarageSites.Mark g in GarageSites.Marks)
 		{
-			double cp = (g.X - x0) / cell, cq = (z0 - g.Z) / cell, disc = Math.Max(2.5, g.Radius / cell), ring = disc + 1.0;
+			double cp = (g.X - x0) / cell, cq = (z0 - g.Z) / cell, disc = Math.Max(2.5, 5.5 * 250.0 / 64.0 / cell), ring = disc + Math.Max(1.0, 250.0 / 64.0 / cell);
 			for (int q = (int)Math.Floor(cq - ring); q <= (int)Math.Floor(cq + ring); q++)
 			{
 				for (int p = (int)Math.Floor(cp - ring); p <= (int)Math.Floor(cp + ring); p++)

@@ -489,16 +489,17 @@ namespace HalfGripOpenWorld
 		private static readonly Color32 MapGarageRing = new Color32(16, 36, 52, 255);
 
 		/// <summary>
-		/// Marks every garage on the map picture over everything else (MiniMap draws these pictures as they are, so a mark here is a mark
-		/// on its map). The disc is 2.5 pixels round and the ring 1 more, whatever the garage's circle, so it is 7 pixels across and still
-		/// shows when a minimap shrinks the picture.
+		/// Marks the garages on the map picture over everything else (MiniMap draws these pictures as they are, so a mark here is a mark
+		/// on its map). One mark for each group of garages near each other (<see cref="GarageSites.Marks"/>). The disc is 5.5 pixels
+		/// round and the ring 1 more, 13 pixels (about 50 units) across: as wide as a main road, so it still shows when a minimap
+		/// shrinks the picture, at the cost of hiding what is under it.
 		/// </summary>
 		private static void MapGarages(double ox, double oz, double pixel, Color32[] map)
 		{
-			const double disc = 2.5, ring = 3.5;
-			foreach (GarageSites.Site site in GarageSites.All)
+			const double disc = 5.5, ring = 6.5;
+			foreach (GarageSites.Mark mark in GarageSites.Marks)
 			{
-				double cp = (site.X - ox) / pixel, cq = (site.Z - oz) / pixel;
+				double cp = (mark.X - ox) / pixel, cq = (mark.Z - oz) / pixel;
 				if (cp < -ring || cq < -ring || cp > Pixels + ring || cq > Pixels + ring)
 				{
 					continue;

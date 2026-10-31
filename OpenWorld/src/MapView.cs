@@ -8,7 +8,7 @@ namespace HalfGripOpenWorld
 	/// or method, so it is found with <c>GetProperty</c> or <c>GetMethod</c>.
 	///
 	/// Each loaded tile has a map picture of <see cref="TilePixels"/> square: its land use with the water and the roads painted in by
-	/// class, in the colours of docs/world.png, and each garage marked with a cyan disc in a dark ring. Display only: it follows the world but nothing in the world depends on it.
+	/// class, in the colours of docs/world.png, and each garage (one for garages close together) marked with a cyan disc in a dark ring, about a main road's width. Display only: it follows the world but nothing in the world depends on it.
 	/// </summary>
 	public static class MapView
 	{
