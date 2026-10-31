@@ -652,6 +652,82 @@ afar), a sky of our own painted in code (sun and moon discs, stars, a gradient),
 storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
 windows and street lamps.
 
+## Junctions and dead ends (0.17.1; asked for after 0.17.0)
+
+The owner reported many junctions messy, not meeting or clipping through each other, and dead ends ending hard. Repairs only: no
+road is moved, added or taken out. Measured with a scratch tool that draws every junction's meshes from above (the new `holes`
+check is its core): of the roads' paving round the 746 junctions, 3.78% had no paved surface on top on 0.17.0 (ground, a verge or a
+sidewalk showing through), now 0.84%. Before and after, the same junctions from above (`docs/junctions.png`).
+
+![Junctions before and after](junctions.png)
+
+What was wrong, and the fixes (`Network.cs`, `RoadMesh.cs`):
+
+- **Wedges of ground in mouths met at a slant.** Each edge of a road ending on another was cut where *any* line from that edge to
+  the centre ran onto the other's paving, and never later than the centre line: the edge reaching the other road last stopped short
+  of it by up to the road's width. Now each edge is cut where it itself runs onto the other's paving, the slant between them
+  following the other's edge; whatever runs on past lies under the other's surface. An edge that never reaches the other (it passes
+  its square end) is cut on the line through the other edge's cut and the centre line's.
+- **Verges and sidewalks missing beside mouths.** A road's verge stopped with its full-width surface, not at its edge's own cut;
+  the road met's verge or sidewalk was left out a whole piece (8) at a time. Both now run to the mouth's edge (to half a unit).
+- **Roads meeting end to end** (about 120 places: a lane on from one farm to the next, a street on from a main road's end) were cut
+  as junctions: a notch, ground each side, a main road's square end standing out across the streets in a village. They are now
+  drawn as one road round the bend (`Network.Joints`): both take the side across the bend at the joint, one height, the narrower
+  widening to the other over 24. With more roads ending there, the biggest carries on into the straightest and the rest meet the
+  two as at a junction. Not where the bend is over 75 degrees, a road hooks round near its end (the hill climb's lane does, at its
+  foot), or a road passes through.
+- **A short street with both ends on other roads** was cut out whole (one cut from its first point on another road to its last).
+  Each stretch is cut on its own, the rest brought under the road it runs alongside.
+- **Cuts against a road not drawn there**: a third road was cut along a main road's stretch already cut away, leaving holes
+  (Redford). Only drawn paving cuts now.
+- **Steps at the seam**: only the sample inside a cut met the other road's surface, so along a long slant the mouth fell up to a
+  unit under it. The samples either side meet it now (held by the regrade), and where the cross-fall is held to 8% the higher side
+  goes under instead of halfway.
+- **Tracks over a lane's mouth**: a mouth brought down to the road it meets left a track meeting it there above it, drawn on top.
+  Tracks and paths are kept 0.04 under any paved surface they run onto (`Network.Tuck`), eased in at their grade.
+- **Dead ends** (178 paved, 68 tracks and paths, from `Network.DeadEnds`): a paved road is rounded off in a half disc with its
+  verge or sidewalk carried round down to the ground; a track's or path's ribbon narrows to a fifth over its last 16.
+- meshcheck: new `holes`, `joints`, `deadends` and `tucked` checks; `poke` and `tucked` read the other road's surface with its
+  cross-fall and only beside the piece the point is on (a point past a piece's end took that end's height).
+
+Left: where a road ends in the corner between two others (a cut is one straight slant, so a little ground can show in the corner),
+and the few places where several main roads end at one point (Redford's middle) are better, not clean. Knock-on: plots at
+junction corners see the mouths and joints now drawn, so a few houses moved or went (483 to 475 buildings round Kingsbridge);
+everything else the same. A town tile builds in 23.9 ms (21.6). Compiled; meshcheck and preview clean; not yet tested in game
+(TESTING.md 24).
+
+### Villages where three or more roads end (0.17.2; the owner's report on 0.17.1)
+
+The owner found junctions still broken at Ashby, Carrow, Elmsted, Kestrel and Millbrook (teleport stops). All five are a village's
+middle, where every main road through it starts or ends at one point (the Gabriel graph's links all end at the village), and often
+a street or a fourth road ends a few units off it. `Joints` drew the biggest pair as one road and cut the rest against them: their
+square ends stood out across each other and a wedge of ground showed in the middle. Where another road's paving covered the point,
+nothing was joined at all and every end was cut as at a T.
+
+Now such a place is a **hub** (`Network.Hub`, `TryHub`/`MakeHub`; drawn by `RoadMesh.Plate`): at least three paved roads ending
+within half a unit, plus any road whose paving is on the point (ending within 24 of it: an arm from its end; passing through: two
+arms, at most one such road). Arms round the place in order; for each pair of neighbours, where the left edge of one meets the right
+edge of the next (out ahead, or back past the place for arms more than half round apart; none for arms about opposite). Each arm is
+cut where the curve between it and its neighbours starts, 12 out along its edge from that meeting point; the plate's outline runs
+cut, down the arm's edge, round the curve (a quadratic from the meeting point), up the next arm's edge; cut into triangles (ear
+clipping, no slivers). Its surface follows the arms' edges; the roads ending there are eased to one height (a through road's). The
+arms' cuts are `Gap`s marked `Hub`: no mouth flare, and the arms still make the ground's bed and count in the lookups (buildings,
+signs keep off). The ground is held 0.5 under the plate; other roads' verges, tracks (`Tuck`) and the plate's own verge or sidewalk
+(round each corner, a sidewalk where both arms have one) stop at paving. Not made, the place left as before: an arm cut further than
+80 or past its road's room, an outline crossing itself, or a road crossing the plate without ending there (one at Kingsbridge,
+(-1.577, -4.254)). Left out of a hub and cut as at any junction: an arm running on alongside its neighbour (a street a few degrees
+off a main road; the hub is made of the rest). Kestrel's main road ran past the village and hooked back onto it in its last 20
+units: its arm starts where it last ran straight (`Unhook`), and the hook is gone under the grass.
+
+18 hubs (67 arms): the five villages, Redford's middle, Westhaven's and Kingsbridge's centres, and the other villages. Measured
+with the junction renderer round each hub (paving with nothing paved on top, and smaller surfaces showing over bigger ones, in
+pixels at 0.4 units): Elmsted 1081 and 68 to 0 and 0, Millbrook 1054/25 to 0/0, Ashby 356/442 to 0/437, Carrow 1374/1611 to
+489/1523; at Ashby and Carrow what is left is a street lying wholly along a main road (hidden under it, the measure counts its
+strip). meshcheck's `holes` 0.84% to 0.66%; new `hubs` check (cuts meet the outline, plate paved, ground under it). A town tile
+24 to 27 ms (22 on this machine before). Compiled; meshcheck and preview clean; not yet tested in game (TESTING.md 24).
+
+![The five villages, 0.17.1 above, 0.17.2 below](hubs.png)
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
@@ -679,3 +755,59 @@ races), while the rest of the room roams. A proposed shape, smallest useful step
 
 Open questions for the owner: which courses first; whether solo best times should be kept; whether non-entrants should be ghosted
 near a running event; whether to ask the Multiplayer mod for a mod channel.
+
+## Later: traffic (investigated after 0.17.0, to agree with the owner)
+
+AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
+
+**What the game's AI is.** `EnemyController` is a racing driver on one closed lap held in a `PathManager`: every lookup wraps
+with `% count` (`SampleLane`, `ResolveSegment`, the braking speeds), and the speed profile is solved over the whole lap and cached
+per car type. Most of what it does is racing: weaving across three lanes, blockers and overtaking, health and wrecks, its guns,
+nitro and rockets (`EnemyModule.Fit`), resetting itself onto the lap. `TrackManager.SpawnEnemies` fills a grid and registers each
+car with the lap manager. The roads are the opposite: thousands of open polylines (`Network.Road`) meeting at junctions. Driving
+them with `EnemyController` would mean rebuilding a `PathManager` per car as it goes, a window of road ahead; the window's two ends
+join into a false hairpin, the braking worked back from it slows the car for nothing, and re-solving the profile per car costs too
+much. The token loop works only because it is a closed lap.
+
+**Reused:** the game's car prefabs (`enemyCarPrefab`, `devCars`: skins, damage visuals, smoke, engine sound, the "Enemy" layer);
+`CarControllerNew`, driven through `steeringAngleDeg`, `engineAccel` and `brakeAccel`; `EnemyController`'s gear and throttle logic
+(`DriveTowardsSpeed`, `AccelInGear`, `UpdateGearSelection`, about 80 lines, copied); `RemoteCar`'s smoothing as the model for
+stand-ins. On a traffic car `EnemyController` stays, disabled, so player weapons (which look it up with
+`GetComponentInParent<EnemyController>`) can still damage and wreck it; `EnemyGun` and the other `EnemyModule`s are switched off
+so traffic never shoots. Traffic stays out of `tm.enemies`, so the lap manager and race logic never see it. `Origin.Shift` already
+moves every root and rigidbody, so the cars follow a shift with nothing added.
+
+**Written:** a `TrafficDriver` (steers for a point a little ahead in the left lane of a `Network.Road`, keeps a speed set by road
+class and bends, follows the car in front); route choice at junctions from the junction graph `Signs` builds; spawning and
+despawning per tile, density by road class and place. The route logic reads the roads without Unity (as `RoadMesh` does through
+`Network.Point` and `Network.Spans`), so `meshcheck` can check it.
+
+**Cost: two tiers.** Each physics car is a full rigidbody raycasting to the ground from every wheel, so only perhaps 20 to 30 near
+the player (within about 300 m) are physics cars; further out cars move along the road without physics, and are despawned outside
+the loaded tiles.
+
+**In a room, control must be handed between players.** Each player loads tiles, and so ground colliders, only round their own car:
+the host has no ground under a car near a far-away client, so a physics car there falls through the world. Whoever has that ground
+loaded must drive it. The Multiplayer mod's AI sync cannot carry this: the host runs every AI car and sends `AiState`, read for at
+most 8 cars, its list fixed at the scene's start; the others see kinematic stand-ins (`RemoteCar`). The design:
+
+1. **Distant traffic on a timetable, nothing sent.** A car's position is a pure function of (room seed, car id, race clock), as
+   `Storms` is, under the same determinism rules, so every machine draws the same distant traffic.
+2. **Near a player, a physics car with one owner.** The owner simulates it and sends its state (about 45 bytes a car at 10 Hz);
+   everyone else shows a kinematic stand-in.
+3. **Owner per car, not per tile:** the nearest player, with hysteresis, the host settling disputes (everyone already gets every
+   player's position 20 times a second). Hitting someone else's kinematic stand-in feels like hitting a wall; with the nearest
+   player as owner, the player about to hit a car usually owns it, so the hit is real physics. Per tile would be simpler but hands
+   cars over at every tile border and makes collisions worse there.
+4. **Handoff:** the old owner sends a last state and "hand to X"; X spawns a physics car from it.
+5. **Retirement:** a car that has been knocked about cannot rejoin the timetable; once outside every player's reach it is despawned
+   for the rest of that cycle, with one short "retired" message.
+
+This needs the Multiplayer mod's mod channel (step 3 of the events plan above), the Multiplayer mod's owner's change to make.
+
+**Waiting on the Multiplayer mod.** No solo traffic first (the owner's call): traffic is built once, for rooms, when the
+Multiplayer mod has the mod channel. Then all of it together: the driver on the game's car prefabs, per-tile spawning, the two
+tiers, `meshcheck` checks on the routes, the timetable, ownership, handoff and retirement. (AI rivals for solo events are a
+separate thing: they can use the game's own `EnemyController` unchanged, since a course is a closed lap, as the token loop is.)
+
+Open questions for the owner: whether traffic should be shootable and wreckable; how dense.

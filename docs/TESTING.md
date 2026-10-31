@@ -7,7 +7,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 1. The race loads on the road into Kingsbridge, just outside the town, facing it; none of Tokyo's arena, city or train is left.
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
    or seams between tiles. Where roads meet, the smaller one stops at the bigger one's edge with a flared mouth, level with it (no
-   lip, no flicker, nothing poking through); the same where two streets cross.
+   lip, no flicker, nothing poking through); the same where two streets cross. More junctions and dead ends: 24.
 3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Follow a river and its
    tributaries, in the lowland and up in the mountains: the water's edge meets the bank everywhere, never hanging in the air with
    ground or sky showing under it. The bridge at world 0.208, -2.517 km (a main road in a cutting over a river in a gorge): no ground
@@ -131,3 +131,20 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    respawn the car is just past the last gate passed, facing on along the course, `BACK AT THE LAST CHECKPOINT`, and the clock ran
    on. Drive far off the course: `BACK TO THE COURSE`, then `EVENT OVER` after 10 s; teleport mid-event: `EVENT OVER`. Pause: the
    clock stops. In a Multiplayer room the same works for yourself.
+24. Junctions and dead ends (0.17.1). With `ShowCoords`, drive to these (world km) and look round each, from the car and from
+   outside: no ground, grass or verge showing in a mouth, no wedge of ground where a road meets another at a slant (on either side),
+   no sidewalk or verge lying across a mouth, no step or flicker where the surfaces meet, nothing of one road poking through
+   another.
+   - A street meeting a street at a slant in Westhaven (11.482, -10.303), and Kingsbridge's streets round (-1.802, -4.088).
+   - Two farm lanes carrying on end to end (-9.333, -9.646): one road round the bend, no notch or seam, the verges unbroken.
+   - Main roads ending in a village, their streets carrying on: Northcote (-1.486, 5.487), Kestrel (12.082, -4.155), and
+     (7.710, -4.893). The main road narrows smoothly into the street, no square end standing out across it.
+   - Redford's middle (-6.838, -5.281), where two main roads and two streets end at one place.
+   - Villages where three or more roads end at one point (0.17.2), by the teleport: Ashby, Carrow, Elmsted, Kestrel, Millbrook
+     (and Westhaven's centre). One plain asphalt plate joins them: each road stops square at its edge, the corners between them
+     curved with the sidewalk or verge carried round, no ground in the middle, no road's square end across another, no step
+     where a road meets the plate. At Kestrel the main road's old hook west of the village is gone (grass there).
+   - A farm track meeting a lane that meets the trunk road (-12.822, 2.269): the track is under the lane's surface, not over it.
+   - Dead ends: a Kingsbridge street (-2.135, -3.547) and a lane (-7.894, 4.300) end rounded off, the sidewalk or verge carried
+     round the end down to the grass (no square edge standing over the ground); a farm track (-0.282, 2.578) narrows to a point
+     into the grass. Drive off each end: no bump.
