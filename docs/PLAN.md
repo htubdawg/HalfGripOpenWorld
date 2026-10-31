@@ -252,8 +252,7 @@ hill-climb grades.
 
 ## 0.12.0: a bridge's banks, country signs, through ways (reported after 0.11.0)
 
-Done on branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (`clip` now covers bridge decks), not yet tested
-in game.
+Merged (PR #20). Compiled, preview and meshcheck clean (`clip` now covers bridge decks).
 
 - **Ground through a bridge's ends** at (208, -2517): a primary road in a cutting (land 57, road 53) crosses a river in a gorge.
   The deck is held at the road's height, but the ground under a deck was left alone, so the bank tops stood up to 3.3 over the deck
@@ -271,3 +270,188 @@ in game.
   and can climb between its two ends at its grade; a second point is tried if the first fails. Country dead ends: lanes 102 to 55,
   tracks 71 to 39, footpaths 38 to 23. Roads 150 to 166 km real (2.1 km per km²). `tools/preview` reports the country dead ends by
   class.
+
+## Garage in the world (asked for after 0.12.0)
+
+The owner's ask: a garage in the Open World where a player swaps items, gets ammo and gets health, without leaving the Multiplayer
+room (no race end, no scene load). No currency.
+
+### Feasibility test: done (0.12.1, `GarageTest.cs`)
+
+On branch `claude/epic-goodall-zas0pe`, not merged. `Debug.GarageTest` (off by default) lists a key in Settings > Controls
+(`Garage test (Open World)`, F9, through HalfGripTools' `ctx.Keys`; F8 is the game's bug report key; `mod.json` asks for tools
+1.0.2). A press: reads the car's loadout (`PlayerLoadout.Equipped`), empties the car, fits the new loadout (the old one with the next
+gun and steering wheel in the catalog), and 0.25 s later refills. Only the car changes, not the save or the Multiplayer loadout.
+**The owner tested it in a Multiplayer room: every gun (the game's and the modded M1911, Minigun, RPG, Sniper Rifle, Railgun) and
+every wheel swaps and works.** What it took, and what the garage must keep:
+
+- **Fitting and removing** is the game's own live refit, `LoadoutRefit.Swap(off, on, loadout)` (the dev console's giveitem uses it
+  in a race): stats re-applied, item prefabs spawned and removed, gun and shifter activators, sprites, body skin, `CarLink`. Car
+  stats are read live, so engine, tires and body take effect at once. `Empty` removes items one at a time, `Fit` adds them.
+- **Refill**: `Effects.Refill(RefillTarget.AllEffects, 1f)` (ammo, nitro, charges) and `Effects.Refill(RefillTarget.Health, 1f)`,
+  the road pickups' path. Wait a frame or more after a refit: a new gun's rack only listens from its `Start`.
+- **Guns are built into the cockpit**, one per kind (SmgAssembly, ShotgunAssembly, RevolverAssembly, SawedOffAssembly); a gun item
+  only picks which is on, and taking it off only switches it off. A gun reads its item (capacity, magazines, blood-fed) and the gun
+  mods convert it (M1911, Minigun, RPG, Sniper Rifle on the SMG; Railgun on the shotgun) once, as it starts up. So emptying the car
+  also puts every gun back as built:
+  - Copies of each gun and of its held model (`aimModel`, the 3D gun raised to the camera, under the camera, outside the gun)
+    are taken the moment before the gun first wakes: Harmony prefixes at `Priority.First` on `NAutomaticGun`, `NPumpActionGun`,
+    `NBreakActionGun`, `NRevolver` and `MagazineManager` `Awake` (the RPG and Sniper prefixes replace the SMG's Awake, and three
+    of the four guns wake before `GunLoadoutActivator`). Kept under an inactive object moved into the race scene.
+  - On reset, the live gun and held model are detached, unregistered from `Rig` and destroyed, and fresh copies put in their place.
+  - The gun's references into its held model (fire point, the sawed-off's `barrels` array) are remapped by path, arrays and lists
+    included, both when the copy is taken and on each reset.
+  - The copies' sprites are recorded when taken and put back on each fresh copy: the gun mods' `Sprites.Reskin` swaps sprites by
+    name across the whole scene, inactive objects included, and had put the Sniper Rifle's art on the stored SMG copy.
+- **Multiplayer**: nothing new goes over the network. Others see only paint and body (`Skins` re-sends the body each second), PvP
+  damage is applied on the owner's car, and HP goes as a fraction in each `Car` packet. Items stay local.
+
+Looked into after the test (0.12.2), the two gaps the notes above named:
+
+- **The Minigun's roof gun stayed on the car after swapping away.** The roof gun is built on the car body by `MiniHeat.Setup` and
+  taken down only by `MiniHeat.Cleanup`, which the Minigun mod calls only when it unloads; `MiniHeat.OnDestroy` does not. Putting the
+  SMG back as built destroys `MiniHeat` with the gun, so the roof gun was left turning on the roof (pointing ahead, its gun gone).
+  Emptying now takes every Minigun roof gun off the car and runs each `MiniHeat.Cleanup` (by name: the classes are internal) before
+  the guns are put back; a Minigun fitted again builds a fresh one as its gun starts. Only when an SMG copy exists (otherwise the SMG
+  is not put back and the Minigun stays whole). The **remote** cannot stay: the reading of the code and the Tokyo scene dump puts
+  everything the Minigun changes in the cockpit (the remote's sprites and its holder moved by `RemotePlacer`, the heat bar on the rack,
+  the overheat padlock, the held model's mesh) under `SmgAssembly` or `HeldSmg`, which are replaced; to be confirmed in game (README
+  test 22). The other gun mods: the Sniper Rifle's laser dot and scope overlay go in its gun's `OnDestroy`; the Railgun's charge and
+  the RPG's launcher are components on the gun object; the RPG's rockets in flight, explosions and scorch marks are meant to outlive it.
+- **Rockets from an RPG fitted mid-race.** The note was wrong as to the cause: the Multiplayer mod (`Cues.FindRocket`) looks up the
+  RPG's rocket *type* by name once per game session, not the fitted gun at race start, and 20 times a second sends every live
+  `RpgProjectile`; its Harmony prefix on `Explode` is on the type too. Its aim cue re-reads the guns every second. So an RPG fitted by
+  the refit should show to the others exactly as one fitted at the start; the README's test 22 now asks for that in a room. (Others
+  see the RPG's aim as an SMG's either way: the cue sends the gun's `RequiredGunType`.)
+
+### The garage: agreed with the owner (after 0.12.1)
+
+The owner's answers to the open points:
+
+1. **Where, and on the map.** Small circular waypoints on relevant existing buildings: the filling stations (`LotKind.Garage`, 5 in
+   this world) and workshops (`LotKind.Workshop`, 10), the circuit's pit garages (`Circuit.GaragesA/B`), the rally service area
+   (`LotKind.Service`) and the hill climb's paddock (`LotKind.Paddock`): 18 in all. Generation does not change:
+   they are read from the layout. Each is a mark on the map, not a moving waypoint, that MiniMap shows **without any change to MiniMap
+   or to `MapView`'s members**: MiniMap draws `MapView.TryGetTile`'s pictures, so the mark is painted into the tile's map picture in
+   `Streamer.MapPicture` (after the roads, so it sits on top), a filled disc in a colour nothing else uses, with a dark ring, at least
+   3 pixels across (a tile is 64 pixels for 250 units) so it survives the minimap shrinking it. README's map colour list and `MapView`'s
+   summary gain the mark; `tools/preview` draws it on `world.png`.
+2. **Opening.** In the waypoint's circle, the car stopped (nearly: under about 1 unit/s) and the gearbox in **neutral** (the active
+   shifter's `gear == 0` or not `inGear`, read through `CarLink`, which covers every shifter kind) opens the garage. No key. Open, the
+   player is in **god mode**: `CarLink.godMode` (the game's own, which `TakeCrashDamage` checks: crashes, hazards and the Multiplayer
+   mod's PvP hits all come through it) plus HP held at what it was on opening (regeneration and drains are put back each frame), until
+   the garage closes (a Close button, or the car put in gear and moved off). Only the garage's Repair raises it, to full. `godMode`
+   is set back only if the garage set it (the Multiplayer mod sets it for a player who has finished). Opening also fills nothing by
+   itself: Repair and Refill are buttons.
+3. **Items.** Every item available by normal means: the catalog's items that are not `disabled` (the game's own flag for items kept
+   out of play: the shop, unlocks and rewards all skip them), locked or not, the gun mods' items included, by unique id. Not the
+   consumables (`UpgradeCategory.CONSUMABLE`: used up from the inventory, no slot to fit them in). In a Multiplayer room, also not
+   what the Multiplayer mod leaves out of its own garage (`Loadout.Banned`, read by reflection so its list stays the one rule: slow
+   motion, rerolls, run boons, beer, time rewinding), which break a shared race; solo, those are offered.
+4. **Not remembered.** Nothing is written: not the save (`equipped`/`inventory`), not the Multiplayer mod's loadout. The garage only
+   changes the car, as the test does; the next race starts with the loadout picked in the menu.
+
+The overlay (the garage scene's drag-and-drop UI exists only in that scene): slots by `UpgradeCategory` as `DevCommands.Slots` names
+them (two medium slots), each item card with `item.image` and `item.Name`, fit and remove, Repair, Refill, Close; the cursor freed
+(the `Grabber` locks it) and driving input held while open. Changes apply on Close or on each pick (to decide in the first build:
+each refit empties and refits the whole car, under a frame). Gun copies are taken in every Open World race, not only with
+`Debug.GarageTest`; `GarageTest` and its key go when the garage replaces it.
+
+### The garage: built (0.13.0)
+
+On branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a new `garages` check), not yet tested in game.
+
+- **Sites** (`GarageSites.cs`, no Unity, read from the layout): 20 in this world, 5 filling stations (34 back on the forecourt,
+  between the canopy's posts and the kiosk), 10 workshops (13 back, mid-yard), 3 in the circuit's pit lane in front of the garages
+  (radius 8), the rally service area and the hill climb paddock (three tenths of the way back, clear of the vans); radius 9.
+  `meshcheck garages`: every circle's edge and middle on its own lot's surface or the pit lane, off buildings, pumps, posts, vans and
+  awnings, at the surface's height, its ring over the ground, none overlapping.
+- **Map**: `Streamer.MapGarages` paints a cyan disc (2.5 pixels) in a dark ring (1 more) over everything in each tile's map picture,
+  so MiniMap shows it as it is; `tools/preview` draws the same on `world.png` and lists the sites.
+- **In the world** (`Garage.cs`): a cyan emissive ring on the surface (following its slope, 0.14 over it) with four dashes pointing
+  in, under the world's root so the origin shift moves it; `GARAGE` over each circle within 220 units.
+- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, for 0.6 s.
+  Then `CarLink.godMode` (set back only if the garage set it) and the health held each `LateUpdate` (capped at the new maximum after a
+  refit); input muted (`GameInput.Mute`), the cursor freed and the hand hidden, as the Multiplayer mod's pause does. Closed by Close or
+  Esc (the controls back the frame after, so the Esc does not open the pause menu), or if the car is pushed out or knocked moving. It
+  does not open again until the car leaves the circle, moves or goes into gear.
+- **Window** (`GarageUi.cs`, IMGUI scaled to the screen's height, the game's m6x11 font if found): slots down the left in category
+  order under Car (chassis, tires, engine, shifter), Cockpit (steering wheel, gun, two medium slots) and Extras (passive, exterior);
+  the chosen slot's items on the right, best tier first then by name, in tier colours, "not unlocked yet" on locked ones, the fitted
+  one marked; the hovered item's picture, name and the game's own description (its stat lines; TextMeshPro tags removed) underneath;
+  Leave empty; health bar with Repair; Refill ammo and nitro; Close. An item fits as it is clicked (the whole car is emptied and
+  refitted, `GarageRefit.Apply`), ammo and nitro filled 0.25 s later. A medium item picked for one slot leaves the other. Items on the
+  car no slot takes are carried through untouched. Mouse only: no gamepad navigation.
+- **Items**: `Garage.Offered`: not `disabled`, not consumable, unique id; in a room not `Multiplayer.Loadout.Banned` (by reflection;
+  the same four types if it cannot be found).
+- **Not remembered**: the first refit keeps `PlayerLoadout.Equipped`; when the world goes (`Garage.OnDestroy`), or before the next
+  car is fitted (a prefix on `LoadoutSpawner.Awake`), the stats and `PlayerLoadout` are put back, unless the game set or dropped the
+  loadout itself in between (postfixes on `PlayerLoadout.Set`/`Forget`): in a room the next race starts without the menu and is
+  fitted from `PlayerLoadout`.
+- **Refit** (`GarageRefit.cs`, was `GarageTest.cs`): the guns are copied in every Open World race; the debug key and `Debug.GarageTest`
+  are gone. `tools/meshcheck` no longer compiles the garage's game-side files (the test had broken its build).
+
+### The garage: first test and changes (0.13.1)
+
+The owner tested 0.13.0 alone (no second player, so nothing yet on what other players see): the circles on the ground look right and
+the Minigun's roof gun comes off. Asked for, and done on the same branch:
+
+- **Map marks as wide as a road**, hiding what is under them: the disc is 5.5 pixels round and the ring 1 more, 13 pixels (about 50
+  units, between a primary road and a trunk road) across. Garages within 160 units of each other (`GarageSites.MarkGroup`, joined
+  along chains, in the sites' order) share one mark at their middle (`GarageSites.Marks`): 16 marks for the 20 garages (the three pits,
+  and two places where a filling station and a workshop face each other). `meshcheck garages` checks every garage is in a mark and no
+  two marks run into each other; `tools/preview` draws the marks and lists the groups.
+- **Drag and drop**: an item dragged from the list onto a slot it fits (lit while dragging) is fitted; a fitted item dragged off its
+  slot (anywhere but another slot) comes off; dragged onto the other medium slot, the two swap. Dropped on a slot it does not fit, it
+  says so. A left click on a slot chooses it; on a list item, keeps its description shown.
+- **Right click** on a list item fits it (into the chosen slot, or the empty medium slot if the chosen one is full) or takes it off if
+  it is fitted; on a slot, takes its item off.
+- **Pixel look**: panels, slots, cards, icon wells and buttons are nine-sliced pixel-art boxes (3-unit pixels, a near-black outline
+  with cut corners, a light top-left edge and a dark bottom-right one; sunk for wells and a pressed button), the game's dark greys
+  and its orange for the chosen slot and a pointed-at button, cyan for what is fitted; headings and names with a hard drop shadow;
+  health as a row of blocks, green, red under 30%.
+
+### The garage: second test (0.13.2)
+
+The owner's second test (screenshots): the window works. Asked for, and done:
+
+- **Map marks doubled**: 11 pixels round and a 2 pixel ring, 26 pixels (about 100 units) across; garages within 250 units share one
+  (15 marks for 20 garages); meshcheck's marks are at least 110 apart.
+- **The prompt raised** to 56% of the screen's height, clear of the steering wheel and the shifter.
+- **The health row no longer overlaps the slots**: the window is 800 high (the ten slots and three headings take 568).
+- **Less cyberpunk, more grungy**: no cyan in the window or the prompt (only the world's `GARAGE` labels, which match the rings);
+  oily warm greys, the HUD's orange for the chosen slot and a pointed-at button, a dirty mustard for what is fitted and drop targets,
+  cream lettering, an olive health bar (rust red when low), and a tiled grime texture (specks, blotches, the odd scratch, an integer
+  hash) over every box and button.
+
+### The garage: the vanilla garage's colours (0.13.3)
+
+The owner found 0.13.2's orange and brown gross and sent a screenshot of the vanilla garage to take the colours and theme from (not
+its layout). The window and prompt now use them: a dark slate frame, worn mid-grey metal tiles with a near-black outline, black
+wells for the pictures and the health bar, white lettering; the vanilla red (its map button, its prices) for the chosen slot, a
+pointed-at button and the headings; its unlock bar's green for what is fitted, the drop targets and the health blocks (red when
+low). The grime stays, neutral grey instead of warm.
+
+### The garage: readable text (0.13.4)
+
+The owner's screenshot of 0.13.3: the grey slot names and tier names could not be read on the grey metal. Now the tiles are a
+darker metal, every line on a slot or card is light (or the item's tier colour) with the hard black shadow, and the title is
+`GARAGE` in red and the garage's name in white.
+
+### The garage: room for the text (0.13.5)
+
+From the owner's screenshot of 0.13.4: the instructions were still grey, and the slots and cards a little small for their two lines.
+The instructions and the leaving hint are now light; the slots are 56 high (59 apart), the cards 64, their pictures and text moved
+to match, and the window 860 high to hold the taller slots.
+
+### The garage: no grey text left (0.13.6)
+
+The game's descriptions grey their flavour line (for its own light card): every grey or dark colour in them is now lifted to the
+window's light text, the stat lines' colours kept. The other secondary text and the full-health button's label (no longer dimmed;
+it does nothing when health is full) are the same light grey-white.
+
+### README trimmed (with 0.13.6)
+
+The owner found the README bloated. It is now for players and other mods' authors: a short feature list, install, playing, the
+garages, settings, names, the map API and checking a change. The long "How it works" moved to `docs/DESIGN.md` ("How the code
+works"), and the in-game test checklist to `docs/TESTING.md` (CLAUDE.md points there).

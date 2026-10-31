@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HalfGripOpenWorld;
 using UnityEngine;
 
@@ -71,6 +72,7 @@ internal static class Program
 			("rally", RallyChecks),
 			("climb", ClimbChecks),
 			("signs", SignChecks),
+			("garages", GarageChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -1348,5 +1350,110 @@ internal static class Program
 		}
 		Console.WriteLine("signs:   " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts (" + Signs.Fingers + " fingers): " + onRoad + " points over a road, " + wet + " posts in water, " + crowded + " buildings on a sign, " + undrawn + " not drawn; " + distinct.Count + " faces, " + outside + " outside the atlas, " + overlap + " overlapping");
 		return Signs.NameSigns > 0 && Signs.Fingerposts > 0 && onRoad == 0 && wet == 0 && crowded == 0 && undrawn == 0 && outside == 0 && overlap == 0;
+	}
+
+	/// <summary>
+	/// Every garage's circle on clear, drivable ground: round its edge and at its middle, on its own lot's surface and off its building
+	/// (pumps, canopy posts, vans and awnings too), or on the circuit's pit lane off the garages; at the surface's height (the ring
+	/// follows the slope); its ring over the drawn ground; no two circles overlapping.
+	/// </summary>
+	private static bool GarageChecks()
+	{
+		int samples = 0, off = 0, blocked = 0, height = 0, sunk = 0, overlap = 0;
+		List<GarageSites.Site> all = GarageSites.All;
+		foreach (GarageSites.Site g in all)
+		{
+			Town.Lot lot = g.Kind == GarageKind.Pits ? null : Town.Lots.OrderBy(l => (l.X - g.X) * (l.X - g.X) + (l.Z - g.Z) * (l.Z - g.Z)).First();
+			for (int k = -1; k < 32; k++)
+			{
+				double a = k * Math.PI / 16.0, r = k < 0 ? 0.0 : g.Radius;
+				double x = g.X + Math.Cos(a) * r, z = g.Z + Math.Sin(a) * r;
+				double surface = GarageSites.SurfaceAt(g, x, z);
+				samples++;
+				if (lot != null)
+				{
+					Town.Lot on = Town.At(x, z, out bool building);
+					Town.Local(lot, x, z, out double u, out double v);
+					if (on != lot)
+					{
+						off++;
+						Console.WriteLine("  garage " + g.Name + ": (" + x.ToString("0") + ", " + z.ToString("0") + ") is off its lot");
+						continue;
+					}
+					if (building || Obstacle(lot, u, v))
+					{
+						blocked++;
+						Console.WriteLine("  garage " + g.Name + ": (" + x.ToString("0") + ", " + z.ToString("0") + ") is on a building or in the way of one (u " + u.ToString("0.0") + ", v " + v.ToString("0.0") + ")");
+					}
+					if (Math.Abs(Town.Surface(lot, u) - surface) > 0.01)
+					{
+						height++;
+					}
+				}
+				else
+				{
+					Circuit.Local(x, z, out double u, out double v);
+					if (Circuit.SurfaceAt(x, z) == CircuitSurface.None || Circuit.Building(x, z) || v < Circuit.PitWallOut || v > Circuit.PitLaneOut)
+					{
+						off++;
+						Console.WriteLine("  garage " + g.Name + ": (" + x.ToString("0") + ", " + z.ToString("0") + ") is off the pit lane");
+					}
+					if (Math.Abs(Circuit.PlaneAt(x, z) + Circuit.Lift - surface) > 0.01)
+					{
+						height++;
+					}
+				}
+				// The ring is drawn 0.14 over the surface.
+				if (surface + Network.Lift + 0.14 < Mesh(x, z) + 0.05)
+				{
+					sunk++;
+				}
+			}
+			foreach (GarageSites.Site o in all)
+			{
+				if (o != g && Math.Sqrt((o.X - g.X) * (o.X - g.X) + (o.Z - g.Z) * (o.Z - g.Z)) < o.Radius + g.Radius + 2.0)
+				{
+					overlap++;
+				}
+			}
+		}
+		// The map's marks: every garage in one, and no two marks (about 100 units across) running into each other.
+		List<GarageSites.Mark> marks = GarageSites.Marks;
+		int marked = marks.Sum(m => m.Count), blots = 0;
+		for (int i = 0; i < marks.Count; i++)
+		{
+			for (int j = i + 1; j < marks.Count; j++)
+			{
+				if (Math.Sqrt((marks[i].X - marks[j].X) * (marks[i].X - marks[j].X) + (marks[i].Z - marks[j].Z) * (marks[i].Z - marks[j].Z)) < 110.0)
+				{
+					blots++;
+				}
+			}
+		}
+		bool ok = all.Count > 0 && off == 0 && blocked == 0 && height == 0 && sunk == 0 && overlap == 0 && marked == all.Count && blots == 0;
+		Console.WriteLine("garages: " + all.Count + " (" + string.Join(", ", all.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key).ToArray()) + "), " + samples + " samples: " + off + " off their surface, " + blocked + " on a building or in the way, "
+			+ height + " at the wrong height, " + sunk + " ring under the ground, " + overlap / 2 + " overlapping; " + marks.Count + " map marks with " + marked + " garages, " + blots + " running into each other " + (ok ? "ok" : "FAIL"));
+		return ok;
+	}
+
+	/// <summary>Whether lot-frame (u, v) is on one of the things standing on a lot's open surface (as Buildings lays them out), with a unit to spare.</summary>
+	private static bool Obstacle(Town.Lot lot, double u, double v)
+	{
+		bool In(double cu, double cv, double w, double d)
+		{
+			return Math.Abs(u - cu) <= w * 0.5 + 1.0 && Math.Abs(v - cv) <= d * 0.5 + 1.0;
+		}
+		switch (lot.Kind)
+		{
+			case LotKind.Garage:
+				return In(-7.0, 20.0, 3.0, 1.4) || In(7.0, 20.0, 3.0, 1.4) || In(-14.0, 13.0, 1.0, 1.0) || In(14.0, 13.0, 1.0, 1.0) || In(-14.0, 27.0, 1.0, 1.0) || In(14.0, 27.0, 1.0, 1.0);
+			// The vans, trailers and awnings along the back.
+			case LotKind.Service:
+				return v >= lot.D - 41.0 - 1.0;
+			case LotKind.Paddock:
+				return v >= lot.D - 25.0 - 1.0;
+			default:
+				return false;
+		}
 	}
 }

@@ -481,6 +481,45 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+			MapGarages(ox, oz, pixel, map);
+		}
+
+		/// <summary>A garage's mark: a filled disc, a colour nothing else on the map has, in a dark ring.</summary>
+		private static readonly Color32 MapGarage = new Color32(40, 220, 255, 255);
+		private static readonly Color32 MapGarageRing = new Color32(16, 36, 52, 255);
+
+		/// <summary>
+		/// Marks the garages on the map picture over everything else (MiniMap draws these pictures as they are, so a mark here is a mark
+		/// on its map). One mark for each group of garages near each other (<see cref="GarageSites.Marks"/>). The disc is 11 pixels
+		/// round and the ring 2 more, 26 pixels (about 100 units) across, wider than the trunk road, so it still shows plainly when a
+		/// minimap shrinks the picture, at the cost of hiding what is under it.
+		/// </summary>
+		private static void MapGarages(double ox, double oz, double pixel, Color32[] map)
+		{
+			const double disc = 11.0, ring = 13.0;
+			foreach (GarageSites.Mark mark in GarageSites.Marks)
+			{
+				double cp = (mark.X - ox) / pixel, cq = (mark.Z - oz) / pixel;
+				if (cp < -ring || cq < -ring || cp > Pixels + ring || cq > Pixels + ring)
+				{
+					continue;
+				}
+				for (int q = Math.Max(0, (int)Math.Floor(cq - ring)); q <= Math.Min(Pixels - 1, (int)Math.Floor(cq + ring)); q++)
+				{
+					for (int p = Math.Max(0, (int)Math.Floor(cp - ring)); p <= Math.Min(Pixels - 1, (int)Math.Floor(cp + ring)); p++)
+					{
+						double dp = p + 0.5 - cp, dq = q + 0.5 - cq, d = Math.Sqrt(dp * dp + dq * dq);
+						if (d <= disc)
+						{
+							map[q * Pixels + p] = MapGarage;
+						}
+						else if (d <= ring)
+						{
+							map[q * Pixels + p] = MapGarageRing;
+						}
+					}
+				}
+			}
 		}
 
 		/// <summary>Copies a loaded tile's map picture into <paramref name="into"/>; false if the tile is not loaded. Main thread only.</summary>

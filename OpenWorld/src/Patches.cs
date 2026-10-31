@@ -209,3 +209,81 @@ namespace HalfGripOpenWorld
 		}
 	}
 }
+
+namespace HalfGripOpenWorld
+{
+	/// <summary>
+	/// The garage keeps an untouched copy of each of the cockpit's guns (see <see cref="GarageRefit.CaptureGun"/>), taken the moment
+	/// before the gun first starts up: guns start as the scene loads, some before the gun activator wakes. First, ahead of the gun mods,
+	/// which convert the gun and its rack in these same methods (the RPG's prefix replaces the SMG's Awake altogether).
+	/// </summary>
+	[HarmonyPatch]
+	internal static class GunTemplates
+	{
+		private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+		{
+			yield return AccessTools.Method(typeof(NAutomaticGun), "Awake");
+			yield return AccessTools.Method(typeof(NPumpActionGun), "Awake");
+			yield return AccessTools.Method(typeof(NBreakActionGun), "Awake");
+			yield return AccessTools.Method(typeof(NRevolver), "Awake");
+		}
+
+		[HarmonyPriority(Priority.First)]
+		private static void Prefix(Gun __instance)
+		{
+			GarageRefit.CaptureGun(__instance);
+		}
+	}
+
+	/// <summary>A gun's rack may wake before the gun does; the gun is copied then.</summary>
+	[HarmonyPatch(typeof(MagazineManager), "Awake")]
+	internal static class RackTemplates
+	{
+		[HarmonyPriority(Priority.First)]
+		private static void Prefix(MagazineManager __instance)
+		{
+			GarageRefit.CaptureGun(__instance.GetComponentInParent<Gun>(true));
+		}
+	}
+
+	/// <summary>As the cockpit wakes: the guns not copied yet, and the log line saying which were.</summary>
+	[HarmonyPatch(typeof(GunLoadoutActivator), "Awake")]
+	internal static class GunTemplatesCheck
+	{
+		private static void Prefix(GunLoadoutActivator __instance)
+		{
+			GarageRefit.CheckGuns(__instance);
+		}
+	}
+
+	/// <summary>
+	/// The game keeps the loadout of the race in hand in <see cref="PlayerLoadout"/>, and the next race's car is fitted from it when it
+	/// is known: a garage's refit changes it, so before any car is fitted the loadout the race started with is put back (see
+	/// <see cref="Garage.RestoreLoadout"/>). Garage changes last for one race.
+	/// </summary>
+	[HarmonyPatch(typeof(LoadoutSpawner), "Awake")]
+	internal static class GarageForgets
+	{
+		[HarmonyPriority(Priority.First)]
+		private static void Prefix()
+		{
+			Garage.RestoreLoadout();
+		}
+	}
+
+	/// <summary>The game (the menu, a room's next race) set or dropped the loadout itself: that one stands, the garage has nothing to put back.</summary>
+	[HarmonyPatch]
+	internal static class GarageLoadoutSet
+	{
+		private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+		{
+			yield return AccessTools.Method(typeof(PlayerLoadout), nameof(PlayerLoadout.Set));
+			yield return AccessTools.Method(typeof(PlayerLoadout), nameof(PlayerLoadout.Forget));
+		}
+
+		private static void Postfix()
+		{
+			Garage.Forget();
+		}
+	}
+}
