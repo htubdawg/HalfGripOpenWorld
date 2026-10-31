@@ -817,6 +817,51 @@ world (all but the cockpit's on the INTERIOR layer, the mirror and any drawing i
 seconds (a camera switched on later), with each logged under `VerboseLog`. `ShowCoords` adds a line: the far view's chunks drawn, the
 fog's start and end, and how far the camera in use draws. `WorldScene.RaiseCameras` (far view off) raises the free-flight camera too.
 
+## The land past the far view painted into the sky (0.20.0; asked for after 0.19.1)
+
+The owner asked whether the mountains could be painted into the sky until one is close enough for the far view to draw them. The
+far view already draws the whole world out to where the fog ends, so the sky taking over inside that would only be wrong (the sky is
+seen as from infinitely far: painted mountains 10 km off would stand still as you drive, and slip where the meshes took over). The
+gap was past the fog: from the south coast the northern ranges are 20 to 30 km off, past the 20,000 the meshes are drawn to at most,
+so they were never seen. Agreed: paint the land past the meshes' edge, and let the fog run on past it.
+
+- **The skyline (`Skyline.cs`, `SkylineBuild.cs`).** For each of the painted sky's 1024 columns a ray steps out over the far view's
+  surface (its heights with the canopy, sunk by the earth's curve: about 40 at 40 km) from 0.9 of the drawn distance to 60 km, in steps
+  a little under a texel's height at that distance (25 units, growing to 300), keeping the highest the land has stood: each sky row
+  in a band of 48 either side of the horizon (17 degrees) it passes takes the land there (distance, colour, normal). Past the world's
+  south edge the sea goes on; past the walls, nothing. Colours from the far view's picture averaged into 200-unit cells and read
+  between them (the far view's mipmapped picture is as soft at those distances; single pixels shimmered between builds). About 5 to
+  15 ms a build, on a worker, again whenever the eye has moved 40 across or 4 up or the drawn edge 2%, at most four times a second;
+  the first at once. Two buffers, never building into the one the picture under way paints.
+- **Lit and fogged as the far view is (`SkyPaint.Shade`).** The far view is URP Lit on a white base, so a painted texel is its colour
+  (sRGB curve off, in linear colour) times 0.96, times the ambient probe (evaluated at the six axes when `Sky` scales it, used as an
+  ambient cube on the texel's normal) plus the sun's colour and intensity on the slope, darker when wet; the sea past the world shines
+  at a glance (about three quarters of the horizon's colour, as the sea sheet's gloss would; a guess to check in game). Then Unity's
+  linear fog by distance, toward the horizon's colour. Land nearly all fog (the last tenth) fades into the sky, as the meshes stop
+  at the cameras' reach and the sky shows past them. The rain curtains between the car and the land hang in front of it. Painted a
+  frame at a time with the sky's rows (the band under the horizon too: all at a picture's end it took a frame 3 ms); a frame's
+  painting about as before (0.5 to 0.6 ms, at worst about 1).
+- **How far one sees, and how far it is drawn.** With the skyline, the clearest day sees 40,000 (across the whole world), times the
+  day's clearness (0.65 to 1 from the room's seed), less at night, under cloud and in the rain as before; the fog starts at 3% of
+  it. The meshes are drawn to `FarViewDistance` at most (`FarView.DrawnReach`, set by `Sky`; the cameras' reach follows it), and past
+  them the skyline. So the near world is a little clearer than in 0.19 (at 3 km the fog is 7% where it was 21%): the fog no longer
+  has to close at the meshes' edge. `FarSkyline` off (or the painted sky failing) gives 0.19's fog exactly. The storms' haze keeps
+  its reach of 20,000 at most.
+- **Kept to the linear fog.** Exponential fog would suit distance better, but the game's shaders may have the other fog modes'
+  variants stripped and none can be compiled, so the fog mode is not changed.
+- **Checked:** `tools/farview` now draws each view twice, out to the fog's end as if the far view reached it, and as the game
+  shows it (the far view to 14,000, the painted sky past it, read a texel at a time), both lit by `SkyPaint.Shade`: past 14,000 no land
+  without land painted within a texel (0.00 to 0.01%), no sky with land painted (0.00%), colours inside the outlines within 8 to 12
+  of 255 (the reference's picture is sharper than the far view's at 20 to 30 km); the same skyline twice; a storm 9 km off greys the land
+  behind it and nothing away from it; the cost. `tools/skyview` and meshcheck pass; `tools/jview` builds again (it had not left out
+  `FarView.cs` since 0.19.0). Compiled; not yet tested in game (TESTING.md 27).
+- **Seen in game only:** whether the painted land's light matches the meshes' at the seam (the ambient cube and the sun's light are
+  the scene's, but URP's other terms are left out); Unity's fog goes by depth, the painting by distance, so at the screen's edges the
+  meshes' edge is a little clearer than the land painted on past it; the painted outlines are a sky texel (0.35 degrees, several
+  screen pixels) coarse.
+
+![The far view's picture of the world, and three views over the country on a clear morning: in the middle drawn to the fog's end (40 km), on the right as the game shows it, the far view to 14 km and the land past it painted into the sky](farview.png)
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

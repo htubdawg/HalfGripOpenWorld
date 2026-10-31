@@ -17,14 +17,15 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
-  roads), so the mountains, the coast and the towns are seen to the horizon on a clear day.
+  roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
+  painted into the sky, so on the clearest days you see across the whole world, the far mountains hazy on the horizon.
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west, the rally stage (orange) in the north-east, the hill climb (pink) in the mountains north of the middle](docs/world.png)
 
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.19.1**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.20.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -125,7 +126,8 @@ the same ground.
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; past them the far view, or with it off the fog's end). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `FarView` | true | Draws the whole world at low detail past the loaded tiles, and lets you see as far as the weather allows. Off, the fog ends where the tiles end, as before 0.19.0. |
-| World | `FarViewDistance` | 14000 | With `FarView` on, the furthest you see on the clearest day, in game units (the world is 32000 across); the weather brings it in from there (4000 to 20000). |
+| World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
+| World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws. |
@@ -188,7 +190,9 @@ dotnet run -c Release --project tools/jview -- at junction.ppm -10708 -10113 100
 weather, what a sample costs) and draws the world at six times for one seed. `tools/skyview` checks the painted sky (the sun's disc
 where its light comes from, the horizon the fog's colour, storms seen from afar toward them and nowhere else, a seed always the same
 sky, what a frame costs) and draws it at ten times of day and weathers (as `docs/sky.png`). `tools/farview` builds the far view's
-low-detail world (its time, memory, repeatability) and draws its picture and three views over the country (as `docs/farview.png`). `tools/jview` draws the tiles' road meshes from above
+low-detail world (its time, memory, repeatability) and the land painted past it into the sky (that it stands where the far view drawn
+to the fog's end would, its cost, a storm's rain in front of it), and draws its picture and three views over the country, each drawn
+to the fog's end and as the game shows it (as `docs/farview.png`). `tools/jview` draws the tiles' road meshes from above
 round a point, a list of points, random junctions or dead ends, or every hub, with ground showing in a mouth, surfaces poking
 through and steps marked; it also lists the roads near a point and the places (its modes are at the top of its `Program.cs`).
 

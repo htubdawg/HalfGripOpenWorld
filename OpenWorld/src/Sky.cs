@@ -86,11 +86,28 @@ namespace HalfGripOpenWorld
 		private float nextPlanes;
 		private readonly List<(Material m, Color colour, float smooth)> roads = new List<(Material, Color, float)>();
 
-		/// <summary>With the far view on, how far one sees on the clearest day of this race (from the room's seed, under the config's
-		/// FarViewDistance), the reach shown now (eased toward the weather's), and the storms round the car for the painted sky, refilled on a
-		/// worker every few seconds.</summary>
-		private float clearReach;
+		/// <summary>With the far view on, how clear this race's day is (from the room's seed: the haziest see 0.65 of the clearest), the
+		/// reach shown now (eased toward the weather's), and the storms round the car for the painted sky, refilled on a worker every few
+		/// seconds.</summary>
+		private float clearness;
 		private float reach = -1f;
+
+		/// <summary>With the land painted past the far view (<see cref="Skyline"/>), how far one sees on the clearest day: across the whole
+		/// world (32,000) and some, the mountains 30 km off faint in the haze. Without it, the config's FarViewDistance, as the meshes stop there.</summary>
+		private const float ClearSight = 40000f;
+
+		/// <summary>The land past the far view's edge for the painted sky: the one being painted and a spare built into on a worker when the
+		/// eye has moved, where it was last asked for, and the light it is painted in (the ambient probe as an ambient cube, refreshed with the
+		/// probe).</summary>
+		private Skyline skyline;
+		private Skyline spareSkyline;
+		private System.Threading.Tasks.Task<Skyline> building;
+		private float nextSkyline;
+		private bool skylineFailed;
+		private Vector3 toLight = Vector3.up;
+		private readonly SkyPaint.Rgb[] ambientCube = new SkyPaint.Rgb[6];
+		private static readonly Vector3[] CubeAxes = { Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back };
+		private readonly Color[] cubeColours = new Color[6];
 		private StormField field;
 		private System.Threading.Tasks.Task<StormField> filling;
 		private float nextField;
@@ -116,9 +133,9 @@ namespace HalfGripOpenWorld
 			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
 			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
 			startHour = (float)(u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v);
-			// Some days are clearer than others: the clearest see the whole of the config's far view distance, the haziest two thirds of it.
+			// Some days are clearer than others: the haziest see two thirds as far as the clearest.
 			double w = (double)(Noise.Mix(h ^ 0xC1EA2UL) >> 11) * (1.0 / 9007199254740992.0);
-			clearReach = Mod.FarReach.Value * (float)(0.65 + 0.35 * w);
+			clearness = (float)(0.65 + 0.35 * w);
 			Mod.Log.LogInfo("Sky: the race starts at " + Clock(startHour) + ", a day lasts " + (DaySeconds / 60f).ToString("0") + " minutes; storms: a "
 				+ (storms.Raininess < 0.35 ? "dry" : storms.Raininess < 0.7 ? "showery" : "wet") + " day (" + storms.Raininess.ToString("0.00") + "), wind "
 				+ storms.WindSpeed.ToString("0.0") + " from " + Compass(-DetMath.Cos(storms.WindAngle), -DetMath.Sin(storms.WindAngle)) + ", snow above " + storms.SnowLine.ToString("0"));
@@ -536,7 +553,7 @@ namespace HalfGripOpenWorld
 			bool moon = elevation < -2f;
 			float shownElevation = Mathf.Max(LowestLight, Mathf.Abs(elevation) * (moon ? 0.8f : 1f));
 			float azimuth = moon ? -turn + 180f : -turn;
-			Vector3 toLight = Quaternion.Euler(0f, -azimuth, 0f) * (Quaternion.Euler(0f, 0f, shownElevation) * Vector3.right);
+			toLight = Quaternion.Euler(0f, -azimuth, 0f) * (Quaternion.Euler(0f, 0f, shownElevation) * Vector3.right);
 			sun.transform.rotation = Quaternion.LookRotation(-toLight, Vector3.up);
 
 			float dim = 1f - 0.55f * cloud;
@@ -574,8 +591,52 @@ namespace HalfGripOpenWorld
 					keeper.Store(scaled);
 				}
 				RenderSettings.ambientProbe = scaled;
+				// The same light as an ambient cube for the land painted past the far view.
+				scaled.Evaluate(CubeAxes, cubeColours);
+				for (int i = 0; i < 6; i++)
+				{
+					ambientCube[i] = new SkyPaint.Rgb(Mathf.Max(0f, cubeColours[i].r), Mathf.Max(0f, cubeColours[i].g), Mathf.Max(0f, cubeColours[i].b));
+				}
 				RenderSettings.reflectionIntensity = reflections * Mathf.Lerp(0.15f, 1f, daylight) * (1f - 0.4f * cloud);
 			}
+
+			// ---- how far one sees ----
+			float thin = Mathf.Lerp(1f, 0.45f, rain);
+			float fogEnd = Mathf.Lerp(Mathf.Min(nightLook.fogEnd, dayLook.fogEnd), dayLook.fogEnd, daylight) * thin;
+			float fogStart = Mathf.Lerp(Mathf.Min(nightLook.fogStart, dayLook.fogStart), dayLook.fogStart, daylight) * thin;
+			// With the far view, how far one sees is ours, from the weather at the car (the weathers' fogs were made for arenas, some
+			// ending at 300): the day's clear sight, a little less at night, brought in under cloud and closer still in the rain. Eased, so
+			// it never jumps (the far view coming on, a teleport). The meshes are drawn to FarViewDistance at most; past that, with the
+			// skyline, the land is painted into the sky, so the fog need not close at the meshes' edge: it ends where the air says.
+			bool lands = FarView.Showing && Mod.FarSkyline.Value && painter != null && !skylineFailed;
+			float target = fogEnd;
+			if (FarView.Showing)
+			{
+				target = (lands ? ClearSight : Mod.FarReach.Value) * clearness * Mathf.Lerp(0.75f, 1f, daylight) * (1f - 0.5f * cloud) * Mathf.Lerp(1f, 0.08f, rain);
+				target = Mathf.Max(target, fogEnd);
+			}
+			reach = reach < 0f ? target : Mathf.MoveTowards(reach, target, dt * Mathf.Max(600f, reach * 0.4f));
+			if (FarView.Showing || reach > fogEnd + 1f)
+			{
+				fogEnd = reach;
+				fogStart = reach * 0.03f;
+			}
+			float drawn = 0f;
+			if (FarView.Showing)
+			{
+				drawn = Mathf.Min(fogEnd, Mod.FarReach.Value);
+				if (lands)
+				{
+					Lands(x, z, drawn);
+				}
+				if (!lands || skyline == null)
+				{
+					// Nothing past the meshes: the fog closes at their edge, as before 0.20.0.
+					fogEnd = drawn;
+					fogStart = Mathf.Min(fogStart, fogEnd * 0.03f);
+				}
+			}
+			FarView.DrawnReach = drawn;
 
 			// ---- the sky ----
 			Color? horizon = null;
@@ -583,6 +644,8 @@ namespace HalfGripOpenWorld
 			{
 				try
 				{
+					state.Land = lands ? skyline : null;
+					state.Light = Light(fogStart, fogEnd);
 					horizon = PaintSky(ref state, x, z, t);
 				}
 				catch (Exception e)
@@ -631,24 +694,6 @@ namespace HalfGripOpenWorld
 				fog = Color.Lerp(nightLook.fogColor, dayLook.fogColor, daylight) * Color.Lerp(Color.white, new Color(1f, 0.75f, 0.6f), sunset * 0.5f);
 				float grey = fog.grayscale;
 				fog = Color.Lerp(fog, new Color(grey, grey, grey), cloud * 0.6f) * (1f - 0.3f * cloud);
-			}
-			float thin = Mathf.Lerp(1f, 0.45f, rain);
-			float fogEnd = Mathf.Lerp(Mathf.Min(nightLook.fogEnd, dayLook.fogEnd), dayLook.fogEnd, daylight) * thin;
-			float fogStart = Mathf.Lerp(Mathf.Min(nightLook.fogStart, dayLook.fogStart), dayLook.fogStart, daylight) * thin;
-			// With the far view, how far one sees is ours, from the weather at the car (the weathers' fogs were made for arenas, some
-			// ending at 300): the day's clear reach, a little less at night, brought in under cloud and closer still in the rain. Eased, so
-			// it never jumps (the far view coming on, a teleport).
-			float target = fogEnd;
-			if (FarView.Showing)
-			{
-				target = clearReach * Mathf.Lerp(0.75f, 1f, daylight) * (1f - 0.5f * cloud) * Mathf.Lerp(1f, 0.08f, rain);
-				target = Mathf.Max(target, fogEnd);
-			}
-			reach = reach < 0f ? target : Mathf.MoveTowards(reach, target, dt * Mathf.Max(600f, reach * 0.4f));
-			if (FarView.Showing || reach > fogEnd + 1f)
-			{
-				fogEnd = reach;
-				fogStart = reach * 0.03f;
 			}
 			RenderSettings.fog = true;
 			RenderSettings.fogColor = fog;
@@ -744,7 +789,8 @@ namespace HalfGripOpenWorld
 			state.Storm = field;
 			state.CarX = (float)x;
 			state.CarZ = (float)z;
-			state.Reach = reach > 0f ? reach : RenderSettings.fogEndDistance;
+			// The storms' haze was made for a reach of up to 20,000: past that a storm would show to the storm field's edge and stop there.
+			state.Reach = Mathf.Min(20000f, reach > 0f ? reach : RenderSettings.fogEndDistance);
 			bool done;
 			if (!painted)
 			{
@@ -767,6 +813,93 @@ namespace HalfGripOpenWorld
 			}
 			SkyPaint.Palette(state, out _, out SkyPaint.Rgb horizon, out _);
 			return new Color(horizon.R, horizon.G, horizon.B, 1f);
+		}
+
+		/// <summary>
+		/// Keeps <see cref="skyline"/>, the land past the far view's edge, up to date for the eye: built again on a worker when the eye has
+		/// moved 40 across or 4 up, or the drawn edge 2% (the weather closing in), at most four times a second; the first at once, so the fog
+		/// never opens past land not painted yet. Built from 0.9 of the drawn edge, so the edge can move out a little before the next build
+		/// with no gap (the meshes cover what is painted inside their reach). Never into the one the picture under way is painting.
+		/// </summary>
+		private void Lands(double x, double z, float drawn)
+		{
+			if (!FarGrid.Ready)
+			{
+				return;
+			}
+			if (building != null && building.IsCompleted)
+			{
+				if (building.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
+				{
+					spareSkyline = skyline;
+					skyline = building.Result;
+				}
+				else
+				{
+					skylineFailed = true;
+					Mod.Log.LogWarning("Sky: the land past the far view stopped (the fog closes at the far view's edge): " + building.Exception);
+				}
+				building = null;
+			}
+			Camera camera = Camera.main;
+			double eye = camera != null ? camera.transform.position.y : tm.playerCarController.transform.position.y + 3.0;
+			double from = drawn * 0.9;
+			if (skyline == null)
+			{
+				Skyline first = new Skyline();
+				first.Build(x, z, eye, from);
+				skyline = first;
+				Mod.Log.LogInfo("Sky: the land past the far view painted into the sky (" + first.Hits + " texels, " + first.Ms.ToString("0") + " ms a build)");
+				return;
+			}
+			if (building != null || Time.time < nextSkyline)
+			{
+				return;
+			}
+			double mx = x - skyline.X, mz = z - skyline.Z;
+			bool moved = mx * mx + mz * mz > 40.0 * 40.0 || Math.Abs(eye - skyline.Eye) > 4.0 || Math.Abs(from - skyline.From) > skyline.From * 0.02;
+			if (!moved)
+			{
+				return;
+			}
+			Skyline into = spareSkyline ?? new Skyline();
+			if (into == painter.Painting)
+			{
+				return;
+			}
+			spareSkyline = null;
+			nextSkyline = Time.time + 0.25f;
+			building = System.Threading.Tasks.Task.Run(() =>
+			{
+				into.Build(x, z, eye, from);
+				return into;
+			});
+		}
+
+		/// <summary>How the far view is lit and fogged this frame, for the land painted past it (see <see cref="SkyPaint.LandLight"/>).</summary>
+		private SkyPaint.LandLight Light(float fogStart, float fogEnd)
+		{
+			bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+			Color c = linear ? sun.color.linear : sun.color;
+			float intensity = sun.isActiveAndEnabled ? sun.intensity : 0f;
+			return new SkyPaint.LandLight
+			{
+				Linear = linear,
+				East = ambientCube[0],
+				West = ambientCube[1],
+				Up = ambientCube[2],
+				Down = ambientCube[3],
+				North = ambientCube[4],
+				South = ambientCube[5],
+				SunX = toLight.x,
+				SunY = toLight.y,
+				SunZ = toLight.z,
+				Sun = new SkyPaint.Rgb(c.r * intensity, c.g * intensity, c.b * intensity),
+				Tint = 1f - 0.18f * Mathf.Max(0f, wet),
+				Reflect = RenderSettings.reflectionIntensity,
+				FogStart = fogStart,
+				FogEnd = fogEnd,
+			};
 		}
 
 		/// <summary>
@@ -849,6 +982,7 @@ namespace HalfGripOpenWorld
 		private void OnDestroy()
 		{
 			Status = null;
+			FarView.DrawnReach = 0f;
 			if (live != null)
 			{
 				if (WeatherGrip.Current == live)

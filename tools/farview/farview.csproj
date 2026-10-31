@@ -28,5 +28,9 @@
     <Compile Include="../../OpenWorld/src/GarageSites.cs" />
     <Compile Include="../../OpenWorld/src/Courses.cs" />
     <Compile Include="../../OpenWorld/src/FarGrid.cs" />
+    <Compile Include="../../OpenWorld/src/Skyline.cs" />
+    <Compile Include="../../OpenWorld/src/SkylineBuild.cs" />
+    <Compile Include="../../OpenWorld/src/SkyPaint.cs" />
+    <Compile Include="../../OpenWorld/src/StormField.cs" />
   </ItemGroup>
 </Project>

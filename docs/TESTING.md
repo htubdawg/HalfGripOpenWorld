@@ -176,3 +176,14 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    sky is as in 0.18.0. The frame rate is about as before (with `VerboseLog`, `Tiles: ... ms each` unchanged).
    In the free-flight view too (0.19.1): the country goes on past the loaded ground to the horizon. With `ShowCoords`, the last line
    says `far view: N chunks, fog A to B, <camera> draws to C` with C a little over B (thousands on a clear day), in every view.
+27. The land past the far view painted into the sky (0.20.0). The log says `Sky: the land past the far view painted into the sky (N
+   texels, M ms a build)` a few seconds into the race, and no `the land past the far view stopped`. On a clear day (`ShowCoords`:
+   cloud near 0; its last line now `fog A to B, <camera> draws to C` with C about `FarViewDistance` and B up to 40000), from the
+   highest road near the coast looking north and from the spawn: the mountains in the north stand on the horizon past where the far
+   view ends, hazy and lit from the same side as the near hills, their snow lighter. Where the far view ends (about 14 km out) there
+   is no line, no band of sky, no step in brightness or colour; take a screenshot of it from high ground. Drive along: the far
+   mountains keep their places (they do not slide with the car) and do not flicker. The near country is a little clearer than in 0.19.
+   At sunset and at night the painted land darkens with the meshes. A storm between you and the mountains hides them behind its rain.
+   As the rain closes in, the far mountains go first, smoothly. Look south from high ground over the sea: the sea goes on past the far
+   view's edge with no seam (its shine there is a guess; report a screenshot if the far sea is brighter or darker than the near).
+   With `FarSkyline=false`: the fog ends at the far view's edge as in 0.19.1. The frame rate is about as before.

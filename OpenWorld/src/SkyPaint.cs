@@ -17,6 +17,9 @@ namespace HalfGripOpenWorld
 	/// Unity. The sky changes slowly (the sun crosses a texel in about two seconds), so a picture is painted a few rows a frame
 	/// (<see cref="RowsPerFrame"/>) and handed over whole when it is done, about five times a second at 60 frames a second.
 	///
+	/// Since 0.20.0 the land past the far view's drawn edge is painted over it round the horizon (<see cref="Skyline"/>, lit and fogged as
+	/// the far view is), so the country goes on past the meshes to where the fog really ends.
+	///
 	/// It only draws what <see cref="Sky"/> says (the hour, the cloud at the car), so it may use floats and <c>Math</c>; the stars and
 	/// the cloud pattern come from the room's seed, so players in a room see the same ones.
 	/// </summary>
@@ -27,7 +30,8 @@ namespace HalfGripOpenWorld
 		internal const int H = 512;
 		private const int Half = H / 2;
 
-		/// <summary>Rows of the upper half painted each frame (the lower half, under the horizon, is one colour a row and done at the end).</summary>
+		/// <summary>Rows of the upper half painted each frame (the lower half, under the horizon, is one colour a row and done at the end, but
+		/// for the skyline's band, painted a frame at a time with the rest).</summary>
 		internal const int RowsPerFrame = 24;
 
 		/// <summary>The cloud layer's height above the car, in game units (about 1200 m), which sets how fast it shrinks toward the horizon.</summary>
@@ -108,6 +112,41 @@ namespace HalfGripOpenWorld
 
 			/// <summary>How far one sees on the ground (the fog's end), in game units: storms further off fade into the horizon's haze.</summary>
 			internal float Reach;
+
+			/// <summary>The land past the far view's drawn edge (<see cref="Skyline"/>), painted over the sky round the horizon, lit and fogged
+			/// by <see cref="Light"/>. Null for none.</summary>
+			internal Skyline Land;
+
+			internal LandLight Light;
+		}
+
+		/// <summary>
+		/// How the far view's land is lit and fogged in the scene, so the land painted past its edge (<see cref="Skyline"/>) carries on from it
+		/// with no seam: the far view is the game's <c>Universal Render Pipeline/Lit</c> on a white base, so a texel is its picture's colour
+		/// times the ambient light from the way its slope faces plus the sun's, then Unity's linear fog by its distance, in linear colour
+		/// when the game draws in linear colour.
+		/// </summary>
+		internal struct LandLight
+		{
+			/// <summary>True when the game draws in linear colour (colours mixed after taking the sRGB curve off, put back after).</summary>
+			internal bool Linear;
+
+			/// <summary>The ambient light (the scene's light probe, as it is set this moment) from east, west, up, down, north and south, in
+			/// the colour space the lighting is done in.</summary>
+			internal Rgb East, West, Up, Down, North, South;
+
+			/// <summary>The unit vector toward the scene's light (the sun, or the moon at night), and its colour times its intensity.</summary>
+			internal float SunX, SunY, SunZ;
+			internal Rgb Sun;
+
+			/// <summary>The far view's material's base colour (white, darker when wet), as a factor.</summary>
+			internal float Tint;
+
+			/// <summary>The scene's environment reflections' strength (the sea past the world shines like the far view's sea sheet).</summary>
+			internal float Reflect;
+
+			/// <summary>The fog's start and end (Unity's linear fog: none at the start, all at the end).</summary>
+			internal float FogStart, FogEnd;
 		}
 
 		/// <summary>The picture, RGBA, bottom row first, as <c>Texture2D.SetPixelData</c> takes it. Only whole pictures are in it.</summary>
@@ -127,8 +166,12 @@ namespace HalfGripOpenWorld
 		private readonly List<int> lit = new List<int>();
 		private static readonly float[] Dither = { 0f, 8f, 2f, 10f, 12f, 4f, 14f, 6f, 3f, 11f, 1f, 9f, 15f, 7f, 13f, 5f };
 
-		/// <summary>The row being painted next, from <see cref="Half"/> up; <see cref="H"/> when no picture is under way.</summary>
+		/// <summary>The row being painted next, from <see cref="Half"/> up (from the bottom of the skyline's band when there is land to paint);
+		/// <see cref="H"/> when no picture is under way.</summary>
 		private int next = H;
+
+		/// <summary>The first row painted a frame at a time in the picture under way: the rows under it are done at its end.</summary>
+		private int first = Half;
 
 		// What the picture under way is painted with, worked out once at its start.
 		private State s;
@@ -145,6 +188,37 @@ namespace HalfGripOpenWorld
 		private readonly float[] curtainA = new float[W * CurtainSteps];
 		private readonly float[] curtainH = new float[W * CurtainSteps];
 		private readonly float[] streaks = new float[W];
+
+		// The land past the far view's edge for the picture under way, and its fog colour in the colour space it is lit in.
+		private Skyline land;
+		private LandLight light;
+		private Rgb fogLit;
+
+		/// <summary>The sRGB curve taken off a byte (256 values), and put back on a linear value (<see cref="Curve"/> + 1 steps from 0 to 1).</summary>
+		private static readonly float[] ToLinear = new float[256];
+		private const int Curve = 4095;
+		private static readonly float[] ToGamma = new float[Curve + 1];
+
+		static SkyPaint()
+		{
+			for (int i = 0; i < 256; i++)
+			{
+				ToLinear[i] = (float)Linear(i / 255.0);
+			}
+			for (int i = 0; i <= Curve; i++)
+			{
+				double v = i / (double)Curve;
+				ToGamma[i] = (float)(v <= 0.0031308 ? v * 12.92 : 1.055 * Math.Pow(v, 1.0 / 2.4) - 0.055);
+			}
+		}
+
+		private static double Linear(double v)
+		{
+			return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+		}
+
+		/// <summary>The <see cref="Skyline"/> the picture under way paints, which must not be built into until the picture is done.</summary>
+		internal Skyline Painting => next < H ? land : null;
 
 		internal SkyPaint(int seed)
 		{
@@ -289,7 +363,6 @@ namespace HalfGripOpenWorld
 		private void Begin(in State state)
 		{
 			s = state;
-			next = Half;
 			Palette(s, out zenith, out horizon, out glow);
 			float e = s.SunElevation;
 			float daylight = Step(-6f, 10f, e);
@@ -345,6 +418,134 @@ namespace HalfGripOpenWorld
 
 			PlaceStars();
 			Storming();
+
+			land = s.Light.FogEnd > s.Light.FogStart ? s.Land : null;
+			light = s.Light;
+			fogLit = FogColour(light, horizon);
+			// The land under the horizon is painted a frame at a time with the rest; all at the end it took a frame 3 ms.
+			first = land != null ? Skyline.Lowest : Half;
+			next = first;
+		}
+
+		private static float Lin(float v)
+		{
+			return (float)Linear(Math.Max(0.0, Math.Min(1.0, v)));
+		}
+
+		/// <summary>
+		/// One texel of land as the far view's material shows it at distance <paramref name="d"/>: its picture's colour
+		/// (<paramref name="r"/>, <paramref name="g"/>, <paramref name="b"/>) lit by the ambient light from the way its normal faces and the
+		/// sun on it (the sea past the world also shining), then fogged; out in sRGB, 0 to 1, with the fog's share. False when it is all
+		/// fog. <paramref name="fogColour"/> is the horizon's colour in the colour space the lighting is done in. <c>tools/farview</c> lights
+		/// its reference views with it.
+		/// </summary>
+		internal static bool Shade(in LandLight light, Rgb fogColour, byte r, byte g, byte b, bool sea, float nx, float ny, float nz, float d,
+			out float lr, out float lg, out float lb, out float fog)
+		{
+			fog = Math.Max(0f, Math.Min(1f, (d - light.FogStart) / (light.FogEnd - light.FogStart)));
+			if (fog >= 0.999f)
+			{
+				lr = lg = lb = 0f;
+				return false;
+			}
+			// The ambient light from the way the slope faces, as an ambient cube.
+			Rgb xs = nx > 0f ? light.East : light.West, ys = ny > 0f ? light.Up : light.Down, zs = nz > 0f ? light.North : light.South;
+			float wx = nx * nx, wy = ny * ny, wz = nz * nz;
+			float lambert = Math.Max(0f, nx * light.SunX + ny * light.SunY + nz * light.SunZ);
+			// URP Lit with no metal: the diffuse is 0.96 of the albedo.
+			float tint = light.Tint * 0.96f;
+			float er = (xs.R * wx + ys.R * wy + zs.R * wz + light.Sun.R * lambert) * tint;
+			float eg = (xs.G * wx + ys.G * wy + zs.G * wz + light.Sun.G * lambert) * tint;
+			float eb = (xs.B * wx + ys.B * wy + zs.B * wz + light.Sun.B * lambert) * tint;
+			bool linear = light.Linear;
+			lr = (linear ? ToLinear[r] : r / 255f) * er;
+			lg = (linear ? ToLinear[g] : g / 255f) * eg;
+			lb = (linear ? ToLinear[b] : b / 255f) * eb;
+			if (sea)
+			{
+				// The sea sheet's gloss (smoothness 0.7) seen at a glance: about three quarters of the environment, the sky at the horizon.
+				float shine = 0.74f * light.Reflect;
+				lr += fogColour.R * shine;
+				lg += fogColour.G * shine;
+				lb += fogColour.B * shine;
+			}
+			lr += (fogColour.R - lr) * fog;
+			lg += (fogColour.G - lg) * fog;
+			lb += (fogColour.B - lb) * fog;
+			if (linear)
+			{
+				lr = ToGamma[(int)(Math.Max(0f, Math.Min(1f, lr)) * Curve)];
+				lg = ToGamma[(int)(Math.Max(0f, Math.Min(1f, lg)) * Curve)];
+				lb = ToGamma[(int)(Math.Max(0f, Math.Min(1f, lb)) * Curve)];
+			}
+			return true;
+		}
+
+		/// <summary>The horizon's colour for <see cref="Shade"/>: in linear colour if the light is.</summary>
+		internal static Rgb FogColour(in LandLight light, Rgb horizon)
+		{
+			return light.Linear ? new Rgb(Lin(horizon.R), Lin(horizon.G), Lin(horizon.B)) : horizon;
+		}
+
+		/// <summary>
+		/// The land past the far view's edge over one row of the picture (in <see cref="Skyline"/>'s band): each texel with land in it lit as
+		/// the far view's material lights it (its picture's colour, the ambient light from the way its slope faces, the sun on it; the sea
+		/// past the world shining as the far view's sea sheet does, at a glance a reflection of the sky at the horizon), fogged by its
+		/// distance as Unity's linear fog fogs the meshes (<see cref="Shade"/>), behind the rain curtains between it and the car. Land so far
+		/// into the fog that it is nearly all fog fades into the sky behind it, as the meshes stop at the cameras' reach and the sky shows
+		/// past them.
+		/// </summary>
+		private void PaintLand(int row)
+		{
+			int k = row - Skyline.Lowest;
+			if (land == null || k < 0 || k >= Skyline.Rows)
+			{
+				return;
+			}
+			float[] dist = land.Dist, normal = land.Normal;
+			byte[] colour = land.Colour;
+			int o = row * W * 4;
+			int li = k * W;
+			for (int col = 0; col < W; col++, o += 4, li++)
+			{
+				float d = dist[li];
+				if (d <= 0f)
+				{
+					continue;
+				}
+				int c = li * 4;
+				if (!Shade(light, fogLit, colour[c], colour[c + 1], colour[c + 2], colour[c + 3] == 0, normal[li * 3], normal[li * 3 + 1], normal[li * 3 + 2], d,
+					out float lr, out float lg, out float lb, out float fog))
+				{
+					continue;
+				}
+				if (raining)
+				{
+					// The rain curtains between here and the land, in front of it as they are in front of the sky behind it.
+					int step = Math.Min(CurtainSteps - 1, (int)((d - CurtainFrom) / CurtainStep));
+					float rain = step >= 0 ? curtainA[col * CurtainSteps + step] : 0f;
+					if (rain > 0.003f)
+					{
+						float h = curtainH[col * CurtainSteps + step] / rain;
+						rain *= streaks[col];
+						lr += (rainColour.R + (horizon.R - rainColour.R) * h - lr) * rain;
+						lg += (rainColour.G + (horizon.G - rainColour.G) * h - lg) * rain;
+						lb += (rainColour.B + (horizon.B - rainColour.B) * h - lb) * rain;
+					}
+				}
+				// Nearly all fog: fades into the sky already painted there.
+				float a = 1f - Step(0.9f, 0.999f, fog);
+				if (a < 1f)
+				{
+					lr = work[o] / 255f + (lr - work[o] / 255f) * a;
+					lg = work[o + 1] / 255f + (lg - work[o + 1] / 255f) * a;
+					lb = work[o + 2] / 255f + (lb - work[o + 2] / 255f) * a;
+				}
+				float dither = (Dither[(row & 3) * 4 + (col & 3)] + 0.5f) / 16f;
+				work[o] = Byte(lr, dither);
+				work[o + 1] = Byte(lg, dither);
+				work[o + 2] = Byte(lb, dither);
+			}
 		}
 
 		/// <summary>
@@ -390,9 +591,15 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>One row of the upper half: the gradient, the sun's glow, the stars, the discs and the cloud over them.</summary>
+		/// <summary>One row of the upper half: the gradient, the sun's glow, the stars, the discs and the cloud over them (a row of the lower
+		/// half in the skyline's band: <see cref="Under"/>).</summary>
 		private void Row(int row)
 		{
+			if (row < Half)
+			{
+				Under(row);
+				return;
+			}
 			float y = rowY[row], r = rowR[row];
 			// Up from the horizon colour (exactly it on the lowest row, which the fog meets) toward the top of the sky's, quickly at first.
 			float f = (float)Math.Sqrt(Math.Max(0f, y - 0.005f));
@@ -531,6 +738,7 @@ namespace HalfGripOpenWorld
 				work[o + 3] = 255;
 				o += 4;
 			}
+			PaintLand(row);
 		}
 
 		/// <summary>The storm field's cloud at sample coordinates (u, v), read between samples; 0 outside it. <see cref="StormField.CloudAt"/>
@@ -577,24 +785,31 @@ namespace HalfGripOpenWorld
 		/// seam), then the picture handed over.</summary>
 		private void Finish()
 		{
-			for (int row = 0; row < Half; row++)
+			for (int row = 0; row < first; row++)
 			{
-				float k = 1f - 0.25f * Step(0f, 0.6f, -rowY[row]);
-				int o = row * W * 4;
-				for (int col = 0; col < 4; col++)
-				{
-					float d = (Dither[(row & 3) * 4 + col] + 0.5f) / 16f;
-					work[o + col * 4] = Byte(horizon.R * k, d);
-					work[o + col * 4 + 1] = Byte(horizon.G * k, d);
-					work[o + col * 4 + 2] = Byte(horizon.B * k, d);
-					work[o + col * 4 + 3] = 255;
-				}
-				for (int col = 4; col < W; col += 4)
-				{
-					Buffer.BlockCopy(work, o, work, o + col * 4, 16);
-				}
+				Under(row);
 			}
 			Buffer.BlockCopy(work, 0, Pixels, 0, Pixels.Length);
+		}
+
+		/// <summary>A row of the lower half: the horizon's colour (darker straight down), and the land past the far view in it.</summary>
+		private void Under(int row)
+		{
+			float k = 1f - 0.25f * Step(0f, 0.6f, -rowY[row]);
+			int o = row * W * 4;
+			for (int col = 0; col < 4; col++)
+			{
+				float d = (Dither[(row & 3) * 4 + col] + 0.5f) / 16f;
+				work[o + col * 4] = Byte(horizon.R * k, d);
+				work[o + col * 4 + 1] = Byte(horizon.G * k, d);
+				work[o + col * 4 + 2] = Byte(horizon.B * k, d);
+				work[o + col * 4 + 3] = 255;
+			}
+			for (int col = 4; col < W; col += 4)
+			{
+				Buffer.BlockCopy(work, o, work, o + col * 4, 16);
+			}
+			PaintLand(row);
 		}
 
 		/// <summary>The stars' positions for the picture under way: each turned about the pole, as one texel (bright ones two), made wider

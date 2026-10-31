@@ -65,6 +65,10 @@ namespace HalfGripOpenWorld
 		private readonly List<Vector2> uvs = new List<Vector2>();
 		private readonly List<int> triangles = new List<int>();
 
+		/// <summary>How far the cameras draw the world (the far view's meshes), set by <see cref="Sky"/> with the fog each frame; 0 when the
+		/// far view is not showing. Past it, with the skyline on, the land is painted into the sky (<see cref="Skyline"/>).</summary>
+		internal static float DrawnReach;
+
 		/// <summary>True while the far view is drawn: on in the config and its grid built. <see cref="Sky"/> then sets the fog's reach.</summary>
 		internal static bool Showing => Instance != null && Instance.shown;
 
@@ -199,7 +203,8 @@ namespace HalfGripOpenWorld
 
 		private void LateUpdate()
 		{
-			// The cameras draw as far as the fog lets one see (Sky sets it), never less than the tiles reach.
+			// The cameras draw as far as Sky says the far view is drawn (where the fog ends, or FarViewDistance if that is nearer and the land
+			// past it is painted into the sky), never less than the tiles reach.
 			if (!shown)
 			{
 				return;
@@ -218,7 +223,8 @@ namespace HalfGripOpenWorld
 					Note(all[i]);
 				}
 			}
-			float needed = Mathf.Max((Mod.TileRadius.Value + 0.5f) * Streamer.TileSize, RenderSettings.fogEndDistance * 1.02f + 50f);
+			float reach = DrawnReach > 0f ? DrawnReach : RenderSettings.fogEndDistance;
+			float needed = Mathf.Max((Mod.TileRadius.Value + 0.5f) * Streamer.TileSize, reach * 1.02f + 50f);
 			foreach (Camera camera in cameras)
 			{
 				if (camera != null && Mathf.Abs(camera.farClipPlane - needed) > 10f)
