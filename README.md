@@ -28,9 +28,23 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 ## Install
 
-1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
-2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.17.0` and `Open World map made from TokyoNeon`.
+You need Windows and the game on Steam. The mod launcher from [HalfGripMods](https://github.com/4l3x4nd3r0/HalfGripMods) does
+everything: it installs BepInEx and HalfGripTools, and adds this mod from its GitHub link.
+
+1. Download `HalfGrip-Mods-Installer.exe` from the [HalfGripMods releases](https://github.com/4l3x4nd3r0/HalfGripMods/releases)
+   (the newest release called "installer") and double-click it. If Windows says "Windows protected your PC", press **More info**,
+   then **Run anyway**.
+2. Close the game, then press **INSTALL ALL** (BepInEx, HalfGripTools and the official mods). To leave out the official mods,
+   press **INSTALL** on just the BepInEx and HalfGripTools cards.
+3. Press **+ ADD**, paste `https://github.com/htubdawg/HalfGripOpenWorld` and press **ADD**. Then press **INSTALL** on the Open
+   World card.
+4. Start the game from Steam.
+
+To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
+needs the same version). To stop playing it, switch it off in the game's mod manager.
+
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.17.0` and
+`Open World map made from TokyoNeon`.
 
 ## Playing it
 
