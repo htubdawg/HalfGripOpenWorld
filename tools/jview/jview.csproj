@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Draws the tiles' road meshes from above round junctions, hubs and dead ends (see Program.cs). Pass -p:GameDir=<game folder>
+       (the HalfGripRefs repo's game/ works). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0618;CS0649;CS0169;CS0414</NoWarn>
+    <GameDir Condition="'$(GameDir)' == ''">../../../halfgriprefs/game</GameDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../meshcheck/Stubs.cs" />
+    <Compile Include="../../OpenWorld/src/*.cs" Exclude="../../OpenWorld/src/Mod.cs;../../OpenWorld/src/Patches.cs;../../OpenWorld/src/WorldScene.cs;../../OpenWorld/src/Streamer.cs;../../OpenWorld/src/MapView.cs;../../OpenWorld/src/MapEntry.cs;../../OpenWorld/src/MultiplayerLink.cs;../../OpenWorld/src/Weather.cs;../../OpenWorld/src/Destinations.cs;../../OpenWorld/src/Garage.cs;../../OpenWorld/src/GarageUi.cs;../../OpenWorld/src/GarageRefit.cs;../../OpenWorld/src/GameMode.cs;../../OpenWorld/src/EventRace.cs;../../OpenWorld/src/EventBoard.cs;../../OpenWorld/src/Sky.cs" />
+    <Reference Include="$(GameDir)/HalfGrip_Data/Managed/UnityEngine*.dll" />
+    <Reference Include="$(GameDir)/HalfGrip_Data/Managed/Assembly-CSharp.dll" />
+    <Reference Include="$(GameDir)/BepInEx/core/0Harmony.dll" />
+    <Reference Include="$(GameDir)/BepInEx/core/BepInEx.dll" />
+  </ItemGroup>
+</Project>

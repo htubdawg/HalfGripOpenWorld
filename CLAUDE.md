@@ -93,6 +93,10 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
   (tucked), places where three or more roads end drawn as one plate (hubs); exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
+- `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
+  marking ground in a mouth (cyan), surfaces poking through (magenta), paving under the ground (yellow) and steps; other modes draw a
+  list of points, random junctions or dead ends, list hubs, places or the roads near a point (see the top of its `Program.cs`).
+  Look at the junctions an owner reports with it, and before and after any change to junctions, cuts or `RoadMesh`.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - In game: see the test checklist in `docs/TESTING.md`. The owner tests in game and reports with screenshots and `LogOutput.log`.
