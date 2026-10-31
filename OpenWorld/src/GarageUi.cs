@@ -438,7 +438,7 @@ namespace HalfGripOpenWorld
 					Icon(new Rect(r.x + 11f, r.y + 11f, r.height - 22f, r.height - 22f), s.Item);
 				}
 				Shadowed(new Rect(r.x + 62f, r.y + 6f, r.width - 68f, 20f), s.Label, small);
-				Shadowed(new Rect(r.x + 62f, r.y + 26f, r.width - 68f, 24f), s.Item != null && !lifted ? Titled(s.Item) : "<color=#b4b5ba>Empty</color>", text);
+				Shadowed(new Rect(r.x + 62f, r.y + 26f, r.width - 68f, 24f), s.Item != null && !lifted ? Titled(s.Item) : "<color=#d6d7da>Empty</color>", text);
 				y += 59f;
 			}
 		}
@@ -449,7 +449,7 @@ namespace HalfGripOpenWorld
 			Event e = Event.current;
 			Slot slot = slots[selected];
 			List<UpgradeComponent> items = offered.TryGetValue(slot.Category, out List<UpgradeComponent> list) ? list : new List<UpgradeComponent>();
-			Shadowed(new Rect(area.x + 2f, area.y, area.width - 170f, 26f), slot.Label.ToUpperInvariant() + "  <color=#c4c5c9>" + items.Count + " to choose from</color>", heading);
+			Shadowed(new Rect(area.x + 2f, area.y, area.width - 170f, 26f), slot.Label.ToUpperInvariant() + "  <color=#d6d7da>" + items.Count + " to choose from</color>", heading);
 			if (slot.Item != null && Button(new Rect(area.xMax - 160f, area.y - 4f, 160f, 32f), "Take off"))
 			{
 				Place(selected, null);
@@ -499,7 +499,7 @@ namespace HalfGripOpenWorld
 				Icon(new Rect(r.x + 12f, r.y + 12f, cardH - 24f, cardH - 24f), u);
 				Shadowed(new Rect(r.x + 72f, r.y + 8f, r.width - 240f, 26f), Titled(u), text);
 				Shadowed(new Rect(r.x + 72f, r.y + 34f, r.width - 240f, 22f), TierName(u) + (Unlocked(u) ? "" : "  <color=#ff7a6e>not unlocked yet</color>"), small);
-				string tag = fitted ? "<color=#9ccc5a>FITTED</color>" : elsewhere ? "<color=#9ccc5a>FITTED</color> <color=#c4c5c9>(other slot)</color>" : "";
+				string tag = fitted ? "<color=#9ccc5a>FITTED</color>" : elsewhere ? "<color=#9ccc5a>FITTED</color> <color=#d6d7da>(other slot)</color>" : "";
 				Shadowed(new Rect(r.xMax - 180f, r.y, 168f, cardH), tag, smallRight);
 			}
 			GUI.EndScrollView();
@@ -530,16 +530,14 @@ namespace HalfGripOpenWorld
 		{
 			CarLink link = garage.Link;
 			float hp = link != null ? link.hp : 0f, max = link != null ? Mathf.Max(1f, link.MaxHp) : 1f;
-			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#c4c5c9>(held while open)</color>", small);
+			GUI.Label(new Rect(area.x, area.y - 2f, 300f, 22f), "Health  " + Mathf.CeilToInt(hp) + " / " + Mathf.CeilToInt(max) + "  <color=#d6d7da>(held while open)</color>", small);
 			HealthBar(new Rect(area.x, area.y + 20f, 300f, 26f), Mathf.Clamp01(hp / max));
 			bool full = hp >= max - 0.5f;
-			GUI.enabled = !full;
-			if (Button(new Rect(area.x + 316f, area.y + 12f, 190f, 42f), full ? "Health is full" : "Repair to full"))
+			if (Button(new Rect(area.x + 316f, area.y + 12f, 190f, 42f), full ? "Health is full" : "Repair to full") && !full)
 			{
 				garage.Repair();
 				Say("Repaired");
 			}
-			GUI.enabled = true;
 			if (Button(new Rect(area.x + 520f, area.y + 12f, 230f, 42f), "Refill ammo and nitro"))
 			{
 				garage.Refill();
@@ -710,9 +708,30 @@ namespace HalfGripOpenWorld
 			{
 				words = u.description;
 			}
-			words = Tags.Replace(words ?? "", "");
+			words = Lighter(Tags.Replace(words ?? "", ""));
 			int line = words.IndexOf('\n');
 			return line >= 0 ? words.Substring(line + 1).Trim() : "";
+		}
+
+		/// <summary>A colour tag in the game's text: <c>#rgb</c>, <c>#rrggbb</c> or <c>#rrggbbaa</c>, or a name.</summary>
+		private static readonly Regex ColourTag = new Regex(@"<color=(""?)(#?[0-9a-zA-Z]+)\1>", RegexOptions.Compiled);
+
+		/// <summary>
+		/// The game greys out parts of its descriptions (the flavour line) for its own light card; on this dark window they cannot be
+		/// read, so every grey or dark colour is lifted to the window's light text, and the stat lines' colours are left alone.
+		/// </summary>
+		private static string Lighter(string words)
+		{
+			return ColourTag.Replace(words, m =>
+			{
+				string value = m.Groups[2].Value;
+				if (!ColorUtility.TryParseHtmlString(value, out Color c))
+				{
+					return m.Value;
+				}
+				Color.RGBToHSV(c, out float _, out float saturation, out float brightness);
+				return saturation < 0.25f || brightness < 0.55f ? "<color=#d6d7da>" : m.Value;
+			});
 		}
 
 		private static string Escape(string s)

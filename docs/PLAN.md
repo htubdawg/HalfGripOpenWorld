@@ -443,3 +443,9 @@ darker metal, every line on a slot or card is light (or the item's tier colour) 
 From the owner's screenshot of 0.13.4: the instructions were still grey, and the slots and cards a little small for their two lines.
 The instructions and the leaving hint are now light; the slots are 56 high (59 apart), the cards 64, their pictures and text moved
 to match, and the window 860 high to hold the taller slots.
+
+### The garage: no grey text left (0.13.6)
+
+The game's descriptions grey their flavour line (for its own light card): every grey or dark colour in them is now lifted to the
+window's light text, the stat lines' colours kept. The other secondary text and the full-health button's label (no longer dimmed;
+it does nothing when health is full) are the same light grey-white.
