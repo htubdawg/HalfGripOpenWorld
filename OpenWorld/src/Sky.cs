@@ -208,9 +208,11 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			int ground = Ground();
 			foreach (ParticleSystem ps in effect.GetComponentsInChildren<ParticleSystem>(true))
 			{
 				into.Add((ps, ps.emission.rateOverTimeMultiplier));
+				Land(ps, ground);
 				ParticleSystemRenderer r = ps.GetComponent<ParticleSystemRenderer>();
 				if (r == null || r.sharedMaterial == null)
 				{
@@ -223,6 +225,52 @@ namespace HalfGripOpenWorld
 				{
 					fallMaterials.Add((m, colour, m.GetColor(colour)));
 				}
+			}
+		}
+
+		/// <summary>The layers the world's ground, roads and buildings are on (the tiles on Floor, the roads and buildings on Default).</summary>
+		private static int Ground()
+		{
+			int floor = LayerMask.NameToLayer("Floor");
+			return (1 << 0) | (floor >= 0 ? 1 << floor : 0);
+		}
+
+		/// <summary>
+		/// Makes a falling particle system that collides land on the world's own ground. The game's rain collides with a plane object
+		/// (<c>Weather/ParticleColliderPlane</c>, Tokyo's ground level, used as a collision plane by the particles, so switching its
+		/// collider off changes nothing): in the Open World that is the spawn's height, so the rain stopped and splashed in mid-air over
+		/// low ground and fell through high ground. Collision with the world's colliders instead, the drop dying where it hits (so its
+		/// splash, a collision sub-emitter, comes up there), and a longer life so it reaches a valley floor below the emitter.
+		/// Only systems that already collide are changed: one that never did (snow) keeps falling until its life ends.
+		/// </summary>
+		private static void Land(ParticleSystem ps, int ground)
+		{
+			try
+			{
+				ParticleSystem.CollisionModule collision = ps.collision;
+				ParticleSystem.SubEmittersModule subs = ps.subEmitters;
+				Mod.Info("Sky: particles " + ps.name + ": collision " + (collision.enabled ? collision.type + " (" + collision.planeCount + " planes, quality " + collision.quality + ", lifetime loss " + collision.lifetimeLossMultiplier + ")" : "off")
+					+ ", " + subs.subEmittersCount + " sub-emitters" + (subs.subEmittersCount > 0 ? " (" + subs.GetSubEmitterType(0) + " " + (subs.GetSubEmitterSystem(0) != null ? subs.GetSubEmitterSystem(0).name : "none") + ")" : "")
+					+ ", life " + ps.main.startLifetimeMultiplier.ToString("0.0") + " s");
+				if (!collision.enabled)
+				{
+					return;
+				}
+				string was = collision.type == ParticleSystemCollisionType.Planes ? "a plane" : "the world's colliders already";
+				collision.type = ParticleSystemCollisionType.World;
+				collision.mode = ParticleSystemCollisionMode.Collision3D;
+				collision.collidesWith = ground;
+				// 10000 drops: medium quality checks against a cache of the colliders, not a ray each.
+				collision.quality = ParticleSystemCollisionQuality.Medium;
+				collision.lifetimeLossMultiplier = 1f;
+				collision.bounceMultiplier = 0f;
+				ParticleSystem.MainModule main = ps.main;
+				main.startLifetimeMultiplier *= 2f;
+				Mod.Log.LogInfo("Rain particles " + ps.name + " now land on the world's ground (they collided with " + was + ")");
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Could not make the particles " + ps.name + " land on the ground: " + e.Message);
 			}
 		}
 

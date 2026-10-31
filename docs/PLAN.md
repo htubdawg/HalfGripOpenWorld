@@ -624,6 +624,12 @@ started on the host's go), so every player has the same sky and nothing is sent.
   is scaled per colour (blue at night, darker under cloud) and handed back through `Store`. Rain and snow are the scene's own
   particles at a rate set by the rain at the car (the game's weather budget cut applied, since setting the rate takes them out of
   `RenderBudget`), dimmed at night; the rain's sound is ours, as loud as it rains.
+- **Rain landing on the ground.** The game's rain collides with a plane object (`Weather/ParticleColliderPlane`, Tokyo's ground
+  level) as a collision plane, so switching its collider off (which `WorldScene` did) changed nothing: the drops stopped and
+  splashed at the spawn's height, in mid-air over low ground. `Sky` sets every falling system that collides to collide with the
+  world's colliders (Floor and Default: tiles, roads, buildings; not the cars), each drop dying where it hits so its splash comes up
+  there, at medium quality (10000 drops), with twice the life so it reaches a valley floor. The log lists each system's collision
+  and sub-emitters (with `VerboseLog`) and says `Rain particles ... now land on the world's ground`.
 - **Wet roads.** The road, sidewalk and circuit materials darken and shine as the ground at the car is wet; tracks, verges, gravel
   and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
   the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
