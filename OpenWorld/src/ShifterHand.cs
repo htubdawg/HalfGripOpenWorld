@@ -3,10 +3,9 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The hand on the shifter: whether it holds the car's active shifter, and the frame it lets go of it. The garage and the events'
-	/// start boxes act on that letting go in neutral, not on the gearbox merely standing in neutral: a shift through neutral never lets
-	/// go, and a car put in a circle or a box in neutral (a respawn, a closed garage) opens nothing until the player takes the shifter
-	/// and lets it go again.
+	/// The hand on the shifter: the frame it lets go of the car's active shifter in neutral. The garage and the events' start boxes act
+	/// on that letting go, not on the gearbox merely standing in neutral, so a gear change through neutral (the hand still on the
+	/// shifter) never opens a garage or signs on to an event.
 	///
 	/// Every kind of shifter (H-pattern, sequential, automatic, Lenco) keeps its knobs and levers, the <see cref="Grabbable"/>s the hand
 	/// takes, under its own object, so the shifter is held when the grabber's held object is under the active shifter's.
@@ -22,13 +21,6 @@ namespace HalfGripOpenWorld
 		internal static bool Neutral(CarLink link)
 		{
 			return link.sa != null && (link.sa.gear == 0 || !link.sa.inGear);
-		}
-
-		/// <summary>True while the hand holds the car's active shifter.</summary>
-		internal static bool Holding(CarLink link)
-		{
-			Look(link);
-			return held;
 		}
 
 		/// <summary>True on the one frame the hand let go of the active shifter with it in neutral.</summary>

@@ -43,11 +43,8 @@ namespace HalfGripOpenWorld
 		/// <summary>The garage that is open, or null.</summary>
 		internal GarageSites.Site OpenAt { get; private set; }
 
-		/// <summary>
-		/// True from the shifter being let go in neutral in a circle until the garage opens, so the car may still roll to a stop; false
-		/// again once it leaves the circle, goes into gear or the shifter is taken.
-		/// </summary>
-		internal bool Pending { get; private set; }
+		/// <summary>False after the garage is closed until the car leaves the circle, moves or goes into gear, so it does not open again at once.</summary>
+		internal bool Armed { get; private set; } = true;
 
 		private bool setGodMode;
 		private float heldHp;
@@ -189,7 +186,11 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Here = Inside(car);
+			// Asked every frame, so the hand on the shifter is followed even while the garage is open or the car is out of the circles.
+			bool released = ShifterHand.ReleasedInNeutral(link);
 			float speed = car.rb != null ? car.rb.linearVelocity.magnitude : 0f;
+			bool neutral = ShifterHand.Neutral(link);
+			bool ready = Here != null && speed < Stopped && neutral;
 			if (OpenAt != null)
 			{
 				// Pushed out of the circle or knocked moving (another player's car): the garage closes.
@@ -199,19 +200,17 @@ namespace HalfGripOpenWorld
 				}
 				return;
 			}
-			// The garage opens on the player letting go of the shifter in neutral, not on neutral alone: a shift through neutral, or a
-			// car standing in the circle in neutral after a respawn or after the garage closed, opens nothing.
-			// Asked every frame (the garage always runs), so the hand is followed even out of the circles and the boxes.
-			bool holding = ShifterHand.Holding(link);
-			if (Here == null || !ShifterHand.Neutral(link) || holding)
+			if (!ready)
 			{
-				Pending = false;
+				Armed = true;
+				return;
 			}
-			else if (ShifterHand.ReleasedInNeutral(link))
+			if (!Armed)
 			{
-				Pending = true;
+				return;
 			}
-			if (Pending && speed < Stopped && link.hp > 0f)
+			// Letting go of the shifter in neutral opens it, so a gear change through neutral does not.
+			if (released && link.hp > 0f)
 			{
 				Open(Here);
 			}
@@ -246,7 +245,7 @@ namespace HalfGripOpenWorld
 		{
 			CarLink link = Link;
 			OpenAt = site;
-			Pending = false;
+			Armed = false;
 			heldHp = link.hp;
 			setGodMode = !CarLink.godMode;
 			CarLink.godMode = true;
@@ -287,6 +286,12 @@ namespace HalfGripOpenWorld
 				}
 			}
 			Mod.Log.LogInfo("Garage closed");
+		}
+
+		/// <summary>Keeps the garage shut until the car goes into gear or leaves the circle: after a respawn into the circle.</summary>
+		internal void Disarm()
+		{
+			Armed = false;
 		}
 
 		// ---- what the garage does ----------------------------------------------------------------------------------

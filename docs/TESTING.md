@@ -90,9 +90,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    still cuts the rain on a low setting).
 22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
    filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each
-   circle within about 70 m. Drive into a circle: the line at the bottom says to shift into neutral and let go of the shifter; do it
-   stopped and the garage opens; let go while still rolling in the circle and the line says `Stop to open it`, and the garage opens
-   as the car stops. Shifting through neutral while holding the shifter does not open it, nor does standing in neutral without letting go. While it is open the controls and the gun do nothing, the cursor is free,
+   circle within about 70 m. Drive into a circle: the line at the bottom says to stop and shift into neutral; do it and the garage
+   opens (shifting through neutral while rolling does not). While it is open the controls and the gun do nothing, the cursor is free,
    crashes, hazards and other players' shots do no damage, and the health shown stays put. Drag an item from the list onto a slot (the slots it fits light up), or right-click it: it is on the
    car at once (the new gun, wheel or shifter in the cockpit, the body's look outside), ammo and nitro full a moment later. Every
    gun (the game's and the modded M1911, Minigun, RPG, Sniper Rifle, Railgun) swaps and fires as at the start of a race, with its own
@@ -101,13 +100,13 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    the Multiplayer mod's banned items (slow motion, rerolls) are not in the lists. Dragging a fitted item off its slot, or right-clicking it (in the slot or the list), takes it off; dragging one
    medium item onto the other medium slot swaps them; an item dropped on a slot it does not fit says so. Repair fills the health;
    Refill the ammo and nitro.
-   Esc or Close closes it; it does not open again until you take the shifter and let go of it in neutral again. The next race starts with the
+   Esc or Close closes it; it does not open again until you shift into gear or leave the circle. The next race starts with the
    loadout from the menu or the room, not the garage's (the log says `Garage: the race's own loadout is back`).
 22b. Respawn at a garage (0.16.0), alone and in a Multiplayer room. The garage window's bottom right says `Respawn after a wreck: the
    start`. Press Respawn here: `A wreck comes back here`, the log says `Respawn point: <garage>`, the button reads Respawn at start
    and the bottom right `this garage`; another garage's window says `another garage`. Close, drive off, get wrecked: after the wait
    the car is in that garage's circle, facing out of the lot (along the pit lane to its exit in the pits), repaired, on its wheels,
-   `BACK AT THE GARAGE`; the garage does not open until you take the shifter and let go of it in neutral. In a room, with another player's
+   `BACK AT THE GARAGE`; the garage does not open until you shift into gear and back to neutral. In a room, with another player's
    car parked in that circle: you come back at the start instead. Press Respawn at start and get wrecked: back at the start. Wrecked
    in an event: still back at the last checkpoint. Start the next race (or a new run): a wreck goes back to the start again.
 23. Events, solo (0.15.3). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
@@ -116,9 +115,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    back when the hand leaves. An orange ring is in the circuit's pit lane past the last garage, in the rally service area and in the
    hill climb paddock (beside the garage's circle), off the course, with orange `EVENT` over it from up to about 70 m, and a
    chequered disc in an orange ring on the map (MiniMap) at each, a little larger than a garage's and over the one beside it. Drive
-   into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Shift into neutral and let go of
-   the shifter to start`) shows under the middle of the screen; the board stays tucked away. Stop in it, shift into neutral and let
-   go of the shifter (shifting through neutral, or neutral without letting go, does nothing): the panel goes, the car is put
+   into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Stop and shift into neutral to
+   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral: the panel goes, the car is put
    on the grid (pole on the circuit, just behind the start arch elsewhere), facing up the course, and the board slides out; the
    start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2, 1, GO in the cockpit's
    text, each on time. Before green, shift into gear and floor it: the car stays on its spot (the wheels may spin, the car should

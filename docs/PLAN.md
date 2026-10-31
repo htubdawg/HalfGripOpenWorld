@@ -370,9 +370,7 @@ On branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a
   so MiniMap shows it as it is; `tools/preview` draws the same on `world.png` and lists the sites.
 - **In the world** (`Garage.cs`): a cyan emissive ring on the surface (following its slope, 0.14 over it) with four dashes pointing
   in, under the world's root so the origin shift moves it; `GARAGE` over each circle within 220 units.
-- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, after the hand lets go of the active shifter in
-  neutral (`ShifterHand`: the grabber's held object under the active shifter's; let go while rolling in the circle, it opens on the stop;
-  the shifter taken, a gear or leaving the circle cancels that). Neutral alone opens nothing (0.17.0; it was neutral for 0.6 s).
+- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, for 0.6 s.
   Then `CarLink.godMode` (set back only if the garage set it) and the health held each `LateUpdate` (capped at the new maximum after a
   refit); input muted (`GameInput.Mute`), the cursor freed and the hand hidden, as the Multiplayer mod's pause does. Closed by Close or
   Esc (the controls back the frame after, so the Esc does not open the pause menu), or if the car is pushed out or knocked moving. It
@@ -506,7 +504,7 @@ Step 2 of the events plan below, begun. What is in:
   two, its radius cut to fit a narrow road) and checkpoint gates spaced evenly, about 1000 units (300 m) apart, the last of each lap
   on its line. Read from the layout, so the same for everyone and nothing changes in generation. A best time's key holds the course,
   its length and laps, so a course a new version lays out differently starts afresh.
-- **The event** (`EventRace.cs`): stop in a start box with the shifter let go in neutral (as a garage) and a countdown runs (the name, 3, 2, 1);
+- **The event** (`EventRace.cs`): stop in a start box in neutral for 0.6 s (as a garage) and a countdown runs (the name, 3, 2, 1);
   leaving the box or rolling before GO is a jump start. Then the clock (game time: it stops on pause) runs; a gate counts when the car
   crosses its line going forwards within its reach (the road's half width, the circuit's kerbs, and 10 more). The next three gates
   past the expected one are watched too: crossing one of them calls out the gates missed and goes on from it; a run with any missed
@@ -532,7 +530,7 @@ with the car then put on the grid, and the countdown and green light were not se
   amber, both, green, a second apart.
 - **Off the course.** The start box is in the circuit's pit lane between the last garage's circle and the end of the lane's full
   width, and in the rally service area and the hill climb paddock at 0.3 of the lot's width to the side of the garage's circle nearer
-  the grid. Stopping in it with the shifter let go in neutral puts the car on the grid spot (the circuit's pole slot, 20 behind the start line elsewhere);
+  the grid. Stopping in it in neutral puts the car on the grid spot (the circuit's pole slot, 20 behind the start line elsewhere);
   creeping more than 4 off it or rolling at 3.6 before green is a jump start. A wreck before the first gate goes back to the grid.
 - **The cockpit's board** (`EventBoard.cs`): the game's leaderboard (`StatusInfo`) and lap counter at the top right. In an event the
   leaderboard's updates are switched off and its text is the event's (course, clock, checkpoints or the last lap, best in the game's
@@ -585,7 +583,7 @@ a wreck then comes back to that garage instead of the spawn, for the rest of the
 - **Not saved.** The choice is a field of `GameMode`, which is made with the world and goes with the scene: every race (solo, or the
   room's next race) starts with the spawn again. Nothing goes in the config file or the game's save.
 - **Where.** `GameMode.ToSpawn` puts the car at the circle's middle, facing out (`GarageSites.Site.Hx`, `Hz`: towards the lot's road,
-  or along the pit lane to its exit), and the garage stays shut there until the shifter is taken and let go in neutral, as after closing
+  or along the pit lane to its exit), and keeps the garage shut until the car goes into gear (`Garage.Disarm`), as after closing
   it. If another car is within 8 of the middle (another player respawned or parked there) it goes to the spawn's grid slots instead.
   An event's wreck still goes back to its last gate first. The call-out says where: `BACK AT THE GARAGE`, `BACK AT THE START` or
   `BACK AT THE LAST CHECKPOINT`.

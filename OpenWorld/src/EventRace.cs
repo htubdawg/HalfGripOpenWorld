@@ -73,8 +73,7 @@ namespace HalfGripOpenWorld
 		private State state = State.Idle;
 		private Courses.Course course;
 		private Courses.Course here;
-		/// <summary>As the garage's: the shifter let go in neutral in a box, the car maybe still rolling to a stop there.</summary>
-		private bool pending;
+		private bool armed = true;
 		private float countdownAt;
 		private int countdownShown;
 		private float greenUntil = -1f;
@@ -329,26 +328,31 @@ namespace HalfGripOpenWorld
 			return c;
 		}
 
-		/// <summary>
-		/// Stopped in a start box with the shifter let go in neutral (it may be let go while the car still rolls, in the box): the car is
-		/// signed on and put on the grid. Neutral alone signs nothing on, so a shift through neutral, or standing in the box after a
-		/// finish, does not start the event again.
-		/// </summary>
+		/// <summary>Stopped in a start box and the shifter let go in neutral: the car is signed on and put on the grid.</summary>
 		private void Waiting(CarControllerNew car, CarLink link, float speed)
 		{
+			bool released = ShifterHand.ReleasedInNeutral(link);
+			bool neutral = ShifterHand.Neutral(link);
 			bool garage = Garage.Instance != null && Garage.Instance.OpenAt != null;
-			if (here == null || garage || !ShifterHand.Neutral(link) || ShifterHand.Holding(link))
+			bool ready = here != null && speed < Stopped && neutral && !garage && link.hp > 0f;
+			if (!ready)
 			{
-				pending = false;
+				// Out of the box or moving again: the next stop in it signs on.
+				if (here == null || speed > Stopped * 3f)
+				{
+					armed = true;
+				}
+				return;
 			}
-			else if (ShifterHand.ReleasedInNeutral(link))
+			if (!armed)
 			{
-				pending = true;
+				return;
 			}
-			if (pending && speed < Stopped && link.hp > 0f && Streamer.Instance != null)
+			// Letting go of the shifter in neutral signs on, so a gear change through neutral does not.
+			if (released && Streamer.Instance != null)
 			{
 				course = here;
-				pending = false;
+				armed = false;
 				next = 0;
 				ToGrid(Streamer.Instance);
 				state = State.Countdown;
@@ -765,8 +769,8 @@ namespace HalfGripOpenWorld
 				return null;
 			}
 			string what = Info(here) + ", " + here.Gates.Count + " checkpoints     " + BestLine(here);
-			string how = pending ? "Stop to start"
-				: "Shift into neutral and let go of the shifter to start";
+			string how = !armed ? "Drive out of the box to start it again"
+				: "Stop and shift into neutral to start";
 			return "<color=#ff8c1a>EVENT</color>  " + here.Name + "\n" + what + "\n" + how;
 		}
 
