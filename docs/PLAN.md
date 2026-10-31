@@ -516,8 +516,33 @@ Step 2 of the events plan below, begun. What is in:
   only (a hairpin's other leg is never in a gate's reach), no gate's respawn point on a bridge (the reset puts the car on the ground);
   each start box whole on the road, its ring just over the drawn surface, clear of the garages. The preview lists the courses.
 
-Not yet: a ghost of the best run, split times against the best at each gate, AI rivals, and the room's events (step 3). Not tested
-in game yet (TESTING.md 23).
+Not yet: a ghost of the best run, split times against the best at each gate, AI rivals, and the room's events (step 3).
+
+### Solo events: off the course, the start lights, the cockpit's board (0.15.1)
+
+From the owner's first try of 0.15.0: the timer (a panel drawn over the screen) looked basic, the start box should be off the track
+with the car then put on the grid, and the countdown and green light were not seen.
+
+- **The countdown.** The game's text queue takes a line only while it holds one or none, and types each out a letter at a time:
+  the course's name was still showing when 3 came, so 2 and 1 were dropped and the rest came late. Each call-out now clears the
+  queue first. And the game's own start lights (`RaceStarter`, which WorldScene hangs over the road at the spawn) are moved over
+  the course's start line as the car is put on the grid, turned about the vertical so the green sprite faces up the course: red,
+  amber, both, green, a second apart.
+- **Off the course.** The start box is in the circuit's pit lane between the last garage's circle and the end of the lane's full
+  width, and in the rally service area and the hill climb paddock at 0.3 of the lot's width to the side of the garage's circle nearer
+  the grid. Stopping in it in neutral puts the car on the grid spot (the circuit's pole slot, 20 behind the start line elsewhere);
+  creeping more than 4 off it or rolling at 3.6 before green is a jump start. A wreck before the first gate goes back to the grid.
+- **The cockpit's board** (`EventBoard.cs`): the game's leaderboard (`StatusInfo`) and lap counter at the top right. In an event the
+  leaderboard's updates are switched off and its text is the event's (course, clock, checkpoints or the last lap, best in the game's
+  purple; the result after the finish), and the lap counter shows the lap or the checkpoint; the clock is green while the lights are.
+  Out of one the board slides into the right edge, a sliver left on the screen (its outline measured on the screen each frame through
+  the hand's camera, and moved along the camera's right); the hand over the sliver (not while holding something) slides it out with
+  the game's leaderboard, the cars in the race. The lap counter, which counted the token loop's meaningless laps, now always shows
+  what the board sets (the count of cars out of an event).
+- meshcheck's `events` now checks the grid spot on the road and the box off the course, whole on its lot's open surface (clear of
+  the vans and awnings) or the pit lane.
+
+Not tested in game yet (TESTING.md 23).
 
 ## Next: events (proposed, to agree with the owner)
 

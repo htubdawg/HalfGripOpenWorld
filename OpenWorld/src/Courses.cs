@@ -5,8 +5,8 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// The events' courses: the circuit (laps from its grid), the rally stage (once round its loop, start line to finish line) and the
-	/// hill climb (foot to col), each as a centre line, a start box behind the start line, and checkpoint gates across the road every few
-	/// hundred metres to the finish. Read from the layout, never added to it: generation is unchanged, and every player gets the same
+	/// hill climb (foot to col), each as a centre line, a start box off the course (where a car signs on), the grid spot it is then
+	/// put on behind the start line, and checkpoint gates across the road every few hundred metres to the finish. Read from the layout, never added to it: generation is unchanged, and every player gets the same
 	/// course because they get the same layout (the events in a room, later, rely on that). Pure arithmetic (no Unity), so the preview
 	/// lists them and meshcheck checks the gates and boxes.
 	/// </summary>
@@ -58,7 +58,11 @@ namespace HalfGripOpenWorld
 			public double Distance;
 			/// <summary>The checkpoints in the order they are passed; the last is the finish line.</summary>
 			public readonly List<Gate> Gates = new List<Gate>();
-			/// <summary>The start box: a circle behind the start line (on the circuit, pole position), the car facing (BoxDx, BoxDz).</summary>
+			/// <summary>
+			/// The start box: a circle off the course, near its start, where stopping signs the car on (in the circuit's pit lane past
+			/// the garages, in the rally stage's service area, in the hill climb's paddock, beside each garage's circle); its chevron
+			/// points (BoxDx, BoxDz), the way the course leaves its start.
+			/// </summary>
 			public double BoxX;
 			public double BoxZ;
 			public double BoxY;
@@ -68,6 +72,13 @@ namespace HalfGripOpenWorld
 			/// <summary>The surface's rise per unit east and north round the box (the road's grade along it, the circuit's plane's tilt).</summary>
 			public double BoxGx;
 			public double BoxGz;
+
+			/// <summary>Where a signed-on car is put for the start: on the circuit, pole position; elsewhere behind the start line. Facing (GridDx, GridDz).</summary>
+			public double GridX;
+			public double GridZ;
+			public double GridY;
+			public double GridDx;
+			public double GridDz;
 
 			/// <summary>Height of the surface round the box at (x, z), from sea level.</summary>
 			public double BoxSurface(double x, double z)
@@ -133,11 +144,14 @@ namespace HalfGripOpenWorld
 		/// <summary>How far past the road's edge a gate's crossing still counts.</summary>
 		internal const double GateMargin = 10.0;
 
-		/// <summary>The start box's circle, at most: as a garage's (room for a car to stop in it without aiming), less on a narrow road.</summary>
+		/// <summary>The start box's circle: as a garage's (room for a car to stop in it without aiming).</summary>
 		internal const double BoxRadius = 9.0;
 
-		/// <summary>The rally stage's and the hill climb's start boxes are this far behind the start line (the circuit's is its pole slot).</summary>
-		internal const double BoxBack = 20.0;
+		/// <summary>The rally stage's and the hill climb's grid spot is this far behind the start line (the circuit's is its pole slot).</summary>
+		internal const double GridBack = 20.0;
+
+		/// <summary>In the service area and the paddock the box is this fraction of the lot's width to one side of the garage's circle in its middle.</summary>
+		internal const double BoxAside = 0.3;
 
 		/// <summary>The circuit's laps.</summary>
 		internal const int CircuitLaps = 3;
@@ -171,11 +185,11 @@ namespace HalfGripOpenWorld
 			}
 			if (Rally.Exists && Rally.Road != null)
 			{
-				list.Add(FromRoad(Kind.Rally, Names.Rally, Rally.X, Rally.Z, Rally.S, Rally.Count, Rally.Length, true, Rally.Half, Rally.Road, Rally.StartS, Rally.Length - Rally.StartS + Rally.FinishS));
+				list.Add(FromRoad(Kind.Rally, Names.Rally, Rally.X, Rally.Z, Rally.S, Rally.Count, Rally.Length, true, Rally.Half, Rally.Road, Rally.StartS, Rally.Length - Rally.StartS + Rally.FinishS, LotKind.Service));
 			}
 			if (HillClimb.Exists && HillClimb.Road != null)
 			{
-				list.Add(FromRoad(Kind.HillClimb, Names.HillClimb, HillClimb.X, HillClimb.Z, HillClimb.S, HillClimb.Count, HillClimb.Length, false, HillClimb.Half, HillClimb.Road, HillClimb.StartS, HillClimb.FinishS - HillClimb.StartS));
+				list.Add(FromRoad(Kind.HillClimb, Names.HillClimb, HillClimb.X, HillClimb.Z, HillClimb.S, HillClimb.Count, HillClimb.Length, false, HillClimb.Half, HillClimb.Road, HillClimb.StartS, HillClimb.FinishS - HillClimb.StartS, LotKind.Paddock));
 			}
 			return list;
 		}
@@ -195,7 +209,13 @@ namespace HalfGripOpenWorld
 			c.Distance = c.Length * c.Laps;
 			// The gates' reach takes in the kerbs and the gravel's inner edge: a car that runs wide still passes.
 			Gates(c, Circuit.Half + Circuit.KerbWidth + GateMargin);
-			Circuit.Slot(0, out c.BoxX, out c.BoxZ);
+			Circuit.Slot(0, out c.GridX, out c.GridZ);
+			c.GridY = Circuit.PlaneAt(c.GridX, c.GridZ) + Circuit.Lift;
+			c.GridDx = Circuit.DirX;
+			c.GridDz = Circuit.DirZ;
+			// In the pit lane between the last garage's circle and the end of the lane's full width, midway across it.
+			double u = (Circuit.GaragesA + (Circuit.GaragesB - Circuit.GaragesA) * 0.75 + Circuit.PitB) * 0.5, v = (Circuit.PitWallOut + Circuit.PitLaneOut) * 0.5;
+			Circuit.Straight(u, v, out c.BoxX, out c.BoxZ);
 			c.BoxY = Circuit.PlaneAt(c.BoxX, c.BoxZ) + Circuit.Lift;
 			c.BoxDx = Circuit.DirX;
 			c.BoxDz = Circuit.DirZ;
@@ -207,10 +227,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// The rally stage or the hill climb: the course's own centre line, its heights the drawn surface of its road (the road is made
-		/// from the same points, so each sample is matched to the road's nearest along the way), the box <see cref="BoxBack"/> behind
-		/// the start line.
+		/// from the same points, so each sample is matched to the road's nearest along the way), the grid <see cref="GridBack"/> behind
+		/// the start line, the box in the course's lot (<paramref name="lotKind"/>).
 		/// </summary>
-		private static Course FromRoad(Kind kind, string name, double[] xs, double[] zs, double[] ss, int count, double length, bool loop, double half, Network.Road road, double startS, double distance)
+		private static Course FromRoad(Kind kind, string name, double[] xs, double[] zs, double[] ss, int count, double length, bool loop, double half, Network.Road road, double startS, double distance, LotKind lotKind)
 		{
 			Course c = new Course { Kind = kind, Name = name, X = xs, Z = zs, S = ss, Count = count, Length = length, Loop = loop, Half = half, StartS = startS, Laps = 1, Distance = distance };
 			c.Y = new double[count];
@@ -225,13 +245,35 @@ namespace HalfGripOpenWorld
 				c.Y[i] = RoadY(road, k, xs[i], zs[i]) + Network.Top(road.Kind);
 			}
 			Gates(c, half + GateMargin);
-			c.At(startS - BoxBack, out c.BoxX, out c.BoxZ, out c.BoxY, out c.BoxDx, out c.BoxDz);
-			c.BoxRadius = Math.Min(BoxRadius, half - 0.5);
-			c.At(startS - BoxBack - 8.0, out double _, out double _, out double y0, out double _, out double _);
-			c.At(startS - BoxBack + 8.0, out double _, out double _, out double y1, out double _, out double _);
-			double grade = (y1 - y0) / 16.0;
-			c.BoxGx = grade * c.BoxDx;
-			c.BoxGz = grade * c.BoxDz;
+			c.At(startS - GridBack, out c.GridX, out c.GridZ, out c.GridY, out c.GridDx, out c.GridDz);
+			c.BoxDx = c.GridDx;
+			c.BoxDz = c.GridDz;
+			c.BoxRadius = BoxRadius;
+			foreach (Town.Lot lot in Town.Lots)
+			{
+				if (lot.Kind != lotKind)
+				{
+					continue;
+				}
+				// Level with the garage's circle (GarageSites), to the side of it nearer the grid.
+				double v = lot.D * 0.3, best = double.MaxValue;
+				foreach (int side in new[] { -1, 1 })
+				{
+					double u = lot.W * BoxAside * side;
+					Town.World(lot, u, v, out double x, out double z);
+					double d = Sq(x - c.GridX, z - c.GridZ);
+					if (d < best)
+					{
+						best = d;
+						c.BoxX = x;
+						c.BoxZ = z;
+						c.BoxY = Town.Surface(lot, u);
+					}
+				}
+				c.BoxGx = lot.Grade * lot.Dx;
+				c.BoxGz = lot.Grade * lot.Dz;
+				break;
+			}
 			return c;
 		}
 

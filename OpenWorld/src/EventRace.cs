@@ -6,9 +6,10 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// Solo events at the courses (<see cref="Courses"/>): a glowing box behind each start line; stopping in it in neutral starts a
-	/// countdown, then the clock runs through the checkpoint gates in order to the finish. The next gate stands across the road, lit,
-	/// only while an event runs. A missed gate is called out and the clock runs on, but that run sets no best time. A wreck puts the car
+	/// Solo events at the courses (<see cref="Courses"/>): a glowing box beside each course near its start; stopping in it in neutral
+	/// signs the car on and puts it on the grid behind the start line, where the game's own start lights (moved over the line) count it
+	/// down, then the clock runs through the checkpoint gates in order to the finish. The next gate stands across the road, lit, only
+	/// while an event runs. The cockpit's board at the top right (<see cref="EventBoard"/>) shows the event. A missed gate is called out and the clock runs on, but that run sets no best time. A wreck puts the car
 	/// back at the last gate passed (<see cref="Respawn"/>), not the spawn. The best time of each course is kept in the mod's own config
 	/// file, never the game's save.
 	///
@@ -31,8 +32,19 @@ namespace HalfGripOpenWorld
 		private const float Stopped = 1.2f;
 		private const float Settle = 0.6f;
 
-		/// <summary>Seconds from the countdown starting to the green light: the course's name, then 3, 2, 1.</summary>
-		private const float CountdownSeconds = 4f;
+		/// <summary>
+		/// The countdown, in seconds from being put on the grid: the red light at <see cref="ReadyAt"/>, the amber one a second later,
+		/// both a second after that, green at <see cref="GoAt"/>. The car settles onto the road before the first light.
+		/// </summary>
+		private const float ReadyAt = 1f;
+		private const float GoAt = ReadyAt + 3f;
+
+		/// <summary>On the grid, the car may creep this far (or roll this fast) before the green light before it counts as a jump start.</summary>
+		private const double Creep = 4.0;
+		private const float Rolling = 3.6f;
+
+		/// <summary>How long the green light stays on after the start.</summary>
+		private const float GreenSeconds = 3f;
 
 		/// <summary>The event is given up when the car is further than this from the course for <see cref="OffCourseSeconds"/> (or jumps there).</summary>
 		private const double OffCourse = 500.0;
@@ -65,6 +77,9 @@ namespace HalfGripOpenWorld
 		private float readySince = -1f;
 		private float countdownAt;
 		private int countdownShown;
+		private float greenUntil = -1f;
+		private RaceStarter lights;
+		private float lightsHeight;
 		private float startedAt;
 		private int next;
 		private int missed;
@@ -77,6 +92,7 @@ namespace HalfGripOpenWorld
 		private float previousBest;
 		private string flash;
 		private float flashAt = -1f;
+		private float lastLapShown = -1f;
 		private float offSince = -1f;
 		private float offCheckAt;
 		private bool havePrev;
@@ -104,6 +120,10 @@ namespace HalfGripOpenWorld
 					boxes.Add(Box(c));
 				}
 				gates = new[] { GateMarker("Event gate (next)"), GateMarker("Event gate (after)") };
+				// The race's start lights: WorldScene hung them over the road at the spawn, as high over it as Tokyo's (the road there is at 0.5).
+				lights = FindFirstObjectByType<RaceStarter>();
+				lightsHeight = lights != null ? lights.transform.position.y - 0.5f : 0f;
+				gameObject.AddComponent<EventBoard>();
 				List<string> names = new List<string>();
 				foreach (Courses.Course c in Courses.All)
 				{
@@ -258,7 +278,9 @@ namespace HalfGripOpenWorld
 			}
 			Vector3 p = car.transform.position;
 			Origin.World(p, out double x, out double z);
-			float speed = car.rb != null ? car.rb.linearVelocity.magnitude : 0f;
+			Vector3 v = car.rb != null ? car.rb.linearVelocity : Vector3.zero;
+			float speed = v.magnitude;
+			v.y = 0f;
 			here = InBox(p, x, z);
 			try
 			{
@@ -270,14 +292,19 @@ namespace HalfGripOpenWorld
 						{
 							state = State.Idle;
 						}
-						Waiting(link, speed);
+						Waiting(car, link, speed);
 						break;
 					case State.Countdown:
-						Counting(link, speed);
+						Counting(link, x, z, v.magnitude);
 						break;
 					case State.Running:
 						Timing(link, x, z);
 						break;
+				}
+				if (greenUntil >= 0f && Time.time > greenUntil)
+				{
+					greenUntil = -1f;
+					Lights(false, false, false);
 				}
 			}
 			catch (Exception e)
@@ -288,6 +315,7 @@ namespace HalfGripOpenWorld
 			prevX = x;
 			prevZ = z;
 			havePrev = true;
+			Board();
 		}
 
 		/// <summary>The course whose start box the car stands in, at about the box's height (not on a bridge over it).</summary>
@@ -301,8 +329,8 @@ namespace HalfGripOpenWorld
 			return c;
 		}
 
-		/// <summary>Stopped in a start box in neutral, and held there a moment: the countdown starts.</summary>
-		private void Waiting(CarLink link, float speed)
+		/// <summary>Stopped in a start box in neutral, and held there a moment: the car is signed on and put on the grid.</summary>
+		private void Waiting(CarControllerNew car, CarLink link, float speed)
 		{
 			bool neutral = link.sa != null && (link.sa.gear == 0 || !link.sa.inGear);
 			bool garage = Garage.Instance != null && Garage.Instance.OpenAt != null;
@@ -310,7 +338,7 @@ namespace HalfGripOpenWorld
 			if (!ready)
 			{
 				readySince = -1f;
-				// Out of the box or moving again: the next stop in it starts an event.
+				// Out of the box or moving again: the next stop in it signs on.
 				if (here == null || speed > Stopped * 3f)
 				{
 					armed = true;
@@ -325,51 +353,128 @@ namespace HalfGripOpenWorld
 			{
 				readySince = Time.time;
 			}
-			else if (Time.time - readySince >= Settle)
+			else if (Time.time - readySince >= Settle && Streamer.Instance != null)
 			{
 				course = here;
+				armed = false;
+				readySince = -1f;
+				next = 0;
+				ToGrid(Streamer.Instance);
 				state = State.Countdown;
 				countdownAt = Time.time;
 				countdownShown = -1;
-				next = 0;
-				armed = false;
-				readySince = -1f;
-				TextController.ClearAll();
-				Mod.Log.LogInfo("Event: countdown at the " + course.Name);
+				LightsToStart();
+				Say(Title(course), 1f);
+				Mod.Log.LogInfo("Event: signed on at the " + course.Name + ", on the grid");
 			}
 		}
 
-		/// <summary>The countdown: the course's name, 3, 2, 1, then the clock starts. Leaving the box or rolling away before it is a jump start.</summary>
-		private void Counting(CarLink link, float speed)
+		/// <summary>Puts the car on the course's grid spot, stopped, facing up the course.</summary>
+		private void ToGrid(Streamer streamer)
 		{
-			if (here != course || speed > Stopped * 3f || link.hp <= 0f)
+			streamer.BuildAround(course.GridX, course.GridZ, 1);
+			streamer.Place(course.GridX, course.GridZ, Quaternion.LookRotation(new Vector3((float)course.GridDx, 0f, (float)course.GridDz), Vector3.up));
+			placedFrame = Time.frameCount;
+			havePrev = false;
+		}
+
+		/// <summary>
+		/// The countdown on the grid: red, amber, both, then green and the clock starts, with 3, 2, 1, GO called out. Creeping off the
+		/// spot or rolling before green is a jump start.
+		/// </summary>
+		private void Counting(CarLink link, double x, double z, float flatSpeed)
+		{
+			float since = Time.time - countdownAt;
+			double dx = x - course.GridX, dz = z - course.GridZ;
+			bool jumped = since > ReadyAt * 0.5f && (dx * dx + dz * dz > Creep * Creep || flatSpeed > Rolling);
+			if (jumped || link.hp <= 0f)
 			{
-				TextController.ClearAll();
-				TextController.EnqueueRandomText(1.5f, link.hp <= 0f ? "EVENT OVER" : "JUMP START");
-				Mod.Log.LogInfo("Event: stopped before the start at the " + course.Name);
+				Say(link.hp <= 0f ? "EVENT OVER" : "JUMP START", 1.5f);
+				Lights(false, false, false);
+				Mod.Log.LogInfo("Event: " + (jumped ? "jump start" : "wrecked") + " at the " + course.Name);
 				state = State.Idle;
 				course = null;
 				return;
 			}
-			float since = Time.time - countdownAt;
-			int shown = (int)Math.Floor(since);
-			if (shown != countdownShown && shown < (int)CountdownSeconds)
+			int step = since < ReadyAt ? -1 : (int)Math.Floor(since - ReadyAt);
+			if (step != countdownShown && step >= 0 && step < 3)
 			{
-				countdownShown = shown;
-				TextController.EnqueueRandomText(0.9f, shown == 0 ? Title(course) : (CountdownSeconds - shown).ToString("0"));
+				countdownShown = step;
+				Lights(true, step >= 1, false);
+				Say((3 - step).ToString("0"), 0.8f);
 			}
-			if (since >= CountdownSeconds)
+			if (since >= GoAt)
 			{
-				TextController.ClearAll();
-				TextController.EnqueueRandomText(1f, "GO!");
+				Lights(false, false, true);
+				greenUntil = Time.time + GreenSeconds;
+				Say("GO!", 1f);
 				state = State.Running;
 				startedAt = Time.time;
 				lapStartedAt = startedAt;
 				lap = 1;
 				missed = 0;
 				next = 0;
+				lastLapShown = -1f;
 				offSince = -1f;
 				havePrev = false;
+			}
+		}
+
+		/// <summary>
+		/// A call-out in the cockpit's text, at once: the game's queue takes a new line only when it holds one or none and types each
+		/// out letter by letter, so a countdown queued behind a longer line was late or lost. Cleared first, it shows on time.
+		/// </summary>
+		private static void Say(string text, float seconds)
+		{
+			TextController.ClearAll();
+			TextController.EnqueueRandomText(seconds, text);
+		}
+
+		/// <summary>The game's start lights, moved over the course's start line and turned to face the grid.</summary>
+		private void LightsToStart()
+		{
+			if (lights == null)
+			{
+				return;
+			}
+			try
+			{
+				course.At(course.StartS, out double sx, out double sz, out double sy, out double dx, out double dz);
+				Transform t = lights.transform;
+				t.position = Origin.Local(sx, (float)(sy + Network.Lift) + lightsHeight, sz);
+				// A sprite shows its face against its forward: turn the lights about the vertical so the green one's forward runs
+				// up the course, whichever way the scene had them.
+				Transform face = lights.go != null ? lights.go.transform : t;
+				Vector3 f = face.forward;
+				f.y = 0f;
+				if (f.sqrMagnitude > 1e-4f)
+				{
+					t.rotation = Quaternion.FromToRotation(f.normalized, new Vector3((float)dx, 0f, (float)dz)) * t.rotation;
+				}
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Event: the start lights could not be moved: " + e.Message);
+			}
+		}
+
+		private void Lights(bool ready, bool set, bool go)
+		{
+			if (lights == null)
+			{
+				return;
+			}
+			if (lights.ready != null)
+			{
+				lights.ready.enabled = ready;
+			}
+			if (lights.set != null)
+			{
+				lights.set.enabled = set;
+			}
+			if (lights.go != null)
+			{
+				lights.go.enabled = go;
 			}
 		}
 
@@ -407,7 +512,7 @@ namespace HalfGripOpenWorld
 					if (offSince < 0f)
 					{
 						offSince = Time.time;
-						TextController.EnqueueRandomText(2f, "BACK TO THE COURSE");
+						Say("BACK TO THE COURSE", 2f);
 					}
 					else if (Time.time - offSince > OffCourseSeconds)
 					{
@@ -428,7 +533,7 @@ namespace HalfGripOpenWorld
 			{
 				int n = j - next;
 				missed += n;
-				TextController.EnqueueRandomText(1.5f, n == 1 ? "MISSED A CHECKPOINT" : "MISSED " + n + " CHECKPOINTS");
+				Say(n == 1 ? "MISSED A CHECKPOINT" : "MISSED " + n + " CHECKPOINTS", 1.5f);
 			}
 			next = j + 1;
 			if (next >= course.Gates.Count)
@@ -441,12 +546,12 @@ namespace HalfGripOpenWorld
 				lastLap = Time.time - lapStartedAt;
 				lapStartedAt = Time.time;
 				lap = g.LapEnd + 1;
-				TextController.EnqueueRandomText(1.5f, (lap == course.Laps ? "LAST LAP  " : "LAP " + lap + "  ") + Clock(lastLap));
-				Flash("Lap " + g.LapEnd + ": " + Clock(lastLap));
+				lastLapShown = Time.time;
+				Say(lap == course.Laps ? "LAST LAP" : "LAP " + lap, 1f);
 			}
 			else
 			{
-				Flash("Checkpoint " + next + " of " + course.Gates.Count + ": " + Clock(now));
+				Flash("CP " + next + "  " + Clock(now));
 			}
 		}
 
@@ -462,9 +567,7 @@ namespace HalfGripOpenWorld
 			{
 				best.Value = now;
 			}
-			string text = missed > 0 ? "FINISH  " + Clock(now) + "  (MISSED " + missed + ")" : newBest ? "NEW BEST  " + Clock(now) : "FINISH  " + Clock(now);
-			TextController.ClearAll();
-			TextController.EnqueueRandomText(3f, text);
+			Say(missed > 0 ? "FINISH (MISSED " + missed + ")" : newBest ? "NEW BEST" : "FINISH", 3f);
 			Mod.Log.LogInfo("Event: finished the " + course.Name + " in " + Clock(now) + (missed > 0 ? ", " + missed + " checkpoints missed (no best time)" : newBest ? ", a new best" : ", best " + Clock(previousBest)));
 		}
 
@@ -473,19 +576,20 @@ namespace HalfGripOpenWorld
 		{
 			if (text != null)
 			{
-				TextController.EnqueueRandomText(1.5f, text);
+				Say(text, 1.5f);
 			}
 			if (course != null)
 			{
 				Mod.Log.LogInfo("Event: given up at the " + course.Name);
 			}
+			Lights(false, false, false);
 			state = State.Idle;
 			course = null;
 			next = 0;
 		}
 
 		/// <summary>
-		/// The reset after a wreck in an event: the car goes back on the course just past the last gate passed (the start box if none
+		/// The reset after a wreck in an event: the car goes back on the course just past the last gate passed (the grid if none
 		/// yet), facing along it; the clock runs on. False when no event is running (the reset goes to the spawn).
 		/// </summary>
 		internal static bool Respawn(Streamer streamer)
@@ -499,10 +603,10 @@ namespace HalfGripOpenWorld
 			double x, z, dx, dz;
 			if (e.next == 0)
 			{
-				x = c.BoxX;
-				z = c.BoxZ;
-				dx = c.BoxDx;
-				dz = c.BoxDz;
+				x = c.GridX;
+				z = c.GridZ;
+				dx = c.GridDx;
+				dz = c.GridDz;
 			}
 			else
 			{
@@ -537,7 +641,7 @@ namespace HalfGripOpenWorld
 			return entry;
 		}
 
-		// ---- on the screen -------------------------------------------------------------------------------------------
+		// ---- on the board --------------------------------------------------------------------------------------------
 
 		private static string Title(Courses.Course c)
 		{
@@ -561,74 +665,82 @@ namespace HalfGripOpenWorld
 			flashAt = Time.time;
 		}
 
-		private GUIStyle big;
-		private GUIStyle small;
+		/// <summary>The best time's colour, as the game's own timing panel shows a best lap.</summary>
+		private const string Purple = "<color=#A020F0>";
+		private const string Red = "<color=#FF4040>";
+		private const string Green = "<color=#00FF00>";
 
-		private void OnGUI()
+		/// <summary>
+		/// What the cockpit's board shows (<see cref="EventBoard"/>): the course on offer while the car is in its start box, the
+		/// countdown, the clock with the checkpoints and the best, and the result; nothing otherwise (the board tucks away and shows the
+		/// players under the hand). The lap counter beside it shows the lap, or the checkpoint on a course of one lap.
+		/// </summary>
+		private void Board()
 		{
-			// Not over the garage's window.
-			if (tm == null || GameManager.raceOver || (Garage.Instance != null && Garage.Instance.OpenAt != null))
+			EventBoard board = EventBoard.Instance;
+			if (board == null)
 			{
 				return;
 			}
-			big ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 28, fontStyle = FontStyle.Bold };
-			small ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 18, richText = true };
-			float w = 640f, x0 = Screen.width * 0.5f - w * 0.5f, y0 = 72f;
+			string text = null, lapLine = null;
 			switch (state)
 			{
 				case State.Idle:
 					if (here != null && armed)
 					{
-						ConfigEntry<float> best = Best(here);
-						Panel(x0, y0, w, 2);
-						GUI.Label(new Rect(x0, y0 + 4f, w, 34f), here.Name.ToUpperInvariant(), big);
-						GUI.Label(new Rect(x0, y0 + 38f, w, 26f), Info(here) + (best != null && best.Value > 0f ? "   best " + Clock(best.Value) : "") + "   ·   stop in neutral to start", small);
+						text = here.Name + "\n" + Info(here) + "\n" + BestLine(here) + "\nStop, neutral";
 					}
 					break;
 				case State.Countdown:
-					Panel(x0, y0, w, 2);
-					GUI.Label(new Rect(x0, y0 + 4f, w, 34f), course.Name.ToUpperInvariant(), big);
-					GUI.Label(new Rect(x0, y0 + 38f, w, 26f), Info(course) + "   ·   go on green, not before", small);
+				{
+					float since = Time.time - countdownAt;
+					string count = since < ReadyAt ? "Ready" : Red + (3 - (int)Math.Floor(since - ReadyAt)).ToString("0") + "</color>";
+					text = course.Name + "\n" + Info(course) + "\n" + BestLine(course) + "\n" + count;
+					lapLine = Laps(course, 0);
 					break;
+				}
 				case State.Running:
 				{
 					float now = Time.time - startedAt;
-					Panel(x0, y0, w, 3);
-					GUI.Label(new Rect(x0, y0 + 4f, w, 34f), Clock(now), big);
-					ConfigEntry<float> best = Best(course);
-					string line = (course.Laps > 1 ? "Lap " + Math.Min(lap, course.Laps) + " of " + course.Laps + "   ·   " : "") + "Checkpoint " + next + " of " + course.Gates.Count
-						+ (best != null && best.Value > 0f ? "   ·   best " + Clock(best.Value) : "") + (missed > 0 ? "   ·   <color=#ff8060>" + missed + " missed</color>" : "");
-					GUI.Label(new Rect(x0, y0 + 38f, w, 26f), line, small);
-					if (flash != null && Time.time - flashAt < 3f)
-					{
-						GUI.Label(new Rect(x0, y0 + 62f, w, 26f), flash, small);
-					}
+					string third = lastLapShown >= 0f && Time.time - lastLapShown < 4f ? "Lap " + Clock(lastLap)
+						: flash != null && Time.time - flashAt < 3f ? flash
+						: "CP " + next + "/" + course.Gates.Count + (missed > 0 ? " " + Red + "-" + missed + "</color>" : "");
+					text = course.Name + "\n" + (Time.time < greenUntil ? Green + Clock(now) + "</color>" : Clock(now)) + "\n" + third + "\n" + BestLine(course);
+					lapLine = Laps(course, next);
 					break;
 				}
 				case State.Finished:
 				{
-					Panel(x0, y0, w, 2);
-					GUI.Label(new Rect(x0, y0 + 4f, w, 34f), (newBest ? "NEW BEST  " : "FINISH  ") + Clock(finishTime), big);
-					string line = course.Name + "   ·   " + (missed > 0 ? "<color=#ff8060>" + missed + " checkpoints missed: no best time</color>" : previousBest > 0f ? (newBest ? "was " : "best ") + Clock(previousBest) + (newBest ? "" : "   (+" + (finishTime - previousBest).ToString("0.00") + ")") : "first time set");
-					GUI.Label(new Rect(x0, y0 + 38f, w, 26f), line, small);
+					string gap = missed > 0 ? Red + missed + " missed</color>" : newBest ? Green + "NEW BEST</color>" : previousBest > 0f ? Red + "+" + (finishTime - previousBest).ToString("0.00") + "s</color>" : "";
+					text = "Finish\n" + Clock(finishTime) + "\n" + gap + "\n" + BestLine(course);
+					lapLine = "<size=75%>finished</size>";
 					break;
 				}
 			}
+			board.Text = text;
+			board.Lap = lapLine;
+		}
+
+		/// <summary>The lap counter's line: the lap on the circuit, the checkpoint on a course of one lap.</summary>
+		private string Laps(Courses.Course c, int passed)
+		{
+			if (c.Laps > 1)
+			{
+				return "<size=75%>lap</size> " + Math.Min(Math.Max(1, lap), c.Laps) + " / " + c.Laps;
+			}
+			return "<size=75%>cp</size> " + passed + " / " + c.Gates.Count;
+		}
+
+		private static string BestLine(Courses.Course c)
+		{
+			ConfigEntry<float> best = Best(c);
+			return "Best " + (best != null && best.Value > 0f ? Purple + Clock(best.Value) + "</color>" : "-");
 		}
 
 		/// <summary>The course's length (in real km) and laps.</summary>
 		private static string Info(Courses.Course c)
 		{
-			return (c.Distance / 3300.0).ToString("0.0") + " km" + (c.Laps > 1 ? ", " + c.Laps + " laps" : "") + ", " + c.Gates.Count + " checkpoints";
-		}
-
-		/// <summary>A dark band behind the text, so it reads over sky and snow alike.</summary>
-		private static void Panel(float x, float y, float w, int lines)
-		{
-			Color was = GUI.color;
-			GUI.color = new Color(0f, 0f, 0f, 0.55f);
-			GUI.DrawTexture(new Rect(x, y, w, 10f + 28f * lines), Texture2D.whiteTexture);
-			GUI.color = was;
+			return (c.Distance / 3300.0).ToString("0.0") + " km" + (c.Laps > 1 ? " " + c.Laps + " laps" : "");
 		}
 
 		private void LateUpdate()
