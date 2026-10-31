@@ -329,8 +329,8 @@ Looked into after the test (0.12.2), the two gaps the notes above named:
 The owner's answers to the open points:
 
 1. **Where, and on the map.** Small circular waypoints on relevant existing buildings: the filling stations (`LotKind.Garage`, 5 in
-   this world) and workshops (`LotKind.Workshop`, 10), the circuit's pit garages (`Circuit.GaragesA/B`), and (proposed, same footing)
-   the rally service area (`LotKind.Service`) and the hill climb's paddock (`LotKind.Paddock`): 18 in all. Generation does not change:
+   this world) and workshops (`LotKind.Workshop`, 10), the circuit's pit garages (`Circuit.GaragesA/B`), the rally service area
+   (`LotKind.Service`) and the hill climb's paddock (`LotKind.Paddock`): 18 in all. Generation does not change:
    they are read from the layout. Each is a mark on the map, not a moving waypoint, that MiniMap shows **without any change to MiniMap
    or to `MapView`'s members**: MiniMap draws `MapView.TryGetTile`'s pictures, so the mark is painted into the tile's map picture in
    `Streamer.MapPicture` (after the roads, so it sits on top), a filled disc in a colour nothing else uses, with a dark ring, at least
@@ -345,9 +345,9 @@ The owner's answers to the open points:
    itself: Repair and Refill are buttons.
 3. **Items.** Every item available by normal means: the catalog's items that are not `disabled` (the game's own flag for items kept
    out of play: the shop, unlocks and rewards all skip them), locked or not, the gun mods' items included, by unique id. Not the
-   consumables (`UpgradeCategory.CONSUMABLE`: used up from the inventory, no slot to fit them in). **To confirm:** in a Multiplayer
-   room, also leave out what the Multiplayer mod leaves out of its own garage (`Loadout.Banned`: slow motion, rerolls, run boons,
-   beer, time rewinding), which it bans because they break a shared race; solo, offer them.
+   consumables (`UpgradeCategory.CONSUMABLE`: used up from the inventory, no slot to fit them in). In a Multiplayer room, also not
+   what the Multiplayer mod leaves out of its own garage (`Loadout.Banned`, read by reflection so its list stays the one rule: slow
+   motion, rerolls, run boons, beer, time rewinding), which break a shared race; solo, those are offered.
 4. **Not remembered.** Nothing is written: not the save (`equipped`/`inventory`), not the Multiplayer mod's loadout. The garage only
    changes the car, as the test does; the next race starts with the loadout picked in the menu.
 
