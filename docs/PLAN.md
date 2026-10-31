@@ -431,3 +431,9 @@ its layout). The window and prompt now use them: a dark slate frame, worn mid-gr
 wells for the pictures and the health bar, white lettering; the vanilla red (its map button, its prices) for the chosen slot, a
 pointed-at button and the headings; its unlock bar's green for what is fitted, the drop targets and the health blocks (red when
 low). The grime stays, neutral grey instead of warm.
+
+### The garage: readable text (0.13.4)
+
+The owner's screenshot of 0.13.3: the grey slot names and tier names could not be read on the grey metal. Now the tiles are a
+darker metal, every line on a slot or card is light (or the item's tier colour) with the hard black shadow, and the title is
+`GARAGE` in red and the garage's name in white.
