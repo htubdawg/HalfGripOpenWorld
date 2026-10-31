@@ -70,9 +70,11 @@ namespace HalfGripOpenWorld
 		private AudioSource rainSound;
 		private readonly List<GameObject> headlights = new List<GameObject>();
 		private int headlightsOn = -1;
-		/// <summary>The falling particles' collision planes, and how far round the rain the ground under them is looked at.</summary>
+		/// <summary>The falling particles' collision planes, how far round the rain the ground under them is looked at, on how many points a side.</summary>
 		private readonly List<Transform> planes = new List<Transform>();
 		private const double PlaneReach = 60.0;
+		private const int PlaneSamples = 7;
+		private readonly double[] heights = new double[PlaneSamples * PlaneSamples];
 		private float nextPlanes;
 		private readonly List<(Material m, Color colour, float smooth)> roads = new List<(Material, Color, float)>();
 
@@ -201,7 +203,7 @@ namespace HalfGripOpenWorld
 			{
 				Road(m, false);
 			}
-			Mod.Log.LogInfo("Sky: rain and snow land on " + planes.Count + " collision plane(s) kept under them at the lowest ground");
+			Mod.Log.LogInfo("Sky: rain and snow land on " + planes.Count + " collision plane(s) kept under them, tilted to the ground");
 			Mod.Info("Sky: day " + dayLook.name + ", night " + nightLook.name + ", " + rainParticles.Count + " rain and " + snowParticles.Count + " snow particle systems, "
 				+ headlights.Count + " headlights, " + cabin.Count + " cabin lights, ambient keeper " + (keeper != null ? "found" : "none") + ", rain sound " + (clip != null ? clip.name : "none"));
 		}
@@ -238,8 +240,8 @@ namespace HalfGripOpenWorld
 		/// in the Open World that was the spawn's height, so the drops stopped and splashed in mid-air over low ground. Collision with the
 		/// world's colliders was tried (0.17.0 before its test) and failed: at a quality the drops can afford Unity caches the colliders as
 		/// static, and the floating origin moves them all and the streamer swaps them, so after the first shift the drops hit ground that
-		/// was no longer there and vanished. So the plane stays, and <see cref="MovePlanes"/> puts it under the rain at the lowest ground
-		/// there: no drop stops in the air, and where the ground is higher they go into it, out of sight. The drop dies where it hits (its
+		/// was no longer there and vanished. So the plane stays, and <see cref="MovePlanes"/> keeps it under the rain, tilted to the
+		/// ground there: no drop stops in the air. The drop dies where it hits (its
 		/// splash, a collision sub-emitter, comes up there) and lives twice as long, to reach a valley floor below the emitter.
 		/// </summary>
 		private void Land(ParticleSystem ps)
@@ -275,8 +277,12 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Puts the falling particles' collision planes under the rain at the lowest ground (or water) near it, a few times a second. The
-		/// planes are in scene coordinates like everything else, so this also puts them right after an origin shift.
+		/// Puts the falling particles' collision planes under the rain, ten times a second, tilted to the ground there: a plane fitted
+		/// to the ground or water on a 7 by 7 grid round the rain (least squares), then lowered until it is nowhere above that ground.
+		/// On a hill, going up or down it, the plane lies along the slope, so the drops land and splash on the road ahead and behind; a
+		/// level plane at the lowest ground would sit far under the road there. Over a valley or a ridge the fit is lowered by the bump
+		/// and some drops go into the ground, out of sight; none ever stops in the air. Each sample is about 3 µs. The planes are in
+		/// scene coordinates like everything else, so this also puts them right after an origin shift.
 		/// </summary>
 		private void MovePlanes()
 		{
@@ -285,29 +291,53 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			nextPlanes = Time.time + 0.2f;
+			nextPlanes = Time.time + 0.1f;
 			Vector3 at = effect.transform.position;
 			Origin.World(at, out double x, out double z);
-			double lowest = double.MaxValue;
-			for (int j = -1; j <= 1; j++)
+			const int n = PlaneSamples / 2;
+			double step = PlaneReach / n;
+			for (int j = -n; j <= n; j++)
 			{
-				for (int i = -1; i <= 1; i++)
+				for (int i = -n; i <= n; i++)
 				{
-					double px = x + i * PlaneReach, pz = z + j * PlaneReach;
+					double px = x + i * step, pz = z + j * step;
 					double ground = WorldGen.Height(px, pz);
 					if (Rivers.Water(px, pz, out double level))
 					{
 						ground = Math.Max(ground, level + Network.Lift);
 					}
-					lowest = Math.Min(lowest, ground);
+					heights[(j + n) * PlaneSamples + i + n] = ground;
 				}
 			}
-			Vector3 position = new Vector3(at.x, (float)lowest - 0.05f, at.z);
+			// On a square grid centred here the least-squares plane y = a + b dx + c dz has a the mean and b, c the plain slopes.
+			double sum = 0.0, sx = 0.0, sz = 0.0, xx = 0.0;
+			for (int j = -n; j <= n; j++)
+			{
+				for (int i = -n; i <= n; i++)
+				{
+					double h = heights[(j + n) * PlaneSamples + i + n];
+					sum += h;
+					sx += h * i * step;
+					sz += h * j * step;
+					xx += i * step * i * step;
+				}
+			}
+			double a = sum / (PlaneSamples * PlaneSamples), b = sx / xx, c = sz / xx;
+			double above = 0.0;
+			for (int j = -n; j <= n; j++)
+			{
+				for (int i = -n; i <= n; i++)
+				{
+					above = Math.Max(above, a + b * i * step + c * j * step - heights[(j + n) * PlaneSamples + i + n]);
+				}
+			}
+			Vector3 position = new Vector3(at.x, (float)(a - above) - 0.05f, at.z);
+			Quaternion tilt = Quaternion.FromToRotation(Vector3.up, new Vector3((float)-b, 1f, (float)-c).normalized);
 			foreach (Transform plane in planes)
 			{
 				if (plane != null)
 				{
-					plane.SetPositionAndRotation(position, Quaternion.identity);
+					plane.SetPositionAndRotation(position, tilt);
 				}
 			}
 		}

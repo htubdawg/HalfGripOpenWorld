@@ -629,9 +629,12 @@ started on the host's go), so every player has the same sky and nothing is sent.
   at the spawn's height, in mid-air over low ground. First fix (tested, failed): collide with the world's colliders at medium
   quality. Unity caches the colliders as static at that quality, and every origin shift moves them (and the streamer swaps them),
   so after the first teleport the drops hit ground that was no longer there and the rain vanished; a ray per drop (high quality)
-  costs too much for 10000 drops. Now the plane stays and `Sky.MovePlanes` puts it, five times a second, under the rain at the
-  lowest ground or water in a 120-wide square round it: no drop stops in the air, and where the ground is higher the drops go into
-  it, out of sight. Each drop dies where it hits (its splash is a collision sub-emitter) and lives twice as long (2 s was made for
+  costs too much for 10000 drops. Now the plane stays and `Sky.MovePlanes` puts it, ten times a second, under the rain, tilted to
+  the ground: a plane fitted (least squares) to the ground or water on a 7 by 7 grid over a 120-wide square round the rain, then
+  lowered until it is nowhere above that ground, so no drop stops in the air. A level plane at the lowest ground (tried first) sat
+  far under the road on any hill, so going up or down one no drop landed near the car. Measured over 3000 spots on the land, at the
+  car (50 behind the rain's middle) the plane is under the ground by 2.4 typically, 6.5 at the 90th percentile and 25 at the 99th
+  (level at the lowest: 6.2, 23, 69). Each ground sample costs about 3 µs. Each drop dies where it hits (its splash is a collision sub-emitter) and lives twice as long (2 s was made for
   Tokyo's flat ground). The log says `Sky: rain and snow land on 1 collision plane(s)`; with `VerboseLog` each system's setup.
 - **Wet roads.** The road, sidewalk and circuit materials darken and shine as the ground at the car is wet; tracks, verges, gravel
   and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
