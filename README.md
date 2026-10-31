@@ -282,4 +282,8 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    times, standing and while driving, alone and in a Multiplayer room. Each press should show the new gun and steering wheel in the cockpit at once, name both at the top of the screen, and log `Garage test: ... -> ...`
    twice and `Garage test: refilled`. The new gun fires and reloads, its magazines are full, the wheel steers as its kind should
    (centring, self-aligning, free-spinning, gyro), the health bar is full, and the other players still see the car and can hit it.
-   Anything odd (a gun that does not show or fire, two wheels, an error in the log) is what a garage would have to work round.
+   Each new gun comes as it would at the start of a race: a gun of the same kind (shotgun to Buckshot) does not keep the rounds
+   loaded in the last one, the SMG has its magazines after the BloodDrainer, and the M1911, Minigun, RPG and Sniper Rifle are
+   themselves, not a plain SMG. At the start of the race the log should say `Garage test: copies of` the four guns, with no
+   `had already started` warning. Anything odd (a gun that does not show or fire, two wheels, an error in the log) is what a garage
+   would have to work round.

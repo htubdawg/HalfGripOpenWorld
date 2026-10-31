@@ -209,3 +209,19 @@ namespace HalfGripOpenWorld
 		}
 	}
 }
+
+namespace HalfGripOpenWorld
+{
+	/// <summary>
+	/// The garage test keeps an untouched copy of each of the cockpit's guns, taken here, before the fitted one is switched on and
+	/// starts up (see <see cref="GarageTest.CaptureGuns"/>).
+	/// </summary>
+	[HarmonyPatch(typeof(GunLoadoutActivator), "Awake")]
+	internal static class GunTemplates
+	{
+		private static void Prefix(GunLoadoutActivator __instance)
+		{
+			GarageTest.CaptureGuns(__instance);
+		}
+	}
+}
