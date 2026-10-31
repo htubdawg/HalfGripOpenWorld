@@ -41,11 +41,14 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
 | `GarageSites.cs` | Where the garages are (filling stations, workshops, the circuit's pits, the rally service area, the hill climb paddock), read from the layout |
 | `Garage.cs`, `GarageUi.cs`, `GarageRefit.cs` | The garages in a race: circles, opening on stop in neutral, god mode; the window; the live refit (gun copies) |
+| `ShifterHand.cs` | The frame the hand lets go of the active shifter in neutral (what opens a garage and signs on to an event) |
 | `GameMode.cs` | The Open World's game mode: a wreck respawns the car at the spawn (in an event, at its last gate), no AI (solo; in a room, the room's race set so) |
 | `Courses.cs` | The events' courses read from the layout: centre line, start box off the course, grid spot, checkpoint gates (pure arithmetic: the preview lists them, meshcheck checks them) |
 | `EventRace.cs` | Solo events: the start boxes and gates drawn, sign-on to the grid, the start lights, timing through the gates, respawn at the last gate, best times in the config |
 | `EventBoard.cs` | The cockpit's leaderboard and lap counter: the event on them, tucked into the screen's edge out of one, brought out by the hand |
-| `Weather.cs` | Draws a weather from every map's for each race (room seed in Multiplayer) |
+| `Weather.cs` | Draws a day look and a night look from the game's weathers for each race (room seed), with their rain, snow and grip taken out |
+| `Storms.cs` | The weather over the world: rain cells born, drifting with the wind and dying, as a pure function of room seed, position and race time; wetness looking back; the snow line |
+| `Sky.cs` | Every frame in a race: the time of day (sun, moon, light, sky, ambient probe, fog, headlights) and the storms at the car (rain, snow, sound, wet roads, grip) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
 | `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
@@ -58,6 +61,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   only `Rng`, integer hashing, `+ - * /`, `Math.Floor`, `Math.Sqrt`, `Math.Abs`, `DetMath.Sin`/`Cos` and `Network.Atan2`, and break
   every tie (heaps, sorts) by index. Never `System.Random`, `UnityEngine.Random`,
   `Math.Sin`/`Cos`/`Exp`/`Pow`, or a config value. A change to it changes the world, so everyone in a room needs the same version (the Multiplayer mod enforces that).
+  `Storms` follows the same rules (from the room's seed and the race clock); `Sky` only draws what it says, so it may use floats.
 - **Origin.** Anything that keeps a world position outside a transform must be moved on `Origin.Shifted` (or listed in `GameCaches`).
   Positions sent over the network are world coordinates. Only x and z shift; heights never change.
 - Bump `version` in `mod.json` with each release and keep `README.md` in step.
@@ -67,6 +71,11 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   `Network.Lift` for the scene). Mixing the two sank every building once.
 - Match the style: tabs, `///` summaries that explain *why*, `Mod.Info(...)` for verbose logging, `Mod.Log.LogWarning` and a try/catch
   around risky scene work.
+- **Keys.** Every key the mod reads (debug ones too) goes through HalfGripTools' `ctx.Keys.Add(key, label, section, shown)` in
+  `Mod.Load`, so it is listed in the game's Settings > Controls and can be rebound there; read it with `ModKey.Down`/`Held`. Never a
+  `ConfigEntry<KeyCode>` or a raw `Input`/`GameInput` read of a fixed key. Pick a default the game does not use: its keys include F1,
+  F3, F4, F6, **F8 (bug report)**, F9, F10 and F12 (see `Controls.cs`, `DevBinds.cs`, `ReportBugKey.cs` in the decompile). `Add`
+  returns null if the key is taken, so check for null.
 - Do not invent an `ObjectiveKind` (a saved run with one is deleted).
 - `HalfGripOpenWorld.MapView` is a public API that other mods (MiniMap) read by reflection: never rename it or change its members'
   names or signatures. It is left out of `tools/meshcheck` (it needs `Streamer`).
@@ -82,6 +91,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs, roads under drawn water (flooded), plants in
   the water (plants), ponds, lawns and benches (parks), the events' gates and start boxes (events); exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
+- `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
+  repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - In game: see the test checklist in `docs/TESTING.md`. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next

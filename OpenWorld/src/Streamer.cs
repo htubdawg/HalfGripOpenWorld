@@ -145,7 +145,7 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			if (Mod.Teleport.Value && GameInput.GetKeyDown(Mod.TeleportKey.Value))
+			if (Mod.Teleport.Value && Mod.TeleportKey != null && Mod.TeleportKey.Down)
 			{
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				TeleportNext(back ? -1 : 1);
@@ -784,8 +784,9 @@ namespace HalfGripOpenWorld
 			Origin.World(player.transform.position, out double x, out double z);
 			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " km   height " + player.transform.position.y.ToString("0") + " m\n"
 				+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
-				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work";
-			GUI.Label(new Rect(12f, 12f, 700f, 70f), text);
+				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
+				+ (Sky.Status != null ? "\n" + Sky.Status : "");
+			GUI.Label(new Rect(12f, 12f, 900f, 90f), text);
 		}
 
 		private void OnDestroy()

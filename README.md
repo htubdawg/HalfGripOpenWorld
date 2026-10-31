@@ -22,7 +22,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.16.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.17.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -30,7 +30,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.16.0` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.17.0` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -45,13 +45,20 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
   players respawning together do not land on each other), or at the garage you made the respawn point (see [Garages](#garages)). In a Multiplayer room the room's respawn time counts, and an Open World
   race is always played with respawns (a Demolition is played as a race, and "out, watch" as respawn), since it has no finish.
 - **No AI rivals**, solo or in a room: the room's AI RIVALS setting is ignored in the Open World.
-- **Weather** is drawn from all the game's weathers each race (in a Multiplayer room from the room's seed, so everyone gets the same).
+- **Day and night.** The race starts at an hour of its own (mostly in the day) and the clock goes round: a whole day and night
+  takes 40 minutes. The sun rises in the east and sets in the west, the light turns gold as it does, then the moon and a night sky
+  come out and the headlights go on. The day's and the night's looks are drawn from the game's weathers each race.
+- **Weather.** Storms drift across the country with the wind: it rains in one place and not another, a shower can be seen coming
+  (the sky darkens and the fog closes in before the rain) and driven out of, and above the snow line it snows. Roads stay wet for a
+  while after a shower, darker and shinier, and grip a little less; they dry over about 10 minutes. Some days are dry, some wet.
+  Everything comes from the room's seed and the race clock, so everyone in a room has the same sky and the same storms in the same
+  places.
 
 ## Garages
 
 A glowing cyan circle marks a garage on the forecourt of every filling station, in every workshop's yard, in the circuit's pit lane,
-the rally service area and the hill climb paddock (20 in all); each shows as a cyan dot on MiniMap's map. Stop in a circle and shift
-into neutral to open it:
+the rally service area and the hill climb paddock (20 in all); each shows as a cyan dot on MiniMap's map. Stop in a circle, shift
+into neutral and let go of the shifter to open it:
 
 - Every item the game offers by normal means (locked ones and the gun mods' too) can be fitted. Drag an item onto a slot or
   right-click it to fit it; drag it off its slot or right-click it again to take it off. In a Multiplayer room, the items the
@@ -72,7 +79,7 @@ the rally service area and in the hill climb paddock, next to the garage's circl
 and each one has a chequered disc on the map.
 
 - Drive into the box: a panel like the garage's shows the event, its length, laps, checkpoints and your best time.
-- Stop in it and shift into neutral: the car is put on the grid behind the start line and held there while the start lights over
+- Stop in it, shift into neutral and let go of the shifter: the car is put on the grid behind the start line and held there while the start lights over
   the line count down (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green.
   The cockpit's board (top right) slides out with the event.
 - The clock runs through the checkpoints: an orange gate across the road, lit only while the event runs (the next one and the one
@@ -98,8 +105,9 @@ the same ground.
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; the fog ends there). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | `TeleportKey` (F7) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
-| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen. |
+| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm. |
+| Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back): the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 
 ## Names
@@ -148,6 +156,10 @@ buildings, the courses, signs, garages; name checks after `--` to run only those
 dotnet run -c Release --project tools/preview -- world.ppm 1024
 dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000    # west x, north z, side
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
+dotnet run -c Release --project tools/stormview -- storms.ppm 12345 10    # room seed, minutes between pictures
 ```
+
+`tools/stormview` checks the storms (how much of the land is under rain over 20 room seeds, that a seed always gives the same
+weather, what a sample costs) and draws the world at six times for one seed.
 
 The in-game test checklist is in [docs/TESTING.md](docs/TESTING.md); how the generator and the code work, in [docs/DESIGN.md](docs/DESIGN.md).

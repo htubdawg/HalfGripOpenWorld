@@ -138,7 +138,14 @@ namespace HalfGripOpenWorld
 			Trees.Capture();
 			Foliage foliage = root.AddComponent<Foliage>();
 			foliage.Setup(lit);
-			streamer.Setup(tm.playerCarController, GroundMaterial(lit), groundLayer >= 0 ? groundLayer : 0, RoadMesh.Materials(lit), RoadMesh.VergeMaterial(lit), RoadMesh.SidewalkMaterial(lit), RoadMesh.TrackMaterials(lit), WaterMaterial(lit), 0, Buildings.Materials(lit), CircuitMesh.Materials(lit), CircuitMesh.GravelMaterial(lit), foliage);
+			Material ground = GroundMaterial(lit), verge = RoadMesh.VergeMaterial(lit), sidewalk = RoadMesh.SidewalkMaterial(lit), gravel = CircuitMesh.GravelMaterial(lit);
+			Material[] roads = RoadMesh.Materials(lit), tracks = RoadMesh.TrackMaterials(lit), circuit = CircuitMesh.Materials(lit);
+			streamer.Setup(tm.playerCarController, ground, groundLayer >= 0 ? groundLayer : 0, roads, verge, sidewalk, tracks, WaterMaterial(lit), 0, Buildings.Materials(lit), circuit, gravel, foliage);
+			// The sky wets the surfaces: the paved ones shine, the rest only darken.
+			List<Material> paved = new List<Material>(roads) { sidewalk };
+			paved.AddRange(circuit);
+			List<Material> unpaved = new List<Material>(tracks) { verge, gravel, ground };
+			root.AddComponent<Sky>().Setup(tm, paved.ToArray(), unpaved.ToArray());
 
 			PlaceGrid(tm, env, out Vector3 forward);
 			Tunnels(lit);

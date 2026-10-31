@@ -27,8 +27,10 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<float> ShiftDistance;
 		internal static ConfigEntry<int> GrassReach;
 		internal static ConfigEntry<bool> Teleport;
-		internal static ConfigEntry<KeyCode> TeleportKey;
+		internal static ModKey TeleportKey;
 		internal static ConfigEntry<bool> ShowCoords;
+		internal static ConfigEntry<bool> WeatherSkip;
+		internal static ModKey WeatherSkipKey;
 		internal static ConfigEntry<bool> Verbose;
 
 		/// <summary>The map entry the mod adds to the run config, once it exists.</summary>
@@ -53,9 +55,9 @@ namespace HalfGripOpenWorld
 			TileRadius = ctx.Config.Bind("World", "TileRadius", 5, new ConfigDescription("How many 250 m tiles of ground are kept loaded around the car in each direction. 5 is about 1.3 km, which the fog hides. More draws further and costs memory and frame time. Only changes your own view.", new AcceptableValueRange<int>(2, 10)));
 			GrassReach = ctx.Config.Bind("World", "GrassReach", 2, new ConfigDescription("Grass is drawn on the tiles this many tiles round the car's (2 is about 600 m). 0 turns grass off. Only changes your own view (grass has no collision).", new AcceptableValueRange<int>(0, 4)));
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many metres from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
-			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let TeleportKey jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
-			TeleportKey = ctx.Config.Bind("Debug", "TeleportKey", KeyCode.F7, "The key for Teleport.");
-			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset and the tile count in the top left corner.");
+			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let the Teleport key (Settings > Controls, F7 unless rebound) jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
+			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset, the tile count and the sky (the time, the rain, cloud and wetness at the car, the grip, the nearest storm) in the top left corner.");
+			WeatherSkip = ctx.Config.Bind("Debug", "WeatherSkip", false, "Let the Weather skip key (Settings > Controls, F5 unless rebound) move your own sky 5 minutes on (Shift: back): the time of day (an hour is 100 seconds) and the storms, to test them. Only your own view: in a Multiplayer room your sky is then out of step with the others' until the next race.");
 			Verbose = ctx.Config.Bind("Debug", "VerboseLog", false, "Write the detailed log (each origin shift, tile timings) to the BepInEx log. Off, only the world's build, warnings and errors are logged.");
 
 			MapEntry.Ensure();
@@ -80,6 +82,10 @@ namespace HalfGripOpenWorld
 				MultiplayerLink.Hook(ctx);
 				WorldScene.OnSceneLoaded(scene);
 			});
+			// In the game's own Controls list (shown while their debug setting is on), so they can be rebound there and never take a key
+			// the game or another mod has: the game's are F1, F3, F4, F6, F8 (its bug report), F9, F10 and F12.
+			TeleportKey = ctx.Keys.Add(KeyCode.F7, "Teleport (Open World)", Controls.Section.Race, () => Teleport.Value);
+			WeatherSkipKey = ctx.Keys.Add(KeyCode.F5, "Weather skip (Open World)", Controls.Section.Race, () => WeatherSkip.Value);
 			ctx.OnUnload(MapEntry.Remove);
 			ctx.PatchAll();
 		}

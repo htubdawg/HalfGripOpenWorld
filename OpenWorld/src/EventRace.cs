@@ -7,7 +7,8 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// Solo events at the courses (<see cref="Courses"/>): a glowing box beside each course near its start, with a panel like the
-	/// garage's (<see cref="GarageUi"/>) offering the event while the car is in it; stopping in it in neutral signs the car on and puts
+	/// garage's (<see cref="GarageUi"/>) offering the event while the car is in it; stopping in it and letting go of the shifter in neutral
+	/// (<see cref="ShifterHand"/>) signs the car on and puts
 	/// it on the grid behind the start line, held there until the game's own start lights (moved over the line) count it down, then the
 	/// clock runs through the checkpoint gates in order to the finish. The next gate stands across the road, lit, only while an event
 	/// runs. The cockpit's board at the top right (<see cref="EventBoard"/>) shows the event once it has begun. A missed gate is called out and the clock runs on, but that run sets no best time. A wreck puts the car
@@ -29,9 +30,8 @@ namespace HalfGripOpenWorld
 			Finished,
 		}
 
-		/// <summary>As the garage's: slower than this counts as stopped, and the car must stand this long in neutral before the countdown.</summary>
+		/// <summary>As the garage's: slower than this counts as stopped.</summary>
 		private const float Stopped = 1.2f;
-		private const float Settle = 0.6f;
 
 		/// <summary>
 		/// The countdown, in seconds from being put on the grid: the red light at <see cref="ReadyAt"/>, the amber one a second later,
@@ -74,7 +74,6 @@ namespace HalfGripOpenWorld
 		private Courses.Course course;
 		private Courses.Course here;
 		private bool armed = true;
-		private float readySince = -1f;
 		private float countdownAt;
 		private int countdownShown;
 		private float greenUntil = -1f;
@@ -329,15 +328,15 @@ namespace HalfGripOpenWorld
 			return c;
 		}
 
-		/// <summary>Stopped in a start box in neutral, and held there a moment: the car is signed on and put on the grid.</summary>
+		/// <summary>Stopped in a start box and the shifter let go in neutral: the car is signed on and put on the grid.</summary>
 		private void Waiting(CarControllerNew car, CarLink link, float speed)
 		{
-			bool neutral = link.sa != null && (link.sa.gear == 0 || !link.sa.inGear);
+			bool released = ShifterHand.ReleasedInNeutral(link);
+			bool neutral = ShifterHand.Neutral(link);
 			bool garage = Garage.Instance != null && Garage.Instance.OpenAt != null;
 			bool ready = here != null && speed < Stopped && neutral && !garage && link.hp > 0f;
 			if (!ready)
 			{
-				readySince = -1f;
 				// Out of the box or moving again: the next stop in it signs on.
 				if (here == null || speed > Stopped * 3f)
 				{
@@ -349,15 +348,11 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			if (readySince < 0f)
-			{
-				readySince = Time.time;
-			}
-			else if (Time.time - readySince >= Settle && Streamer.Instance != null)
+			// Letting go of the shifter in neutral signs on, so a gear change through neutral does not.
+			if (released && Streamer.Instance != null)
 			{
 				course = here;
 				armed = false;
-				readySince = -1f;
 				next = 0;
 				ToGrid(Streamer.Instance);
 				state = State.Countdown;
@@ -775,7 +770,6 @@ namespace HalfGripOpenWorld
 			}
 			string what = Info(here) + ", " + here.Gates.Count + " checkpoints     " + BestLine(here);
 			string how = !armed ? "Drive out of the box to start it again"
-				: readySince >= 0f ? "Starting..."
 				: "Stop and shift into neutral to start";
 			return "<color=#ff8c1a>EVENT</color>  " + here.Name + "\n" + what + "\n" + how;
 		}

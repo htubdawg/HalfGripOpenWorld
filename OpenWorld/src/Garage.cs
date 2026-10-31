@@ -9,7 +9,7 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// The garages in the world (<see cref="GarageSites"/>): a glowing circle on the ground at each, and a garage that opens when the car
-	/// stops in one with the gearbox in neutral. While it is open nothing hurts the car (the game's own god mode, which crashes, hazards
+	/// stops in one and the player lets go of the shifter in neutral (<see cref="ShifterHand"/>). While it is open nothing hurts the car (the game's own god mode, which crashes, hazards
 	/// and the Multiplayer mod's hits all go through) and its health is held where it was, so a garage is no heal button unless Repair is
 	/// pressed. Items are fitted through <see cref="GarageRefit"/> as they are picked, ammo and nitro filled a moment after.
 	///
@@ -22,9 +22,6 @@ namespace HalfGripOpenWorld
 
 		/// <summary>The car must be slower than this (units a second, a car is 14 long) to count as stopped.</summary>
 		private const float Stopped = 1.2f;
-
-		/// <summary>How long the car must stand stopped in neutral before the garage opens: a gear change through neutral does not open it.</summary>
-		private const float Settle = 0.6f;
 
 		/// <summary>The circle's line: this wide, inside its radius.</summary>
 		private const float RingWidth = 0.9f;
@@ -49,7 +46,6 @@ namespace HalfGripOpenWorld
 		/// <summary>False after the garage is closed until the car leaves the circle, moves or goes into gear, so it does not open again at once.</summary>
 		internal bool Armed { get; private set; } = true;
 
-		private float readySince = -1f;
 		private bool setGodMode;
 		private float heldHp;
 		private UnityEngine.Object muteKey;
@@ -190,9 +186,10 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Here = Inside(car);
+			// Asked every frame, so the hand on the shifter is followed even while the garage is open or the car is out of the circles.
+			bool released = ShifterHand.ReleasedInNeutral(link);
 			float speed = car.rb != null ? car.rb.linearVelocity.magnitude : 0f;
-			// Neutral: the active shifter (H-pattern, sequential, automatic, Lenco: every kind reports here) in no gear.
-			bool neutral = link.sa != null && (link.sa.gear == 0 || !link.sa.inGear);
+			bool neutral = ShifterHand.Neutral(link);
 			bool ready = Here != null && speed < Stopped && neutral;
 			if (OpenAt != null)
 			{
@@ -206,18 +203,14 @@ namespace HalfGripOpenWorld
 			if (!ready)
 			{
 				Armed = true;
-				readySince = -1f;
 				return;
 			}
 			if (!Armed)
 			{
 				return;
 			}
-			if (readySince < 0f)
-			{
-				readySince = Time.time;
-			}
-			else if (Time.time - readySince >= Settle && link.hp > 0f)
+			// Letting go of the shifter in neutral opens it, so a gear change through neutral does not.
+			if (released && link.hp > 0f)
 			{
 				Open(Here);
 			}
@@ -253,7 +246,6 @@ namespace HalfGripOpenWorld
 			CarLink link = Link;
 			OpenAt = site;
 			Armed = false;
-			readySince = -1f;
 			heldHp = link.hp;
 			setGodMode = !CarLink.godMode;
 			CarLink.godMode = true;
@@ -300,7 +292,6 @@ namespace HalfGripOpenWorld
 		internal void Disarm()
 		{
 			Armed = false;
-			readySince = -1f;
 		}
 
 		// ---- what the garage does ----------------------------------------------------------------------------------

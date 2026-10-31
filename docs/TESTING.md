@@ -2,6 +2,8 @@
 
 Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and `VerboseLog`, then:
 
+Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not run that time: 2 to 6, 13, 14, 18 and 22b.
+
 1. The race loads on the road into Kingsbridge, just outside the town, facing it; none of Tokyo's arena, city or train is left.
 2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
    or seams between tiles. Where roads meet, the smaller one stops at the bigger one's edge with a flared mouth, level with it (no
@@ -73,11 +75,25 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
 19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
    whole time, including after teleports and resets.
 20. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
-21. The log's `Weather:` line, and that the weather looks right (rain and snow follow the car).
+21. Day, night and storms (0.17.0), in a Multiplayer room. The log has `Weather: <day> by day, <night> by night (from the room's
+   seed)` and `Sky: the race starts at hh:mm, a day lasts 40 minutes; storms: a ... day, wind ..., snow above ...`. With `ShowCoords`
+   the overlay's last line gives the time, the sun's height, the rain, cloud, wetness and grip at the car and the nearest storm; both
+   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press the Weather skip key (F5) through a whole day
+   (8 presses a day): the shadows swing from east to west, the light goes gold at dusk, the sky darkens and the night sky comes in,
+   the cockpit dims at night (the cabin is not lit at midnight), the headlights go on at dusk and off after dawn, and nothing jumps
+   or flickers at the swaps (the light fades out and back round sunset and sunrise). Note whether the ambient light changes at
+   all (the world's shadows go blue and dark at night): if it stays as bright as day, the probe override did not take. Drive
+   towards the nearest storm: the sky and fog darken first, then rain starts and grows (the sound with it), the road darkens and
+   shines, and the overlay's grip drops; drive out the other side: the rain stops, the road stays wet and dries over about 10
+   minutes. In the rain, the drops reach the ground and splash on it,
+   on the road and on buildings, on high ground and down in a valley alike, with no drops stopping or splashing in mid-air (the
+   log says `Sky: rain and snow land on 1 collision plane(s)`). Teleport about (origin shifts) while it rains, and drive up and down
+   a long hill in the rain: the rain stays, and the drops splash on the road round the car, uphill and downhill. Up in the northern mountains above the snow line it snows instead. Frame time with heavy rain (the graphics budget
+   still cuts the rain on a low setting).
 22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
    filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each
    circle within about 70 m. Drive into a circle: the line at the bottom says to stop and shift into neutral; do it and the garage
-   opens (shifting through neutral while rolling does not). While it is open the controls and the gun do nothing, the cursor is free,
+   opens when you let go of the shifter (standing in neutral still holding it does not, nor does shifting through neutral while rolling). While it is open the controls and the gun do nothing, the cursor is free,
    crashes, hazards and other players' shots do no damage, and the health shown stays put. Drag an item from the list onto a slot (the slots it fits light up), or right-click it: it is on the
    car at once (the new gun, wheel or shifter in the cockpit, the body's look outside), ammo and nitro full a moment later. Every
    gun (the game's and the modded M1911, Minigun, RPG, Sniper Rifle, Railgun) swaps and fires as at the start of a race, with its own
@@ -102,7 +118,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    hill climb paddock (beside the garage's circle), off the course, with orange `EVENT` over it from up to about 70 m, and a
    chequered disc in an orange ring on the map (MiniMap) at each, a little larger than a garage's and over the one beside it. Drive
    into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Stop and shift into neutral to
-   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral: the panel goes, the car is put
+   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral and let go of the shifter (holding it in neutral does nothing): the panel goes, the car is put
    on the grid (pole on the circuit, just behind the start arch elsewhere), facing up the course, and the board slides out; the
    start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2, 1, GO in the cockpit's
    text, each on time. Before green, shift into gear and floor it: the car stays on its spot (the wheels may spin, the car should

@@ -370,7 +370,8 @@ On branch `claude/epic-goodall-zas0pe`: compiled, preview and meshcheck clean (a
   so MiniMap shows it as it is; `tools/preview` draws the same on `world.png` and lists the sites.
 - **In the world** (`Garage.cs`): a cyan emissive ring on the surface (following its slope, 0.14 over it) with four dashes pointing
   in, under the world's root so the origin shift moves it; `GARAGE` over each circle within 220 units.
-- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, for 0.6 s.
+- **Opening**: in a circle (and within 6 of its height, not on a bridge), under 1.2 units/s, the active shifter in neutral, when the hand
+  lets go of it (`ShifterHand`; until 0.17.0 it was neutral for 0.6 s).
   Then `CarLink.godMode` (set back only if the garage set it) and the health held each `LateUpdate` (capped at the new maximum after a
   refit); input muted (`GameInput.Mute`), the cursor freed and the hand hidden, as the Multiplayer mod's pause does. Closed by Close or
   Esc (the controls back the frame after, so the Esc does not open the pause menu), or if the car is pushed out or knocked moving. It
@@ -473,7 +474,7 @@ to the Multiplayer mod's picker (its modes are fixed in its own code, with no wa
 - **No AI.** Solo there were none already (`NoRivals`). In a room `RoomRules` also sets the race's AI count to 0 and empties
   `Room.AiGrid` (the slots the host dealt the AI cars) before the scene's start, when the Multiplayer mod spawns them.
 
-Not tested in game yet (TESTING.md 17b).
+The owner tested it with 0.17.0: good (TESTING.md 17b).
 
 ### 20 players: investigated, held off
 
@@ -504,7 +505,7 @@ Step 2 of the events plan below, begun. What is in:
   two, its radius cut to fit a narrow road) and checkpoint gates spaced evenly, about 1000 units (300 m) apart, the last of each lap
   on its line. Read from the layout, so the same for everyone and nothing changes in generation. A best time's key holds the course,
   its length and laps, so a course a new version lays out differently starts afresh.
-- **The event** (`EventRace.cs`): stop in a start box in neutral for 0.6 s (as a garage) and a countdown runs (the name, 3, 2, 1);
+- **The event** (`EventRace.cs`): stop in a start box in neutral and let go of the shifter (as a garage) and a countdown runs (the name, 3, 2, 1);
   leaving the box or rolling before GO is a jump start. Then the clock (game time: it stops on pause) runs; a gate counts when the car
   crosses its line going forwards within its reach (the road's half width, the circuit's kerbs, and 10 more). The next three gates
   past the expected one are watched too: crossing one of them calls out the gates missed and goes on from it; a run with any missed
@@ -573,7 +574,7 @@ From the owner's try of 0.15.2 (log): just after `Event: signed on at the Circui
 - **The map's mark** is a chequered disc, laid out like the garages' discs (the flag reached out of its tile and over the road
   above it): squares of 5 pixels in a disc 26 across, an orange ring and a thin dark one, 33 pixels across in all, centred on the box.
 
-Not tested in game yet (TESTING.md 23).
+The owner tested it with 0.17.0: good (TESTING.md 23, with the shifter let go in neutral).
 
 ## Respawn at a garage (0.16.0; asked for after 0.15.3)
 
@@ -594,6 +595,62 @@ a wreck then comes back to that garage instead of the spawn, for the rest of the
   circle and the ground `Streamer.Place` drops it on within 0.5 of the garage's surface.
 
 Not tested in game yet (TESTING.md 22b).
+
+## Day and night, and storms (0.17.0; asked for after 0.16.0)
+
+Free roam in a room had one weather for the whole race, with rain or snow everywhere at once. Now the time of day goes round and
+the weather moves across the country. Everything comes from the room's seed and the race clock (`TrackManager.TimeSinceRaceStart`,
+started on the host's go), so every player has the same sky and nothing is sent. Nothing about it is a setting for that reason
+(the Open World is always played from a room); only the debug skip is.
+
+- **Storms (`Storms.cs`).** Rain cells: each 10 minutes of race gives birth to up to 20 (fewer on a drier day, the day's raininess
+  from the seed), 1400 to 4400 across, living 20 to 60 minutes, building up and dying away, drifting with the wind (from the
+  seed, swinging slowly over the race) at 4 to 11 a second, so a car outruns one easily. Rain is hardest in a cell's middle with a
+  ragged edge; its cloud reaches 1.8 times as far, so the sky darkens first. High ground gets a little more. Above the snow line
+  (330 to 480 from sea level, from the seed) it snows, with sleet either side. Wetness looks back 10 minutes, so a road a storm has
+  passed stays wet and dries. Pure arithmetic under the world's determinism rules. `tools/stormview` checks it: over 20 seeds the
+  rain covers 1 to 3 % of the land on a dry day and about 20 % on a wet one (10 % on average), a seed always gives the same weather,
+  and a sample costs about 8 µs (a wetness, every second, 0.2 ms).
+- **Day and night (`Sky.cs`).** A day lasts 40 minutes (100 seconds an hour); three races in four start between 07:00 and 17:00,
+  the rest at any hour. The sun goes from east to south to west, at most 55° up; the light is never put below 7° (long shadows
+  flicker) and fades out round the horizon while the moon takes over opposite. The light turns gold low down. `Weather` now draws a
+  day look (the weathers with a sky and no headlights: Stadium ash, fiery factory, Forest rainy day, red forest, mountain day) and a
+  night look (the night weathers with a sky); the light's and fog's colours and the sky blend from one to the other, the day sky
+  dimmed and tinted at dusk, the night sky (its stars turning) swapped in once it is dark. The night weathers' moonlight is made
+  for racing in an arena, so it is taken at 35 %. Headlights go on from dusk to dawn and under a black sky.
+- **The game's weather taken over.** The game applies a weather once, as the scene starts. `Sky` keeps its own copy of the day
+  look as `WeatherController.activeProfile` (so the game moves our rain with the car) and as `WeatherGrip.Current` (so the grip
+  read is ours), and sets the light, the cabin light (`SyncInteriorLight.maxIntensity`, which ignores the weather), fog, sky
+  exposure and tint and reflections every frame. The Tokyo scene pins its ambient light (`AmbientProbeKeeper`), so its stored probe
+  is scaled per colour (blue at night, darker under cloud) and handed back through `Store`. Rain and snow are the scene's own
+  particles at a rate set by the rain at the car (the game's weather budget cut applied, since setting the rate takes them out of
+  `RenderBudget`), dimmed at night; the rain's sound is ours, as loud as it rains.
+- **Rain landing on the ground.** The game's rain and snow collide with a plane (`Weather/ParticleColliderPlane`, Tokyo's ground
+  level), a collision plane, so switching its collider off (which `WorldScene` did) changed nothing: the drops stopped and splashed
+  at the spawn's height, in mid-air over low ground. First fix (tested, failed): collide with the world's colliders at medium
+  quality. Unity caches the colliders as static at that quality, and every origin shift moves them (and the streamer swaps them),
+  so after the first teleport the drops hit ground that was no longer there and the rain vanished; a ray per drop (high quality)
+  costs too much for 10000 drops. Now the plane stays and `Sky.MovePlanes` puts it, ten times a second, under the rain, tilted to
+  the ground: a plane fitted (least squares) to the ground or water on a 7 by 7 grid over a 120-wide square round the rain, then
+  lowered until it is nowhere above that ground, so no drop stops in the air. A level plane at the lowest ground (tried first) sat
+  far under the road on any hill, so going up or down one no drop landed near the car. Measured over 3000 spots on the land, at the
+  car (50 behind the rain's middle) the plane is under the ground by 2.4 typically, 6.5 at the 90th percentile and 25 at the 99th
+  (level at the lowest: 6.2, 23, 69). Each ground sample costs about 3 µs. Each drop dies where it hits (its splash is a collision sub-emitter) and lives twice as long (2 s was made for
+  Tokyo's flat ground). The log says `Sky: rain and snow land on 1 collision plane(s)`; with `VerboseLog` each system's setup.
+- **Wet roads.** The road, sidewalk and circuit materials darken and shine as the ground at the car is wet; tracks, verges, gravel
+  and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
+  the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
+- **Debug.** `ShowCoords` adds a line: the time, the sun or moon's height, the rain or snow, cloud, wetness and grip at the car,
+  the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back).
+
+**Garages and start boxes on letting go of the shifter** (0.17.0, asked for): they act when the hand lets go of the active shifter in
+neutral (`ShifterHand`: the grabber's held object under the active shifter's object), stopped and armed as before, in place of
+standing in neutral for 0.6 s. Arming, the prompts and `Garage.Disarm` after a respawn are unchanged.
+
+The owner tested 0.17.0 in game: good (TESTING.md 21, and 22 and 23 with the shifter let go in neutral). Next: rain curtains and dark cloud under the storms nearby (seen from
+afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest
+storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
+windows and street lamps.
 
 ## Next: events (proposed, to agree with the owner)
 
