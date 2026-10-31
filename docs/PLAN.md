@@ -306,26 +306,53 @@ every wheel swaps and works.** What it took, and what the garage must keep:
 - **Multiplayer**: nothing new goes over the network. Others see only paint and body (`Skins` re-sends the body each second), PvP
   damage is applied on the owner's car, and HP goes as a fraction in each `Car` packet. Items stay local.
 
-Known, not handled: what a gun mod builds outside its gun stays after swapping away (the Minigun's roof gun on the car body and its
-remote in the cockpit); the Multiplayer mod looks for the RPG once, at race start, so rockets from an RPG fitted later may not show
-to others. Neither was reported in the test.
+Looked into after the test (0.12.2), the two gaps the notes above named:
 
-### The garage: next, to be agreed with the owner before building
+- **The Minigun's roof gun stayed on the car after swapping away.** The roof gun is built on the car body by `MiniHeat.Setup` and
+  taken down only by `MiniHeat.Cleanup`, which the Minigun mod calls only when it unloads; `MiniHeat.OnDestroy` does not. Putting the
+  SMG back as built destroys `MiniHeat` with the gun, so the roof gun was left turning on the roof (pointing ahead, its gun gone).
+  Emptying now takes every Minigun roof gun off the car and runs each `MiniHeat.Cleanup` (by name: the classes are internal) before
+  the guns are put back; a Minigun fitted again builds a fresh one as its gun starts. Only when an SMG copy exists (otherwise the SMG
+  is not put back and the Minigun stays whole). The **remote** cannot stay: the reading of the code and the Tokyo scene dump puts
+  everything the Minigun changes in the cockpit (the remote's sprites and its holder moved by `RemotePlacer`, the heat bar on the rack,
+  the overheat padlock, the held model's mesh) under `SmgAssembly` or `HeldSmg`, which are replaced; to be confirmed in game (README
+  test 22). The other gun mods: the Sniper Rifle's laser dot and scope overlay go in its gun's `OnDestroy`; the Railgun's charge and
+  the RPG's launcher are components on the gun object; the RPG's rockets in flight, explosions and scorch marks are meant to outlive it.
+- **Rockets from an RPG fitted mid-race.** The note was wrong as to the cause: the Multiplayer mod (`Cues.FindRocket`) looks up the
+  RPG's rocket *type* by name once per game session, not the fitted gun at race start, and 20 times a second sends every live
+  `RpgProjectile`; its Harmony prefix on `Explode` is on the type too. Its aim cue re-reads the guns every second. So an RPG fitted by
+  the refit should show to the others exactly as one fitted at the start; the README's test 22 now asks for that in a room. (Others
+  see the RPG's aim as an SMG's either way: the cue sends the gun's `RequiredGunType`.)
 
-From the feasibility notes; settle these first:
+### The garage: agreed with the owner (after 0.12.1)
 
-- **Where**: garage zones on the world's existing places, without changing generation: `LotKind.Workshop` and
-  `LotKind.FillingStation` lots (`Town.cs`) and the circuit's pit garages (`Circuit.GaragesA/B`). A visible sign or marker.
-- **When it opens**: in a zone, car nearly stopped; perhaps not within a few seconds of taking damage, so it is not a heal button
-  mid-fight (the only balance without currency). A key to open (through `ctx.Keys`), or opening on stopping in the zone.
-- **The item picker**: the garage scene's drag-and-drop UI (`MenuManager`, `InventorySlot`) exists only in that scene, so an overlay
-  of our own: the slots (`DevCommands.Slots`: Aero, Tires, Servo, Gun, Engine, MediumSlot/MediumSlot2, PassiveSlot, ExternalSlot,
-  ShifterSlot by `UpgradeCategory`), item cards (`item.image`, `item.Name`), fit and remove; free the cursor (the `Grabber` locks it)
-  and hold driving input while open. Then empty, fit and refill as the test does.
-- **Which items**: in a room, the Multiplayer mod's rules: every unlocked item free, minus its `Loadout.Banned` (slow motion, the
-  Inverter, rerolls, run boons, consumables). Solo: the save's owned items, or the same free list (owner's choice).
-- **Remembering the fit**: in a room, write it to the Multiplayer mod's loadout (`Multiplayer.Loadout.Equipped` and `Persist()`,
-  internal: by reflection as `MultiplayerLink` does, falling back to our own ban list) so the next garage visit and race keep it.
-  Solo: the save's `equipped`/`inventory` (`GameManager.SaveEquippedUpgrades`/`SaveInventory`), or not at all.
-- Keep `GarageTest` until the garage replaces it, then remove the debug key.
+The owner's answers to the open points:
 
+1. **Where, and on the map.** Small circular waypoints on relevant existing buildings: the filling stations (`LotKind.Garage`, 5 in
+   this world) and workshops (`LotKind.Workshop`, 10), the circuit's pit garages (`Circuit.GaragesA/B`), and (proposed, same footing)
+   the rally service area (`LotKind.Service`) and the hill climb's paddock (`LotKind.Paddock`): 18 in all. Generation does not change:
+   they are read from the layout. Each is a mark on the map, not a moving waypoint, that MiniMap shows **without any change to MiniMap
+   or to `MapView`'s members**: MiniMap draws `MapView.TryGetTile`'s pictures, so the mark is painted into the tile's map picture in
+   `Streamer.MapPicture` (after the roads, so it sits on top), a filled disc in a colour nothing else uses, with a dark ring, at least
+   3 pixels across (a tile is 64 pixels for 250 units) so it survives the minimap shrinking it. README's map colour list and `MapView`'s
+   summary gain the mark; `tools/preview` draws it on `world.png`.
+2. **Opening.** In the waypoint's circle, the car stopped (nearly: under about 1 unit/s) and the gearbox in **neutral** (the active
+   shifter's `gear == 0` or not `inGear`, read through `CarLink`, which covers every shifter kind) opens the garage. No key. Open, the
+   player is in **god mode**: `CarLink.godMode` (the game's own, which `TakeCrashDamage` checks: crashes, hazards and the Multiplayer
+   mod's PvP hits all come through it) plus HP held at what it was on opening (regeneration and drains are put back each frame), until
+   the garage closes (a Close button, or the car put in gear and moved off). Only the garage's Repair raises it, to full. `godMode`
+   is set back only if the garage set it (the Multiplayer mod sets it for a player who has finished). Opening also fills nothing by
+   itself: Repair and Refill are buttons.
+3. **Items.** Every item available by normal means: the catalog's items that are not `disabled` (the game's own flag for items kept
+   out of play: the shop, unlocks and rewards all skip them), locked or not, the gun mods' items included, by unique id. Not the
+   consumables (`UpgradeCategory.CONSUMABLE`: used up from the inventory, no slot to fit them in). **To confirm:** in a Multiplayer
+   room, also leave out what the Multiplayer mod leaves out of its own garage (`Loadout.Banned`: slow motion, rerolls, run boons,
+   beer, time rewinding), which it bans because they break a shared race; solo, offer them.
+4. **Not remembered.** Nothing is written: not the save (`equipped`/`inventory`), not the Multiplayer mod's loadout. The garage only
+   changes the car, as the test does; the next race starts with the loadout picked in the menu.
+
+The overlay (the garage scene's drag-and-drop UI exists only in that scene): slots by `UpgradeCategory` as `DevCommands.Slots` names
+them (two medium slots), each item card with `item.image` and `item.Name`, fit and remove, Repair, Refill, Close; the cursor freed
+(the `Grabber` locks it) and driving input held while open. Changes apply on Close or on each pick (to decide in the first build:
+each refit empties and refits the whole car, under a frame). Gun copies are taken in every Open World race, not only with
+`Debug.GarageTest`; `GarageTest` and its key go when the garage replaces it.

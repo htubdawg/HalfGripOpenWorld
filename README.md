@@ -62,7 +62,7 @@ generated from a fixed seed, the same every time and for every player, the way r
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.12.1**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.12.2**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -70,7 +70,7 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 1. Install BepInEx and HalfGripTools (steps 1 and 2 of the [HalfGripTools README](https://github.com/4l3x4nd3r0/HalfGripTools#install)).
 2. Copy the `OpenWorld` folder into `BepInEx\HalfGripMods\` in the game folder.
-3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.12.1` and `Open World map made from TokyoNeon`.
+3. Start the game. `BepInEx\LogOutput.log` should have `Loaded Open World 0.12.2` and `Open World map made from TokyoNeon`.
 
 ## Playing it
 
@@ -286,5 +286,7 @@ Things only the game can show. Turn on `TestMode`, `ShowCoords`, `Teleport` and 
    loaded in the last one, the SMG has its magazines after the BloodDrainer, and the M1911, Minigun, RPG and Sniper Rifle are
    themselves, not a plain SMG, each with its own model when raised (no Sniper Rifle model left on the guns after it) and each one
    can be raised and fired. At the start of the race the log should say `Garage test: copies of` the four guns, with no
-   `had already started` warning. Anything odd (a gun that does not show or fire, two wheels, an error in the log) is what a garage
+   `had already started` warning. Swapping from the Minigun to any other gun takes its roof gun off the car (seen from the outside
+   camera, and by the other players) and leaves no remote in the cockpit; fitting it again puts one roof gun back, not two. In a
+   room, an RPG fitted with the key (not at the start of the race) fires rockets the other players see fly and explode. Anything odd (a gun that does not show or fire, two wheels, an error in the log) is what a garage
    would have to work round.

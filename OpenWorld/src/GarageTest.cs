@@ -124,9 +124,58 @@ namespace HalfGripOpenWorld
 				left.Remove(loadout[i]);
 				LoadoutRefit.Swap(loadout[i], null, left);
 			}
+			TakeDownGunMods();
 			foreach (GunType type in templates.Keys.ToList())
 			{
 				ResetGun(type);
+			}
+		}
+
+		/// <summary>
+		/// Takes down what a gun mod built outside its gun, which putting the gun back as built cannot reach. The Minigun builds its roof
+		/// gun on the car body (and points the gun's fire point at its muzzle) and takes it down only in <c>MiniHeat.Cleanup</c>, which
+		/// its own <c>OnDestroy</c> does not call: so the roof gun stayed on the car after swapping away from the Minigun. The Sniper Rifle's
+		/// laser dot and scope overlay go in its <c>OnDestroy</c>, and the RPG's rockets and scorch marks are meant to outlive the gun. The
+		/// Minigun's classes are internal: found by name. A Minigun fitted again builds a new roof gun as its fresh gun starts.
+		/// </summary>
+		private static void TakeDownGunMods()
+		{
+			// The Minigun rides on the SMG: with no copy of the SMG to put back, its gun and roof gun stay as they are, together.
+			if (!templates.ContainsKey(GunType.SMG_RIFLE))
+			{
+				return;
+			}
+			// The roof guns first, taken off the car at once so a new one (which looks for an old one on the car) does not find them.
+			Type roof = AccessTools.TypeByName("HalfGripMinigun.RoofGun");
+			int removed = 0;
+			if (roof != null)
+			{
+				foreach (UnityEngine.Object o in UnityEngine.Object.FindObjectsByType(roof, FindObjectsInactive.Include, FindObjectsSortMode.None))
+				{
+					if (o is Component c && c.gameObject.scene.handle == holderScene)
+					{
+						c.transform.SetParent(null, false);
+						UnityEngine.Object.Destroy(c.gameObject);
+						removed++;
+					}
+				}
+			}
+			// Then the heat meters' cleanup: the gun's fire point back off the roof, the hum stopped, the overheat padlock gone.
+			Type heat = AccessTools.TypeByName("HalfGripMinigun.MiniHeat");
+			MethodInfo cleanup = heat == null ? null : AccessTools.Method(heat, "Cleanup");
+			if (cleanup != null)
+			{
+				foreach (UnityEngine.Object o in UnityEngine.Object.FindObjectsByType(heat, FindObjectsInactive.Include, FindObjectsSortMode.None))
+				{
+					if (o is Component c && c.transform.root != holder.transform)
+					{
+						cleanup.Invoke(c, null);
+					}
+				}
+			}
+			if (removed > 0)
+			{
+				Mod.Info("Garage test: took " + removed + " Minigun roof gun(s) off the car");
 			}
 		}
 
