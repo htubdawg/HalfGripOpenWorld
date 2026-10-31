@@ -648,7 +648,7 @@ neutral (`ShifterHand`: the grabber's held object under the active shifter's obj
 standing in neutral for 0.6 s. Arming, the prompts and `Garage.Disarm` after a respawn are unchanged.
 
 The owner tested 0.17.0 in game: good (TESTING.md 21, and 22 and 23 with the shifter let go in neutral). Next: rain curtains and dark cloud under the storms nearby (seen from
-afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest
+afar), a sky of our own painted in code (sun and moon discs, stars, a gradient; done in 0.18.0), wetness per tile, lightning in the hardest
 storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
 windows and street lamps.
 
@@ -727,6 +727,39 @@ strip). meshcheck's `holes` 0.84% to 0.66%; new `hubs` check (cuts meet the outl
 24 to 27 ms (22 on this machine before). Compiled; meshcheck and preview clean; not yet tested in game (TESTING.md 24).
 
 ![The five villages, 0.17.1 above, 0.17.2 below](hubs.png)
+
+## A sky of our own (0.18.0; asked for after 0.17.3)
+
+The owner expected the sun and moon to be ours: they were only the scene's directional light, turned. The sky was the drawn day
+weather's skybox, dimmed and tinted, cut over to the night weather's in one frame once it was dark; the sun painted into those
+skies stood still while the light went round, and could be on the other side of the sky from it.
+
+- **No shader of our own.** The game cannot compile one at run time, and its build has only `Skybox/Cubemap` and
+  `Skybox/Panoramic` (scene dumps: the Forest's rainy day and Tokyo use the panoramic one). So the sky is a picture: `SkyPaint`
+  paints a 1024 by 512 latitude-longitude image (a texel about 0.35 degrees, point-sampled like the world's pixel-art textures)
+  and `Sky` shows it through a copy of the game's panoramic material (its tint set so a texel's colour is what is seen). If no
+  such material or shader is found, the old dimmed and swapped skies are kept.
+- **What is painted.** A gradient from the horizon to the top of the sky through six keyed colours by the sun's height (night,
+  dusk, the sun on the horizon, sunset, morning, day), with a little of the race's two drawn weathers' fog colours as haze; a glow
+  round the sun (gold and red low down); the sun's disc (2 degrees across, white by day, orange low down) where its light comes
+  from (`SkyPaint.Place` puts the sun, the moon and the stars for an hour, and `Sky` turns the light by the same numbers); the
+  moon's disc with three seas and a halo, opposite the sun as its light is; 2400 stars from the room's seed turning 15 degrees an
+  hour about a pole 48 degrees up in the north, coming out after sunset and fading under the moon and cloud; a cloud layer (tiling
+  value noise, seen in perspective at 4000 units up, so it shrinks toward the horizon) that stays put over the land as the car
+  drives and drifts with the storms' wind, covering 6% of the sky on a dry day, about 35% on a wet one, all of it under a storm,
+  lit gold at sunset and grey by the moon. Under a storm the whole sky goes grey.
+- **The fog is the horizon.** The fog's colour is now the painted horizon's (the same palette), and everything under the horizon
+  in the picture is that colour, so the world fades into the sky with no seam.
+- **Cost.** A picture is painted 24 rows a frame (about 0.7 ms on this machine) and uploaded whole when done, about every 11
+  frames; the sun crosses a texel in about two seconds. Setting up (cloud pattern, stars) takes about 55 ms at the race start, and
+  the first picture is painted at once.
+- **Checked** with the new `tools/skyview` (the sun's disc at the texel its light comes from, south at noon; the horizon within
+  1/255 of the fog's colour at eight times and weathers; a seed paints the same sky; the cost), which draws `docs/sky.png`.
+  Compiled; not yet tested in game (TESTING.md 25).
+- **Left for later:** the moon is always full (it is opposite the sun, as its light is); clouds are one flat layer, not the storms
+  seen from afar (still the next item below 0.17.0's).
+
+![The painted sky: 10:00, 13:00 with fair weather cloud, 17:20, sunset, dusk, 23:00 with the moon, 02:00 cloudy, under a storm; left the whole turn, right a view from the car](sky.png)
 
 ## Next: events (proposed, to agree with the owner)
 

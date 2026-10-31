@@ -7,8 +7,9 @@ using UnityEngine.Rendering;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The sky over an Open World race, every frame: the time of day going round (the sun's and the moon's light, their colours, the sky,
-	/// the ambient light, the fog, the headlights) and the weather where the car is (<see cref="Storms"/>: rain or snow, the cloud that
+	/// The sky over an Open World race, every frame: the time of day going round (the sun's and the moon's light, their colours, the sky
+	/// painted by <see cref="SkyPaint"/> with the sun's and moon's discs where their light comes from, the ambient light, the fog, which
+	/// takes the painted horizon's colour, the headlights) and the weather where the car is (<see cref="Storms"/>: rain or snow, the cloud that
 	/// darkens everything under a storm, the rain's sound, wet roads that shine and grip less, and dry again).
 	///
 	/// The game sets a weather once, as a scene starts (<c>WeatherController.ApplyProfile</c>), and only moves the rain with the car after
@@ -24,9 +25,6 @@ namespace HalfGripOpenWorld
 	{
 		/// <summary>Seconds of race for a whole day and night (24 hours: 100 seconds an hour).</summary>
 		internal const float DaySeconds = 2400f;
-
-		/// <summary>The highest the sun gets, in degrees (at noon).</summary>
-		private const float NoonElevation = 55f;
 
 		/// <summary>The light is never put lower than this (degrees): long shadows from a sun on the horizon streak and flicker.</summary>
 		private const float LowestLight = 7f;
@@ -60,6 +58,12 @@ namespace HalfGripOpenWorld
 		private WeatherProfile nightLook;
 		private Light sun;
 		private readonly List<(SyncInteriorLight sync, float max)> cabin = new List<(SyncInteriorLight, float)>();
+		/// <summary>The sky painted in code (<see cref="SkyPaint"/>), its picture and the copy of the game's panoramic sky material that shows
+		/// it; null if the material could not be made, and then the day and night weathers' own skies are dimmed and swapped as before 0.18.0.</summary>
+		private SkyPaint painter;
+		private Texture2D paintedTexture;
+		private Material paintedSky;
+		private bool painted;
 		private Material daySky;
 		private Material nightSky;
 		private float dayExposure = 1f, nightExposure = 1f;
@@ -142,14 +146,15 @@ namespace HalfGripOpenWorld
 				cabin.Add((sync, sync.maxIntensity));
 			}
 
-			// The skies: copies, since they are the game's own materials (shared with the other maps).
-			if (dayLook.skyboxMaterial != null)
+			Paint();
+			// Without a painted sky, the weathers' own: copies, since they are the game's own materials (shared with the other maps).
+			if (painter == null && dayLook.skyboxMaterial != null)
 			{
 				daySky = new Material(dayLook.skyboxMaterial) { hideFlags = HideFlags.HideAndDontSave };
 				dayExposure = daySky.HasProperty("_Exposure") ? daySky.GetFloat("_Exposure") : 1f;
 				dayTint = daySky.HasProperty("_Tint") ? daySky.GetColor("_Tint") : Color.gray;
 			}
-			if (nightLook.skyboxMaterial != null && nightLook != dayLook)
+			if (painter == null && nightLook.skyboxMaterial != null && nightLook != dayLook)
 			{
 				nightSky = new Material(nightLook.skyboxMaterial) { hideFlags = HideFlags.HideAndDontSave };
 				nightExposure = nightSky.HasProperty("_Exposure") ? nightSky.GetFloat("_Exposure") : 1f;
@@ -210,6 +215,94 @@ namespace HalfGripOpenWorld
 			Mod.Log.LogInfo("Sky: rain and snow land on " + planes.Count + " collision plane(s) kept under them, tilted to the ground");
 			Mod.Info("Sky: day " + dayLook.name + ", night " + nightLook.name + ", " + rainParticles.Count + " rain and " + snowParticles.Count + " snow particle systems, "
 				+ headlights.Count + " headlights, " + cabin.Count + " cabin lights, ambient keeper " + (keeper != null ? "found" : "none") + ", rain sound " + (clip != null ? clip.name : "none"));
+		}
+
+		/// <summary>
+		/// Makes the painted sky's texture and material. The game ships no procedural sky shader and none can be compiled at run time, so
+		/// the material is a copy of one of the game's <c>Skybox/Panoramic</c> ones (the Forest's rainy day, Tokyo's), which keeps the
+		/// shader variant the build has, set to show a whole turn of a latitude-longitude picture as it is (tint and exposure such that a
+		/// texel's colour is what is seen, so the fog can match the horizon).
+		/// </summary>
+		private void Paint()
+		{
+			try
+			{
+				Material template = Panoramic(RenderSettings.skybox);
+				RunConfig config = RunConfig.Instance;
+				if (template == null && config != null)
+				{
+					foreach (MapDefinition map in config.maps)
+					{
+						template = map != null && map.weather != null ? Panoramic(map.weather.skyboxMaterial) : null;
+						if (template != null)
+						{
+							break;
+						}
+					}
+				}
+				Shader shader = template != null ? template.shader : Shader.Find("Skybox/Panoramic");
+				if (shader == null)
+				{
+					Mod.Log.LogWarning("Sky: no panoramic sky shader in the game, so the sky stays the weathers' own");
+					return;
+				}
+				paintedSky = template != null ? new Material(template) : new Material(shader);
+				paintedSky.name = "OpenWorld painted sky";
+				paintedSky.hideFlags = HideFlags.HideAndDontSave;
+				paintedSky.DisableKeyword("_MAPPING_6_FRAMES_LAYOUT");
+				SetIf(paintedSky, "_Mapping", 1f);
+				SetIf(paintedSky, "_ImageType", 0f);
+				SetIf(paintedSky, "_MirrorOnBack", 0f);
+				SetIf(paintedSky, "_Layout", 0f);
+				SetIf(paintedSky, "_Rotation", 0f);
+				SetIf(paintedSky, "_Exposure", 1f);
+				// The shader multiplies by the tint and unity_ColorSpaceDouble (2 in gamma, 4.59 in linear): a tint that undoes that.
+				float tint = QualitySettings.activeColorSpace == ColorSpace.Linear ? Mathf.LinearToGammaSpace(1f / 4.594794f) : 0.5f;
+				if (paintedSky.HasProperty("_Tint"))
+				{
+					paintedSky.SetColor("_Tint", new Color(tint, tint, tint, 1f));
+				}
+				paintedTexture = new Texture2D(SkyPaint.W, SkyPaint.H, TextureFormat.RGBA32, false, false)
+				{
+					name = "OpenWorld painted sky",
+					filterMode = FilterMode.Point,
+					wrapModeU = TextureWrapMode.Repeat,
+					wrapModeV = TextureWrapMode.Clamp,
+					anisoLevel = 0,
+					hideFlags = HideFlags.HideAndDontSave,
+				};
+				paintedSky.SetTexture("_MainTex", paintedTexture);
+				painter = new SkyPaint(Weather.Seed);
+				Mod.Info("Sky: painted sky on a copy of " + (template != null ? template.name : "Skybox/Panoramic") + " (" + shader.name + "), keywords " + string.Join(" ", paintedSky.shaderKeywords));
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Sky: could not make the painted sky, so the sky stays the weathers' own: " + e.Message);
+				painter = null;
+				if (paintedSky != null)
+				{
+					Destroy(paintedSky);
+					paintedSky = null;
+				}
+				if (paintedTexture != null)
+				{
+					Destroy(paintedTexture);
+					paintedTexture = null;
+				}
+			}
+		}
+
+		private static Material Panoramic(Material m)
+		{
+			return m != null && m.shader != null && m.shader.name == "Skybox/Panoramic" ? m : null;
+		}
+
+		private static void SetIf(Material m, string property, float value)
+		{
+			if (m.HasProperty(property))
+			{
+				m.SetFloat(property, value);
+			}
 		}
 
 		/// <summary>Notes a falling effect's particle systems and their rates, and gives its materials copies that can be dimmed at night.</summary>
@@ -416,8 +509,9 @@ namespace HalfGripOpenWorld
 
 			// ---- the sun and the moon ----
 			// The sun rises in the east at 6, is south at noon and sets in the west at 18; the moon goes round opposite it.
-			float turn = (hour - 6f) / 24f * 360f;
-			float elevation = NoonElevation * Mathf.Sin(turn * Mathf.Deg2Rad);
+			SkyPaint.State state = new SkyPaint.State();
+			SkyPaint.Place(ref state, hour, out float turn);
+			float elevation = state.SunElevation;
 			float daylight = Step(-6f, 10f, elevation);
 			float sunUp = Step(-2f, 6f, elevation);
 			float moonUp = Step(-2f, -8f, elevation);
@@ -467,9 +561,23 @@ namespace HalfGripOpenWorld
 			}
 
 			// ---- the sky ----
+			Color? horizon = null;
+			if (painter != null)
+			{
+				try
+				{
+					horizon = PaintSky(ref state, x, z, t);
+				}
+				catch (Exception e)
+				{
+					// The last picture stays up and the fog goes back to the weathers' colours; the rest of the sky carries on.
+					Mod.Log.LogWarning("Sky: the painted sky stopped: " + e);
+					painter = null;
+				}
+			}
 			bool night = daylight < 0.2f && nightSky != null;
 			Material sky = night ? nightSky : daySky;
-			if (sky != null && RenderSettings.skybox != sky)
+			if (painter == null && sky != null && RenderSettings.skybox != sky)
 			{
 				RenderSettings.skybox = sky;
 			}
@@ -495,9 +603,18 @@ namespace HalfGripOpenWorld
 			}
 
 			// ---- the fog ----
-			Color fog = Color.Lerp(nightLook.fogColor, dayLook.fogColor, daylight) * Color.Lerp(Color.white, new Color(1f, 0.75f, 0.6f), sunset * 0.5f);
-			float grey = fog.grayscale;
-			fog = Color.Lerp(fog, new Color(grey, grey, grey), cloud * 0.6f) * (1f - 0.3f * cloud);
+			// With the painted sky, the horizon's colour, so the world fades into the sky; else the weathers' fog colours, blended.
+			Color fog;
+			if (horizon.HasValue)
+			{
+				fog = horizon.Value;
+			}
+			else
+			{
+				fog = Color.Lerp(nightLook.fogColor, dayLook.fogColor, daylight) * Color.Lerp(Color.white, new Color(1f, 0.75f, 0.6f), sunset * 0.5f);
+				float grey = fog.grayscale;
+				fog = Color.Lerp(fog, new Color(grey, grey, grey), cloud * 0.6f) * (1f - 0.3f * cloud);
+			}
 			float thin = Mathf.Lerp(1f, 0.45f, rain);
 			RenderSettings.fog = true;
 			RenderSettings.fogColor = fog;
@@ -571,6 +688,53 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// Hands the painted sky this frame's state (the sun, moon and stars already placed in <paramref name="state"/>; the cloud at the
+		/// car; the race's haze; where the car is under the drifting cloud), uploads a picture when one is finished, and gives back the
+		/// horizon's colour for the fog.
+		/// </summary>
+		private Color PaintSky(ref SkyPaint.State state, double x, double z, double t)
+		{
+			state.Cloud = cloud;
+			// The share of the sky under cloud: some on a dry day, more on a wet one, all of it under a storm.
+			state.Coverage = Mathf.Clamp01(0.06f + 0.3f * (float)storms.Raininess + 0.65f * cloud);
+			state.DayHaze = Rgb(dayLook.fogColor);
+			state.NightHaze = Rgb(nightLook.fogColor);
+			// The cloud pattern stays put over the land and drifts downwind: the car's position less the wind's way since the start.
+			const double tile = 24000.0;
+			double wx = x - storms.WindSpeed * DetMath.Cos(storms.WindAngle) * t;
+			double wz = z - storms.WindSpeed * DetMath.Sin(storms.WindAngle) * t;
+			state.CloudX = (float)(wx - Math.Floor(wx / tile) * tile);
+			state.CloudZ = (float)(wz - Math.Floor(wz / tile) * tile);
+			bool done;
+			if (!painted)
+			{
+				painter.All(state);
+				painted = true;
+				done = true;
+			}
+			else
+			{
+				done = painter.Frame(state);
+			}
+			if (done)
+			{
+				paintedTexture.SetPixelData(painter.Pixels, 0);
+				paintedTexture.Apply(false, false);
+			}
+			if (RenderSettings.skybox != paintedSky)
+			{
+				RenderSettings.skybox = paintedSky;
+			}
+			SkyPaint.Palette(state, out _, out SkyPaint.Rgb horizon, out _);
+			return new Color(horizon.R, horizon.G, horizon.B, 1f);
+		}
+
+		private static SkyPaint.Rgb Rgb(Color c)
+		{
+			return new SkyPaint.Rgb(c.r, c.g, c.b);
+		}
+
 		/// <summary>Sets a falling effect going as hard as <paramref name="amount"/> (0 stops it), within the game's graphics budget.</summary>
 		private static void Fall(GameObject effect, List<(ParticleSystem ps, float rate)> systems, float amount, out bool on)
 		{
@@ -608,6 +772,14 @@ namespace HalfGripOpenWorld
 					WeatherGrip.Current = null;
 				}
 				Destroy(live);
+			}
+			if (paintedSky != null)
+			{
+				Destroy(paintedSky);
+			}
+			if (paintedTexture != null)
+			{
+				Destroy(paintedTexture);
 			}
 			if (daySky != null)
 			{

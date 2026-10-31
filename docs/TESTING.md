@@ -148,3 +148,15 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Dead ends: a Kingsbridge street (-2.135, -3.547) and a lane (-7.894, 4.300) end rounded off, the sidewalk or verge carried
      round the end down to the grass (no square edge standing over the ground); a farm track (-0.282, 2.578) narrows to a point
      into the grass. Drive off each end: no bump.
+25. The painted sky (0.18.0). With `VerboseLog` the log says `Sky: painted sky on a copy of FS002_Rainy (Skybox/Panoramic)` (or
+   another panoramic sky), and there is no `could not make the painted sky` or `painted sky stopped` warning. With `WeatherSkip`, the
+   Weather fast key (F2) or skip key (F5), go through a day: by day a blue sky, paler at the horizon, with a white sun disc and a
+   glow round it, standing where the shadows say the light comes from (shadows point away from it) and moving with them; the sun
+   goes orange and the sky round it gold and red as it sets in the west, the disc going down behind the horizon; the sky goes deep
+   blue, then black, the stars come out (small pixel squares, not stretched, also straight overhead) and turn slowly, and the moon
+   (a grey disc with darker patches) rises in the east opposite where the sun set and crosses the sky. Nothing jumps: no cut between
+   a day sky and a night sky. The distant ground in fog meets the sky at the horizon without a band of a different colour, at every
+   hour. A few clouds by day (more on a wet day, see the log's `showery`/`wet`), which slide across slowly and stay over the same
+   land as you drive (drive a kilometre: they pass overhead); under a storm the whole sky is grey cloud and the sun and stars are
+   hidden. Look straight up and all round: no seam or smear in the sky (the picture's edges meet in the west), no stretched stars at
+   the top. The frame rate is as before (the painting costs about 0.7 ms a frame).

@@ -49,6 +49,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Weather.cs` | Draws a day look and a night look from the game's weathers for each race (room seed), with their rain, snow and grip taken out |
 | `Storms.cs` | The weather over the world: rain cells born, drifting with the wind and dying, as a pure function of room seed, position and race time; wetness looking back; the snow line |
 | `Sky.cs` | Every frame in a race: the time of day (sun, moon, light, sky, ambient probe, fog, headlights) and the storms at the car (rain, snow, sound, wet roads, grip) |
+| `SkyPaint.cs` | The sky painted in code into a panoramic texture: the gradient, the sun's glow and disc, the moon, the stars turning, drifting cloud; where the sun and moon are at an hour. No Unity types (`tools/skyview` draws it) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
 | `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
@@ -99,6 +100,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   Look at the junctions an owner reports with it, and before and after any change to junctions, cuts or `RoadMesh`.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
+- `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes
+  from, the horizon the fog's colour, repeatability, cost) and draws it at eight times and weathers; look at it after any change to
+  `SkyPaint` or the sun's and moon's places.
 - In game: see the test checklist in `docs/TESTING.md`. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next

@@ -22,7 +22,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.17.3**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.18.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps and a far view come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -43,7 +43,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.17.3` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.18.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -60,8 +60,10 @@ If something does not work, `BepInEx\LogOutput.log` in the game folder should ha
   race is always played with respawns (a Demolition is played as a race, and "out, watch" as respawn), since it has no finish.
 - **No AI rivals**, solo or in a room: the room's AI RIVALS setting is ignored in the Open World.
 - **Day and night.** The race starts at an hour of its own (mostly in the day) and the clock goes round: a whole day and night
-  takes 40 minutes. The sun rises in the east and sets in the west, the light turns gold as it does, then the moon and a night sky
-  come out and the headlights go on. The day's and the night's looks are drawn from the game's weathers each race.
+  takes 40 minutes. The sky is painted in code: the sun's disc rises in the east and sets in the west, where its light comes from,
+  the sky goes gold and red round it and the light with it, then the moon comes up opposite, the stars come out and turn about the
+  pole, and the headlights go on. Clouds drift over with the storms' wind, more on a wet day, the whole sky under a storm. The
+  colours of the light and a little haze in the sky are drawn from the game's weathers each race.
 - **Weather.** Storms drift across the country with the wind: it rains in one place and not another, a shower can be seen coming
   (the sky darkens and the fog closes in before the rain) and driven out of, and above the snow line it snows. Roads stay wet for a
   while after a shower, darker and shinier, and grip a little less; they dry over about 10 minutes. Some days are dry, some wet.
@@ -171,11 +173,14 @@ dotnet run -c Release --project tools/preview -- world.ppm 1024
 dotnet run -c Release --project tools/preview -- town.ppm 640 -2600 -6800 6000    # west x, north z, side
 dotnet run -c Release --project tools/meshcheck -p:GameDir=<game folder>
 dotnet run -c Release --project tools/stormview -- storms.ppm 12345 10    # room seed, minutes between pictures
+dotnet run -c Release --project tools/skyview -- sky.ppm 12345    # room seed
 dotnet run -c Release --project tools/jview -- at junction.ppm -10708 -10113 100    # world x, z, span
 ```
 
 `tools/stormview` checks the storms (how much of the land is under rain over 20 room seeds, that a seed always gives the same
-weather, what a sample costs) and draws the world at six times for one seed. `tools/jview` draws the tiles' road meshes from above
+weather, what a sample costs) and draws the world at six times for one seed. `tools/skyview` checks the painted sky (the sun's disc
+where its light comes from, the horizon the fog's colour, a seed always the same sky, what a frame costs) and draws it at eight
+times of day and weathers (as `docs/sky.png`). `tools/jview` draws the tiles' road meshes from above
 round a point, a list of points, random junctions or dead ends, or every hub, with ground showing in a mouth, surfaces poking
 through and steps marked; it also lists the roads near a point and the places (its modes are at the top of its `Program.cs`).
 
