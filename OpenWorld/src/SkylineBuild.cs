@@ -79,6 +79,12 @@ namespace HalfGripOpenWorld
 						break;
 					}
 					bool water = pz < -half;
+					// Out on the sea past the south edge and heading on south, with only rows above the horizon left: the sea, under the eye,
+					// never rises to one, so the rest of the ray is wasted (at the spawn, half of every build's steps).
+					if (water && k >= Band && dz <= 0.0 && eye >= sea)
+					{
+						break;
+					}
 					double h = water ? sea : Height(top, n, px, pz);
 					double t = (h - d * d / (2.0 * Earth) - eye) / d;
 					if (RowTan[k] <= t)

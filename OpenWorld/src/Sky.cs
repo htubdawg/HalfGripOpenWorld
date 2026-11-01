@@ -64,6 +64,16 @@ namespace HalfGripOpenWorld
 		private Texture2D paintedTexture;
 		private Material paintedSky;
 		private bool painted;
+
+		/// <summary>The picture being painted on a worker (<see cref="SkyPaint.All"/>), the <see cref="Skyline"/> it paints (not built into
+		/// until it is done), and when the next may start.</summary>
+		private System.Threading.Tasks.Task paintingTask;
+		private Skyline paintingLand;
+		private float nextPicture;
+
+		/// <summary>Seconds between the starts of pictures: about five a second, as when a picture was painted a few rows a frame at 60 frames
+		/// a second (the sun crosses a texel in about two seconds).</summary>
+		private const float PictureEvery = 0.2f;
 		private Material daySky;
 		private Material nightSky;
 		private float dayExposure = 1f, nightExposure = 1f;
@@ -791,21 +801,36 @@ namespace HalfGripOpenWorld
 			state.CarZ = (float)z;
 			// The storms' haze was made for a reach of up to 20,000: past that a storm would show to the storm field's edge and stop there.
 			state.Reach = Mathf.Min(20000f, reach > 0f ? reach : RenderSettings.fogEndDistance);
-			bool done;
 			if (!painted)
 			{
+				// The first picture at once, so the race does not start under an empty sky.
 				painter.All(state);
 				painted = true;
-				done = true;
+				Upload();
 			}
 			else
 			{
-				done = painter.Frame(state);
-			}
-			if (done)
-			{
-				paintedTexture.SetPixelData(painter.Pixels, 0);
-				paintedTexture.Apply(false, false);
+				if (paintingTask != null && paintingTask.IsCompleted)
+				{
+					System.Threading.Tasks.Task finished = paintingTask;
+					paintingTask = null;
+					paintingLand = null;
+					if (finished.Status != System.Threading.Tasks.TaskStatus.RanToCompletion)
+					{
+						throw new Exception("a picture could not be painted", finished.Exception?.GetBaseException());
+					}
+					Upload();
+				}
+				if (paintingTask == null && Time.unscaledTime >= nextPicture)
+				{
+					// Painted on a worker: it reads only the state handed to it (a copy), its storm field and skyline (neither changed once
+					// made; the skyline is kept from being built into until this is done, see Lands) and its own arrays.
+					nextPicture = Time.unscaledTime + PictureEvery;
+					SkyPaint p = painter;
+					SkyPaint.State st = state;
+					paintingLand = st.Land;
+					paintingTask = System.Threading.Tasks.Task.Run(() => p.All(st));
+				}
 			}
 			if (RenderSettings.skybox != paintedSky)
 			{
@@ -813,6 +838,13 @@ namespace HalfGripOpenWorld
 			}
 			SkyPaint.Palette(state, out _, out SkyPaint.Rgb horizon, out _);
 			return new Color(horizon.R, horizon.G, horizon.B, 1f);
+		}
+
+		/// <summary>The picture just painted into the sky's texture. Only while no picture is being painted into <see cref="SkyPaint.Pixels"/>.</summary>
+		private void Upload()
+		{
+			paintedTexture.SetPixelData(painter.Pixels, 0);
+			paintedTexture.Apply(false, false);
 		}
 
 		/// <summary>
@@ -863,7 +895,7 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Skyline into = spareSkyline ?? new Skyline();
-			if (into == painter.Painting)
+			if (into == paintingLand)
 			{
 				return;
 			}

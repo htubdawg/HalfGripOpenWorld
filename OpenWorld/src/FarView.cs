@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace HalfGripOpenWorld
@@ -16,6 +17,10 @@ namespace HalfGripOpenWorld
 	/// where the tile's finer ground dips under the far view's straight edge. Skirts also hang round every chunk, where a chunk of one
 	/// detail meets one of another. A chunk is remade when the tiles loaded in it change (in the same frame, from
 	/// <see cref="Streamer"/>), or a few a frame when its detail changes.
+	///
+	/// Coming on, it is made over some frames before it is shown: the chunks nearest the car first, a share a frame
+	/// (<see cref="WarmBudget"/>), and the picture's mipmaps on a worker. Before 0.20.1 all 256 chunks, the picture and its mipmaps were
+	/// made in the one frame it came on, a hitch of tens of milliseconds in the middle of a race.
 	///
 	/// The sea south of the world goes on to the horizon as one flat sheet. The chunks are children of the world's root, so the floating
 	/// origin moves them with everything else.
@@ -34,6 +39,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>Chunks remade a frame for a change of detail alone.</summary>
 		private const int RemakesPerFrame = 3;
+
+		/// <summary>While the far view is being made, before it is shown: cells made a frame (a chunk at the finest detail has 1600, at the
+		/// coarsest 25), so about two of the nearest chunks a frame, all 256 in some twenty frames.</summary>
+		private const int WarmBudget = 3200;
 
 		internal static FarView Instance;
 
@@ -58,6 +67,14 @@ namespace HalfGripOpenWorld
 		private Mesh seaMesh;
 		private readonly List<Camera> cameras = new List<Camera>();
 		private bool shown;
+
+		/// <summary>True once every chunk has been made (see <see cref="Warm"/>); the far view is shown only then.</summary>
+		private bool built;
+
+		/// <summary>The picture's mipmaps being made on a worker (see <see cref="Mips"/>), before the texture is made.</summary>
+		private Task<byte[][]> mipping;
+
+		private readonly List<int> order = new List<int>();
 
 		// Reused while making a mesh.
 		private readonly List<Vector3> vertices = new List<Vector3>();
@@ -97,12 +114,16 @@ namespace HalfGripOpenWorld
 		/// <summary>Called by <see cref="Streamer"/> at the end of its frame's streaming, with the car at world (x, z).</summary>
 		internal void Follow(double x, double z, Streamer streamer)
 		{
-			bool on = Mod.ShowFarView.Value;
-			if (on && texture == null && FarGrid.Ready)
+			bool want = Mod.ShowFarView.Value && FarGrid.Ready;
+			if (want && texture == null)
 			{
-				Picture();
+				Prepare();
 			}
-			on &= texture != null;
+			if (want && !built)
+			{
+				Warm(x, z, streamer);
+			}
+			bool on = want && texture != null && built;
 			if (on != shown)
 			{
 				shown = on;
@@ -129,31 +150,7 @@ namespace HalfGripOpenWorld
 				for (int ci = 0; ci < chunks; ci++)
 				{
 					Chunk c = grid[cj * chunks + ci] ??= new Chunk();
-					double x0 = -WorldGen.Half + ci * ChunkSize, z0 = -WorldGen.Half + cj * ChunkSize;
-					double dx = Math.Max(0.0, Math.Max(x0 - x, x - (x0 + ChunkSize)));
-					double dz = Math.Max(0.0, Math.Max(z0 - z, z - (z0 + ChunkSize)));
-					double d = Math.Sqrt(dx * dx + dz * dz);
-					int lod = LodReach.Length;
-					for (int k = 0; k < LodReach.Length; k++)
-					{
-						if (d < LodReach[k])
-						{
-							lod = k;
-							break;
-						}
-					}
-					ulong mask = 0UL;
-					if (lod == 0)
-					{
-						int tx0 = (int)Math.Round(x0 / Streamer.TileSize), tz0 = (int)Math.Round(z0 / Streamer.TileSize);
-						for (int b = 0; b < ChunkTiles * ChunkTiles; b++)
-						{
-							if (streamer.IsLoaded(tx0 + b % ChunkTiles, tz0 + b / ChunkTiles))
-							{
-								mask |= 1UL << b;
-							}
-						}
-					}
+					Want(ci, cj, x, z, streamer, out int lod, out ulong mask);
 					if (c.Lod == lod && c.Mask == mask)
 					{
 						continue;
@@ -167,17 +164,98 @@ namespace HalfGripOpenWorld
 					{
 						budget--;
 					}
-					try
+					Remake(c, ci, cj, lod, mask);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Makes the chunks not made yet, the nearest the car first, until <see cref="WarmBudget"/> cells are spent this frame; sets
+		/// <see cref="built"/> once every chunk is made. Hidden until then (<see cref="Make"/> shows a chunk only while the far view is).
+		/// </summary>
+		private void Warm(double x, double z, Streamer streamer)
+		{
+			order.Clear();
+			for (int k = 0; k < grid.Length; k++)
+			{
+				if (grid[k] == null || grid[k].Lod < 0)
+				{
+					order.Add(k);
+				}
+			}
+			order.Sort((a, b) =>
+			{
+				int byDistance = Distance(a % chunks, a / chunks, x, z).CompareTo(Distance(b % chunks, b / chunks, x, z));
+				return byDistance != 0 ? byDistance : a.CompareTo(b);
+			});
+			int spent = 0, made = 0;
+			foreach (int k in order)
+			{
+				if (spent >= WarmBudget)
+				{
+					break;
+				}
+				int ci = k % chunks, cj = k / chunks;
+				Chunk c = grid[k] ??= new Chunk();
+				Want(ci, cj, x, z, streamer, out int lod, out ulong mask);
+				Remake(c, ci, cj, lod, mask);
+				int cells = (int)Math.Round(ChunkSize / FarGrid.Step) / LodStep[lod];
+				spent += cells * cells;
+				made++;
+			}
+			built = made == order.Count;
+		}
+
+		/// <summary>How far chunk (ci, cj) is from world (x, z): 0 inside it.</summary>
+		private static double Distance(int ci, int cj, double x, double z)
+		{
+			double x0 = -WorldGen.Half + ci * ChunkSize, z0 = -WorldGen.Half + cj * ChunkSize;
+			double dx = Math.Max(0.0, Math.Max(x0 - x, x - (x0 + ChunkSize)));
+			double dz = Math.Max(0.0, Math.Max(z0 - z, z - (z0 + ChunkSize)));
+			return Math.Sqrt(dx * dx + dz * dz);
+		}
+
+		/// <summary>The detail chunk (ci, cj) should be drawn at with the car at world (x, z), and, at the finest, the tiles loaded in it to
+		/// leave out.</summary>
+		private void Want(int ci, int cj, double x, double z, Streamer streamer, out int lod, out ulong mask)
+		{
+			double d = Distance(ci, cj, x, z);
+			lod = LodReach.Length;
+			for (int k = 0; k < LodReach.Length; k++)
+			{
+				if (d < LodReach[k])
+				{
+					lod = k;
+					break;
+				}
+			}
+			mask = 0UL;
+			if (lod == 0)
+			{
+				double x0 = -WorldGen.Half + ci * ChunkSize, z0 = -WorldGen.Half + cj * ChunkSize;
+				int tx0 = (int)Math.Round(x0 / Streamer.TileSize), tz0 = (int)Math.Round(z0 / Streamer.TileSize);
+				for (int b = 0; b < ChunkTiles * ChunkTiles; b++)
+				{
+					if (streamer.IsLoaded(tx0 + b % ChunkTiles, tz0 + b / ChunkTiles))
 					{
-						Make(c, ci, cj, lod, mask);
-					}
-					catch (Exception e)
-					{
-						Mod.Log.LogWarning("Far view: chunk " + ci + "," + cj + " could not be made: " + e.Message);
-						c.Lod = lod;
-						c.Mask = mask;
+						mask |= 1UL << b;
 					}
 				}
+			}
+		}
+
+		/// <summary><see cref="Make"/>, a failure logged and the chunk taken as made (so it is not tried again every frame).</summary>
+		private void Remake(Chunk c, int ci, int cj, int lod, ulong mask)
+		{
+			try
+			{
+				Make(c, ci, cj, lod, mask);
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Far view: chunk " + ci + "," + cj + " could not be made: " + e.Message);
+				c.Lod = lod;
+				c.Mask = mask;
 			}
 		}
 
@@ -255,8 +333,71 @@ namespace HalfGripOpenWorld
 		/// <summary>One line for the debug overlay (ShowCoords): the chunks drawn, the fog's reach, the camera's reach.</summary>
 		internal static string Status;
 
-		/// <summary>Makes the world's picture into a texture (mipmapped and filtered: at a distance a point-sampled picture shimmers), and the sea.</summary>
-		private void Picture()
+		/// <summary>Has the picture's mipmaps made on a worker, then, once they are, makes the texture (see <see cref="Picture"/>).</summary>
+		private void Prepare()
+		{
+			if (mipping == null)
+			{
+				byte[] colours = FarGrid.Colours;
+				int p = FarGrid.Pixels;
+				mipping = Task.Run(() => Mips(colours, p));
+				return;
+			}
+			if (!mipping.IsCompleted)
+			{
+				return;
+			}
+			byte[][] chain = null;
+			if (mipping.Status == TaskStatus.RanToCompletion)
+			{
+				chain = mipping.Result;
+			}
+			else
+			{
+				Mod.Log.LogWarning("Far view: the picture's mipmaps could not be made on a worker (Unity makes them): " + mipping.Exception?.GetBaseException().Message);
+			}
+			mipping = null;
+			Picture(chain);
+		}
+
+		/// <summary>
+		/// The picture's mipmaps below the full size, each half the last (rounded down, at least 1, as Unity sizes them), each texel the
+		/// average of the 2 by 2 above it, as Unity's own box filter makes them. Pure; on a worker, where it cost the main thread the frame
+		/// the far view came on.
+		/// </summary>
+		internal static byte[][] Mips(byte[] colours, int size)
+		{
+			List<byte[]> chain = new List<byte[]>();
+			byte[] src = colours;
+			int s = size;
+			while (s > 1)
+			{
+				int d = Math.Max(1, s / 2);
+				byte[] dst = new byte[d * d * 4];
+				for (int j = 0; j < d; j++)
+				{
+					int j0 = Math.Min(s - 1, 2 * j), j1 = Math.Min(s - 1, 2 * j + 1);
+					for (int i = 0; i < d; i++)
+					{
+						int i0 = Math.Min(s - 1, 2 * i), i1 = Math.Min(s - 1, 2 * i + 1);
+						int a = (j0 * s + i0) * 4, b = (j0 * s + i1) * 4, c = (j1 * s + i0) * 4, e = (j1 * s + i1) * 4;
+						int o = (j * d + i) * 4;
+						for (int k = 0; k < 4; k++)
+						{
+							dst[o + k] = (byte)((src[a + k] + src[b + k] + src[c + k] + src[e + k] + 2) >> 2);
+						}
+					}
+				}
+				chain.Add(dst);
+				src = dst;
+				s = d;
+			}
+			return chain.ToArray();
+		}
+
+		/// <summary>Makes the world's picture into a texture (mipmapped and filtered: at a distance a point-sampled picture shimmers), with the
+		/// mipmaps in <paramref name="chain"/> (Unity makes them if it is null or does not fit), and the sea.</summary>
+		private void Picture(byte[][] chain)
 		{
 			int p = FarGrid.Pixels;
 			texture = new Texture2D(p, p, TextureFormat.RGBA32, true)
@@ -268,7 +409,18 @@ namespace HalfGripOpenWorld
 				hideFlags = HideFlags.HideAndDontSave,
 			};
 			texture.SetPixelData(FarGrid.Colours, 0);
-			texture.Apply(true, true);
+			if (chain != null && chain.Length == texture.mipmapCount - 1)
+			{
+				for (int m = 1; m < texture.mipmapCount; m++)
+				{
+					texture.SetPixelData(chain[m - 1], m);
+				}
+				texture.Apply(false, true);
+			}
+			else
+			{
+				texture.Apply(true, true);
+			}
 			material.SetTexture("_BaseMap", texture);
 			material.SetTexture("_MainTex", texture);
 
@@ -304,6 +456,8 @@ namespace HalfGripOpenWorld
 			MeshRenderer r = sea.AddComponent<MeshRenderer>();
 			r.sharedMaterial = seaMaterial;
 			Quiet(r);
+			// Shown with the chunks, once they are all made.
+			sea.SetActive(shown);
 		}
 
 		private static void Quiet(MeshRenderer r)
@@ -425,7 +579,8 @@ namespace HalfGripOpenWorld
 				Quiet(r);
 			}
 			c.Any = triangles.Count > 0;
-			c.Go.SetActive(c.Any);
+			// Hidden while the far view is being made (or is off): shown with the rest when it comes on.
+			c.Go.SetActive(shown && c.Any);
 		}
 
 		/// <summary>A skirt hanging <paramref name="drop"/> under the edge between vertices i and j, seen from both sides (it may be looked

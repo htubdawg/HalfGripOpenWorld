@@ -187,3 +187,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    As the rain closes in, the far mountains go first, smoothly. Look south from high ground over the sea: the sea goes on past the far
    view's edge with no seam (its shine there is a guess; report a screenshot if the far sea is brighter or darker than the near).
    With `FarSkyline=false`: the fog ends at the far view's edge as in 0.19.1. The frame rate is about as before.
+28. The far view's costs (0.20.1). The sky looks and moves as in 0.20.0: the sun, clouds and storms change smoothly (a new picture
+   about five times a second), nothing torn or half painted, no `the painted sky stopped` in the log. Start a race with the far view
+   on: no hitch when `Far view on` shows in the log (a fraction of a second after the grid is built), and when it comes on the far
+   view is there all at once, with no chunk missing and no hole near the car.
+   The frame rate a little better than 0.20.0, most of all on a slow CPU.

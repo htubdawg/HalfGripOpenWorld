@@ -158,21 +158,17 @@ internal static class Program
 			SkyPaint.State st = Make(new Scene { Hour = 17.5f, Cloud = 0.2f, Coverage = 0.5f, StormX = 6000f, StormZ = -4000f, StormR = stormR });
 			paint.All(st);
 			Stopwatch watch = Stopwatch.StartNew();
-			int frames = 0, pictures = 0;
-			while (pictures < 40)
+			const int pictures = 40;
+			for (int k = 0; k < pictures; k++)
 			{
 				st.CloudX += 3f;
 				st.CloudZ += 1f;
-				if (paint.Frame(st))
-				{
-					pictures++;
-				}
-				frames++;
+				paint.All(st);
 			}
 			watch.Stop();
-			double perFrame = watch.Elapsed.TotalMilliseconds / frames;
-			Console.WriteLine("Cost" + (stormR > 0f ? " with a storm: " : ": ") + perFrame.ToString("0.00") + " ms a frame (" + SkyPaint.RowsPerFrame + " rows), a picture every " + (frames / (double)pictures).ToString("0") + " frames ("
-				+ (watch.Elapsed.TotalMilliseconds / pictures).ToString("0.0") + " ms of painting)");
+			// The game paints a picture on a worker about five times a second (Sky.PictureEvery): this is a worker's share of a core.
+			double perPicture = watch.Elapsed.TotalMilliseconds / pictures;
+			Console.WriteLine("Cost" + (stormR > 0f ? " with a storm: " : ": ") + perPicture.ToString("0.0") + " ms a picture, on a worker (" + (perPicture * 5.0 / 10.0).ToString("0.0") + "% of a core at five a second)");
 		}
 
 		// ---- the drawing ----

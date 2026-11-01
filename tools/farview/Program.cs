@@ -238,31 +238,27 @@ internal static class Program
 			ok &= hidden;
 		}
 
-		// What painting the land adds to a frame's sky painting (the rows in the skyline's band; the lower half, all at the end of a picture).
+		// What painting the land adds to a picture of the sky (painted on a worker in the game, about five a second).
 		{
 			Skyline line = new Skyline();
 			line.Build(views[2].x, views[2].z, Surface(views[2].x, views[2].z, out _) + 3.0, drawn * 0.9);
-			double[] perFrame = new double[2];
+			double[] perPicture = new double[2];
 			double[] worst = new double[2];
 			for (int pass = 0; pass < 2; pass++)
 			{
 				state.Land = pass == 0 ? null : line;
 				painter.All(state);
 				Stopwatch all = Stopwatch.StartNew();
-				int frames = 0, pictures = 0;
-				while (pictures < 20)
+				const int pictures = 20;
+				for (int k = 0; k < pictures; k++)
 				{
 					Stopwatch one = Stopwatch.StartNew();
-					if (painter.Frame(state))
-					{
-						pictures++;
-					}
+					painter.All(state);
 					worst[pass] = Math.Max(worst[pass], one.Elapsed.TotalMilliseconds);
-					frames++;
 				}
-				perFrame[pass] = all.Elapsed.TotalMilliseconds / frames;
+				perPicture[pass] = all.Elapsed.TotalMilliseconds / pictures;
 			}
-			Console.WriteLine("Sky painting a frame: " + perFrame[0].ToString("0.00") + " ms (worst " + worst[0].ToString("0.00") + "), with the land " + perFrame[1].ToString("0.00") + " ms (worst " + worst[1].ToString("0.00") + ")");
+			Console.WriteLine("Sky painting a picture (on a worker): " + perPicture[0].ToString("0.0") + " ms (worst " + worst[0].ToString("0.0") + "), with the land " + perPicture[1].ToString("0.0") + " ms (worst " + worst[1].ToString("0.0") + ")");
 		}
 
 		using (FileStream file = File.Create(output))

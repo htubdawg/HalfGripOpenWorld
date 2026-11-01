@@ -14,8 +14,9 @@ namespace HalfGripOpenWorld
 	/// so the sky is a picture: an equirectangular image, <see cref="W"/> by <see cref="H"/> (a texel is about 0.35 degrees, a few screen
 	/// pixels, drawn point-sampled like the world's other pixel-art textures), shown through a copy of the game's panoramic sky material.
 	/// <see cref="Sky"/> owns the texture and material; this only fills an RGBA byte array, so <c>tools/skyview</c> can draw it without
-	/// Unity. The sky changes slowly (the sun crosses a texel in about two seconds), so a picture is painted a few rows a frame
-	/// (<see cref="RowsPerFrame"/>) and handed over whole when it is done, about five times a second at 60 frames a second.
+	/// Unity. The sky changes slowly (the sun crosses a texel in about two seconds), so <see cref="Sky"/> has a whole picture painted on a
+	/// worker about five times a second and uploads each when it is done (before 0.20.1 a few rows a frame on the main thread, a millisecond
+	/// or more of every frame).
 	///
 	/// Since 0.20.0 the land past the far view's drawn edge is painted over it round the horizon (<see cref="Skyline"/>, lit and fogged as
 	/// the far view is), so the country goes on past the meshes to where the fog really ends.
@@ -29,10 +30,6 @@ namespace HalfGripOpenWorld
 		internal const int W = 1024;
 		internal const int H = 512;
 		private const int Half = H / 2;
-
-		/// <summary>Rows of the upper half painted each frame (the lower half, under the horizon, is one colour a row and done at the end, but
-		/// for the skyline's band, painted a frame at a time with the rest).</summary>
-		internal const int RowsPerFrame = 24;
 
 		/// <summary>The cloud layer's height above the car, in game units (about 1200 m), which sets how fast it shrinks toward the horizon.</summary>
 		private const float CloudHeight = 4000f;
@@ -149,10 +146,10 @@ namespace HalfGripOpenWorld
 			internal float FogStart, FogEnd;
 		}
 
-		/// <summary>The picture, RGBA, bottom row first, as <c>Texture2D.SetPixelData</c> takes it. Only whole pictures are in it.</summary>
+		/// <summary>The picture, RGBA, bottom row first, as <c>Texture2D.SetPixelData</c> takes it. <see cref="All"/> paints into it, so it
+		/// holds a whole picture only between pictures: read it only while none is being painted.</summary>
 		internal readonly byte[] Pixels = new byte[W * H * 4];
 
-		private readonly byte[] work = new byte[W * H * 4];
 		private readonly float[] rowY = new float[H];
 		private readonly float[] rowR = new float[H];
 		private readonly float[] cosPhi = new float[W];
@@ -165,13 +162,6 @@ namespace HalfGripOpenWorld
 		private readonly float[] stars = new float[W * Half];
 		private readonly List<int> lit = new List<int>();
 		private static readonly float[] Dither = { 0f, 8f, 2f, 10f, 12f, 4f, 14f, 6f, 3f, 11f, 1f, 9f, 15f, 7f, 13f, 5f };
-
-		/// <summary>The row being painted next, from <see cref="Half"/> up (from the bottom of the skyline's band when there is land to paint);
-		/// <see cref="H"/> when no picture is under way.</summary>
-		private int next = H;
-
-		/// <summary>The first row painted a frame at a time in the picture under way: the rows under it are done at its end.</summary>
-		private int first = Half;
 
 		// What the picture under way is painted with, worked out once at its start.
 		private State s;
@@ -216,9 +206,6 @@ namespace HalfGripOpenWorld
 		{
 			return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
 		}
-
-		/// <summary>The <see cref="Skyline"/> the picture under way paints, which must not be built into until the picture is done.</summary>
-		internal Skyline Painting => next < H ? land : null;
 
 		internal SkyPaint(int seed)
 		{
@@ -326,38 +313,15 @@ namespace HalfGripOpenWorld
 			new Rgb(1.000f, 0.550f, 0.200f), new Rgb(0.950f, 0.800f, 0.550f), new Rgb(0.850f, 0.850f, 0.780f),
 		};
 
-		/// <summary>
-		/// Paints the next rows of the picture under way, starting a new one with <paramref name="state"/> if none is. True when a picture
-		/// was finished this call and <see cref="Pixels"/> holds it.
-		/// </summary>
-		internal bool Frame(in State state)
-		{
-			if (next >= H)
-			{
-				Begin(state);
-			}
-			int end = Math.Min(H, next + RowsPerFrame);
-			for (; next < end; next++)
-			{
-				Row(next);
-			}
-			if (next < H)
-			{
-				return false;
-			}
-			Finish();
-			return true;
-		}
-
-		/// <summary>Paints a whole picture at once (the first one, so the race does not start under an empty sky).</summary>
+		/// <summary>Paints a whole picture with <paramref name="state"/> into <see cref="Pixels"/>. No Unity calls, so <see cref="Sky"/> runs it
+		/// on a worker; its <see cref="State.Land"/> and <see cref="State.Storm"/> must not change until it returns.</summary>
 		internal void All(in State state)
 		{
 			Begin(state);
-			for (; next < H; next++)
+			for (int row = 0; row < H; row++)
 			{
-				Row(next);
+				Row(row);
 			}
-			Finish();
 		}
 
 		private void Begin(in State state)
@@ -422,9 +386,6 @@ namespace HalfGripOpenWorld
 			land = s.Light.FogEnd > s.Light.FogStart ? s.Land : null;
 			light = s.Light;
 			fogLit = FogColour(light, horizon);
-			// The land under the horizon is painted a frame at a time with the rest; all at the end it took a frame 3 ms.
-			first = land != null ? Skyline.Lowest : Half;
-			next = first;
 		}
 
 		private static float Lin(float v)
@@ -537,14 +498,14 @@ namespace HalfGripOpenWorld
 				float a = 1f - Step(0.9f, 0.999f, fog);
 				if (a < 1f)
 				{
-					lr = work[o] / 255f + (lr - work[o] / 255f) * a;
-					lg = work[o + 1] / 255f + (lg - work[o + 1] / 255f) * a;
-					lb = work[o + 2] / 255f + (lb - work[o + 2] / 255f) * a;
+					lr = Pixels[o] / 255f + (lr - Pixels[o] / 255f) * a;
+					lg = Pixels[o + 1] / 255f + (lg - Pixels[o + 1] / 255f) * a;
+					lb = Pixels[o + 2] / 255f + (lb - Pixels[o + 2] / 255f) * a;
 				}
 				float dither = (Dither[(row & 3) * 4 + (col & 3)] + 0.5f) / 16f;
-				work[o] = Byte(lr, dither);
-				work[o + 1] = Byte(lg, dither);
-				work[o + 2] = Byte(lb, dither);
+				Pixels[o] = Byte(lr, dither);
+				Pixels[o + 1] = Byte(lg, dither);
+				Pixels[o + 2] = Byte(lb, dither);
 			}
 		}
 
@@ -732,10 +693,10 @@ namespace HalfGripOpenWorld
 					}
 				}
 				float d = (Dither[(row & 3) * 4 + (col & 3)] + 0.5f) / 16f;
-				work[o] = Byte(cr, d);
-				work[o + 1] = Byte(cg, d);
-				work[o + 2] = Byte(cb, d);
-				work[o + 3] = 255;
+				Pixels[o] = Byte(cr, d);
+				Pixels[o + 1] = Byte(cg, d);
+				Pixels[o + 2] = Byte(cb, d);
+				Pixels[o + 3] = 255;
 				o += 4;
 			}
 			PaintLand(row);
@@ -781,17 +742,6 @@ namespace HalfGripOpenWorld
 			cb += (moonColour.B * shade - cb) * a;
 		}
 
-		/// <summary>The lower half (under the horizon: the horizon's colour, which the fog also is, so distant ground meets the sky without a
-		/// seam), then the picture handed over.</summary>
-		private void Finish()
-		{
-			for (int row = 0; row < first; row++)
-			{
-				Under(row);
-			}
-			Buffer.BlockCopy(work, 0, Pixels, 0, Pixels.Length);
-		}
-
 		/// <summary>A row of the lower half: the horizon's colour (darker straight down), and the land past the far view in it.</summary>
 		private void Under(int row)
 		{
@@ -800,14 +750,14 @@ namespace HalfGripOpenWorld
 			for (int col = 0; col < 4; col++)
 			{
 				float d = (Dither[(row & 3) * 4 + col] + 0.5f) / 16f;
-				work[o + col * 4] = Byte(horizon.R * k, d);
-				work[o + col * 4 + 1] = Byte(horizon.G * k, d);
-				work[o + col * 4 + 2] = Byte(horizon.B * k, d);
-				work[o + col * 4 + 3] = 255;
+				Pixels[o + col * 4] = Byte(horizon.R * k, d);
+				Pixels[o + col * 4 + 1] = Byte(horizon.G * k, d);
+				Pixels[o + col * 4 + 2] = Byte(horizon.B * k, d);
+				Pixels[o + col * 4 + 3] = 255;
 			}
 			for (int col = 4; col < W; col += 4)
 			{
-				Buffer.BlockCopy(work, o, work, o + col * 4, 16);
+				Buffer.BlockCopy(Pixels, o, Pixels, o + col * 4, 16);
 			}
 			PaintLand(row);
 		}

@@ -862,6 +862,31 @@ so they were never seen. Agreed: paint the land past the meshes' edge, and let t
 
 ![The far view's picture of the world, and three views over the country on a clear morning: in the middle drawn to the fog's end (40 km), on the right as the game shows it, the far view to 14 km and the land past it painted into the sky](farview.png)
 
+## The far view's costs (0.20.1; from a performance review agreed with the owner)
+
+A review of the far view and the painted sky found the GPU load small (about 150k triangles, one material) and the costs on the main
+thread. The owner picked three of its findings:
+
+- **The sky painted on a worker.** `SkyPaint` painted 24 rows a frame on the main thread (0.65 ms a frame on this machine, at worst
+  1.6, likely 2 to 4 times that under the game's Mono), the only cost of the far view and sky paid every frame. It uses no Unity
+  types, so `Sky` now has a whole picture painted on a worker (`SkyPaint.All`) every 0.2 s, about as often as before, and uploads it
+  when done; the main thread only uploads. The picture is painted straight into `SkyPaint.Pixels` (no second buffer to copy from: 2 MB
+  less), read only between pictures. `Sky` keeps the skyline the picture under way paints, so it is not built into (in place of
+  `SkyPaint.Painting`). The first picture is still painted at once. About 5 to 9 ms a picture, 3 to 5% of a core.
+- **The far view made over some frames before it is shown.** The frame it came on, all 256 chunks were made (the budget of three a
+  frame was only for a change of detail), the 1280-pixel picture uploaded and its mipmaps made on the main thread: tens of
+  milliseconds in the middle of a race. Now the chunks are made hidden, the nearest the car first, about 3200 cells a frame (two of the
+  nearest chunks, some twenty frames for all), the picture's mipmaps made on a worker (`FarView.Mips`, a 2 by 2 box as Unity's own)
+  and uploaded with it, and the far view (and `Sky`'s reach with it) comes on only when all of it is ready.
+- **The skyline's rays stopped over the open sea.** Out past the south edge heading south with only rows above the horizon left, the
+  sea (under the eye) can never fill one, so the ray stops there. Exact (the same texels in every view), but only 10 to 15% of a build
+  at the spawn and nothing inland: those steps skip the height lookup, so they were cheap (the review had guessed half the build).
+- **Not done (left in the review):** the tile edges' dips worked out from the tiles' own heights (60% of `FarGrid`'s build), a chunk's
+  vertices kept when only its holes change, the picture freed once uploaded, `Follow`'s per-frame tile lookups, the finest detail's
+  reach following `TileRadius`, detail hysteresis.
+- **Checked:** compiled against the game (`tools/check.sh`); `tools/farview` and `tools/skyview` pass, now timing a whole picture.
+  Not yet tested in game (TESTING.md 28).
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
