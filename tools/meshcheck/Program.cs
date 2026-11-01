@@ -1520,7 +1520,8 @@ internal static class Program
 	/// The events' courses: gates in order to the finish (the last on the finish line), each at the road's height and reaching over
 	/// its own stretch of road only (never over another part of the course, where a car would pass it out of turn); each gate's
 	/// respawn point off any bridge (the reset puts the car on the ground); the grid spot on the road; the start box off the course,
-	/// whole on its lot's open surface (the circuit's pit lane), its ring just over it, clear of the garages' circles.
+	/// whole on its lot's open surface (the circuit's pit lane; the highway's westbound carriageway behind its grid), its ring just over
+	/// it, clear of the garages' circles.
 	/// </summary>
 	private static bool EventChecks()
 	{
@@ -1528,7 +1529,7 @@ internal static class Program
 		List<Courses.Course> all = Courses.All;
 		foreach (Courses.Course c in all)
 		{
-			Network.Road road = c.Kind == Courses.Kind.Rally ? Rally.Road : c.Kind == Courses.Kind.HillClimb ? HillClimb.Road : null;
+			Network.Road road = c.Road;
 			double last = 0.0;
 			for (int k = 0; k < c.Gates.Count; k++)
 			{
@@ -1541,7 +1542,7 @@ internal static class Program
 				}
 				last = g.Along;
 				bool bridge = false;
-				c.At(c.StartS + g.Along + 6.0, out double rx, out double rz, out double _, out double _, out double _);
+				c.At(c.StartS + g.Along + Courses.RespawnPast, out double rx, out double rz, out double _, out double _, out double _);
 				if (road != null)
 				{
 					int near = 0;
@@ -1620,14 +1621,28 @@ internal static class Program
 				grid++;
 				Console.WriteLine("  event " + c.Name + ": the grid spot at " + c.GridY.ToString("0.00") + ", the road " + Drawn(c, road, c.GridX, c.GridZ).ToString("0.00"));
 			}
-			// The start box: on its lot's open surface (the circuit's pit lane), off the course, its ring just over the surface.
-			Town.Lot lot = road == null ? null : Town.Lots.FirstOrDefault(l => l.Kind == (c.Kind == Courses.Kind.Rally ? LotKind.Service : LotKind.Paddock));
+			// The start box: on its lot's open surface (the circuit's pit lane), off the course, its ring just over the surface. The
+			// highway's is on the westbound carriageway behind the start line: whole on it, clear of the median and the shoulder.
+			bool highway = c.Kind == Courses.Kind.Highway;
+			Town.Lot lot = road == null || highway ? null : Town.Lots.FirstOrDefault(l => l.Kind == (c.Kind == Courses.Kind.Rally ? LotKind.Service : LotKind.Paddock));
 			for (int k = -1; k < 32; k++)
 			{
 				double a = k * Math.PI / 16.0, r = k < 0 ? 0.0 : c.BoxRadius;
 				double x = c.BoxX + Math.Cos(a) * r, z = c.BoxZ + Math.Sin(a) * r;
 				double surface;
-				if (lot != null)
+				if (highway)
+				{
+					surface = Drawn(c, road, x, z);
+					double across = Math.Sqrt(c.Distance2(x, z));
+					c.At(c.StartS - Courses.HighwayBoxBack, out double sx, out double sz, out double _, out double sdx, out double sdz);
+					double ahead = (x - sx) * sdx + (z - sz) * sdz, left = (z - sz) * sdx - (x - sx) * sdz;
+					if (across < 5.0 || across > c.Half - 4.0 || left < 0.0 || c.StartS - Courses.HighwayBoxBack + ahead > c.StartS - Courses.GridBack - 10.0)
+					{
+						off++;
+						Console.WriteLine("  event " + c.Name + ": the start box's (" + x.ToString("0") + ", " + z.ToString("0") + ") is off the westbound carriageway behind the grid");
+					}
+				}
+				else if (lot != null)
 				{
 					Town.Lot on = Town.At(x, z, out bool building);
 					Town.Local(lot, x, z, out double u, out double v);
@@ -1648,7 +1663,7 @@ internal static class Program
 						Console.WriteLine("  event " + c.Name + ": the start box's (" + x.ToString("0") + ", " + z.ToString("0") + ") is off the pit lane");
 					}
 				}
-				if (Math.Sqrt(c.Distance2(x, z)) < c.Half + 2.0)
+				if (!highway && Math.Sqrt(c.Distance2(x, z)) < c.Half + 2.0)
 				{
 					off++;
 					Console.WriteLine("  event " + c.Name + ": the start box's (" + x.ToString("0") + ", " + z.ToString("0") + ") is on the course");
@@ -1674,7 +1689,7 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = all.Count == 3 && order == 0 && height == 0 && reach == 0 && bridged == 0 && grid == 0 && off == 0 && sunk == 0 && floating == 0 && garages == 0;
+		bool ok = all.Count == 4 && order == 0 && height == 0 && reach == 0 && bridged == 0 && grid == 0 && off == 0 && sunk == 0 && floating == 0 && garages == 0;
 		List<string> names = all.Select(c => c.Name + " " + c.Gates.Count + " gates over " + c.Distance.ToString("0")).ToList();
 		Console.WriteLine("events:  " + string.Join(", ", names) + "; " + gateCount + " gates: " + order + " out of order, " + height + " off the road's height, " + reach + " reaching over another stretch, " + bridged + " respawning on a bridge; " + grid + " grid spot samples off the road; start boxes: "
 			+ off + " samples off their surface or on the course, " + sunk + " ring under the ground, " + floating + " floating, " + garages + " on a garage " + (ok ? "ok" : "FAIL"));

@@ -192,3 +192,12 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    on: no hitch when `Far view on` shows in the log (a fraction of a second after the grid is built), and when it comes on the far
    view is there all at once, with no chunk missing and no hole near the car.
    The frame rate a little better than 0.20.0, most of all on a slow CPU.
+29. The highway event (0.21.0). The log says `Events: ...; Highway 10.1 km, 33 gates`. Teleport to `Highway (start)`: the car is on the
+   eastbound (south) carriageway at the west edge, facing east, the tunnel mouth behind. Turn round: an orange ring on the westbound
+   carriageway between the start line and the tunnel, `EVENT` over it, and a chequered disc on the map (MiniMap) at the west end of
+   the trunk road. Drive into it from the east (as a car driving west to the world's end would): the panel says `EVENT  Highway`,
+   10.1 km, 33 checkpoints. Stop in neutral and let go of the shifter: the car is put on the grid on the eastbound carriageway facing
+   east, the start lights over the road at the start line, red, amber, both, green. Drive east: the orange gates span both
+   carriageways, posts outside the shoulders; none stands on a bridge with its respawn there. Get wrecked mid-race: back just past
+   the last gate, on the eastbound carriageway, facing east. The finish gate (white) is just short of the east tunnel mouth, before
+   it; the best time goes under `[Best times]` as `Highway_33427_1`.

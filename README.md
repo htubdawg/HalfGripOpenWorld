@@ -12,7 +12,8 @@ generated from a fixed seed (the same for every player) the way real country com
   park, and filling stations and workshops along the main roads.
 - **Parks and trails:** town parks with ponds, paths and benches, a riverside walk, and trails round the lakes.
 - **Race courses:** a 2.9 km tarmac circuit with kerbs, gravel traps, pits and grandstands; a 5 km gravel rally stage through the
-  upland forest; a 1.5 km hill climb up a mountain valley. Each has a timed solo event (see [Events](#events)).
+  upland forest; a 1.5 km hill climb up a mountain valley. Each has a timed solo event (see [Events](#events)), and so has the
+  trunk road: a 10 km checkpoint race along it from the west edge to the east.
 - **Road signs:** name signs into every town and village, and fingerposts at junctions with the miles to the nearest places by road.
 - **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
@@ -22,10 +23,10 @@ generated from a fixed seed (the same for every player) the way real country com
 
 ![Map of the world: the trunk road orange, main roads yellow, minor roads cream, lanes white, tracks brown, bridges red; the circuit in the north-west, the rally stage (orange) in the north-east, the hill climb (pink) in the mountains north of the middle](docs/world.png)
 
-![The same map with the towns, villages, race courses and the start named](docs/world-labels.png)
+![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.20.1**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.21.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -46,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.18.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.21.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -94,10 +95,13 @@ into neutral and let go of the shifter to open it:
 
 ## Events
 
-Each course has a timed event: 3 laps of the circuit from pole, once round the rally stage, and the hill climb from its foot to the
-finish below the col. A glowing orange box beside each course marks where to sign on: in the circuit's pit lane past the garages, in
-the rally service area and in the hill climb paddock, next to the garage's circle. "EVENT" floats over each box when you are near,
-and each one has a chequered disc on the map.
+Each course has a timed event: 3 laps of the circuit from pole, once round the rally stage, the hill climb from its foot to the
+finish below the col, and the **highway**: one way along the trunk road, from just inside the west edge's tunnel to just short of the
+east edge's, 10 km and 33 checkpoints. A glowing orange box beside each course marks where to sign on: in the circuit's pit lane past
+the garages, in the rally service area and in the hill climb paddock, next to the garage's circle; for the highway, on the westbound
+carriageway at the west end, between the start line and the tunnel (drive west along the trunk road to the end of the world and
+stop in it; you are put on the grid on the eastbound side, facing east). "EVENT" floats over each box when you are near, and each
+one has a chequered disc on the map.
 
 - Drive into the box: a panel like the garage's shows the event, its length, laps, checkpoints and your best time.
 - Stop in it, shift into neutral and let go of the shifter: the car is put on the grid behind the start line and held there while the start lights over
@@ -106,7 +110,7 @@ and each one has a chequered disc on the map.
 - The clock runs through the checkpoints: an orange gate across the road, lit only while the event runs (the next one and the one
   after; the finish line's is white). The board shows the time, the checkpoints passed and your best; the lap counter beside it the
   lap (on the circuit) or the checkpoint. A missed gate is called out and the clock runs on, but that run sets no best time.
-- A wreck puts the car back just past the last gate passed, and the clock runs on. Driving more than about 150 m from the course for
+- A wreck puts the car back just past the last gate passed (on the highway, on the eastbound carriageway), and the clock runs on. Driving more than about 150 m from the course for
   10 seconds (or teleporting) gives the event up.
 - Your best time for each course is kept in `halfgrip.openworld.cfg` under `[Best times]` (never in the game's save); set one to 0
   to start again. A course a new version lays out differently starts with no best time.
@@ -129,7 +133,7 @@ the same ground.
 | World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws. |
 | Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back), and the Weather fast key (F2) turns a 10x speed for it on and off: the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
@@ -172,7 +176,8 @@ tools/check.sh <game folder> <HalfGripTools>/dist/BepInEx/plugins/HalfGripTools/
 
 On Windows, HalfGripTools' own `tools\check-mods.ps1 -ModsPath <this repo> -Mod OpenWorld -GameDir <game folder>` does the same.
 
-`tools/preview` checks the world generator and draws a map (as `docs/world.png`, with names as `docs/world-labels.png`);
+`tools/preview` checks the world generator and draws a map (as `docs/world.png`, and with the garages' and events' marks and the
+names as `docs/world-labels.png`);
 `tools/meshcheck` builds the world against Unity's own types and exits 1 if any check fails (road surfaces, bridges, water edges,
 buildings, the courses, signs, garages, the far view meeting the tiles; name checks after `--` to run only those):
 

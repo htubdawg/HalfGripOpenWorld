@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The events' courses: the circuit (laps from its grid), the rally stage (once round its loop, start line to finish line) and the
-	/// hill climb (foot to col), each as a centre line, a start box off the course (where a car signs on), the grid spot it is then
+	/// The events' courses: the circuit (laps from its grid), the rally stage (once round its loop, start line to finish line), the
+	/// hill climb (foot to col) and the highway (the trunk road one way, from the west edge's tunnel to the east's), each as a centre line, a start box off the course (where a car signs on), the grid spot it is then
 	/// put on behind the start line, and checkpoint gates across the road every few hundred metres to the finish. Read from the layout, never added to it: generation is unchanged, and every player gets the same
 	/// course because they get the same layout (the events in a room, later, rely on that). Pure arithmetic (no Unity), so the preview
 	/// lists them and meshcheck checks the gates and boxes.
@@ -17,6 +17,7 @@ namespace HalfGripOpenWorld
 			Circuit = 0,
 			Rally = 1,
 			HillClimb = 2,
+			Highway = 3,
 		}
 
 		/// <summary>A checkpoint: a line across the road at S along the centre line, crossed going (Dx, Dz).</summary>
@@ -50,6 +51,13 @@ namespace HalfGripOpenWorld
 			public bool Loop;
 			/// <summary>The road's half width.</summary>
 			public double Half;
+			/// <summary>The course's road (null for the circuit, which is not one of the network's roads).</summary>
+			public Network.Road Road;
+			/// <summary>
+			/// How far right of the centre line a car is put, on the grid and after a wreck: 0 but on the highway, whose centre line is
+			/// its median, where the car goes in the middle of the carriageway the way it goes (traffic keeps right).
+			/// </summary>
+			public double Keep;
 			/// <summary>Where the start line is along the centre line.</summary>
 			public double StartS;
 			/// <summary>Laps (1 for the stage and the climb).</summary>
@@ -60,7 +68,8 @@ namespace HalfGripOpenWorld
 			public readonly List<Gate> Gates = new List<Gate>();
 			/// <summary>
 			/// The start box: a circle off the course, near its start, where stopping signs the car on (in the circuit's pit lane past
-			/// the garages, in the rally stage's service area, in the hill climb's paddock, beside each garage's circle); its chevron
+			/// the garages, in the rally stage's service area, in the hill climb's paddock, beside each garage's circle; on the highway
+			/// on the westbound carriageway behind the start line, where a car driven west to the world's edge stops); its chevron
 			/// points (BoxDx, BoxDz), the way the course leaves its start.
 			/// </summary>
 			public double BoxX;
@@ -156,6 +165,22 @@ namespace HalfGripOpenWorld
 		/// <summary>The circuit's laps.</summary>
 		internal const int CircuitLaps = 3;
 
+		/// <summary>The highway's start line is this far along the trunk road from the west edge's tunnel mouth, its finish this far short of the east's.</summary>
+		internal const double HighwayStart = 500.0;
+		internal const double HighwayFinish = 400.0;
+
+		/// <summary>The highway's start box is this far behind its start line, between the grid and the tunnel mouth.</summary>
+		internal const double HighwayBoxBack = 200.0;
+
+		/// <summary>
+		/// The middle of a carriageway of the trunk road, from its centre line: the road is 66 across, a median 10 wide in the middle,
+		/// two lanes of 11 each side and a shoulder of 4 outside them (RoadMesh's texture).
+		/// </summary>
+		internal const double Carriageway = 17.5;
+
+		/// <summary>How far a highway checkpoint may be moved from its even spacing to put the respawn after it off a bridge.</summary>
+		internal const double BridgeShift = 400.0;
+
 		private static readonly object gate = new object();
 		private static List<Course> all;
 
@@ -224,6 +249,11 @@ namespace HalfGripOpenWorld
 			{
 				list.Add(FromRoad(Kind.HillClimb, Names.HillClimb, HillClimb.X, HillClimb.Z, HillClimb.S, HillClimb.Count, HillClimb.Length, false, HillClimb.Half, HillClimb.Road, HillClimb.StartS, HillClimb.FinishS - HillClimb.StartS, LotKind.Paddock));
 			}
+			Course highway = MakeHighway();
+			if (highway != null)
+			{
+				list.Add(highway);
+			}
 			return list;
 		}
 
@@ -265,7 +295,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private static Course FromRoad(Kind kind, string name, double[] xs, double[] zs, double[] ss, int count, double length, bool loop, double half, Network.Road road, double startS, double distance, LotKind lotKind)
 		{
-			Course c = new Course { Kind = kind, Name = name, X = xs, Z = zs, S = ss, Count = count, Length = length, Loop = loop, Half = half, StartS = startS, Laps = 1, Distance = distance };
+			Course c = new Course { Kind = kind, Name = name, X = xs, Z = zs, S = ss, Count = count, Length = length, Loop = loop, Half = half, Road = road, StartS = startS, Laps = 1, Distance = distance };
 			c.Y = new double[count];
 			int k = 0;
 			for (int i = 0; i < count; i++)
@@ -309,6 +339,117 @@ namespace HalfGripOpenWorld
 			}
 			return c;
 		}
+
+		/// <summary>
+		/// The highway: the trunk road (the network's one road of its class, made first, west edge to east edge and on into each edge's
+		/// tunnel) from <see cref="HighwayStart"/> past the west tunnel mouth to <see cref="HighwayFinish"/> short of the east one. Its
+		/// centre line is the road's own (the median), its gates reach over both carriageways; the grid is in the middle of the
+		/// eastbound carriageway (<see cref="Carriageway"/>) <see cref="GridBack"/> behind the start line, the box in the middle of the
+		/// westbound one <see cref="HighwayBoxBack"/> behind it, on the road itself (the trunk road has no lay-by, and nothing ever
+		/// drives there but a car on its way to the tunnel, which is where the box is wanted). Null if there is no such road.
+		/// </summary>
+		private static Course MakeHighway()
+		{
+			Network.Road road = null;
+			foreach (Network.Road r in Network.Roads)
+			{
+				if (r.Kind == RoadKind.Trunk && (road == null || r.Count > road.Count))
+				{
+					road = r;
+				}
+			}
+			if (road == null || road.Count < 3 || road.Loop)
+			{
+				return null;
+			}
+			int n = road.Count;
+			// West to east whichever way the road was made.
+			bool flip = road.X[0] > road.X[n - 1];
+			Course c = new Course { Kind = Kind.Highway, Name = Names.Highway, Count = n, Loop = false, Half = road.Half, Road = road, Laps = 1, Keep = Carriageway };
+			c.X = new double[n];
+			c.Z = new double[n];
+			c.Y = new double[n];
+			c.S = new double[n];
+			double total = road.S[n - 1] - road.S[0];
+			for (int i = 0; i < n; i++)
+			{
+				int k = flip ? n - 1 - i : i;
+				c.X[i] = road.X[k];
+				c.Z[i] = road.Z[k];
+				// The drawn surface at the centre line, as RoadMesh draws it (Network.Point with no side: no cross-fall).
+				c.Y[i] = road.Y[k] + Network.Top(road.Kind);
+				c.S[i] = flip ? road.S[n - 1] - road.S[k] : road.S[k] - road.S[0];
+			}
+			c.Length = total;
+			c.StartS = HighwayStart;
+			c.Distance = total - HighwayStart - HighwayFinish;
+			if (c.Distance < GateSpacing * 2.0)
+			{
+				return null;
+			}
+			Gates(c, road.Half + GateMargin);
+			OffBridges(c, road, flip);
+			c.At(c.StartS - GridBack, out double gx, out double gz, out c.GridY, out c.GridDx, out c.GridDz);
+			// Right of the way the car faces is (dz, -dx).
+			c.GridX = gx + c.GridDz * Carriageway;
+			c.GridZ = gz - c.GridDx * Carriageway;
+			c.At(c.StartS - HighwayBoxBack, out double bx, out double bz, out c.BoxY, out c.BoxDx, out c.BoxDz);
+			c.BoxX = bx - c.BoxDz * Carriageway;
+			c.BoxZ = bz + c.BoxDx * Carriageway;
+			c.BoxRadius = BoxRadius;
+			// The road's grade along it (no cross-fall away from a mouth).
+			c.At(c.StartS - HighwayBoxBack + 10.0, out double _, out double _, out double ahead, out double _, out double _);
+			c.At(c.StartS - HighwayBoxBack - 10.0, out double _, out double _, out double behind, out double _, out double _);
+			double grade = (ahead - behind) / 20.0;
+			c.BoxGx = grade * c.BoxDx;
+			c.BoxGz = grade * c.BoxDz;
+			return c;
+		}
+
+		/// <summary>
+		/// Moves each highway checkpoint but the finish, as little as it can (up to <see cref="BridgeShift"/>), so the respawn just
+		/// past it (<see cref="RespawnPast"/>) is not on a bridge: the reset puts the car on the ground, which there is the river.
+		/// </summary>
+		private static void OffBridges(Course c, Network.Road road, bool flip)
+		{
+			bool Bridged(double along)
+			{
+				// A car's length either side of the respawn point, by the road's own samples.
+				double s0 = c.StartS + along + RespawnPast - 15.0, s1 = c.StartS + along + RespawnPast + 15.0;
+				for (int i = 0; i < c.Count; i++)
+				{
+					if (c.S[i] >= s0 - 10.0 && c.S[i] <= s1 + 10.0 && road.Bridge[flip ? c.Count - 1 - i : i])
+					{
+						return true;
+					}
+				}
+				return false;
+			}
+			for (int k = 0; k < c.Gates.Count - 1; k++)
+			{
+				Gate g = c.Gates[k];
+				if (!Bridged(g.Along))
+				{
+					continue;
+				}
+				double lo = k > 0 ? c.Gates[k - 1].Along + 50.0 : 50.0, hi = c.Gates[k + 1].Along - 50.0;
+				for (double d = 10.0; d <= BridgeShift; d += 10.0)
+				{
+					double along = g.Along + d <= hi && !Bridged(g.Along + d) ? g.Along + d : g.Along - d >= lo && !Bridged(g.Along - d) ? g.Along - d : -1.0;
+					if (along < 0.0)
+					{
+						continue;
+					}
+					c.At(c.StartS + along, out g.X, out g.Z, out g.Y, out g.Dx, out g.Dz);
+					g.Along = along;
+					c.Gates[k] = g;
+					break;
+				}
+			}
+		}
+
+		/// <summary>After a wreck in an event the car goes back on the course this far past the last gate passed.</summary>
+		internal const double RespawnPast = 6.0;
 
 		private static double Sq(double a, double b)
 		{
