@@ -654,7 +654,10 @@ namespace HalfGripOpenWorld
 			}
 			else
 			{
-				c.At(c.StartS + c.Gates[e.next - 1].Along + 6.0, out x, out z, out double _, out dx, out dz);
+				c.At(c.StartS + c.Gates[e.next - 1].Along + Courses.RespawnPast, out x, out z, out double _, out dx, out dz);
+				// On the carriageway the way the course goes (the highway's centre line is its median).
+				x += dz * c.Keep;
+				z -= dx * c.Keep;
 			}
 			streamer.BuildAround(x, z, 1);
 			streamer.Place(x, z, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));

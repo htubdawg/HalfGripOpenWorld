@@ -10,7 +10,7 @@ using HalfGripOpenWorld;
 // Prints the layout (rivers, lakes, places, roads by class), realism figures (road density at real scale, junction types, dead
 // ends), the steepest grade per class, how far the ground is from each road's bed, repeatability and the time a tile takes; then
 // writes a map (land use, hillshade, water, roads by class, bridges in red), the whole world by default, or the square given; the
-// same map with the places and courses named (<out>-labels.ppm), and every road sign's face as the game draws it (<out>-signs.ppm).
+// same map with the garages' and events' marks and the places and courses named (<out>-labels.ppm), and every road sign's face as the game draws it (<out>-signs.ppm).
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -271,13 +271,14 @@ internal static class Program
 			Console.WriteLine("one tile, " + where + ": " + (watch.Elapsed.TotalMilliseconds / 5).ToString("0.0") + " ms");
 		}
 
+		// The map with nothing on it but the world; then the same map with the garages' and events' marks, as the map pictures draw
+		// them, and the places and courses named, in the signs' lettering.
 		byte[] map = Draw(size, x0, z0, span);
-		Garages(map, size, x0, z0, span);
-		Events(map, size, x0, z0, span);
 		Write(output, size, size, map, false);
 		Console.WriteLine("wrote " + output);
-		// The same map with the places and courses named, in the signs' lettering.
 		string labelled = Path.ChangeExtension(output, null) + "-labels.ppm";
+		Garages(map, size, x0, z0, span);
+		Events(map, size, x0, z0, span);
 		Label(map, size, x0, z0, span);
 		Write(labelled, size, size, map, false);
 		Console.WriteLine("wrote " + labelled);
@@ -451,6 +452,15 @@ internal static class Program
 		{
 			Network.Road climb = HillClimb.Road;
 			labels.Add((Names.HillClimb, climb.X[climb.Count / 2], climb.Z[climb.Count / 2], 2, course, 3));
+		}
+		foreach (Courses.Course c in Courses.All)
+		{
+			// The highway is the trunk road, already drawn: named on it a little past its start, clear of the start box's mark.
+			if (c.Kind == Courses.Kind.Highway)
+			{
+				c.At(c.StartS + 1500.0, out double hx, out double hz, out double _, out double _, out double _);
+				labels.Add((Names.Highway, hx, hz, 2, course, 3));
+			}
 		}
 		foreach (Places.Place p in Places.All)
 		{

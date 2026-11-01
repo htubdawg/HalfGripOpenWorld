@@ -887,6 +887,25 @@ thread. The owner picked three of its findings:
 - **Checked:** compiled against the game (`tools/check.sh`); `tools/farview` and `tools/skyview` pass, now timing a whole picture.
   Not yet tested in game (TESTING.md 28).
 
+## The highway event (0.21.0; asked for by the owner)
+
+A fourth solo event: a one-way checkpoint race along the trunk road from the west edge to the east (`Courses.MakeHighway`), 10.1 km
+real with 33 checkpoints. Read from the layout like the others; generation is unchanged.
+
+- **Course.** The trunk road's own centre line (its median), west to east, from 500 past the west tunnel mouth to 400 short of the
+  east one. Gates every 1000 or so reach over both carriageways. A gate whose respawn would land on a bridge (the reset puts the car
+  on the ground, the river there) is moved along up to 400 to the nearest spot clear of it.
+- **Keeping right.** The grid and the respawn after a wreck are in the middle of the eastbound carriageway (`Course.Keep`, 17.5
+  right of the median), not on the median.
+- **Start box.** The trunk road has no lay-by, so the box is on the road itself: the westbound carriageway, 200 behind the start
+  line, between the grid and the tunnel, where a car driven west to the world's end arrives and stops. Its chequered disc is on the
+  map at the west edge, and the teleport has `Highway (start)`.
+- **Maps.** `tools/preview` now writes the map with nothing on it (`docs/world.png`) and the map with the garages' and events' marks
+  and the names (`docs/world-labels.png`).
+- **Checked:** compiled against the game; preview and meshcheck pass (the events check takes the highway: gates in order at the
+  road's height, none respawning on a bridge, the grid on the road, the box whole on the westbound carriageway behind the grid).
+  Not yet tested in game (TESTING.md 29).
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

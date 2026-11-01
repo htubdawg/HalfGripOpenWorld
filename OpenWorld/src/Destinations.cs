@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the retail park, a filling
+	/// The world's key places, in a fixed order, for the debug teleport to go round: the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, a filling
 	/// station, a workshop, the parks, the lake trails, the villages and the mountain pass. Each is a point on a road (on its right-hand lane)
 	/// and the road's direction there, so a car put there can drive off at once.
 	/// </summary>
@@ -75,6 +75,14 @@ namespace HalfGripOpenWorld
 				list.Add(new Place { Name = Names.HillClimb + " (start)", X = sx, Z = sz, Dx = dx, Dz = dz });
 				HillClimb.At(HillClimb.FinishS - 40.0, out double fx, out double fz, out double ex, out double ez);
 				list.Add(new Place { Name = Names.HillClimb + " (finish)", X = fx, Z = fz, Dx = ex, Dz = ez });
+			}
+			foreach (Courses.Course c in Courses.All)
+			{
+				// The highway's grid, on the eastbound carriageway at the west edge, facing east.
+				if (c.Kind == Courses.Kind.Highway)
+				{
+					list.Add(new Place { Name = Names.Highway + " (start)", X = c.GridX, Z = c.GridZ, Dx = c.GridDx, Dz = c.GridDz });
+				}
 			}
 			bool garage = false, workshop = false;
 			foreach (Town.Lot lot in Town.Lots)

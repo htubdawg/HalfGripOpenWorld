@@ -27,5 +27,7 @@ namespace HalfGripOpenWorld
 		internal const string Circuit = "Circuit";
 		internal const string Rally = "Rally stage";
 		internal const string HillClimb = "Hill climb";
+		/// <summary>The highway event: the trunk road from the west edge to the east. Shown on the event's panel and the labelled map, not on a sign.</summary>
+		internal const string Highway = "Highway";
 	}
 }
