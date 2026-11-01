@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../OpenWorld/src/Noise.cs" />
+    <Compile Include="../../OpenWorld/src/Rng.cs" />
+    <Compile Include="../../OpenWorld/src/Heap.cs" />
+    <Compile Include="../../OpenWorld/src/WorldGen.cs" />
+    <Compile Include="../../OpenWorld/src/Rivers.cs" />
+    <Compile Include="../../OpenWorld/src/Places.cs" />
+    <Compile Include="../../OpenWorld/src/Network.cs" />
+    <Compile Include="../../OpenWorld/src/LandUse.cs" />
+    <Compile Include="../../OpenWorld/src/Town.cs" />
+    <Compile Include="../../OpenWorld/src/Parks.cs" />
+    <Compile Include="../../OpenWorld/src/Circuit.cs" />
+    <Compile Include="../../OpenWorld/src/Rally.cs" />
+    <Compile Include="../../OpenWorld/src/HillClimb.cs" />
+    <Compile Include="../../OpenWorld/src/Names.cs" />
+    <Compile Include="../../OpenWorld/src/Lettering.cs" />
+    <Compile Include="../../OpenWorld/src/Signs.cs" />
+    <Compile Include="../../OpenWorld/src/GarageSites.cs" />
+    <Compile Include="../../OpenWorld/src/Courses.cs" />
+    <Compile Include="../../OpenWorld/src/FarGrid.cs" />
+    <Compile Include="../../OpenWorld/src/Skyline.cs" />
+    <Compile Include="../../OpenWorld/src/SkylineBuild.cs" />
+    <Compile Include="../../OpenWorld/src/SkyPaint.cs" />
+    <Compile Include="../../OpenWorld/src/StormField.cs" />
+  </ItemGroup>
+</Project>

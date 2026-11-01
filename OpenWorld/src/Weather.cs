@@ -8,9 +8,10 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// Each Open World race gets a look for the day and a look for the night, drawn from the game's weathers (the day: the Stadium's ash,
 	/// the fiery factory, the Forest's rainy day and red forest, the mountain day; the night: the rainy Stadium and Forest nights, the snowy
-	/// mountain night, the factory night). <see cref="Sky"/> blends between them as the race's clock goes round, and brings the rain and
-	/// snow from <see cref="Storms"/>, so the copies here have their own rain, snow, rain sounds and grip taken out. Only the fog is
-	/// changed besides, so it ends where the loaded tiles end.
+	/// mountain night, the factory night). <see cref="Sky"/> blends their light and fog between them as the race's clock goes round (the
+	/// sky itself is painted by <see cref="SkyPaint"/>, with a little of their fog colours as haze; their skies are only used if it cannot
+	/// be), and brings the rain and snow from <see cref="Storms"/>, so the copies here have their own rain, snow, rain sounds and grip
+	/// taken out. Only the fog is changed besides, so it ends where the loaded tiles end.
 	///
 	/// The draws, the storms and the time of day all come from the room's seed (the Multiplayer mod's <c>Room.Seed</c>, the same for every
 	/// player and new each race), so everyone in a room gets the same sky. Outside a room (TestMode) the seed is random.

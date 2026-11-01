@@ -641,14 +641,14 @@ started on the host's go), so every player has the same sky and nothing is sent.
   and the ground darken. Grip: up to `x0.96 ^1.06` wet (the game's own rain is `x0.97 ^1.05`), a little less on snow. The look is
   the wetness at the car, for every road in view: a road a kilometre off is as wet as the one under the car.
 - **Debug.** `ShowCoords` adds a line: the time, the sun or moon's height, the rain or snow, cloud, wetness and grip at the car,
-  the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back).
+  the nearest storm (how far, which way). `WeatherSkip` with its key (F5 in Settings > Controls, through `ctx.Keys`, like the teleport's F7) moves your own sky 5 minutes on (Shift back); the Weather fast key (F2) toggles it running 10x.
 
 **Garages and start boxes on letting go of the shifter** (0.17.0, asked for): they act when the hand lets go of the active shifter in
 neutral (`ShifterHand`: the grabber's held object under the active shifter's object), stopped and armed as before, in place of
 standing in neutral for 0.6 s. Arming, the prompts and `Garage.Disarm` after a respawn are unchanged.
 
 The owner tested 0.17.0 in game: good (TESTING.md 21, and 22 and 23 with the shifter let go in neutral). Next: rain curtains and dark cloud under the storms nearby (seen from
-afar), a sky of our own painted in code (sun and moon discs, stars, a gradient), wetness per tile, lightning in the hardest
+afar; done in 0.19.0), a sky of our own painted in code (sun and moon discs, stars, a gradient; done in 0.18.0), wetness per tile, lightning in the hardest
 storms, lights on the Multiplayer mod's stand-ins (other players' cars have none, so they are hard to see at night), glowing
 windows and street lamps.
 
@@ -727,6 +727,165 @@ strip). meshcheck's `holes` 0.84% to 0.66%; new `hubs` check (cuts meet the outl
 24 to 27 ms (22 on this machine before). Compiled; meshcheck and preview clean; not yet tested in game (TESTING.md 24).
 
 ![The five villages, 0.17.1 above, 0.17.2 below](hubs.png)
+
+## A sky of our own (0.18.0; asked for after 0.17.3)
+
+The owner expected the sun and moon to be ours: they were only the scene's directional light, turned. The sky was the drawn day
+weather's skybox, dimmed and tinted, cut over to the night weather's in one frame once it was dark; the sun painted into those
+skies stood still while the light went round, and could be on the other side of the sky from it.
+
+- **No shader of our own.** The game cannot compile one at run time, and its build has only `Skybox/Cubemap` and
+  `Skybox/Panoramic` (scene dumps: the Forest's rainy day and Tokyo use the panoramic one). So the sky is a picture: `SkyPaint`
+  paints a 1024 by 512 latitude-longitude image (a texel about 0.35 degrees, point-sampled like the world's pixel-art textures)
+  and `Sky` shows it through a copy of the game's panoramic material (its tint set so a texel's colour is what is seen). If no
+  such material or shader is found, the old dimmed and swapped skies are kept.
+- **What is painted.** A gradient from the horizon to the top of the sky through six keyed colours by the sun's height (night,
+  dusk, the sun on the horizon, sunset, morning, day), with a little of the race's two drawn weathers' fog colours as haze; a glow
+  round the sun (gold and red low down); the sun's disc (2 degrees across, white by day, orange low down) where its light comes
+  from (`SkyPaint.Place` puts the sun, the moon and the stars for an hour, and `Sky` turns the light by the same numbers); the
+  moon's disc with three seas and a halo, opposite the sun as its light is; 2400 stars from the room's seed turning 15 degrees an
+  hour about a pole 48 degrees up in the north, coming out after sunset and fading under the moon and cloud; a cloud layer (tiling
+  value noise, seen in perspective at 4000 units up, so it shrinks toward the horizon) that stays put over the land as the car
+  drives and drifts with the storms' wind, covering 6% of the sky on a dry day, about 35% on a wet one, all of it under a storm,
+  lit gold at sunset and grey by the moon. Under a storm the whole sky goes grey.
+- **The fog is the horizon.** The fog's colour is now the painted horizon's (the same palette), and everything under the horizon
+  in the picture is that colour, so the world fades into the sky with no seam.
+- **Cost.** A picture is painted 24 rows a frame (about 0.7 ms on this machine) and uploaded whole when done, about every 11
+  frames; the sun crosses a texel in about two seconds. Setting up (cloud pattern, stars) takes about 55 ms at the race start, and
+  the first picture is painted at once.
+- **Checked** with the new `tools/skyview` (the sun's disc at the texel its light comes from, south at noon; the horizon within
+  1/255 of the fog's colour at eight times and weathers; a seed paints the same sky; the cost), which draws `docs/sky.png`.
+  Compiled; not yet tested in game (TESTING.md 25).
+- **Left for later:** the moon is always full (it is opposite the sun, as its light is); clouds are one flat layer, not the storms
+  seen from afar (done in 0.19.0, below).
+
+![The painted sky: 10:00, 13:00 with fair weather cloud, 17:20, sunset, dusk, 23:00 with the moon, 02:00 cloudy, under a storm; left the whole turn, right a view from the car](sky.png)
+
+## The far view and storms seen from afar (0.19.0; asked for after 0.18.0)
+
+Before, nothing was drawn past the loaded tiles (TileRadius 5, about 1250 units), and the fog ended there; several of the game's
+weathers end their fog sooner still (300 to 860), made for arenas. The clouds were one flat layer whose amount was the cloud at the
+car, so a storm was never seen until it was overhead. Both done together, as the owner asked; the owner left how far to see and
+whether the weathers' fogs could go to judgement.
+
+- **The world at low detail (`FarGrid.cs`).** `WorldGen.Height` every 50 units over the whole world (641 a side; the tiles' own
+  vertices, so where the far view meets a tile they share them exactly), water lifting a point to its surface (so no far water fights
+  the ground at a distance), woods standing 22 over the ground (a canopy, by the share of woods round each point), and a picture every
+  25 units (1280 a side): the tiles' land use with the water, lots, circuit and roads painted over (each road as much of its pixel as
+  it covers, so a lane is faint and the trunk road solid; tracks and paths left out). Pure arithmetic, built on a worker after the
+  layout in `Mod.Load`: about 1.2 to 2.8 s on four cores here, 10 MB. Height samples cost 1.4 µs, so the world is cheap.
+- **The meshes (`FarView.cs`).** 16 by 16 chunks of 2000 units (8 by 8 tiles), each one mesh, no collider, no shadows, one material
+  (the ground's, with the world's picture, mipmapped and filtered: point-sampled at a distance it shimmers). Within 3500 of the car a
+  chunk takes every sample; to 6500 every second, to 11000 every fourth, past that every eighth. A chunk leaves out the cells of every
+  loaded tile (a 64-bit mask per chunk), and is remade in the same frame the streamer adds or drops a tile in it (`Streamer.Far`, after
+  `Stream`), so the far view never lies over or pokes through the real ground and no hole opens for a frame; changes of detail alone
+  are remade three a frame. Skirts hang from every edge bordering a cell not drawn: along a tile's edge as deep as the real ground (or
+  water) dips under the far view's straight edge between samples (`FarGrid.DipX`/`DipZ`, from the tiles' 5-unit vertices: sharp
+  mountain valleys dip up to 137; 2326 of 18490 tile-edge pieces checked need more than the 24 minimum), so no gap shows; round the
+  chunks, deeper the coarser, where chunks of two details meet. The sea goes on south of the world to the horizon as one flat sheet.
+- **How far one sees is ours.** With the far view showing, `Sky` sets the fog's end from the weather at the car, not the weathers':
+  a clear day sees `FarViewDistance` (14000 by default) times 0.65 to 1 from the room's seed (some days are hazier), less at night
+  (x0.75), under cloud (to x0.5) and in the rain (to x0.08: a few hundred units in a downpour, never less than the old fog). Eased,
+  so it never jumps; the fog starts at 3% of it. The cameras draw to it (`FarView.LateUpdate`). The weathers' fog colours had already
+  gone (the fog is the painted horizon); their distances now go too. Off in the config, everything is as before.
+- **Storms in the painted sky.** `Sky` has the storms round the car filled into a `StormField` (64 by 64 samples 800 apart, 51 km
+  across; `Storms.Fill`, cell by cell, the same values as `Storms.At` for ground at sea level, 1.4 ms) on a worker every 3 seconds.
+  `SkyPaint` looks each sky texel's point on the cloud layer up in it: a storm's cloud builds out of lumps (its edge broken by the
+  cloud pattern and a finer one), dark in its middle and grey toward its edge, hazed by distance (to the horizon's colour over 3.5
+  times the reach). Under it hang rain curtains: per column, stepping out from 1500 to 25,800 from the car, the share of the sky
+  hidden behind the rain so far (the rain falls straight down, so a column's curtains are the same at every height under the cloud),
+  read at each row up to where that way meets the cloud layer; streaked a few columns wide. Both fade out over the horizon's last rows,
+  which stay exactly the fog's colour. With a storm in view a frame's painting costs about 0.2 to 0.35 ms more (about 0.8 to 0.9 ms).
+- **Checked:** meshcheck's new `farview` check (the far view on the tiles' vertices at tile corners; along tile edges across the world
+  the skirt's foot always under the real surface); the new `tools/farview` (build time, memory, the same grid twice, the picture and
+  three views over the country, `docs/farview.png`); `tools/skyview` (two storm scenes: toward the storm the sky differs from the same
+  sky with none, low down in the curtains and where the cloud layer is over the storm; away from it untouched; the horizon still the
+  fog's colour; the cost) and `tools/stormview` (a field equals `At` at its samples). Compiled; not yet tested in game (TESTING.md 26).
+- **Left for later:** towns and towers as shapes in the far view (they are only their colours), lit windows at night, far water
+  that shines (the far view's lakes are matte where the tiles' are glossy), and depth precision at 10 km is only known in game.
+
+![The far view's picture of the world, and three views over the country to the horizon on a clear day](farview.png)
+
+### The free-flight camera drew only to 1500 (0.19.1; the owner's report on 0.19.0)
+
+The owner's screenshot on 0.19.0 (taken high over the fields, in the free-flight view): the storms looked right, but past the loaded
+tiles was only a band of the horizon's colour, though the near trees were hardly fogged (so the fog's reach was ours). Nothing in the
+game sets a camera's reach but the rear-view mirror's (`RenderBudget`), and the game applies its fog once. The Tokyo scene has three
+cameras that draw the world (scene dump): the Main Camera, the OutsideCamera and a FreeFlightCamera of its own, off until the dev
+free flight turns it on, reaching 1500. The far view raised only the first two by name. Now it raises every camera that draws the
+world (all but the cockpit's on the INTERIOR layer, the mirror and any drawing into a texture), found at the start and every 2
+seconds (a camera switched on later), with each logged under `VerboseLog`. `ShowCoords` adds a line: the far view's chunks drawn, the
+fog's start and end, and how far the camera in use draws. `WorldScene.RaiseCameras` (far view off) raises the free-flight camera too.
+
+## The land past the far view painted into the sky (0.20.0; asked for after 0.19.1)
+
+The owner asked whether the mountains could be painted into the sky until one is close enough for the far view to draw them. The
+far view already draws the whole world out to where the fog ends, so the sky taking over inside that would only be wrong (the sky is
+seen as from infinitely far: painted mountains 10 km off would stand still as you drive, and slip where the meshes took over). The
+gap was past the fog: from the south coast the northern ranges are 20 to 30 km off, past the 20,000 the meshes are drawn to at most,
+so they were never seen. Agreed: paint the land past the meshes' edge, and let the fog run on past it.
+
+- **The skyline (`Skyline.cs`, `SkylineBuild.cs`).** For each of the painted sky's 1024 columns a ray steps out over the far view's
+  surface (its heights with the canopy, sunk by the earth's curve: about 40 at 40 km) from 0.9 of the drawn distance to 60 km, in steps
+  a little under a texel's height at that distance (25 units, growing to 300), keeping the highest the land has stood: each sky row
+  in a band of 48 either side of the horizon (17 degrees) it passes takes the land there (distance, colour, normal). Past the world's
+  south edge the sea goes on; past the walls, nothing. Colours from the far view's picture averaged into 200-unit cells and read
+  between them (the far view's mipmapped picture is as soft at those distances; single pixels shimmered between builds). About 5 to
+  15 ms a build, on a worker, again whenever the eye has moved 40 across or 4 up or the drawn edge 2%, at most four times a second;
+  the first at once. Two buffers, never building into the one the picture under way paints.
+- **Lit and fogged as the far view is (`SkyPaint.Shade`).** The far view is URP Lit on a white base, so a painted texel is its colour
+  (sRGB curve off, in linear colour) times 0.96, times the ambient probe (evaluated at the six axes when `Sky` scales it, used as an
+  ambient cube on the texel's normal) plus the sun's colour and intensity on the slope, darker when wet; the sea past the world shines
+  at a glance (about three quarters of the horizon's colour, as the sea sheet's gloss would; a guess to check in game). Then Unity's
+  linear fog by distance, toward the horizon's colour. Land nearly all fog (the last tenth) fades into the sky, as the meshes stop
+  at the cameras' reach and the sky shows past them. The rain curtains between the car and the land hang in front of it. Painted a
+  frame at a time with the sky's rows (the band under the horizon too: all at a picture's end it took a frame 3 ms); a frame's
+  painting about as before (0.5 to 0.6 ms, at worst about 1).
+- **How far one sees, and how far it is drawn.** With the skyline, the clearest day sees 40,000 (across the whole world), times the
+  day's clearness (0.65 to 1 from the room's seed), less at night, under cloud and in the rain as before; the fog starts at 3% of
+  it. The meshes are drawn to `FarViewDistance` at most (`FarView.DrawnReach`, set by `Sky`; the cameras' reach follows it), and past
+  them the skyline. So the near world is a little clearer than in 0.19 (at 3 km the fog is 7% where it was 21%): the fog no longer
+  has to close at the meshes' edge. `FarSkyline` off (or the painted sky failing) gives 0.19's fog exactly. The storms' haze keeps
+  its reach of 20,000 at most.
+- **Kept to the linear fog.** Exponential fog would suit distance better, but the game's shaders may have the other fog modes'
+  variants stripped and none can be compiled, so the fog mode is not changed.
+- **Checked:** `tools/farview` now draws each view twice, out to the fog's end as if the far view reached it, and as the game
+  shows it (the far view to 14,000, the painted sky past it, read a texel at a time), both lit by `SkyPaint.Shade`: past 14,000 no land
+  without land painted within a texel (0.00 to 0.01%), no sky with land painted (0.00%), colours inside the outlines within 8 to 12
+  of 255 (the reference's picture is sharper than the far view's at 20 to 30 km); the same skyline twice; a storm 9 km off greys the land
+  behind it and nothing away from it; the cost. `tools/skyview` and meshcheck pass; `tools/jview` builds again (it had not left out
+  `FarView.cs` since 0.19.0). Compiled; not yet tested in game (TESTING.md 27).
+- **Seen in game only:** whether the painted land's light matches the meshes' at the seam (the ambient cube and the sun's light are
+  the scene's, but URP's other terms are left out); Unity's fog goes by depth, the painting by distance, so at the screen's edges the
+  meshes' edge is a little clearer than the land painted on past it; the painted outlines are a sky texel (0.35 degrees, several
+  screen pixels) coarse.
+
+![The far view's picture of the world, and three views over the country on a clear morning: in the middle drawn to the fog's end (40 km), on the right as the game shows it, the far view to 14 km and the land past it painted into the sky](farview.png)
+
+## The far view's costs (0.20.1; from a performance review agreed with the owner)
+
+A review of the far view and the painted sky found the GPU load small (about 150k triangles, one material) and the costs on the main
+thread. The owner picked three of its findings:
+
+- **The sky painted on a worker.** `SkyPaint` painted 24 rows a frame on the main thread (0.65 ms a frame on this machine, at worst
+  1.6, likely 2 to 4 times that under the game's Mono), the only cost of the far view and sky paid every frame. It uses no Unity
+  types, so `Sky` now has a whole picture painted on a worker (`SkyPaint.All`) every 0.2 s, about as often as before, and uploads it
+  when done; the main thread only uploads. The picture is painted straight into `SkyPaint.Pixels` (no second buffer to copy from: 2 MB
+  less), read only between pictures. `Sky` keeps the skyline the picture under way paints, so it is not built into (in place of
+  `SkyPaint.Painting`). The first picture is still painted at once. About 5 to 9 ms a picture, 3 to 5% of a core.
+- **The far view made over some frames before it is shown.** The frame it came on, all 256 chunks were made (the budget of three a
+  frame was only for a change of detail), the 1280-pixel picture uploaded and its mipmaps made on the main thread: tens of
+  milliseconds in the middle of a race. Now the chunks are made hidden, the nearest the car first, about 3200 cells a frame (two of the
+  nearest chunks, some twenty frames for all), the picture's mipmaps made on a worker (`FarView.Mips`, a 2 by 2 box as Unity's own)
+  and uploaded with it, and the far view (and `Sky`'s reach with it) comes on only when all of it is ready.
+- **The skyline's rays stopped over the open sea.** Out past the south edge heading south with only rows above the horizon left, the
+  sea (under the eye) can never fill one, so the ray stops there. Exact (the same texels in every view), but only 10 to 15% of a build
+  at the spawn and nothing inland: those steps skip the height lookup, so they were cheap (the review had guessed half the build).
+- **Not done (left in the review):** the tile edges' dips worked out from the tiles' own heights (60% of `FarGrid`'s build), a chunk's
+  vertices kept when only its holes change, the picture freed once uploaded, `Follow`'s per-frame tile lookups, the finest detail's
+  reach following `TileRadius`, detail hysteresis.
+- **Checked:** compiled against the game (`tools/check.sh`); `tools/farview` and `tools/skyview` pass, now timing a whole picture.
+  Not yet tested in game (TESTING.md 28).
 
 ## Next: events (proposed, to agree with the owner)
 

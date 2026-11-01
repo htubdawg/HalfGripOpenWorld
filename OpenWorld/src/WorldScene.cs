@@ -141,10 +141,19 @@ namespace HalfGripOpenWorld
 			Material ground = GroundMaterial(lit), verge = RoadMesh.VergeMaterial(lit), sidewalk = RoadMesh.SidewalkMaterial(lit), gravel = CircuitMesh.GravelMaterial(lit);
 			Material[] roads = RoadMesh.Materials(lit), tracks = RoadMesh.TrackMaterials(lit), circuit = CircuitMesh.Materials(lit);
 			streamer.Setup(tm.playerCarController, ground, groundLayer >= 0 ? groundLayer : 0, roads, verge, sidewalk, tracks, WaterMaterial(lit), 0, Buildings.Materials(lit), circuit, gravel, foliage);
+			// The far view past the tiles, with the ground's look (so the wet weather darkens it too) and its own sea.
+			FarView far = root.AddComponent<FarView>();
+			Material farGround = FarView.MakeMaterial(ground, "OpenWorld Far"), farSea = FarView.MakeMaterial(ground, "OpenWorld Far Sea");
+			if (farSea.HasProperty("_Smoothness"))
+			{
+				farSea.SetFloat("_Smoothness", 0.7f);
+			}
+			far.Setup(farGround, farSea, groundLayer >= 0 ? groundLayer : 0);
+			streamer.Far = far;
 			// The sky wets the surfaces: the paved ones shine, the rest only darken.
 			List<Material> paved = new List<Material>(roads) { sidewalk };
 			paved.AddRange(circuit);
-			List<Material> unpaved = new List<Material>(tracks) { verge, gravel, ground };
+			List<Material> unpaved = new List<Material>(tracks) { verge, gravel, ground, farGround };
 			root.AddComponent<Sky>().Setup(tm, paved.ToArray(), unpaved.ToArray());
 
 			PlaceGrid(tm, env, out Vector3 forward);
@@ -413,13 +422,14 @@ namespace HalfGripOpenWorld
 			Mod.Info("Token loop: " + line.sampledPoints.Count + " samples, " + line.trackLength.ToString("0") + " m");
 		}
 
-		/// <summary>The cameras draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never lowered.</summary>
+		/// <summary>The cameras that draw the world (the dev free-flight one too) draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never
+		/// lowered. With the far view on, <see cref="FarView"/> sets them further.</summary>
 		private static void RaiseCameras()
 		{
 			float needed = (Mod.TileRadius.Value + 0.5f) * Streamer.TileSize;
 			foreach (Camera camera in UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
 			{
-				if ((camera.name == "Main Camera" || camera.name == "OutsideCamera") && camera.farClipPlane < needed)
+				if ((camera.name == "Main Camera" || camera.name == "OutsideCamera" || camera.name == "FreeFlightCamera") && camera.farClipPlane < needed)
 				{
 					Mod.Info(camera.name + " draws to " + needed.ToString("0") + " m (was " + camera.farClipPlane.ToString("0") + ")");
 					camera.farClipPlane = needed;

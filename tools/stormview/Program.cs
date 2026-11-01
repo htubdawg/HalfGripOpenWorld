@@ -7,7 +7,8 @@ using HalfGripOpenWorld;
 //   dotnet run -c Release --project tools/stormview -- [out.ppm] [room seed] [minutes apart]
 // Prints, over 20 room seeds and two hours of race, how much of the land is under rain and under cloud, how often a spot is wet,
 // whether the same seed gives the same weather twice, and what a sample costs; then draws the world at six times for the seed given
-// (land shaded by height, cloud darkening it, rain blue, snow white) side by side. Exits 1 if a check fails.
+// (land shaded by height, cloud darkening it, rain blue, snow white) side by side. Also checks the storm field the painted sky reads
+// (Storms.Fill) against Storms.At at its samples, and what a field costs. Exits 1 if a check fails.
 internal static class Program
 {
 	private static int Main(string[] args)
@@ -105,6 +106,32 @@ internal static class Program
 		{
 			Console.WriteLine("FAIL: too slow for every frame");
 			ok = false;
+		}
+
+		// The painted sky's storm field: the same weather as At at every sample (for ground at sea level), and its cost on a worker.
+		{
+			Storms st = new Storms(seed);
+			double worst = 0.0, fillMs = 0.0;
+			int fields = 0;
+			for (double t = 600.0; t <= 7200.0; t += 1300.0)
+			{
+				StormField f = new StormField(64, 800.0, (t * 3.0) % 16000.0 - 8000.0, -(t * 2.0) % 12000.0 + 4000.0);
+				Stopwatch fw = Stopwatch.StartNew();
+				st.Fill(f, t);
+				fillMs += fw.Elapsed.TotalMilliseconds;
+				fields++;
+				for (int j = 0; j < f.N; j += 3)
+				{
+					for (int i = 0; i < f.N; i += 3)
+					{
+						st.At(f.X0 + i * f.Spacing, f.Z0 + j * f.Spacing, t, 0.0, out double rain, out double cloud);
+						worst = Math.Max(worst, Math.Max(Math.Abs(rain - f.Rain[j * f.N + i]), Math.Abs(cloud - f.Cloud[j * f.N + i])));
+					}
+				}
+			}
+			bool same = worst < 1e-5;
+			Console.WriteLine("storm field (64 a side, 800 apart): off At by at most " + worst.ToString("0.000000") + (same ? "  ok" : "  FAIL") + "; a field costs " + (fillMs / fields).ToString("0.0") + " ms");
+			ok &= same;
 		}
 
 		Draw(output, new Storms(seed), apart);

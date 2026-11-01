@@ -49,8 +49,13 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Weather.cs` | Draws a day look and a night look from the game's weathers for each race (room seed), with their rain, snow and grip taken out |
 | `Storms.cs` | The weather over the world: rain cells born, drifting with the wind and dying, as a pure function of room seed, position and race time; wetness looking back; the snow line |
 | `Sky.cs` | Every frame in a race: the time of day (sun, moon, light, sky, ambient probe, fog, headlights) and the storms at the car (rain, snow, sound, wet roads, grip) |
+| `StormField.cs` | The storms round the car on a coarse grid for the painted sky (`Storms.Fill` fills it on a worker). No Unity types |
+| `SkyPaint.cs` | The sky painted in code into a panoramic texture: the gradient, the sun's glow and disc, the moon, the stars turning, drifting cloud, the land past the far view lit and fogged; where the sun and moon are at an hour. No Unity types (`tools/skyview` draws it) |
+| `Skyline.cs`, `SkylineBuild.cs` | The land past the far view's drawn edge as the painted sky shows it: per sky texel round the horizon, the land a ray meets, its distance, colour and slope (the data; and its build, rays marched over `FarGrid` on a worker). No Unity types (`tools/farview` checks it) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
 | `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
+| `FarGrid.cs` | The far view's low-detail world: heights every 50 (the tiles' vertices; water lifted, woods' canopy), a picture every 25, the skirts' depths along tile edges. Pure, built after the layout |
+| `FarView.cs` | The far view: chunk meshes past the loaded tiles (holes where tiles are, skirts), the sea to the horizon, the cameras' reach |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
 | `GameCaches.cs` | World positions the game keeps in fields, moved on each shift |
 | `MultiplayerLink.cs` | Positions over the network in world coordinates; stand-in cars moved on each shift |
@@ -91,7 +96,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs, roads under drawn water (flooded), plants in
   the water (plants), ponds, lawns and benches (parks), the events' gates and start boxes (events), paving showing ground or a
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
-  (tucked), places where three or more roads end drawn as one plate (hubs); exits 1 on a failure. It reads the drawn
+  (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview);
+  exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
   marking ground in a mouth (cyan), surfaces poking through (magenta), paving under the ground (yellow) and steps; other modes draw a
@@ -99,6 +105,13 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   Look at the junctions an owner reports with it, and before and after any change to junctions, cuts or `RoadMesh`.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
+- `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes
+  from, the horizon the fog's colour, storms seen toward them and nowhere else, repeatability, cost) and draws it at ten times and
+  weathers; look at it after any change to `SkyPaint` or the sun's and moon's places.
+- `dotnet run -c Release --project tools/farview -- out.ppm [drawn]` builds the far view's low-detail world (time, memory,
+  repeatability) and the land painted past it into the sky (it stands where the far view drawn to the fog's end would, a storm's rain
+  in front of it, cost), and draws its picture and three views over the country, each to the fog's end and as the game shows it; look
+  at it after any change to `FarGrid`, `Skyline`, the land use or how the far view is lit.
 - In game: see the test checklist in `docs/TESTING.md`. The owner tests in game and reports with screenshots and `LogOutput.log`.
 
 ## What is next

@@ -78,7 +78,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 21. Day, night and storms (0.17.0), in a Multiplayer room. The log has `Weather: <day> by day, <night> by night (from the room's
    seed)` and `Sky: the race starts at hh:mm, a day lasts 40 minutes; storms: a ... day, wind ..., snow above ...`. With `ShowCoords`
    the overlay's last line gives the time, the sun's height, the rain, cloud, wetness and grip at the car and the nearest storm; both
-   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press the Weather skip key (F5) through a whole day
+   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press the Weather skip key (F5) through a whole day (or toggle the Weather fast key, F2, for 10x)
    (8 presses a day): the shadows swing from east to west, the light goes gold at dusk, the sky darkens and the night sky comes in,
    the cockpit dims at night (the cabin is not lit at midnight), the headlights go on at dusk and off after dawn, and nothing jumps
    or flickers at the swaps (the light fades out and back round sunset and sunrise). Note whether the ambient light changes at
@@ -148,3 +148,47 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Dead ends: a Kingsbridge street (-2.135, -3.547) and a lane (-7.894, 4.300) end rounded off, the sidewalk or verge carried
      round the end down to the grass (no square edge standing over the ground); a farm track (-0.282, 2.578) narrows to a point
      into the grass. Drive off each end: no bump.
+25. The painted sky (0.18.0). With `VerboseLog` the log says `Sky: painted sky on a copy of FS002_Rainy (Skybox/Panoramic)` (or
+   another panoramic sky), and there is no `could not make the painted sky` or `painted sky stopped` warning. With `WeatherSkip`, the
+   Weather fast key (F2) or skip key (F5), go through a day: by day a blue sky, paler at the horizon, with a white sun disc and a
+   glow round it, standing where the shadows say the light comes from (shadows point away from it) and moving with them; the sun
+   goes orange and the sky round it gold and red as it sets in the west, the disc going down behind the horizon; the sky goes deep
+   blue, then black, the stars come out (small pixel squares, not stretched, also straight overhead) and turn slowly, and the moon
+   (a grey disc with darker patches) rises in the east opposite where the sun set and crosses the sky. Nothing jumps: no cut between
+   a day sky and a night sky. The distant ground in fog meets the sky at the horizon without a band of a different colour, at every
+   hour. A few clouds by day (more on a wet day, see the log's `showery`/`wet`), which slide across slowly and stay over the same
+   land as you drive (drive a kilometre: they pass overhead); under a storm the whole sky is grey cloud and the sun and stars are
+   hidden. Look straight up and all round: no seam or smear in the sky (the picture's edges meet in the west), no stretched stars at
+   the top. The frame rate is as before (the painting costs about 0.7 ms a frame).
+26. The far view and storms seen from afar (0.19.0). The log says `Far view on (the world's grid built in ... ms)` within a few
+   seconds of the race starting, and no `Far view failed` or `chunk ... could not be made` warning. On a clear day (`ShowCoords`: cloud
+   near 0), from the spawn and from the mountain pass and the hill climb's finish (teleport): the country goes on past the loaded
+   ground to the horizon, fading into the sky's colour with no band between: the mountains in the north with snow and rock, the woods
+   standing up dark green, fields, lakes and the sea in the south going on past the coast to the horizon, the main roads as thin grey
+   lines. Where the loaded ground ends (about 1.3 km out with TileRadius 5) there is no gap, no sky showing through, no step, no
+   flicker; buildings and trees appear there (that is expected). Drive a few kilometres fast and teleport: the far ground follows
+   with no hole opening for a frame and nothing poking through the road or the ground near the car. Far mountains and coast do not
+   flicker or shimmer (z-fighting at a distance would show as stripes; report a screenshot if so). Under cloud and in the rain the
+   view closes in smoothly (a few hundred metres in a downpour) and opens again as it clears. With `FarView` off in the cfg, the fog
+   ends at the loaded ground as before. Storms (a showery or wet day in the log; `WeatherSkip` and F2 to find one): a storm some
+   way off shows as dark lumpy cloud over its place, grey at its edge, with grey streaked rain hanging under it down to the horizon;
+   it grows as it comes, and it is overhead when the rain starts; one behind you is behind you (turn round). Away from storms the
+   sky is as in 0.18.0. The frame rate is about as before (with `VerboseLog`, `Tiles: ... ms each` unchanged).
+   In the free-flight view too (0.19.1): the country goes on past the loaded ground to the horizon. With `ShowCoords`, the last line
+   says `far view: N chunks, fog A to B, <camera> draws to C` with C a little over B (thousands on a clear day), in every view.
+27. The land past the far view painted into the sky (0.20.0). The log says `Sky: the land past the far view painted into the sky (N
+   texels, M ms a build)` a few seconds into the race, and no `the land past the far view stopped`. On a clear day (`ShowCoords`:
+   cloud near 0; its last line now `fog A to B, <camera> draws to C` with C about `FarViewDistance` and B up to 40000), from the
+   highest road near the coast looking north and from the spawn: the mountains in the north stand on the horizon past where the far
+   view ends, hazy and lit from the same side as the near hills, their snow lighter. Where the far view ends (about 14 km out) there
+   is no line, no band of sky, no step in brightness or colour; take a screenshot of it from high ground. Drive along: the far
+   mountains keep their places (they do not slide with the car) and do not flicker. The near country is a little clearer than in 0.19.
+   At sunset and at night the painted land darkens with the meshes. A storm between you and the mountains hides them behind its rain.
+   As the rain closes in, the far mountains go first, smoothly. Look south from high ground over the sea: the sea goes on past the far
+   view's edge with no seam (its shine there is a guess; report a screenshot if the far sea is brighter or darker than the near).
+   With `FarSkyline=false`: the fog ends at the far view's edge as in 0.19.1. The frame rate is about as before.
+28. The far view's costs (0.20.1). The sky looks and moves as in 0.20.0: the sun, clouds and storms change smoothly (a new picture
+   about five times a second), nothing torn or half painted, no `the painted sky stopped` in the log. Start a race with the far view
+   on: no hitch when `Far view on` shows in the log (a fraction of a second after the grid is built), and when it comes on the far
+   view is there all at once, with no chunk missing and no hole near the car.
+   The frame rate a little better than 0.20.0, most of all on a slow CPU.
