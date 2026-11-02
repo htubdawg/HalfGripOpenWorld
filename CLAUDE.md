@@ -43,7 +43,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Garage.cs`, `GarageUi.cs`, `GarageRefit.cs` | The garages in a race: circles, opening on stop in neutral, god mode; the window; the live refit (gun copies) |
 | `ShifterHand.cs` | The frame the hand lets go of the active shifter in neutral (what opens a garage and signs on to an event) |
 | `GameMode.cs` | The Open World's game mode: a wreck respawns the car at the spawn (in an event, at its last gate), no AI (solo; in a room, the room's race set so) |
-| `Courses.cs` | The events' courses read from the layout: centre line, start box off the course, grid spot, checkpoint gates (pure arithmetic: the preview lists them, meshcheck checks them) |
+| `Courses.cs` | The events' courses read from the layout: centre line, start box off the course, grid spot and a room race's grid slots, waiting spots, checkpoint gates, time limit (pure arithmetic: the preview lists them, meshcheck checks them) |
+| `EventRoom.cs` | The events in a room: lobbies, one race per course, standings, cut-off and time limit, results, the weapon rules, and their messages; held by the room's host (the arbiter). No Unity types (`tools/eventsim` drives it) |
 | `EventRace.cs` | Solo events: the start boxes and gates drawn, sign-on to the grid, the start lights, timing through the gates, respawn at the last gate, best times in the config |
 | `EventBoard.cs` | The cockpit's leaderboard and lap counter: the event on them, tucked into the screen's edge out of one, brought out by the hand |
 | `Weather.cs` | Draws a day look and a night look from the game's weathers for each race (room seed), with their rain, snow and grip taken out |
@@ -103,6 +104,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   marking ground in a mouth (cyan), surfaces poking through (magenta), paving under the ground (yellow) and steps; other modes draw a
   list of points, random junctions or dead ends, list hubs, places or the roads near a point (see the top of its `Program.cs`).
   Look at the junctions an owner reports with it, and before and after any change to junctions, cuts or `RoadMesh`.
+- `dotnet run -c Release --project tools/eventsim -- [seed]` drives `EventRoom` on pretend machines over a pretend network with
+  delays (joins, leaves, the Host leaving, creates and Starts at once, cut-off, time limit, leaving mid-race, a late joiner, the
+  rules, twenty players at random) and checks every machine agrees with the arbiter; run it after any change to `EventRoom`.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes

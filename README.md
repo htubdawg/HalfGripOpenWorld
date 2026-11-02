@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.21.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.22.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.21.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.22.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -189,6 +189,7 @@ dotnet run -c Release --project tools/stormview -- storms.ppm 12345 10    # room
 dotnet run -c Release --project tools/skyview -- sky.ppm 12345    # room seed
 dotnet run -c Release --project tools/farview -- farview.ppm 14000    # clear-day reach
 dotnet run -c Release --project tools/jview -- at junction.ppm -10708 -10113 100    # world x, z, span
+dotnet run -c Release --project tools/eventsim -- 1    # seed for the pretend network's delays
 ```
 
 `tools/stormview` checks the storms (how much of the land is under rain over 20 room seeds, that a seed always gives the same
@@ -200,5 +201,9 @@ to the fog's end would, its cost, a storm's rain in front of it), and draws its 
 to the fog's end and as the game shows it (as `docs/farview.png`). `tools/jview` draws the tiles' road meshes from above
 round a point, a list of points, random junctions or dead ends, or every hub, with ground showing in a mouth, surfaces poking
 through and steps marked; it also lists the roads near a point and the places (its modes are at the top of its `Program.cs`).
+`tools/eventsim` drives the events' lobbies in a room (`EventRoom.cs`) on pretend machines over a pretend network with delays:
+joins, leaves, the Host leaving, two creates and two Starts at once, races to the finish, the cut-off, the time limit, a player
+leaving the room mid-race, a late joiner, the weapon rules and twenty players at random, checking every machine agrees with the
+arbiter.
 
 The in-game test checklist is in [docs/TESTING.md](docs/TESTING.md); how the generator and the code work, in [docs/DESIGN.md](docs/DESIGN.md).

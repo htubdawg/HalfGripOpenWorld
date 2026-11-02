@@ -18,13 +18,16 @@ namespace HalfGripOpenWorld
 	/// way ProcTrack reads the room seed. If they are not there (no Multiplayer mod, or a version that renamed them), nothing is patched
 	/// and a line is logged; solo play is unaffected.
 	///
-	/// Which values in a packet are positions (Multiplayer protocol 7, read from its Wire.cs, RaceSync.cs and Cues.cs):
-	///   Car        position, velocity, [aim point]      even Vec()s
-	///   Respawned  position                             even
-	///   AiState    (position, velocity) per AI car      even
-	///   Rocket     (position, velocity) per rocket      even
-	///   RocketEnd  position                             even
-	///   Shot       landing point per shot               all
+	/// Which values in a packet are positions (Multiplayer protocol 8, read from its Wire.cs, RaceSync.cs and Cues.cs; the numbers
+	/// are protocol 7's, protocol 8 added ModData 32, the mods' bytes, and AiRespawned 33):
+	///   Car          position, velocity, [aim point]    even Vec()s
+	///   Respawned    position                           even
+	///   AiState      (position, velocity) per AI car    even
+	///   Rocket       (position, velocity) per rocket    even
+	///   RocketEnd    position                           even
+	///   Shot         landing point per shot             all
+	///   AiRespawned  position                           even (no AI races in the Open World: listed so the table is whole)
+	/// ModData carries no Vec(): the Open World's own messages (<see cref="EventRoom"/>) hold no positions.
 	/// </summary>
 	internal static class MultiplayerLink
 	{
@@ -121,6 +124,7 @@ namespace HalfGripOpenWorld
 			(25, "Shot", true),
 			(26, "Rocket", false),
 			(27, "RocketEnd", false),
+			(33, "AiRespawned", false),
 		};
 
 		/// <summary>Patches the Multiplayer mod once, at the first scene load (when every mod has been compiled and loaded).</summary>

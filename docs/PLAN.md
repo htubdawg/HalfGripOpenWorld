@@ -966,6 +966,48 @@ Also: `MultiplayerLink` was written for Multiplayer's protocol 7; it is 8 now. T
 
 Later: ghosting players outside an event near it, AI rivals for a lobby of one, a kick for the Host if it is needed.
 
+### Events in a room: the lobbies' core (0.22.0, PR 1)
+
+On branch `claude/epic-goodall-zas0pe`: compiled against the game, preview, meshcheck and eventsim clean. Nothing changes in game yet
+but the highway's grid spot (pole is now in the eastbound carriageway's inner lane, 12 right of the median, not across both lanes);
+the room's events come in 0.23.0.
+
+- **Grid slots** (`Course.Slots`, the first the grid spot): the circuit its own 12 (staggered pairs); the highway 12 in staggered
+  pairs, one per eastbound lane (`HighwayInner`/`HighwayOuter`, 12 and 23 right of the median), 13 apart; the rally stage and **the
+  hill climb** 8 in single file, 18 apart. The plan said pairs on the climb, but its road is 15 across (narrower than the stage's 16)
+  and a car 6, so it is single file too. `MaxEntrants` is the slot count.
+- **Waiting spots** (`Course.Waits`, 4 each): along the pit lane past the box, two abreast; across the service area and the paddock
+  from the box (past the garage's circle), two by two in front of the vans; on the westbound carriageway past the box towards the
+  tunnel, single file facing west. The game picks the one with no car on it (0.23.0).
+- **Time limit** (`Course.TimeLimit`): the distance at 40 real km/h, rounded up to a half minute: circuit 13:00, rally stage 7:30,
+  hill climb 2:30, highway 15:30.
+- **meshcheck `events`** now checks every slot (a car's 14 by 6 footprint on the road, the highway's on its eastbound carriageway; at
+  the drawn surface's height; off bridges; behind the start line; 20 or more from every gate but a lap's end on the start line; no
+  two overlapping) and spot (the footprint on the box's ground, off the course, out of the box and the garages' circles, at its
+  surface's height, a unit heading, no two overlapping). Tried by moving the slots and spots into each other and into the box: it fails.
+- **`EventRoom.cs`** (no Unity types): the arbiter (the room's host, or this machine alone) holds the lobbies and applies requests
+  (Create with the Guns and Melee rules, Join, Leave, Start, Gate, Retire) in arrival order, then sends the changed lobby whole to
+  everybody (`Lobby`, or `Gone` when its last entrant leaves; `Refused` with the reason to the one asking). One lobby per player
+  (creating or joining leaves the old one). Join is refused while the lobby's race is on or when it is full. Start: the Host only,
+  the course free (no other lobby racing or showing results on it); slots in join order, green 5 s ahead on the race clock, the time
+  limit from green. Gates count only forward, in the current race, while running; the last is the finish, which sets the 45 s
+  cut-off. The race ends when nobody is running, at the cut-off or at the limit (those running are DNF), the results stand 15 s,
+  then those who left go, the rest wait again and the course is free. Leaving mid-race (or the room) is a DNF kept in the results;
+  the Host passes to the next in. Standings: clean finishers by time, finishers who missed a gate, then the running and the out by
+  gates passed and time; ties in join order. Rules: `MayUse` (what a player may fire) and `MayHit` (whether a hit counts):
+  roamers as before; a lobby's player and anybody outside it never, crashes included; two entrants of one race only while both run
+  past green, by the Host's rules (guns, explosions and tire shots under Guns, items under Melee), crashes always. Messages start
+  with a version byte (1); bad or other-version ones are dropped.
+- **For PR 3:** the Multiplayer mod forwards crash damage as an item hit (`Combat.KindOf`: anything not a gun or explosion), so
+  telling a crash from a melee item needs `Combat.Current` (`Source.Crash`) on the attacker's side when the hit is sent.
+- **`tools/eventsim`**: up to 20 pretend machines over a pretend network (50 to 250 ms, in order per sender and receiver), 14
+  scenarios (the plan's list, plus a full lobby, joining a race that is on, a late joiner's snapshot, a lobby of one outside a room,
+  the rules, stale and bad messages, and 3000 random actions by 20 players who come and go), checking after each step that every
+  machine's lobbies match the arbiter's byte for byte. Five seeds pass.
+- **`MultiplayerLink`** checked against protocol 8: the message numbers it converts are unchanged and its hooks are the same; the
+  comment now says protocol 8, and `AiRespawned` (33) is in the table. `ModData` (the mods' bytes) has no positions.
+- `mod.json` asks for HalfGripTools 1.0.6 (`ctx.Net`), version 0.22.0.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
