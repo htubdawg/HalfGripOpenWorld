@@ -999,7 +999,7 @@ the room's events come in 0.23.0.
   pairs, one per eastbound lane (`HighwayInner`/`HighwayOuter`, 12 and 23 right of the median), 13 apart; the rally stage and **the
   hill climb** 8 in single file, 18 apart. The plan said pairs on the climb, but its road is 15 across (narrower than the stage's 16)
   and a car 6, so it is single file too. `MaxEntrants` is the slot count.
-- **Waiting spots** (`Course.Waits`, 4 each): along the pit lane past the box, two abreast; across the service area and the paddock
+- **Waiting spots** (`Course.Waits`, 4 each; one per grid slot since 0.23.3): along the pit lane past the box, two abreast; across the service area and the paddock
   from the box (past the garage's circle), two by two in front of the vans; on the westbound carriageway past the box towards the
   tunnel, single file facing west. The game picks the one with no car on it (0.23.0).
 - **Time limit** (`Course.TimeLimit`): the distance at 40 real km/h, rounded up to a half minute: circuit 13:00, rally stage 7:30,
@@ -1085,6 +1085,24 @@ back and they were still the Host. Giving up only retired them from the race (`R
   holds the course through results nobody is there to see. `Retire` stays in the messages, unused by the game.
 - eventsim's new "leaving a race early": the Host leaves mid-race (B Host, A a DNF, A never back after the results), the last one
   out mid-race (the lobby gone at once, the course free), a lobby of one.
+
+### 0.23.3: more than two players (checked before merging to main)
+
+The owner asked to confirm events work with more than two players. `EventRoom` was built for that (the room's host the arbiter,
+every message to every machine over Multiplayer's full mesh, grid slots dealt in join order up to the course's `MaxEntrants`), and
+eventsim's "many players at random" drives twenty players: every machine agrees with the arbiter over seeds 1, 2, 3, 7 and 42.
+One gap in the game, not the room: each course had 4 waiting spots while a lobby takes 12 (8 on the stage and the climb), so the
+fifth to join was put on the first spot, on top of a car.
+
+- **Waiting spots one per grid slot** (`Course.Waits.Count == MaxEntrants`): the circuit's pit lane 6 rows of two; the service area
+  and the paddock 4 rows of two, `WaitRow` (9) apart from `WaitFirst` (0.12) of the lot's depth, clear of the vans at the back; the
+  highway's westbound carriageway two abreast (one in each lane), 6 rows. meshcheck's `events` checks the count against
+  `MaxEntrants` and every spot's footprint as before (all 40 pass).
+- **No car put on another.** Several lobbies at one course can still outnumber the spots: when every spot is taken the car stays
+  where it is (`Every waiting spot is taken: wait here`).
+- Main's 0.21.1 (the trees' cost) merged in.
+- **Checked:** compiled against the game (`tools/check.sh`), meshcheck passes, eventsim passes. Not yet tested in game with three
+  or more (TESTING.md 34).
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 

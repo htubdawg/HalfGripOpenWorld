@@ -929,7 +929,11 @@ namespace HalfGripOpenWorld
 			noteUntil = Time.unscaledTime + 4f;
 		}
 
-		/// <summary>Moves the car just clear of the box to the course's first waiting spot no other car is on, stopped, facing out.</summary>
+		/// <summary>
+		/// Moves the car just clear of the box to the course's first waiting spot no other car is on, stopped, facing out. A course
+		/// has a spot for every grid slot, but several lobbies there may wait at once: when every spot is taken the car stays where
+		/// it is rather than be put on another car (the two would be thrown apart).
+		/// </summary>
 		private void ToWaiting(Courses.Course c)
 		{
 			Streamer streamer = Streamer.Instance;
@@ -937,14 +941,22 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			Courses.Spot spot = c.Waits[0];
+			Courses.Spot spot = default;
+			bool free = false;
 			foreach (Courses.Spot s in c.Waits)
 			{
 				if (!GameMode.CarNear(Origin.Local(s.X, 0f, s.Z)))
 				{
 					spot = s;
+					free = true;
 					break;
 				}
+			}
+			if (!free)
+			{
+				Notify("Every waiting spot is taken: wait here");
+				Mod.Info("Event: every waiting spot at the " + c.Name + " is taken; the car stays where it is");
+				return;
 			}
 			streamer.BuildAround(spot.X, spot.Z, 1);
 			streamer.Place(spot.X, spot.Z, Quaternion.LookRotation(new Vector3((float)spot.Dx, 0f, (float)spot.Dz), Vector3.up));

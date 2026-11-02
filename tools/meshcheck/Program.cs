@@ -1758,7 +1758,7 @@ internal static class Program
 			}
 			// The waiting spots: each car's footprint on the box's ground (the lot's open surface, the pit lane, the westbound
 			// carriageway), off the course, clear of the box, the garages and each other, at its surface's height.
-			if (c.Waits.Count != Courses.WaitCount)
+			if (c.Waits.Count != c.MaxEntrants)
 			{
 				waits++;
 				Console.WriteLine("  event " + c.Name + ": " + c.Waits.Count + " waiting spots");

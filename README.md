@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.2**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.3**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.2` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.3` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -109,7 +109,8 @@ one has a chequered disc on the map.
   lists the course's lobbies (Host, entrants, weapon rules, state) with **Join**, and **Create** a lobby with its rules: **Guns**
   on or off, **Melee** on or off (the rules are enforced in a later version). Alone (no Multiplayer room) the button is **Start**:
   a lobby of one is a solo run, and it starts at once.
-- Joining or creating moves the car just clear of the box to a waiting spot, so the box is free for the next player. The room is told
+- Joining or creating moves the car just clear of the box to a waiting spot (one for every grid slot: 12 at the circuit and the highway, 8 at the rally stage and the hill climb), so the box is
+  free for the next player; if every spot is taken (several lobbies waiting at once) the car stays where it is. The room is told
   when a lobby opens. While in a lobby a **strip** under the cockpit's board shows the course, the Host, the entrants, the rules and
   the state, with **Start** (the Host's) and **Leave**: point the hand at a button and grab, as with the cockpit's levers (the hand is drawn
   over the strip). The board

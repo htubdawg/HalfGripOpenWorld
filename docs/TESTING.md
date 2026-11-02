@@ -232,3 +232,9 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    to the loaded tiles' edge, nothing popping in or out as you turn the camera (1/3, the mirror) or as you drive; trees near the car
    cast shadows, and their shadows still fall into view from trees just off screen. Hit a tree trunk: solid, at a standstill and at
    speed, on the tile you are on and the next. `TreeShadowReach=0`: no tree shadows, faster still.
+34. Events with three or more players (0.23.3). Three or more in one room. Each opens the circuit's panel and joins one lobby: each
+   car goes to its own waiting spot in the pit lane (two abreast, further along with each player), none on another. The Host
+   starts: all go onto the grid in join order (pole, second beside and behind, third behind pole...), the lights go green together,
+   each board shows `Pn/N` with N the number racing and the positions change as cars pass at gates. Let one finish, one run out the
+   cut-off and one drive off the course: the results list a time, `OUT: THE CUT-OFF` and DNF, the same on every machine. Do the same
+   at the hill climb's paddock (8 spots, 4 rows of two clear of the vans). Send `LogOutput.log` from every machine.
