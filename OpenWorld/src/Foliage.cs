@@ -33,6 +33,8 @@ namespace HalfGripOpenWorld
 		{
 			public string Name;
 			public float Height;
+			/// <summary>How far the model reaches out from its middle (any way round), in its own units.</summary>
+			public float Radius;
 			public readonly List<Part> Parts = new List<Part>();
 		}
 
@@ -135,6 +137,7 @@ namespace HalfGripOpenWorld
 				holder.AddComponent<MeshRenderer>().sharedMaterials = mr.sharedMaterials;
 			}
 			model.Height = max.y - min.y;
+			model.Radius = 0.5f * Mathf.Sqrt((max.x - min.x) * (max.x - min.x) + (max.z - min.z) * (max.z - min.z));
 			if (model.Parts.Count == 0 || model.Height < 0.01f)
 			{
 				return null;
@@ -173,7 +176,7 @@ namespace HalfGripOpenWorld
 			Material needles = Foliage.Plain(shader, new Color(0.18f, 0.34f, 0.18f));
 			for (int k = 0; k < 2; k++)
 			{
-				Model model = new Model { Name = "Pine" + (k + 1), Height = 30f };
+				Model model = new Model { Name = "Pine" + (k + 1), Height = 30f, Radius = 7f };
 				model.Parts.Add(new Part { Mesh = Foliage.Cone(1.1f, 9f, 0f, 6), Materials = new[] { bark }, Local = Matrix4x4.identity });
 				for (int c = 0; c < 3; c++)
 				{
@@ -189,9 +192,11 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// Trees and grass. Each tile's are worked out on its worker thread from its ground texture's own pixels (<see cref="Scatter"/>): one
 	/// try per pixel, with a chance by what the ground is (dense in woods, a few in hedges and gardens, the odd one in the open). They are
-	/// drawn GPU-instanced, all tiles' trees together and the grass of the tiles round the car, so tens of thousands cost a few dozen draw
-	/// calls. Each tree has a trunk collider. Positions are kept relative to their tile, and the draw lists are rebuilt when a tile comes
-	/// or goes, the car moves to another tile (for the grass), or the origin shifts.
+	/// drawn GPU-instanced, so tens of thousands cost a few hundred draw calls. Each tile's trees are drawn in their own calls with that
+	/// tile's bounds: Unity culls an instanced call only as a whole, so one list of every loaded tree (as before 0.21.1) was drawn in
+	/// full every frame, behind the camera and in every shadow cascade, which near the rally stage (36 000 trees loaded) cost most of the
+	/// frame. A tile's draw lists are made once, when it comes, and only moved when the origin shifts; grass is made for the tiles near
+	/// the car only. Trees past <see cref="Mod.TreeShadowReach"/> tiles cast no shadows.
 	/// </summary>
 	internal sealed class Foliage : MonoBehaviour
 	{
@@ -206,22 +211,29 @@ namespace HalfGripOpenWorld
 			public Transform Tile;
 			public int Tx;
 			public int Tz;
-			public Plant[] Trees;
 			public Plant[] Grass;
+			/// <summary>Each tree draw's instances (as <see cref="treeDraws"/>), in the scene's coordinates as of <see cref="PlacedAt"/>.</summary>
+			public Matrix4x4[][] TreeMatrices;
+			/// <summary>Each grass kind's instances, made while the tile is near the car and dropped when it is not.</summary>
+			public Matrix4x4[][] GrassMatrices;
+			/// <summary>The tile's position the matrices were made for; when the origin shifts the tile moves and they follow.</summary>
+			public Vector3 PlacedAt;
+			/// <summary>Bounds round the trees and the grass, relative to the tile.</summary>
+			public Bounds TreeBox;
+			public Bounds GrassBox;
 		}
 
 		private readonly Dictionary<long, TileFoliage> tiles = new Dictionary<long, TileFoliage>();
-		private readonly List<List<Matrix4x4>> treeLists = new List<List<Matrix4x4>>();
 		private readonly List<(Mesh mesh, int sub, Material material)> treeDraws = new List<(Mesh, int, Material)>();
-		private readonly List<Matrix4x4>[] grassLists = new List<Matrix4x4>[GrassKinds];
 		private Mesh tuft;
 		private Material[] grassMaterials;
-		private readonly Matrix4x4[] batch = new Matrix4x4[1023];
-		private bool dirty;
 		private int carTx = int.MinValue, carTz = int.MinValue;
 		private bool broken;
-		/// <summary>Where each tree model's draw lists start in <see cref="treeLists"/>.</summary>
+		/// <summary>Where each tree model's draws start in <see cref="treeDraws"/>.</summary>
 		private int[] modelStart = new int[0];
+
+		/// <summary>The most instances one call takes.</summary>
+		private const int Batch = 1023;
 
 		/// <summary>The height a tree of scale 1 is drawn at, whatever its model's own size: about 9 m.</summary>
 		private const float TreeHeight = 30f;
@@ -237,10 +249,6 @@ namespace HalfGripOpenWorld
 				Grass(shader, new Color(0.80f, 0.66f, 0.30f)),
 				Grass(shader, new Color(0.47f, 0.47f, 0.27f)),
 			};
-			for (int k = 0; k < GrassKinds; k++)
-			{
-				grassLists[k] = new List<Matrix4x4>();
-			}
 			modelStart = new int[Trees.Models.Count];
 			for (int m = 0; m < Trees.Models.Count; m++)
 			{
@@ -251,21 +259,9 @@ namespace HalfGripOpenWorld
 					for (int sub = 0; sub < part.Mesh.subMeshCount && sub < part.Materials.Length; sub++)
 					{
 						treeDraws.Add((part.Mesh, sub, part.Materials[sub]));
-						treeLists.Add(new List<Matrix4x4>());
 					}
 				}
 			}
-			Origin.Shifted += OnShift;
-		}
-
-		private void OnDestroy()
-		{
-			Origin.Shifted -= OnShift;
-		}
-
-		private void OnShift(Vector3 delta)
-		{
-			dirty = true;
 		}
 
 		/// <summary>A tree's drawn height (scale 1 is <see cref="TreeHeight"/>), for its trunk collider.</summary>
@@ -276,26 +272,140 @@ namespace HalfGripOpenWorld
 
 		internal void Add(long key, Transform tile, int tx, int tz, Plant[] trees, Plant[] grass)
 		{
-			tiles[key] = new TileFoliage { Tile = tile, Tx = tx, Tz = tz, Trees = trees, Grass = grass };
-			dirty = true;
+			TileFoliage t = new TileFoliage { Tile = tile, Tx = tx, Tz = tz, Grass = grass, PlacedAt = tile.position };
+			t.TreeMatrices = TreeMatrices(trees, t.PlacedAt, out t.TreeBox);
+			t.GrassBox = Box(grass, 1.5f, 4f);
+			tiles[key] = t;
 		}
 
 		internal void Remove(long key)
 		{
-			if (tiles.Remove(key))
-			{
-				dirty = true;
-			}
+			tiles.Remove(key);
 		}
 
-		/// <summary>The car's tile, each frame: the grass follows it.</summary>
+		/// <summary>The car's tile, each frame: the grass and the trees' shadows follow it.</summary>
 		internal void Follow(int tx, int tz)
 		{
-			if (tx != carTx || tz != carTz)
+			carTx = tx;
+			carTz = tz;
+		}
+
+		/// <summary>A tile's trees as each draw's instances, placed at the tile's position <paramref name="at"/>; and their bounds.</summary>
+		private Matrix4x4[][] TreeMatrices(Plant[] trees, Vector3 at, out Bounds box)
+		{
+			box = new Bounds();
+			if (trees == null || trees.Length == 0 || Trees.Models.Count == 0)
 			{
-				carTx = tx;
-				carTz = tz;
-				dirty = true;
+				return null;
+			}
+			int[] counts = new int[treeDraws.Count];
+			foreach (Plant p in trees)
+			{
+				int index = p.Model % Trees.Models.Count;
+				int k = modelStart[index];
+				foreach (Trees.Part part in Trees.Models[index].Parts)
+				{
+					int subs = Math.Min(part.Mesh.subMeshCount, part.Materials.Length);
+					for (int sub = 0; sub < subs; sub++)
+					{
+						counts[k + sub]++;
+					}
+					k += subs;
+				}
+			}
+			Matrix4x4[][] lists = new Matrix4x4[treeDraws.Count][];
+			for (int k = 0; k < lists.Length; k++)
+			{
+				lists[k] = counts[k] > 0 ? new Matrix4x4[counts[k]] : null;
+				counts[k] = 0;
+			}
+			Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+			Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+			foreach (Plant p in trees)
+			{
+				int index = p.Model % Trees.Models.Count;
+				Trees.Model model = Trees.Models[index];
+				float scale = p.Scale * TreeHeight / model.Height;
+				Matrix4x4 place = Matrix4x4.TRS(at + p.Pos, Quaternion.Euler(0f, p.Yaw, 0f), Vector3.one * scale);
+				int k = modelStart[index];
+				foreach (Trees.Part part in model.Parts)
+				{
+					Matrix4x4 full = place * part.Local;
+					int subs = Math.Min(part.Mesh.subMeshCount, part.Materials.Length);
+					for (int sub = 0; sub < subs; sub++)
+					{
+						lists[k + sub][counts[k + sub]++] = full;
+					}
+					k += subs;
+				}
+				// The crown's reach round the trunk, with room for the waving.
+				float r = model.Radius * scale + 2f;
+				min = Vector3.Min(min, p.Pos - new Vector3(r, 1f, r));
+				max = Vector3.Max(max, p.Pos + new Vector3(r, p.Scale * TreeHeight + 2f, r));
+			}
+			box.SetMinMax(min, max);
+			return lists;
+		}
+
+		/// <summary>Bounds round plants, <paramref name="side"/> out to each side and <paramref name="up"/> above their feet.</summary>
+		private static Bounds Box(Plant[] plants, float side, float up)
+		{
+			Bounds box = new Bounds();
+			if (plants == null || plants.Length == 0)
+			{
+				return box;
+			}
+			Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+			Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+			foreach (Plant p in plants)
+			{
+				min = Vector3.Min(min, p.Pos);
+				max = Vector3.Max(max, p.Pos);
+			}
+			box.SetMinMax(min - new Vector3(side, 1f, side), max + new Vector3(side, up, side));
+			return box;
+		}
+
+		/// <summary>A near tile's grass as each kind's instances, placed at the tile's position <paramref name="at"/>.</summary>
+		private static Matrix4x4[][] GrassMatrices(Plant[] grass, Vector3 at)
+		{
+			int[] counts = new int[GrassKinds];
+			foreach (Plant p in grass)
+			{
+				counts[p.Model]++;
+			}
+			Matrix4x4[][] lists = new Matrix4x4[GrassKinds][];
+			for (int k = 0; k < GrassKinds; k++)
+			{
+				lists[k] = counts[k] > 0 ? new Matrix4x4[counts[k]] : null;
+				counts[k] = 0;
+			}
+			foreach (Plant p in grass)
+			{
+				lists[p.Model][counts[p.Model]++] = Matrix4x4.TRS(at + p.Pos, Quaternion.Euler(0f, p.Yaw, 0f), Vector3.one * p.Scale);
+			}
+			return lists;
+		}
+
+		/// <summary>Moves a tile's instances by <paramref name="delta"/> (the origin shifted; heights never change, but y costs nothing).</summary>
+		private static void Move(Matrix4x4[][] lists, Vector3 delta)
+		{
+			if (lists == null)
+			{
+				return;
+			}
+			foreach (Matrix4x4[] list in lists)
+			{
+				if (list == null)
+				{
+					continue;
+				}
+				for (int i = 0; i < list.Length; i++)
+				{
+					list[i].m03 += delta.x;
+					list[i].m13 += delta.y;
+					list[i].m23 += delta.z;
+				}
 			}
 		}
 
@@ -305,19 +415,46 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			if (dirty)
-			{
-				Rebuild();
-			}
 			try
 			{
-				for (int k = 0; k < treeDraws.Count; k++)
+				int reach = Mod.GrassReach.Value;
+				int shadows = Mod.TreeShadowReach.Value;
+				foreach (TileFoliage t in tiles.Values)
 				{
-					Draw(treeDraws[k].mesh, treeDraws[k].sub, treeDraws[k].material, treeLists[k], ShadowCastingMode.On);
-				}
-				for (int k = 0; k < GrassKinds; k++)
-				{
-					Draw(tuft, 0, grassMaterials[k], grassLists[k], ShadowCastingMode.Off);
+					if (t.Tile == null)
+					{
+						continue;
+					}
+					Vector3 at = t.Tile.position;
+					if (at != t.PlacedAt)
+					{
+						Move(t.TreeMatrices, at - t.PlacedAt);
+						Move(t.GrassMatrices, at - t.PlacedAt);
+						t.PlacedAt = at;
+					}
+					int near = Math.Max(Math.Abs(t.Tx - carTx), Math.Abs(t.Tz - carTz));
+					if (t.TreeMatrices != null)
+					{
+						Bounds box = new Bounds(t.TreeBox.center + at, t.TreeBox.size);
+						ShadowCastingMode cast = near <= shadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+						for (int k = 0; k < treeDraws.Count; k++)
+						{
+							Draw(treeDraws[k].mesh, treeDraws[k].sub, treeDraws[k].material, t.TreeMatrices[k], box, cast);
+						}
+					}
+					if (t.Grass != null && t.Grass.Length > 0 && near <= reach)
+					{
+						t.GrassMatrices ??= GrassMatrices(t.Grass, at);
+						Bounds box = new Bounds(t.GrassBox.center + at, t.GrassBox.size);
+						for (int k = 0; k < GrassKinds; k++)
+						{
+							Draw(tuft, 0, grassMaterials[k], t.GrassMatrices[k], box, ShadowCastingMode.Off);
+						}
+					}
+					else
+					{
+						t.GrassMatrices = null;
+					}
 				}
 			}
 			catch (Exception e)
@@ -328,67 +465,26 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		private void Draw(Mesh mesh, int sub, Material material, List<Matrix4x4> list, ShadowCastingMode shadows)
+		/// <summary>
+		/// One draw's instances of a tile, with the tile's bounds, so Unity leaves the whole call out for a camera (or a shadow cascade)
+		/// that cannot see the tile.
+		/// </summary>
+		private static void Draw(Mesh mesh, int sub, Material material, Matrix4x4[] list, Bounds box, ShadowCastingMode shadows)
 		{
-			if (mesh == null || material == null)
+			if (mesh == null || material == null || list == null)
 			{
 				return;
 			}
-			for (int start = 0; start < list.Count; start += batch.Length)
+			RenderParams rp = new RenderParams(material)
 			{
-				int n = Math.Min(batch.Length, list.Count - start);
-				list.CopyTo(start, batch, 0, n);
-				Graphics.DrawMeshInstanced(mesh, sub, material, batch, n, null, shadows, true, 0);
-			}
-		}
-
-		/// <summary>The draw lists from every tile's plants, in the scene's current coordinates.</summary>
-		private void Rebuild()
-		{
-			dirty = false;
-			foreach (List<Matrix4x4> list in treeLists)
+				worldBounds = box,
+				shadowCastingMode = shadows,
+				receiveShadows = true,
+				layer = 0,
+			};
+			for (int start = 0; start < list.Length; start += Batch)
 			{
-				list.Clear();
-			}
-			foreach (List<Matrix4x4> list in grassLists)
-			{
-				list.Clear();
-			}
-			foreach (TileFoliage t in tiles.Values)
-			{
-				if (t.Tile == null)
-				{
-					continue;
-				}
-				Vector3 at = t.Tile.position;
-				if (t.Trees != null && Trees.Models.Count > 0)
-				{
-					foreach (Plant p in t.Trees)
-					{
-						int index = p.Model % Trees.Models.Count;
-						Trees.Model model = Trees.Models[index];
-						Matrix4x4 place = Matrix4x4.TRS(at + p.Pos, Quaternion.Euler(0f, p.Yaw, 0f), Vector3.one * (p.Scale * TreeHeight / model.Height));
-						int k = modelStart[index];
-						foreach (Trees.Part part in model.Parts)
-						{
-							Matrix4x4 full = place * part.Local;
-							int subs = Math.Min(part.Mesh.subMeshCount, part.Materials.Length);
-							for (int sub = 0; sub < subs; sub++)
-							{
-								treeLists[k + sub].Add(full);
-							}
-							k += subs;
-						}
-					}
-				}
-				int reach = Mod.GrassReach.Value;
-				if (t.Grass != null && reach > 0 && Math.Abs(t.Tx - carTx) <= reach && Math.Abs(t.Tz - carTz) <= reach)
-				{
-					foreach (Plant p in t.Grass)
-					{
-						grassLists[p.Model].Add(Matrix4x4.TRS(at + p.Pos, Quaternion.Euler(0f, p.Yaw, 0f), Vector3.one * p.Scale));
-					}
-				}
+				Graphics.RenderMeshInstanced(rp, mesh, sub, list, Math.Min(Batch, list.Length - start), start);
 			}
 		}
 

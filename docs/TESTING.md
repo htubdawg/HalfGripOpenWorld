@@ -227,3 +227,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    closed; `EVENT` over the box shows no lobby). Two players: A creates, B joins, A starts, then A drives off the course: B's strip
    (after B's race) shows `Host B`, A's never comes back, and B's results list A as DNF. Then B starts again and drives off: the
    lobby closes at once and `EVENT` over the box no longer says `RACE ON`.
+33. The trees' cost (0.21.1). Teleport to `Rally stage (start)` and drive through the woods: the frame rate much better than 0.21.0,
+   no hitch as tiles load or the origin shifts (`Origin shift` lines under 6 ms or so in the verbose log). Woods look as before out
+   to the loaded tiles' edge, nothing popping in or out as you turn the camera (1/3, the mirror) or as you drive; trees near the car
+   cast shadows, and their shadows still fall into view from trees just off screen. Hit a tree trunk: solid, at a standstill and at
+   speed, on the tile you are on and the next. `TreeShadowReach=0`: no tree shadows, faster still.
