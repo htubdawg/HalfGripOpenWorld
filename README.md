@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.1**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.1` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -111,7 +111,8 @@ one has a chequered disc on the map.
   a lobby of one is a solo run, and it starts at once.
 - Joining or creating moves the car just clear of the box to a waiting spot, so the box is free for the next player. The room is told
   when a lobby opens. While in a lobby a **strip** under the cockpit's board shows the course, the Host, the entrants, the rules and
-  the state, with **Start** (the Host's) and **Leave**: point the hand at a button and grab, as with the cockpit's levers. The board
+  the state, with **Start** (the Host's) and **Leave**: point the hand at a button and grab, as with the cockpit's levers (the hand is drawn
+  over the strip). The board
   lists the lobby's entrants.
 - **One race per course at a time:** the first Start takes the course; another lobby's Start reads "Race on" until its results are
   done. Races on different courses run at the same time, and the rest of the room roams.
@@ -126,7 +127,8 @@ one has a chequered disc on the map.
   Driving more than about 150 m from the course for 10 seconds (or teleporting) puts you out of the race (you stay in the lobby).
 - The race ends when everybody has finished or is out, 45 seconds after the first finisher, or at the course's time limit (circuit
   13:00, rally stage 7:30, hill climb 2:30, highway 15:30); those still running are out (DNF). The results stand on the board for 15
-  seconds, then the course is free and the lobby waits again. **Leave** in a race is a DNF.
+  seconds, then the course is free and the lobby waits again. The strip is hidden from the Start until then, so only the board
+  is on the screen while you race; driving away from the course puts you out.
 - Your best time for each course is kept in `halfgrip.openworld.cfg` under `[Best times]` (never in the game's save); set one to 0
   to start again. A course a new version lays out differently starts with no best time.
 - Out of a lobby the board is tucked into the right edge of the screen. Put the hand over the sliver that shows and it slides out

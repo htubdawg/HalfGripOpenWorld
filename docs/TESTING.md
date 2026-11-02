@@ -207,9 +207,10 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    (alone)`), the cursor free, `START A SOLO RUN` with Guns and Melee buttons and **Start**. Esc closes it (no pause menu); drive out
    and back in to open it again. Press Start: the car goes to the grid's pole slot (the log says `Event: created a lobby at the
    Circuit` then `Event: on the grid at the Circuit, slot 1`), the lights count down about 5 s later, and the race runs as before.
-   The strip under the board shows `CIRCUIT  Host You  1/12`, `RACING`, and Leave: point the hand at **Leave** and grab: out of
-   the event, the gates gone, the board tucked away. Race to the finish: the board shows the time and best, then about 15 s later
-   the strip says `WAITING: start when ready`; grab **Start** on the strip to race again from the grid.
+   The strip under the board disappears as the car goes onto the grid and stays away through the race and the results (0.23.1):
+   only the board. Race to the finish: the board shows the time and best, then about 15 s later the strip is back saying
+   `WAITING: start when ready`. Point the hand at **Start**: the hand shows over the strip (0.23.1), not under it; grab to race
+   again. Grab **Leave** while waiting: out of the lobby, the board tucked away.
 31. Events in a room, two players (0.23.0). Both in the Open World in one Multiplayer room. Player A opens the circuit's panel:
    `No lobby here yet`; **Create lobby** with Guns off. A's car moves to a waiting spot beside the box (further along the pit
    lane); B sees `A OPENED A LOBBY AT THE CIRCUIT`, and `EVENT  1 LOBBY` over the box. B opens the panel: A's lobby, 1/12, Guns
@@ -219,4 +220,5 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    when one passes the other at a gate. A finishes: B's board shows `Cut-off 0:45` counting down. If B finishes, the results show at
    once on both boards (`Results`, names and times), the log lists them; if not, at the cut-off B is out (`OUT: THE CUT-OFF`). 15
    s later both strips say waiting again. While A's lobby races, B leaves and creates a second lobby at the circuit: its Start reads
-   `Race on` until A's results are done. Leave mid-race: that player is a DNF in the results. Send `LogOutput.log` from both.
+   `Race on` until A's results are done. Driving away from the course mid-race (more than 150 m for 10 s): that player is a DNF in the
+   results. Send `LogOutput.log` from both.

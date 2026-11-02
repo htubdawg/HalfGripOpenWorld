@@ -1040,6 +1040,17 @@ On branch `claude/epic-goodall-zas0pe`: compiled against the game, meshcheck and
   painted into the tiles' map pictures, which MiniMap reads; a state change would repaint those tiles). To agree with the owner.
 - Not yet: the weapon rules (PR 3, 0.24.0); the panel and README say so.
 
+### 0.23.1: the strip off the screen in the race, the hand over it (the owner's notes on 0.23.0)
+
+- **The strip goes once the race begins**: from the Start (the grid) through the race and its results it is hidden
+  (`EventRace.Strip` is false unless the lobby waits), so only the board is on the screen. Leaving mid-race is then by driving off
+  the course (a DNF); a Leave there could come back as a small key if the owner wants one.
+- **The hand over the strip**: the hand is the game's sprites in the cockpit (`Grabber.idleSprite`, `interactibleSprite`, those under
+  `handIndicator`), and IMGUI is always drawn over the scene, so the strip hid it. After the strip, each sprite the hand shows that
+  overlaps it is drawn again on the GUI (its corners projected through the hand's camera, turned and flipped as it is, its colour), so
+  the hand points over the buttons; elsewhere the game's own drawing is untouched. The panel needs nothing: it frees the hardware
+  cursor, which the system draws over everything.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.

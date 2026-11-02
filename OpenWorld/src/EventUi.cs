@@ -152,6 +152,101 @@ namespace HalfGripOpenWorld
 			{
 				race.LeaveLobby();
 			}
+			HandOnTop(r, scale);
+		}
+
+		/// <summary>The hand's sprites, as the game shows them (the pointer, the hover hand, the holding hand under its indicator).</summary>
+		private readonly List<SpriteRenderer> handSprites = new List<SpriteRenderer>();
+		private Grabber handSpritesOf;
+
+		/// <summary>
+		/// The hand drawn again over <paramref name="area"/>: the game draws it as sprites in the cockpit, and Unity's immediate-mode GUI
+		/// is always drawn over the scene, so the strip hid the hand pointing at its buttons. Each sprite the hand shows now is drawn
+		/// where the camera puts it (its corners projected, turned as it is), only when it overlaps the strip, so nowhere else changes.
+		/// </summary>
+		private void HandOnTop(Rect area, float scale)
+		{
+			if (Event.current.type != EventType.Repaint || hand == null || !hand.enabled || hand.viewCamera == null)
+			{
+				return;
+			}
+			if (handSpritesOf != hand)
+			{
+				handSpritesOf = hand;
+				handSprites.Clear();
+				if (hand.idleSprite != null)
+				{
+					handSprites.Add(hand.idleSprite);
+				}
+				if (hand.interactibleSprite != null)
+				{
+					handSprites.Add(hand.interactibleSprite);
+				}
+				if (hand.handIndicator != null)
+				{
+					handSprites.AddRange(hand.handIndicator.GetComponentsInChildren<SpriteRenderer>(true));
+				}
+			}
+			foreach (SpriteRenderer r in handSprites)
+			{
+				if (r != null && r.enabled && r.gameObject.activeInHierarchy && r.sprite != null)
+				{
+					try
+					{
+						DrawSprite(r, hand.viewCamera, area, scale);
+					}
+					catch (Exception)
+					{
+						// A sprite packed so tightly it has no rectangle: left as the game draws it.
+					}
+				}
+			}
+		}
+
+		/// <summary>One of the hand's sprites drawn on the GUI where the camera shows it, if it overlaps <paramref name="area"/>.</summary>
+		private static void DrawSprite(SpriteRenderer r, Camera cam, Rect area, float scale)
+		{
+			Sprite sprite = r.sprite;
+			Texture2D tex = sprite.texture;
+			Rect tr = sprite.textureRect;
+			float ppu = sprite.pixelsPerUnit;
+			Vector2 min = (sprite.textureRectOffset - sprite.pivot) / ppu, max = min + tr.size / ppu;
+			Vector2 Gui(float x, float y)
+			{
+				Vector3 s = cam.WorldToScreenPoint(r.transform.TransformPoint(new Vector3(x, y, 0f)));
+				return new Vector2(s.x / scale, (Screen.height - s.y) / scale);
+			}
+			Vector3 depth = cam.WorldToScreenPoint(r.transform.position);
+			if (depth.z <= 0f || tex == null)
+			{
+				return;
+			}
+			Vector2 p0 = Gui(min.x, min.y), p1 = Gui(max.x, min.y), p2 = Gui(max.x, max.y), p3 = Gui(min.x, max.y);
+			Rect bounds = Rect.MinMaxRect(Mathf.Min(p0.x, p1.x, p2.x, p3.x), Mathf.Min(p0.y, p1.y, p2.y, p3.y), Mathf.Max(p0.x, p1.x, p2.x, p3.x), Mathf.Max(p0.y, p1.y, p2.y, p3.y));
+			if (!bounds.Overlaps(area))
+			{
+				return;
+			}
+			Vector2 centre = (p0 + p2) * 0.5f;
+			float width = (p1 - p0).magnitude, height = (p3 - p0).magnitude;
+			float angle = Mathf.Atan2(p1.y - p0.y, p1.x - p0.x) * Mathf.Rad2Deg;
+			// The sprite's rows run up; the GUI's down: drawn with its top at p3's side (the texture coordinates are flipped by the GUI).
+			Rect uv = new Rect(tr.x / tex.width, tr.y / tex.height, tr.width / tex.width, tr.height / tex.height);
+			if (r.flipX)
+			{
+				uv = new Rect(uv.xMax, uv.y, -uv.width, uv.height);
+			}
+			if (r.flipY)
+			{
+				uv = new Rect(uv.x, uv.yMax, uv.width, -uv.height);
+			}
+			Matrix4x4 before = GUI.matrix;
+			Color colour = GUI.color;
+			GUI.matrix = before * Matrix4x4.TRS(centre, Quaternion.Euler(0f, 0f, angle), Vector3.one) * Matrix4x4.TRS(-centre, Quaternion.identity, Vector3.one);
+			GUI.color = r.color;
+			GUI.DrawTextureWithTexCoords(new Rect(centre.x - width * 0.5f, centre.y - height * 0.5f, width, height), tex, uv);
+			GUI.color = colour;
+			GUI.matrix = before;
 		}
 
 		/// <summary>

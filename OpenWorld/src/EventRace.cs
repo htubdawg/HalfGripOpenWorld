@@ -1242,14 +1242,15 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// The strip under the board while in a lobby, for <see cref="GarageUi"/>: its two lines, and whether Start shows (to the Host)
-		/// and can be pressed (the lobby waiting, the course free). False out of a lobby.
+		/// and can be pressed (the course free). False out of a lobby, and from the Start until the lobby waits again: on the grid and
+		/// in the race nothing should be on the screen but the board (the owner's ask after 0.23.0).
 		/// </summary>
 		internal bool Strip(out string top, out string bottom, out bool host, out bool canStart, out string startLabel)
 		{
 			top = bottom = startLabel = null;
 			host = canStart = false;
 			EventRoom.Lobby mine = room != null ? room.Mine : null;
-			if (mine == null || mine.Course < 0 || mine.Course >= Courses.All.Count)
+			if (mine == null || mine.Course < 0 || mine.Course >= Courses.All.Count || mine.State != EventRoom.LobbyState.Waiting)
 			{
 				return false;
 			}
