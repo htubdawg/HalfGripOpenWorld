@@ -926,7 +926,8 @@ tree distance). A tile's matrices are made once when it comes and moved when the
 tiles round the car's (the car's at once, then a tile a frame; taken off two tiles further out); far cars in a room are moved by
 their own players, so they need none.
 
-- **Checked:** compiled against the game (`tools/check.sh`), meshcheck plants passes. Not yet tested in game (TESTING.md 30).
+- **Checked:** compiled against the game (`tools/check.sh`), meshcheck plants passes. **Owner tested 0.21.1: "looks good, FPS back
+  to normal".**
 
 ## Next: events (proposed, to agree with the owner)
 
