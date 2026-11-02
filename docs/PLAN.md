@@ -906,6 +906,29 @@ real with 33 checkpoints. Read from the layout like the others; generation is un
   road's height, none respawning on a bridge, the grid on the road, the box whole on the westbound carriageway behind the grid).
   Not yet tested in game (TESTING.md 29).
 
+## The trees' cost (0.21.1; the owner's report of big frame drops in the woods)
+
+The owner's log ended at the rally stage. Counted offline with `Foliage.Scatter` over the ~97 tiles loaded round places in the log:
+spawn 2 153 trees, Kingsbridge 3 329, the circuit 9 358, the rally stage 36 071 (up to 533 a tile; the whole Forest map has ~1 900).
+The trees are light (40 to 78 vertices) but:
+
+- All loaded trees were in one list drawn in batches of 1023 in no order. Unity culls an instanced call only as a whole, by bounds
+  round all its instances, so nothing was ever left out: trees behind the camera and in every shadow cascade, every frame, with
+  the whole list (4.6 MB near the rally stage) copied into the batches each frame.
+- Every tile coming or going, the car crossing into another tile and every origin shift rebuilt every tree's matrix on the main thread.
+- Every loaded tree had a trunk collider (36 000 near the rally stage): each tile's hundreds made as it came (the log's tile build
+  time rose from 1.3 to 1.7 ms on average) and all moved on every shift (shifts rose from about 4.5 to 9.5 ms there).
+
+Fixed: each tile's trees are drawn in their own calls (`Graphics.RenderMeshInstanced`) with that tile's bounds, so Unity leaves out
+the tiles a camera or a shadow cascade cannot see; nothing is drawn less far than before (the far view's canopy hardly shows, so no
+tree distance). A tile's matrices are made once when it comes and moved when the origin shifts; grass's only for the tiles in
+`GrassReach`, freed past it. Trees past `TreeShadowReach` (new, default 2) tiles cast no shadows. Trunk colliders only on the 3 x 3
+tiles round the car's (the car's at once, then a tile a frame; taken off two tiles further out); far cars in a room are moved by
+their own players, so they need none.
+
+- **Checked:** compiled against the game (`tools/check.sh`), meshcheck plants passes. **Owner tested 0.21.1: "looks good, FPS back
+  to normal".**
+
 ## Next: events (proposed, to agree with the owner)
 
 The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road

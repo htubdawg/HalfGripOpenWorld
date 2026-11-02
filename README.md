@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.21.0**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.21.1**, made for game version 0.418 and HalfGripTools 1.0.2 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.21.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.21.1` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -129,6 +129,7 @@ the same ground.
 | Map | `RespawnSeconds` | 3 | Solo: seconds after a wreck before the car is back at the start or the respawn garage (1 to 30). |
 | World | `TileRadius` | 5 | Tiles kept loaded around the car (5 is about 1.3 km; past them the far view, or with it off the fog's end). |
 | World | `GrassReach` | 2 | Tiles round the car whose grass is drawn (0 turns grass off). |
+| World | `TreeShadowReach` | 2 | Tiles round the car whose trees cast shadows; further off they are drawn without (less costs less frame time in the woods). |
 | World | `FarView` | true | Draws the whole world at low detail past the loaded tiles, and lets you see as far as the weather allows. Off, the fog ends where the tiles end, as before 0.19.0. |
 | World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |

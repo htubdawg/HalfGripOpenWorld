@@ -13,6 +13,11 @@ namespace HalfGripOpenWorld
 		{
 			internal static int Value = 2;
 		}
+
+		internal static class TreeShadowReach
+		{
+			internal static int Value = 2;
+		}
 	}
 
 	/// <summary>Stand-in: the checks never run in an Open World scene.</summary>

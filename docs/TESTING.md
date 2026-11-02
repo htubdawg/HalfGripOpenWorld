@@ -201,3 +201,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    carriageways, posts outside the shoulders; none stands on a bridge with its respawn there. Get wrecked mid-race: back just past
    the last gate, on the eastbound carriageway, facing east. The finish gate (white) is just short of the east tunnel mouth, before
    it; the best time goes under `[Best times]` as `Highway_33427_1`.
+30. The trees' cost (0.21.1). Teleport to `Rally stage (start)` and drive through the woods: the frame rate much better than 0.21.0,
+   no hitch as tiles load or the origin shifts (`Origin shift` lines under 6 ms or so in the verbose log). Woods look as before out
+   to the loaded tiles' edge, nothing popping in or out as you turn the camera (1/3, the mirror) or as you drive; trees near the car
+   cast shadows, and their shadows still fall into view from trees just off screen. Hit a tree trunk: solid, at a standstill and at
+   speed, on the tile you are on and the next. `TreeShadowReach=0`: no tree shadows, faster still.
