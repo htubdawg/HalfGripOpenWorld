@@ -140,6 +140,13 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>Whether another car (a room's player, as the game's stand-in enemy) is within a car's room of this scene point: an event's waiting spot is taken.</summary>
+		internal static bool CarNear(Vector3 scenePoint)
+		{
+			List<EnemyController> others = Instance != null && Instance.tm != null ? Traverse.Create(Instance.tm).Field("enemies").GetValue<List<EnemyController>>() : null;
+			return Taken(others, scenePoint);
+		}
+
 		private static bool Taken(List<EnemyController> others, Vector3 slot)
 		{
 			if (others == null)

@@ -46,6 +46,8 @@ namespace HalfGripOpenWorld
 			Start = 4,
 			Gate = 5,
 			Retire = 6,
+			/// <summary>This player's world is built: send them every lobby (one that loads after the host's missed them).</summary>
+			Hello = 7,
 			// From the arbiter.
 			Lobby = 20,
 			Gone = 21,
@@ -319,6 +321,12 @@ namespace HalfGripOpenWorld
 			Request(new Writer(Msg.Retire).I32(race).Done(), now);
 		}
 
+		/// <summary>This machine's world is built (or the room changed): the arbiter sends every lobby.</summary>
+		internal void Hello(double now)
+		{
+			Request(new Writer(Msg.Hello).Done(), now);
+		}
+
 		private void Request(byte[] data, double now)
 		{
 			if (link.Arbiter)
@@ -385,6 +393,11 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			Snapshot(id);
+		}
+
+		private void Snapshot(ulong id)
+		{
 			foreach (Lobby l in lobbies.Values)
 			{
 				link.ToOne(id, LobbyMessage(l, Why.Snapshot, 0UL));
@@ -463,6 +476,12 @@ namespace HalfGripOpenWorld
 						break;
 					case Msg.Retire:
 						Retire(from, r.I32(), now);
+						break;
+					case Msg.Hello:
+						if (from != link.Local)
+						{
+							Snapshot(from);
+						}
 						break;
 				}
 			}

@@ -45,7 +45,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `GameMode.cs` | The Open World's game mode: a wreck respawns the car at the spawn (in an event, at its last gate), no AI (solo; in a room, the room's race set so) |
 | `Courses.cs` | The events' courses read from the layout: centre line, start box off the course, grid spot and a room race's grid slots, waiting spots, checkpoint gates, time limit (pure arithmetic: the preview lists them, meshcheck checks them) |
 | `EventRoom.cs` | The events in a room: lobbies, one race per course, standings, cut-off and time limit, results, the weapon rules, and their messages; held by the room's host (the arbiter). No Unity types (`tools/eventsim` drives it) |
-| `EventRace.cs` | Solo events: the start boxes and gates drawn, sign-on to the grid, the start lights, timing through the gates, respawn at the last gate, best times in the config |
+| `EventRace.cs` | The events in the game: the start boxes and gates drawn, the course's panel, following the local player's lobby (waiting spot, grid slot, start lights to the lobby's start time, timing through the gates, gates sent to the arbiter), respawn at the last gate, the board's text, best times in the config |
+| `EventLink.cs` | `EventRoom`'s messages over HalfGripTools' `ctx.Net` (the room's host the arbiter; alone, this machine); watches the room for a change |
+| `EventUi.cs` | Part of `GarageUi`: the course's panel (lobbies, Join, Create with the rules) and the lobby strip under the board (Start, Leave, pressed with the hand) |
 | `EventBoard.cs` | The cockpit's leaderboard and lap counter: the event on them, tucked into the screen's edge out of one, brought out by the hand |
 | `Weather.cs` | Draws a day look and a night look from the game's weathers for each race (room seed), with their rain, snow and grip taken out |
 | `Storms.cs` | The weather over the world: rain cells born, drifting with the wind and dying, as a pure function of room seed, position and race time; wetness looking back; the snow line |

@@ -99,6 +99,8 @@ namespace HalfGripOpenWorld
 				MultiplayerLink.Hook(ctx);
 				WorldScene.OnSceneLoaded(scene);
 			});
+			// The events' lobbies in a room go over HalfGripTools' channel between this mod's copies (EventRoom, EventLink).
+			EventLink.Hook(ctx);
 			// In the game's own Controls list (shown while their debug setting is on), so they can be rebound there and never take a key
 			// the game or another mod has: the game's are F1, F3, F4, F6, F8 (its bug report), F9, F10 and F12.
 			TeleportKey = ctx.Keys.Add(KeyCode.F7, "Teleport (Open World)", Controls.Section.Race, () => Teleport.Value);

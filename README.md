@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.22.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.22.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -103,20 +103,34 @@ carriageway at the west end, between the start line and the tunnel (drive west a
 stop in it; you are put on the grid on the eastbound side, facing east). "EVENT" floats over each box when you are near, and each
 one has a chequered disc on the map.
 
-- Drive into the box: a panel like the garage's shows the event, its length, laps, checkpoints and your best time.
-- Stop in it, shift into neutral and let go of the shifter: the car is put on the grid behind the start line and held there while the start lights over
-  the line count down (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green.
-  The cockpit's board (top right) slides out with the event.
-- The clock runs through the checkpoints: an orange gate across the road, lit only while the event runs (the next one and the one
-  after; the finish line's is white). The board shows the time, the checkpoints passed and your best; the lap counter beside it the
-  lap (on the circuit) or the checkpoint. A missed gate is called out and the clock runs on, but that run sets no best time.
-- A wreck puts the car back just past the last gate passed (on the highway, on the eastbound carriageway), and the clock runs on. Driving more than about 150 m from the course for
-  10 seconds (or teleporting) gives the event up.
+- Drive into the box: a line shows the event, its length, laps, checkpoints and your best time, and what is on there
+  ("RACE ON", or how many lobbies are waiting; "EVENT" over the box says the same).
+- Stop in it, shift into neutral and let go of the shifter: the course's **panel** opens (the cursor is freed, as in a garage). It
+  lists the course's lobbies (Host, entrants, weapon rules, state) with **Join**, and **Create** a lobby with its rules: **Guns**
+  on or off, **Melee** on or off (the rules are enforced in a later version). Alone (no Multiplayer room) the button is **Start**:
+  a lobby of one is a solo run, and it starts at once.
+- Joining or creating moves the car just clear of the box to a waiting spot, so the box is free for the next player. The room is told
+  when a lobby opens. While in a lobby a **strip** under the cockpit's board shows the course, the Host, the entrants, the rules and
+  the state, with **Start** (the Host's) and **Leave**: point the hand at a button and grab, as with the cockpit's levers. The board
+  lists the lobby's entrants.
+- **One race per course at a time:** the first Start takes the course; another lobby's Start reads "Race on" until its results are
+  done. Races on different courses run at the same time, and the rest of the room roams.
+- On the Start every entrant's car is put on its own grid slot (in the order they joined: two abreast on the circuit and the highway,
+  single file on the rally stage and the hill climb) and held there while the start lights over the line count down to the same
+  moment for everybody (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green.
+- The clock runs from your own green through the checkpoints: an orange gate across the road, lit only while you race (the next one
+  and the one after; the finish line's is white). The board shows the time, your place among the entrants, the checkpoints passed and
+  the time left (your best, alone); the lap counter beside it the lap (on the circuit) or the checkpoint. A missed gate is called
+  out and the clock runs on, but that run sets no best time and ranks after the clean finishes.
+- A wreck puts the car back just past the last gate passed (on the highway, on the eastbound carriageway), and the clock runs on.
+  Driving more than about 150 m from the course for 10 seconds (or teleporting) puts you out of the race (you stay in the lobby).
+- The race ends when everybody has finished or is out, 45 seconds after the first finisher, or at the course's time limit (circuit
+  13:00, rally stage 7:30, hill climb 2:30, highway 15:30); those still running are out (DNF). The results stand on the board for 15
+  seconds, then the course is free and the lobby waits again. **Leave** in a race is a DNF.
 - Your best time for each course is kept in `halfgrip.openworld.cfg` under `[Best times]` (never in the game's save); set one to 0
   to start again. A course a new version lays out differently starts with no best time.
-- Out of an event the board is tucked into the right edge of the screen. Put the hand over the sliver that shows and it slides out
+- Out of a lobby the board is tucked into the right edge of the screen. Put the hand over the sliver that shows and it slides out
   with the list of cars in the race (in a Multiplayer room, the players).
-- In a Multiplayer room an event is your own time trial: the others do not see it. Events that a room runs together come later.
 
 ## Settings
 

@@ -544,6 +544,16 @@ internal static class Program
 		Check(c.Events.Lobbies.Count() == 2, "C was sent both lobbies");
 		Check(c.Heard.All(h => h.why == Why.Snapshot), "a snapshot is no news to call out");
 		Check(c.Events.Taking(3) != null && !c.Events.Taking(3).Guns, "C sees the highway taken, guns off");
+		// D joined the room before its world was built: what it was sent then was lost. Its Hello brings every lobby.
+		Machine d = room.Add(4);
+		room.Settle();
+		d.Events.Reset();
+		Check(!d.Events.Lobbies.Any(), "D's copy is empty before its Hello");
+		d.Events.Hello(room.Now);
+		Agree(room, "after D's Hello");
+		Check(d.Events.Lobbies.Count() == 2, "D was sent both lobbies on its Hello");
+		a.Events.Hello(room.Now);
+		Agree(room, "after the arbiter's own Hello");
 	}
 
 	private static void FullAndRaceOn(Room room)

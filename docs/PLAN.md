@@ -1008,6 +1008,38 @@ the room's events come in 0.23.0.
   comment now says protocol 8, and `AiRespawned` (33) is in the table. `ModData` (the mods' bytes) has no positions.
 - `mod.json` asks for HalfGripTools 1.0.6 (`ctx.Net`), version 0.22.0.
 
+The owner's first try of 0.22.0 (log): the box still started the solo event at once, no panel. As intended for PR 1, which wired
+nothing into the game, but it read as nothing done; PR 2 followed straight away.
+
+### Events in a room: in the game (0.23.0, PR 2)
+
+On branch `claude/epic-goodall-zas0pe`: compiled against the game, meshcheck and eventsim clean. Not yet tested in game (TESTING.md
+30 alone, 31 with two players).
+
+- **`EventLink.cs`**: `EventRoom.ILink` over `ctx.Net` (`SendToHost`, `Send`, `OnReceive`, hooked once in `Mod.Load`), the room's
+  host the arbiter, this machine alone outside a room (id 1, nothing sent). `PlayerJoined`/`PlayerLeft` go to the arbiter. Each frame
+  it watches the room and its host; on a change every lobby is forgotten and the new arbiter asked for its own (`Hello`, a new
+  request: a player whose world builds after the host's had missed the lobbies sent when they joined; eventsim checks it).
+- **`EventRace`** follows the local player's lobby instead of signing on: stopping in a box in neutral and letting go of the shifter
+  opens the course's **panel** (driving muted, cursor freed, the hand hidden, as the garage; closed by Esc, Close, joining, or the
+  car leaving the box or being knocked). Joining or creating moves the car to the course's first free waiting spot (no car within 8,
+  `GameMode.CarNear`), done in the next `Update`, not inside `OnGUI`, and not when the race has already started. A new
+  (lobby, race) pair in Racing with this car Running puts it on its slot and holds it; the countdown runs to the lobby's start time on
+  the race clock (`TrackManager.TimeSinceRaceStart`); green starts this car's own clock. Each gate goes to the arbiter
+  (`Passed`); off the course for 10 s, a teleport, a wreck or a move off the grid before green retires it (still in the lobby). The
+  local best time is kept as before. Alone the panel's button is **Start**: create and start at once.
+- **The board**: in a lobby, its entrants and Waiting (or "Race on: wait"); on the grid the slot; racing the place (`P2/3`) and the
+  time left or the cut-off (the best, alone); after, the standings (place and time, then the first three) or the results.
+- **The strip** (`EventUi.cs`, a part of `GarageUi`, its styles): under the board's measured outline (`EventBoard.Home`), the course,
+  Host, entrants, rules and state, the last refusal; **Start** for the Host (greyed "Race on" while another lobby has the course) and
+  **Leave**. Pressed with the hand: `Grabber.cursor` over the button and `GameInput.HandDown(0)` (once a frame), so it works with the
+  hardware cursor locked and with a pad; a plain button if no hand is found.
+- **The room's call-outs**: a lobby opening, a race on at a course, joins and leaves in this car's lobby, the results (listed in the
+  log), out at the cut-off or the limit. Queued behind what is showing, never during a countdown.
+- **Labels**: "EVENT" over a box says `RACE ON` or how many lobbies wait there. **Not done: the map marks' states** (the marks are
+  painted into the tiles' map pictures, which MiniMap reads; a state change would repaint those tiles). To agree with the owner.
+- Not yet: the weapon rules (PR 3, 0.24.0); the panel and README say so.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
