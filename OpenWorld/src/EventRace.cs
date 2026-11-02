@@ -520,9 +520,9 @@ namespace HalfGripOpenWorld
 			if (moved || carLink.hp <= 0f)
 			{
 				Mod.Log.LogInfo("Event: " + (moved ? "moved off the grid" : "wrecked") + " before the start at the " + course.Name);
-				// Out first: when this machine is the arbiter the race may end inside Retire, and its call-out reads the state.
+				// Out first: when this machine is the arbiter the race may end inside the request, and its call-out reads the state.
 				Out("OUT OF THE RACE");
-				room.Retire(race, now);
+				LeaveLobby();
 				return;
 			}
 			double toGo = mine.StartAt - now;
@@ -721,12 +721,16 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Off the course too long, or a teleport: out of the race (a DNF), still in the lobby.</summary>
+		/// <summary>
+		/// Off the course too long, or a teleport: out of the race (a DNF in the others' results) and out of the lobby, as Leave. The Host
+		/// passes to the next in; a lobby left empty closes (the owner's ask after 0.23.1: leaving a race early had kept the lobby, the
+		/// strip coming back with the player still its Host).
+		/// </summary>
 		private void GiveUp(double now)
 		{
 			Mod.Log.LogInfo("Event: given up at the " + course.Name);
 			Out("EVENT OVER");
-			room.Retire(race, now);
+			LeaveLobby();
 		}
 
 		private void Passed(int j, float clock, double now)

@@ -1051,6 +1051,18 @@ On branch `claude/epic-goodall-zas0pe`: compiled against the game, meshcheck and
   the hand points over the buttons; elsewhere the game's own drawing is untouched. The panel needs nothing: it frees the hardware
   cursor, which the system draws over everything.
 
+### 0.23.2: leaving a race leaves the lobby (the owner's report on 0.23.1)
+
+The owner started a race and left it early (off the course, the strip being hidden in the race); after the results the strip came
+back and they were still the Host. Giving up only retired them from the race (`Retire`, a DNF still in the lobby).
+
+- Giving up (off the course for 10 s, a teleport, a wreck or a move off the grid before green) is now **Leave**: out of the race
+  (a DNF in the others' results) and out of the lobby. The Host passes to the next still in (as before for Leave).
+- `EventRoom.Leaving` closes a lobby as soon as nobody is left in it (not only those who left), in its race too: it no longer
+  holds the course through results nobody is there to see. `Retire` stays in the messages, unused by the game.
+- eventsim's new "leaving a race early": the Host leaves mid-race (B Host, A a DNF, A never back after the results), the last one
+  out mid-race (the lobby gone at once, the course free), a lobby of one.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.

@@ -27,6 +27,7 @@ internal static class Program
 		Scenario("the cut-off", seed, CutoffEnds);
 		Scenario("the time limit", seed, TimeLimitEnds);
 		Scenario("leaving the room mid-race", seed, LeavesRoom);
+		Scenario("leaving a race early", seed, LeavesRace);
 		Scenario("a late joiner's snapshot", seed, LateJoiner);
 		Scenario("full, and a race that is on", seed, FullAndRaceOn);
 		Scenario("a lobby of one outside a room", seed, Solo);
@@ -529,6 +530,44 @@ internal static class Program
 		a.Leave();
 		Agree(room, "the last left");
 		Check(!a.Events.Lobbies.Any(), "no lobby left");
+	}
+
+	/// <summary>
+	/// The owner's report on 0.23.1: the Host gave a race up early and the lobby came back after the results with them still its Host.
+	/// Giving up now leaves the lobby: the Host passes on, and a lobby nobody is left in closes at once, freeing the course.
+	/// </summary>
+	private static void LeavesRace(Room room)
+	{
+		Machine a = room.Add(1), b = room.Add(2);
+		a.Create(0);
+		Agree(room, "A's lobby");
+		b.Join(a.Mine.Id);
+		Agree(room, "B in");
+		a.Start();
+		Agree(room, "the Start");
+		room.Run(EventRoom.StartLead + 2.0);
+		a.Leave();
+		Agree(room, "after the Host left the race");
+		Lobby l = Only(room);
+		Check(l.Host == 2 && a.Mine == null, "B is the Host and A is in no lobby");
+		Check(l.State == LobbyState.Racing && l.Entrants.Any(e => e.Id == 1 && e.Out && e.Run == Run.Dnf), "B races on; A is a DNF in its results");
+		room.Run(EventRoom.ResultsSeconds + Courses[0].TimeLimit + 1.0);
+		Agree(room, "after the race and its results");
+		Check(Only(room).Host == 2 && Ids(Only(room)) == "2" && a.Mine == null, "after the results the lobby is B's alone; A did not come back");
+		// The last one out mid-race: the lobby closes at once and the course is free.
+		b.Start();
+		Agree(room, "B's second race");
+		room.Run(EventRoom.StartLead + 2.0);
+		b.Leave();
+		Agree(room, "after the last one left mid-race");
+		Check(!room.Arbiter.Events.Lobbies.Any() && !b.Events.Lobbies.Any() && room.Arbiter.Events.Taking(0) == null, "the empty lobby closed at once, the course free");
+		// Alone (a solo run on the arbiter): leaving closes it at once too.
+		a.Create(1);
+		a.Start();
+		Agree(room, "A's solo run");
+		room.Run(EventRoom.StartLead + 1.0);
+		a.Leave();
+		Check(!a.Events.Lobbies.Any(), "a lobby of one closes when its one entrant leaves the race");
 	}
 
 	private static void LateJoiner(Room room)

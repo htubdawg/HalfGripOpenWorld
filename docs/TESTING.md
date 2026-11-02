@@ -222,3 +222,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    s later both strips say waiting again. While A's lobby races, B leaves and creates a second lobby at the circuit: its Start reads
    `Race on` until A's results are done. Driving away from the course mid-race (more than 150 m for 10 s): that player is a DNF in the
    results. Send `LogOutput.log` from both.
+32. Leaving a race early (0.23.2). Alone: start a solo run and drive more than 150 m off the course for 10 s (or teleport, F7):
+   `EVENT OVER`, the log says `Event: left the lobby at the Circuit (out of the race)`, and the strip never comes back (the lobby is
+   closed; `EVENT` over the box shows no lobby). Two players: A creates, B joins, A starts, then A drives off the course: B's strip
+   (after B's race) shows `Host B`, A's never comes back, and B's results list A as DNF. Then B starts again and drives off: the
+   lobby closes at once and `EVENT` over the box no longer says `RACE ON`.

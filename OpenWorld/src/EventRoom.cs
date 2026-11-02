@@ -546,7 +546,11 @@ namespace HalfGripOpenWorld
 			Send(l, Why.Joined, from);
 		}
 
-		/// <summary>Takes a player out of a lobby: gone at once while it waits; in its race or results, kept (a DNF if running) until they are done.</summary>
+		/// <summary>
+		/// Takes a player out of a lobby: gone at once while it waits; in its race or results, kept (a DNF if running) for the others'
+		/// results. The Host passes to the next still in. A lobby nobody is left in closes at once, race or not, so it never holds the
+		/// course for results nobody is there to see.
+		/// </summary>
 		private void Leaving(Lobby l, ulong id, double now)
 		{
 			Entrant e = l.In(id);
@@ -578,7 +582,7 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
-			if (l.Entrants.Count == 0)
+			if (l.Count == 0)
 			{
 				Remove(l);
 				return;

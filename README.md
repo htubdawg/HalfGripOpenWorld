@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.1**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.2**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.1` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.2` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -124,11 +124,12 @@ one has a chequered disc on the map.
   the time left (your best, alone); the lap counter beside it the lap (on the circuit) or the checkpoint. A missed gate is called
   out and the clock runs on, but that run sets no best time and ranks after the clean finishes.
 - A wreck puts the car back just past the last gate passed (on the highway, on the eastbound carriageway), and the clock runs on.
-  Driving more than about 150 m from the course for 10 seconds (or teleporting) puts you out of the race (you stay in the lobby).
+  Driving more than about 150 m from the course for 10 seconds (or teleporting) puts you out of the race and out of the lobby:
+  if you were its Host, the next player in takes it over; if nobody is left, it closes and the course is free.
 - The race ends when everybody has finished or is out, 45 seconds after the first finisher, or at the course's time limit (circuit
   13:00, rally stage 7:30, hill climb 2:30, highway 15:30); those still running are out (DNF). The results stand on the board for 15
   seconds, then the course is free and the lobby waits again. The strip is hidden from the Start until then, so only the board
-  is on the screen while you race; driving away from the course puts you out.
+  is on the screen while you race.
 - Your best time for each course is kept in `halfgrip.openworld.cfg` under `[Best times]` (never in the game's save); set one to 0
   to start again. A course a new version lays out differently starts with no best time.
 - Out of a lobby the board is tucked into the right edge of the screen. Put the hand over the sliver that shows and it slides out
