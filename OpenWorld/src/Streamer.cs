@@ -66,6 +66,14 @@ namespace HalfGripOpenWorld
 		private float underwater;
 
 		private readonly Dictionary<long, GameObject> tiles = new Dictionary<long, GameObject>();
+
+		/// <summary>Each loaded tile's trees, for their trunk colliders, which only the tiles round the car get (<see cref="Trunks(int, int)"/>).</summary>
+		private readonly Dictionary<long, Plant[]> treesOf = new Dictionary<long, Plant[]>();
+		/// <summary>The trunk colliders' object of each tile that has them (a child of the tile, destroyed with it).</summary>
+		private readonly Dictionary<long, GameObject> trunks = new Dictionary<long, GameObject>();
+
+		/// <summary>Tiles this many round the car's (in each direction) have trunk colliders: the car is always a whole tile from one without.</summary>
+		private const int TrunkReach = 1;
 		private readonly HashSet<long> working = new HashSet<long>();
 		private readonly ConcurrentQueue<Heights> done = new ConcurrentQueue<Heights>();
 		private readonly List<long> wanted = new List<long>();
@@ -256,6 +264,8 @@ namespace HalfGripOpenWorld
 						MapView.Changed();
 					}
 					foliage?.Remove(key);
+					treesOf.Remove(key);
+					trunks.Remove(key);
 				}
 			}
 
@@ -280,6 +290,8 @@ namespace HalfGripOpenWorld
 					Make(h);
 				}
 			}
+
+			Trunks(cx, cz);
 
 			// New work, nearest first.
 			if (working.Count >= Workers)
@@ -673,7 +685,10 @@ namespace HalfGripOpenWorld
 			Part(go.transform, "Gravel", data, data.Gravel, new[] { gravelMaterial }, true, GravelGrip, GravelDrag);
 			Part(go.transform, "Water", data, data.Water, new[] { waterMaterial }, false, 1f, 1f);
 			Part(go.transform, "Buildings", data, data.Buildings?.Mesh, buildingMaterials, true, 1f, 1f);
-			Trunks(go.transform, data.Trees);
+			if (data.Trees != null && data.Trees.Length > 0)
+			{
+				treesOf[Key(data.Tx, data.Tz)] = data.Trees;
+			}
 			tiles[Key(data.Tx, data.Tz)] = go;
 			if (data.Map != null)
 			{
@@ -690,15 +705,62 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>A collider round each tree's trunk (the trees themselves are drawn instanced, with no objects of their own).</summary>
-		private void Trunks(Transform tile, Plant[] trees)
+		/// <summary>
+		/// Trunk colliders on the tiles round the car's tile (<see cref="TrunkReach"/>), taken off a tile once it is two further off.
+		/// Every loaded tile had them before 0.21.1: up to 36 000 colliders near the rally stage, each tile's hundreds made on the main
+		/// thread as it came and all of them moved on every origin shift. The car's own tile gets its colliders at once, the others
+		/// one tile a frame.
+		/// </summary>
+		private void Trunks(int cx, int cz)
 		{
-			if (trees == null || trees.Length == 0)
+			List<long> drop = null;
+			foreach (long key in trunks.Keys)
+			{
+				Unkey(key, out int tx, out int tz);
+				if (Math.Max(Math.Abs(tx - cx), Math.Abs(tz - cz)) > TrunkReach + 1)
+				{
+					(drop ??= new List<long>()).Add(key);
+				}
+			}
+			if (drop != null)
+			{
+				foreach (long key in drop)
+				{
+					if (trunks[key] != null)
+					{
+						Destroy(trunks[key]);
+					}
+					trunks.Remove(key);
+				}
+			}
+			long own = Key(cx, cz);
+			if (!trunks.ContainsKey(own))
+			{
+				Trunks(own);
+			}
+			for (int dz = -TrunkReach; dz <= TrunkReach; dz++)
+			{
+				for (int dx = -TrunkReach; dx <= TrunkReach; dx++)
+				{
+					long key = Key(cx + dx, cz + dz);
+					if (!trunks.ContainsKey(key) && treesOf.ContainsKey(key))
+					{
+						Trunks(key);
+						return;
+					}
+				}
+			}
+		}
+
+		/// <summary>A collider round each tree's trunk on one loaded tile (the trees themselves are drawn instanced, with no objects of their own).</summary>
+		private void Trunks(long key)
+		{
+			if (!tiles.TryGetValue(key, out GameObject tile) || !treesOf.TryGetValue(key, out Plant[] trees))
 			{
 				return;
 			}
 			GameObject go = new GameObject("Trunks") { layer = layer };
-			go.transform.SetParent(tile, false);
+			go.transform.SetParent(tile.transform, false);
 			foreach (Plant p in trees)
 			{
 				float tall = Foliage.Tall(p);
@@ -707,6 +769,7 @@ namespace HalfGripOpenWorld
 				c.radius = 0.9f + 0.4f * p.Scale;
 				c.height = tall * 0.6f;
 			}
+			trunks[key] = go;
 		}
 
 		/// <summary>
