@@ -1125,6 +1125,13 @@ What the chassis item spawns (its interior or exterior half) is not in the refs;
 - **0.23.5:** the report also says how the gun on is drawn: each of its sprites (active, enabled, the sprite, alpha, layer, sorting,
   material, scale, its `SpriteUpgradeChanger`'s settings, read by reflection), its position and where the interior camera sees it;
   and a report as the garage opens, before any refit, to compare with.
+- **The 0.23.5 log:** any refit does it (taking the shotgun off and putting it back), not only a chassis. The fresh shotgun
+  matches the original as the garage opened in every sprite (active, enabled, sprite, alpha, layer, sorting, material, scale,
+  changer), its position and the interior camera's view of it. The owner's game is 0.419: the decompile (owner's `Managed` folder)
+  differs from 0.418 only in the steering (`HingedObject`'s spring limit, `CarLink`, `NSteeringWheel`), speedrun and stats code;
+  nothing in the guns, the loadout refit or the cockpit's drawing. An earlier log on 0.418 (0.17.0) did the same refits.
+- **0.23.6:** each sprite also logs where it is, its bounds, whether any camera drew it (`isVisible`), its rendering layers and
+  where in the interior camera's view it sits, before and after.
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 

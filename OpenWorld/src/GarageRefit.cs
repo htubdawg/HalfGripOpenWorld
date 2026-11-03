@@ -437,7 +437,9 @@ namespace HalfGripOpenWorld
 						Color c = r.color;
 						lines.Add("    " + r.name + ": " + (r.gameObject.activeInHierarchy ? "active" : "INACTIVE") + (r.enabled ? "" : " DISABLED") + ", sprite " + (r.sprite == null ? "NONE" : r.sprite.name)
 							+ ", alpha " + c.a.ToString("0.00") + ", layer " + LayerMask.LayerToName(r.gameObject.layer) + ", sorting " + r.sortingLayerName + "/" + r.sortingOrder
-							+ ", material " + (r.sharedMaterial == null ? "none" : r.sharedMaterial.name) + ", scale " + r.transform.lossyScale.ToString("0.00") + Changer(r.GetComponent<SpriteUpgradeChanger>()));
+							+ ", material " + (r.sharedMaterial == null ? "none" : r.sharedMaterial.name) + ", scale " + r.transform.lossyScale.ToString("0.00") + Changer(r.GetComponent<SpriteUpgradeChanger>())
+							+ ", at " + r.transform.position.ToString("0.00") + ", bounds " + r.bounds.size.ToString("0.00") + (r.isVisible ? ", DRAWN" : ", not drawn") + ", rendering layers " + r.renderingLayerMask
+							+ (cockpit == null ? "" : ", viewport " + cockpit.WorldToViewportPoint(r.bounds.center).ToString("0.00")));
 					}
 				}
 				Mod.Log.LogInfo("Garage guns " + when + ": PlayerStats.gun " + PlayerStats.gun + ", " + InteriorCollider.Active.Count + " colliders in the hand's list\n    "
