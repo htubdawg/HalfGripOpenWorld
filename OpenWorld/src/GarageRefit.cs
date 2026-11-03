@@ -165,6 +165,15 @@ namespace HalfGripOpenWorld
 					}
 					holder = new GameObject("OpenWorldGunTemplates");
 					holder.SetActive(false);
+					// On the cockpit's layer, so the floating origin leaves it and everything under it alone (Origin.Shift skips
+					// INTERIOR roots). On the world's layer the holder was moved with each shift while the copies' INTERIOR parts were
+					// put back, so they drifted a whole shift's distance from their gun every time: a gun built from them after the car
+					// had travelled sat kilometres off the cockpit camera, grabbable but never drawn (the owner's "the gun disappears").
+					int interior = LayerMask.NameToLayer("INTERIOR");
+					if (interior >= 0)
+					{
+						holder.layer = interior;
+					}
 					// Made while the scene loads: put with the gun, not in whatever scene is active (the one being left).
 					UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(holder, gun.gameObject.scene);
 					holderScene = scene;
@@ -375,10 +384,15 @@ namespace HalfGripOpenWorld
 		/// Writes the cockpit's guns to the log as the hand would find them: which is on, whether its grip can be grabbed, its colliders
 		/// in the hand's list and their sorting layer, and anything else in that list sorted at or over them (it would be picked instead
 		/// where the two overlap: the hand takes the highest layer under it). Owners reported guns that could not be used after a chassis
-		/// change with nothing in the log; this is what the next log needs to show where they went.
+		/// change with nothing in the log; this showed their sprites kilometres from the gun (see the holder in <see cref="CaptureGun"/>).
+		/// In the verbose log.
 		/// </summary>
 		internal static void Report(string when)
 		{
+			if (Mod.Verbose == null || !Mod.Verbose.Value)
+			{
+				return;
+			}
 			try
 			{
 				List<string> lines = new List<string>();
@@ -442,7 +456,7 @@ namespace HalfGripOpenWorld
 							+ (cockpit == null ? "" : ", viewport " + cockpit.WorldToViewportPoint(r.bounds.center).ToString("0.00")));
 					}
 				}
-				Mod.Log.LogInfo("Garage guns " + when + ": PlayerStats.gun " + PlayerStats.gun + ", " + InteriorCollider.Active.Count + " colliders in the hand's list\n    "
+				Mod.Info("Garage guns " + when + ": PlayerStats.gun " + PlayerStats.gun + ", " + InteriorCollider.Active.Count + " colliders in the hand's list\n    "
 					+ string.Join("\n    ", lines.ToArray())
 					+ (lowest == int.MaxValue ? "\n    no gun on with a collider in the hand's list" : "\n    sorted at or over the gun on (layer " + lowest + "): " + (over.Count == 0 ? "nothing" : over.Count + ": " + string.Join(", ", over.Take(20).ToArray()))));
 			}

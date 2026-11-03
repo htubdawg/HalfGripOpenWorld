@@ -238,7 +238,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    each board shows `Pn/N` with N the number racing and the positions change as cars pass at gates. Let one finish, one run out the
    cut-off and one drive off the course: the results list a time, `OUT: THE CUT-OFF` and DNF, the same on every machine. Do the same
    at the hill climb's paddock (8 spots, 4 rows of two clear of the vans). Send `LogOutput.log` from every machine.
-35. Guns after a chassis change (0.23.4). At any garage, with a gun fitted: note that the gun works, fit **Aero Tough** in the
-   Chassis slot, close the garage and try the gun (grab it, aim, fire). Then a second chassis, and then back to none. Say which ones
-   leave the gun unusable and what you see (no gun in the cockpit, a gun that cannot be grabbed, or one that cannot fire). The log has
-   `Garage guns after a refit:` and `Garage guns as the garage closed:` blocks; send `LogOutput.log`.
+35. Guns after a garage refit (0.23.7). Teleport a few times first (F7, so the origin shifts: `Origin shift` lines in the verbose
+   log), then at any garage with the shotgun fitted take it off and put it back, and fit a chassis: close the garage after each and
+   the gun is still in the cockpit, grabs, aims and fires. Then drive or teleport far again, come back to a garage and swap guns
+   once more: still there. With `VerboseLog` on, the `Garage guns after a refit` block shows every sprite of the gun on as `DRAWN`
+   and at a position near the gun's own (a few units, not thousands).
