@@ -59,7 +59,7 @@ If something does not work, `BepInEx\LogOutput.log` in the game folder should ha
 - You start on the road into Kingsbridge, the main town, just outside it and facing its middle.
 - **Reset** (hold R) puts the car back on its wheels, not back at the spawn: on the nearest road if there is one within about 75 m
   (in the right-hand lane, facing the way you were going); further out, on the nearest clear, flat, dry spot round the car, clear of
-  trees and buildings (where it is, if that is clear); on the nearest road however far if nothing round it is clear. On a road, a
+  trees and buildings (where it is, if that is clear), never to a road far off: deep in the woods it stays in the woods. On a road, a
   farm track, the circuit or the rally stage it stays where it is; in an event's race it is never moved onto another road. A car that
   ends up in a river, a lake or the sea is put back on dry land the same way.
 - **Wrecked:** the drive goes on. After a few seconds the car is back at the start, repaired (on the first free grid slot, so

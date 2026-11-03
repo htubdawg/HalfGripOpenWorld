@@ -211,7 +211,8 @@ namespace HalfGripOpenWorld
 		/// <paramref name="heading"/> as the place allows. On an event's grid or in its race, see below. Otherwise: where it is if that is
 		/// a road, track, course or car park with room; on the nearest paved road if there is one within <see cref="RoadReach"/>; else
 		/// the nearest clear spot round it (dry, flat enough, no tree, building or car on it), which is where it is if that is clear; else
-		/// the nearest road however far (deep in the woods a long way back beats being stuck); else where it is. Returns what it chose, for the log.
+		/// where it is: never to a road far off, which in the woods would throw the driver out of where they chose to drive (only out of
+		/// the water, with no dry land near, does it go to the nearest road however far). Returns what it chose, for the log.
 		/// </summary>
 		internal string Recover(double x, double z, Vector3 heading)
 		{
@@ -239,7 +240,7 @@ namespace HalfGripOpenWorld
 					Place(ex, ez, Quaternion.LookRotation(heading, Vector3.up));
 					return "in a race, clear spot " + Math.Sqrt((ex - x) * (ex - x) + (ez - z) * (ez - z)).ToString("0") + " away";
 				}
-				if (!(Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5))
+				if (!Wet(x, z))
 				{
 					Place(x, z, Quaternion.LookRotation(heading, Vector3.up));
 					return "in a race, in place";
@@ -266,13 +267,14 @@ namespace HalfGripOpenWorld
 				double moved = Math.Sqrt((ox - x) * (ox - x) + (oz - z) * (oz - z));
 				return moved < 0.5 ? "in place" : "clear spot " + moved.ToString("0") + " away";
 			}
-			if (road)
+			// Only out of the water does a reset go to a road far off: in the woods the driver wants to stay in the woods.
+			if (road && Wet(x, z))
 			{
 				OnRoad(rx, rz, dx, dz, found, hx, hz);
-				return "no clear spot near, road " + away.ToString("0") + " away";
+				return "in the water, no dry spot near, road " + away.ToString("0") + " away";
 			}
 			Place(x, z, Quaternion.LookRotation(heading, Vector3.up));
-			return "nothing clear or paved near, in place";
+			return "nothing clear near, in place";
 		}
 
 		/// <summary>
@@ -312,6 +314,12 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool OpenSpot(double x, double z, double hx, double hz, out double ox, out double oz)
 		{
+			// Thick woods may have no gap a whole footprint wide: then one only the car's width clear of trunks (it can drive out of it).
+			return OpenSpot(x, z, hx, hz, SpotAlong, out ox, out oz) || OpenSpot(x, z, hx, hz, SpotAcross, out ox, out oz);
+		}
+
+		private bool OpenSpot(double x, double z, double hx, double hz, double trees, out double ox, out double oz)
+		{
 			double start = Math.Atan2(hz, hx);
 			for (double r = 0.0; r <= OpenReach; r += OpenStep)
 			{
@@ -324,7 +332,7 @@ namespace HalfGripOpenWorld
 					ox = x + Math.Cos(angle) * r;
 					oz = z + Math.Sin(angle) * r;
 					WorldGen.ClampInside(ref ox, ref oz, 50.0);
-					if (Clear(ox, oz, hx, hz))
+					if (Clear(ox, oz, hx, hz, trees))
 					{
 						return true;
 					}
@@ -335,13 +343,13 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>True if a car facing (hx, hz) can stand at world (x, z): loaded ground, dry, flat enough, no tree trunk near, nothing standing on it.</summary>
-		private bool Clear(double x, double z, double hx, double hz)
+		private bool Clear(double x, double z, double hx, double hz, double trees = SpotAlong)
 		{
 			if (!IsLoaded(TileOf(x), TileOf(z)))
 			{
 				return false;
 			}
-			if (Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5)
+			if (Wet(x, z))
 			{
 				return false;
 			}
@@ -355,7 +363,7 @@ namespace HalfGripOpenWorld
 				lo = Math.Min(lo, g);
 				hi = Math.Max(hi, g);
 			}
-			if (hi - lo > SpotRise || TreeNear(x, z, SpotAlong))
+			if (hi - lo > SpotRise || TreeNear(x, z, trees))
 			{
 				return false;
 			}
@@ -370,6 +378,12 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return true;
+		}
+
+		/// <summary>True if world (x, z) is under a river's, a lake's or the sea's water.</summary>
+		private static bool Wet(double x, double z)
+		{
+			return Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5;
 		}
 
 		/// <summary>The tile parts a car drives on (see <see cref="Make"/>): a reset on one leaves the car there.</summary>

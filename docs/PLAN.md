@@ -1154,7 +1154,9 @@ never another road (no short cuts, and a move of 30 off the grid is out of the r
 road within `RoadReach` (250, a tile): there, turned to the way along it nearer the car's heading, in the right-hand lane (the
 carriageway's middle on the trunk road), slid along the road if another car is on the spot; else the nearest clear spot on rings
 6 apart out to 60 (dry, the ground rising no more than 3 across a footprint of 18 by 9, no tree trunk within 9 from the tiles'
-tree data, nothing solid more than 2 above the ground from five rays down); else the nearest road however far; else in place.
+tree data, nothing solid more than 2 above the ground from five rays down), and if the woods have no such gap, one with trunks
+only 4.5 off; else in place. Never to a road far off (the owner: a driver in the deep woods does not want to be sent hundreds of
+metres to a road), except from the water with no dry land within 60, which would otherwise dunk the car again and again.
 The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
