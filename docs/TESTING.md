@@ -111,7 +111,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    `BACK AT THE GARAGE`; the garage does not open until you shift into gear and back to neutral. In a room, with another player's
    car parked in that circle: you come back at the start instead. Press Respawn at start and get wrecked: back at the start. Wrecked
    in an event: still back at the last checkpoint. Start the next race (or a new run): a wreck goes back to the start again.
-23. Events, solo (0.15.3). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
+23. Events, solo (0.15.3; since 0.23.0 the box opens a panel first, see 30). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
    5 gates`. Out of an event the cockpit's board (top right) is tucked into the screen's right edge with a sliver showing; the hand
    over the sliver slides it out with the cars in the race (`cars 1` solo, `players N` in a room, on the lap counter), and it goes
    back when the hand leaves. An orange ring is in the circuit's pit lane past the last garage, in the rally service area and in the
@@ -201,8 +201,40 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    carriageways, posts outside the shoulders; none stands on a bridge with its respawn there. Get wrecked mid-race: back just past
    the last gate, on the eastbound carriageway, facing east. The finish gate (white) is just short of the east tunnel mouth, before
    it; the best time goes under `[Best times]` as `Highway_33427_1`.
-30. The trees' cost (0.21.1). Teleport to `Rally stage (start)` and drive through the woods: the frame rate much better than 0.21.0,
+30. Events in lobbies, alone (0.23.0). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps, 12 on the grid; ...`. Teleport to
+   `Circuit (paddock)` and drive into the orange box in the pit lane: the line under the screen says `EVENT  Circuit` and to stop and
+   shift into neutral. Stop, neutral, let go of the shifter: the **panel** opens (the log says `Event: the Circuit's panel is open
+   (alone)`), the cursor free, `START A SOLO RUN` with Guns and Melee buttons and **Start**. Esc closes it (no pause menu); drive out
+   and back in to open it again. Press Start: the car goes to the grid's pole slot (the log says `Event: created a lobby at the
+   Circuit` then `Event: on the grid at the Circuit, slot 1`), the lights count down about 5 s later, and the race runs as before.
+   The strip under the board disappears as the car goes onto the grid and stays away through the race and the results (0.23.1):
+   only the board. Race to the finish: the board shows the time and best, then about 15 s later the strip is back saying
+   `WAITING: start when ready`. Point the hand at **Start**: the hand shows over the strip (0.23.1), not under it; grab to race
+   again. Grab **Leave** while waiting: out of the lobby, the board tucked away.
+31. Events in a room, two players (0.23.0). Both in the Open World in one Multiplayer room. Player A opens the circuit's panel:
+   `No lobby here yet`; **Create lobby** with Guns off. A's car moves to a waiting spot beside the box (further along the pit
+   lane); B sees `A OPENED A LOBBY AT THE CIRCUIT`, and `EVENT  1 LOBBY` over the box. B opens the panel: A's lobby, 1/12, Guns
+   off Melee on, Waiting, **Join**. B joins: B's car moves to another waiting spot (not onto A's), A hears `B JOINED`, both boards
+   list `A, B`, both strips `2/12`; A's strip has **Start**, B's only Leave. A grabs Start: both cars go onto the grid (A pole, B
+   second, beside and behind), both lights go green at about the same moment. Race: each board shows `P1/2` or `P2/2` and changes
+   when one passes the other at a gate. A finishes: B's board shows `Cut-off 0:45` counting down. If B finishes, the results show at
+   once on both boards (`Results`, names and times), the log lists them; if not, at the cut-off B is out (`OUT: THE CUT-OFF`). 15
+   s later both strips say waiting again. While A's lobby races, B leaves and creates a second lobby at the circuit: its Start reads
+   `Race on` until A's results are done. Driving away from the course mid-race (more than 150 m for 10 s): that player is a DNF in the
+   results. Send `LogOutput.log` from both.
+32. Leaving a race early (0.23.2). Alone: start a solo run and drive more than 150 m off the course for 10 s (or teleport, F7):
+   `EVENT OVER`, the log says `Event: left the lobby at the Circuit (out of the race)`, and the strip never comes back (the lobby is
+   closed; `EVENT` over the box shows no lobby). Two players: A creates, B joins, A starts, then A drives off the course: B's strip
+   (after B's race) shows `Host B`, A's never comes back, and B's results list A as DNF. Then B starts again and drives off: the
+   lobby closes at once and `EVENT` over the box no longer says `RACE ON`.
+33. The trees' cost (0.21.1). Teleport to `Rally stage (start)` and drive through the woods: the frame rate much better than 0.21.0,
    no hitch as tiles load or the origin shifts (`Origin shift` lines under 6 ms or so in the verbose log). Woods look as before out
    to the loaded tiles' edge, nothing popping in or out as you turn the camera (1/3, the mirror) or as you drive; trees near the car
    cast shadows, and their shadows still fall into view from trees just off screen. Hit a tree trunk: solid, at a standstill and at
    speed, on the tile you are on and the next. `TreeShadowReach=0`: no tree shadows, faster still.
+34. Events with three or more players (0.23.3). Three or more in one room. Each opens the circuit's panel and joins one lobby: each
+   car goes to its own waiting spot in the pit lane (two abreast, further along with each player), none on another. The Host
+   starts: all go onto the grid in join order (pole, second beside and behind, third behind pole...), the lights go green together,
+   each board shows `Pn/N` with N the number racing and the positions change as cars pass at gates. Let one finish, one run out the
+   cut-off and one drive off the course: the results list a time, `OUT: THE CUT-OFF` and DNF, the same on every machine. Do the same
+   at the hill climb's paddock (8 spots, 4 rows of two clear of the vans). Send `LogOutput.log` from every machine.

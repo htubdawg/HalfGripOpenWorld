@@ -25,6 +25,13 @@ namespace HalfGripOpenWorld
 		/// <summary>The lap counter's text for this frame, or null for the count of cars in the race.</summary>
 		internal string Lap;
 
+		/// <summary>
+		/// The board's and the lap counter's outline on the screen where the game has them (pixels from the bottom left), measured each
+		/// frame; the lobby strip goes under it. <see cref="HasHome"/> is false until it has been measured.
+		/// </summary>
+		internal Rect Home;
+		internal bool HasHome;
+
 		/// <summary>How much of the board's width stays on the screen when it is tucked away, as a fraction of the screen's width.</summary>
 		private const float Sliver = 0.025f;
 
@@ -170,6 +177,8 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			Home = home;
+			HasHome = true;
 			Vector3 right = cam.transform.right;
 			float perUnit = cam.WorldToScreenPoint(middle + right).x - cam.WorldToScreenPoint(middle).x;
 			if (perUnit <= 1e-3f)

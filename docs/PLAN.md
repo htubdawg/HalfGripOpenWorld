@@ -929,33 +929,180 @@ their own players, so they need none.
 - **Checked:** compiled against the game (`tools/check.sh`), meshcheck plants passes. **Owner tested 0.21.1: "looks good, FPS back
   to normal".**
 
-## Next: events (proposed, to agree with the owner)
+## Next: events in a room (agreed with the owner after 0.21.0)
 
-The aim: independent races at several places at once (the circuit, the rally stage, the hill climb, later point-to-point road
-races), while the rest of the room roams. A proposed shape, smallest useful step first:
+HalfGripTools 1.0.6 has `ctx.Net` (bytes between this mod's copies in a Multiplayer room; Multiplayer 1.0.0 carries them, `ModBus.cs`).
+Events become lobbies a room joins, several courses racing at once while the rest of the room roams. The solo sign-on goes: a lobby
+of one is a solo run, and outside a room (or without Multiplayer) the same lobby code runs on this machine alone.
 
-1. **Courses as data.** An `EventCourse` per course, made from the layout already built (`Circuit`, `Rally`, `HillClimb`; later
-   routes along the road graph from `Signs`): a start box with grid slots, checkpoints as gates across the road (point, heading,
-   width) every few hundred metres, a finish (the start again for a lap course), and laps. Deterministic, from the layout, so every
-   player has the same course without sending it. Drawn as start lights, gate posts and a finish arch; checkpoint gates only show
-   for a player in that event.
-2. **Solo events** (begun in 0.15.0, above). Driving into a start box offers the event (as a garage opens: stop, shift into neutral). A countdown, then
-   timing through the checkpoints in order (a missed gate is called out, the clock runs on), a finish with the time, and a best time per
-   course kept in the mod's own config file (never the game's save). Ghost of the best lap later. A wreck in an event respawns at the
-   last gate passed, not the spawn (`GameMode.TakeWreck` already lets the reset tell a wreck apart). This needs nothing from
-   the Multiplayer mod and proves the course data, gates and timing.
-3. **Events in a room.** An event is a small state machine (open, gathering, countdown, running, results) keyed by course, and each
-   player has a state in it (entered, gate n, finished in t, out). Several run at once; a player is in at most one. The host is the
-   authority: it starts the countdown when the entrants are ready, and takes each player's finish time as reported. The
-   Multiplayer mod has no way for another mod to send its own messages, and its classes are internal; patching its packet
-   handler by name (as `MultiplayerLink` does for positions) is fragile. Best is a small public hook in the Multiplayer mod: a mod
-   channel (`Send(modId, bytes)`, `OnReceive(modId, handler)`), which is the Multiplayer mod's owner's change to make (its repo is
-   not ours). To be asked for once step 2 is in.
-4. **Rules per event.** Weapons off or on, collisions with players not in the event (ghosted, as the Multiplayer mod's spectators),
-   AI rivals for a solo event (the game's own `EnemyController` on the course's line, as the token loop's are now). Later.
+**Lobbies.**
+- **The box panel.** Stopping in a start box in neutral and letting go of the shifter (as now) opens a panel in the garage's look
+  (cursor freed, as the garage): the course and its best time, the course's lobbies (Host, entrants n/max, state) with **Join**,
+  and **Create**, which sets the lobby's **Guns** and **Melee** rules. The first player in a lobby is its Host; if they leave, the next
+  player in is. Joining closes the panel and moves the car just clear of the box to the course's waiting spot (pit lane, service
+  area, paddock, behind the start on the highway), so the box is free for the next player.
+- **The lobby strip.** While in a lobby or an event, a small bar under the cockpit board: the course, entrants, the weapon rules, the
+  state (waiting, the course's race on, the countdown, racing), and two buttons clicked with the mouse: **Start** (the Host, while
+  the course is free) and **Leave** (anyone, any time: from a lobby at once, from the grid the car is let go, in the race a DNF). Not
+  the whole panel: the strip never takes input from driving.
+- Several lobbies may form on a course; **one race per course at a time**: the first Start takes the course, the other lobbies' Start
+  is greyed ("RACE ON") until its results are done, so a Host who never starts holds nobody up. Courses race independently.
+- When a lobby opens, the room is told in a call-out (course, Host, entrants); the box's label and its map mark show its state.
+- Laps are fixed per course.
 
-Open questions for the owner: which courses first; whether solo best times should be kept; whether non-entrants should be ghosted
-near a running event; whether to ask the Multiplayer mod for a mod channel.
+**The race.**
+- On Start the Multiplayer room's host (the arbiter, below) deals grid slots in join order and sends a start time on the race clock
+  about 5 s ahead; each player puts their own car on its slot (`ToGrid`, `Hold`) and runs the start lights to it. Each times from their
+  own green, so the clock is fair though the lights differ by the room's Go latency.
+- Timing stays local as now; each gate passed (gate, time) and the finish are sent to the arbiter, which sends the standings: the
+  cockpit board shows the position among the entrants. A wreck goes back to the last gate, as now. Driving off the course for 10 s
+  still gives the event up.
+- It ends when every entrant has finished, left or dropped out; 45 s after the first finisher; or at the course's time limit (from
+  its length at a slow average, about 40 real km/h), shown on the board. Those still running are DNF. Results panel, then the course is
+  free. A clean run still keeps the local best time.
+
+**Weapon rules** (the Host's, set at Create):
+- **Guns** off: guns and rockets. **Melee** off: every melee item (RAM, SNOWPLOUGH, SPIKE, the hammers). Blocked on both machines: the
+  attacker's cannot fire or hit, and the victim's drops the hit in Multiplayer's `Combat.OnHit` (patched by name, as
+  `MultiplayerLink` patches the Multiplayer mod), by its kind (gun, explosion, tire; item). Crashes stay.
+- Entrants and players outside the event cannot damage each other while in a lobby or race (fixed rule). No ghosting for now.
+- Garages are fully allowed in an event; the bans act on firing and hits, not on what is fitted, so a refit cannot get round them.
+  In an event a wreck goes to the last gate, a garage's Respawn here after it.
+
+**Under it.** The Multiplayer room's host holds every lobby (requests by `SendToHost`, state sent to all; its own go through the same
+handler), so two players creating at once cannot clash. A player who leaves the room is taken out of every lobby (a DNF in a race);
+a player who joins gets a snapshot. The room closes if its host leaves, so there is no handover.
+
+**PRs.**
+1. **0.22.0:** grid slots per course (staggered pairs; single file on the rally stage; on the carriageway on the highway; a maximum
+   per course) and waiting spots, in `Courses`, with meshcheck's `events` checking every slot (on the road, clear of each other, not
+   on a bridge) and spot (off the course, on open ground); `EventRoom.cs`, the lobbies, races, time limits, results and rules with no
+   Unity types, and its messages (a version byte first); `tools/eventsim` driving it through joins, leaves, the Host leaving, two
+   creates at once, two Starts at once, the cutoff and the time limit. `mod.json` needs tools 1.0.6.
+2. **0.23.0:** the box panel, the waiting spot, the lobby strip, the synced start, standings on the board, results, the room's
+   call-outs, the label and map states; README and TESTING.md (a two-player test).
+3. **0.24.0:** Guns and Melee on both machines; no damage between entrants and others. Check the cursor with the game's
+   `lockHardwareCursor` on (the garage re-locks it on closing, `Garage.cs`), so the strip's buttons can be clicked.
+
+Also: `MultiplayerLink` was written for Multiplayer's protocol 7; it is 8 now. The message numbers it translates are the same; the new
+`AiRespawned` (33) carries a position but the Open World has no AI. Check the patch still hooks, and update its comment, in PR 1.
+
+Later: ghosting players outside an event near it, AI rivals for a lobby of one, a kick for the Host if it is needed.
+
+### Events in a room: the lobbies' core (0.22.0, PR 1)
+
+On branch `claude/epic-goodall-zas0pe`: compiled against the game, preview, meshcheck and eventsim clean. Nothing changes in game yet
+but the highway's grid spot (pole is now in the eastbound carriageway's inner lane, 12 right of the median, not across both lanes);
+the room's events come in 0.23.0.
+
+- **Grid slots** (`Course.Slots`, the first the grid spot): the circuit its own 12 (staggered pairs); the highway 12 in staggered
+  pairs, one per eastbound lane (`HighwayInner`/`HighwayOuter`, 12 and 23 right of the median), 13 apart; the rally stage and **the
+  hill climb** 8 in single file, 18 apart. The plan said pairs on the climb, but its road is 15 across (narrower than the stage's 16)
+  and a car 6, so it is single file too. `MaxEntrants` is the slot count.
+- **Waiting spots** (`Course.Waits`, 4 each; one per grid slot since 0.23.3): along the pit lane past the box, two abreast; across the service area and the paddock
+  from the box (past the garage's circle), two by two in front of the vans; on the westbound carriageway past the box towards the
+  tunnel, single file facing west. The game picks the one with no car on it (0.23.0).
+- **Time limit** (`Course.TimeLimit`): the distance at 40 real km/h, rounded up to a half minute: circuit 13:00, rally stage 7:30,
+  hill climb 2:30, highway 15:30.
+- **meshcheck `events`** now checks every slot (a car's 14 by 6 footprint on the road, the highway's on its eastbound carriageway; at
+  the drawn surface's height; off bridges; behind the start line; 20 or more from every gate but a lap's end on the start line; no
+  two overlapping) and spot (the footprint on the box's ground, off the course, out of the box and the garages' circles, at its
+  surface's height, a unit heading, no two overlapping). Tried by moving the slots and spots into each other and into the box: it fails.
+- **`EventRoom.cs`** (no Unity types): the arbiter (the room's host, or this machine alone) holds the lobbies and applies requests
+  (Create with the Guns and Melee rules, Join, Leave, Start, Gate, Retire) in arrival order, then sends the changed lobby whole to
+  everybody (`Lobby`, or `Gone` when its last entrant leaves; `Refused` with the reason to the one asking). One lobby per player
+  (creating or joining leaves the old one). Join is refused while the lobby's race is on or when it is full. Start: the Host only,
+  the course free (no other lobby racing or showing results on it); slots in join order, green 5 s ahead on the race clock, the time
+  limit from green. Gates count only forward, in the current race, while running; the last is the finish, which sets the 45 s
+  cut-off. The race ends when nobody is running, at the cut-off or at the limit (those running are DNF), the results stand 15 s,
+  then those who left go, the rest wait again and the course is free. Leaving mid-race (or the room) is a DNF kept in the results;
+  the Host passes to the next in. Standings: clean finishers by time, finishers who missed a gate, then the running and the out by
+  gates passed and time; ties in join order. Rules: `MayUse` (what a player may fire) and `MayHit` (whether a hit counts):
+  roamers as before; a lobby's player and anybody outside it never, crashes included; two entrants of one race only while both run
+  past green, by the Host's rules (guns, explosions and tire shots under Guns, items under Melee), crashes always. Messages start
+  with a version byte (1); bad or other-version ones are dropped.
+- **For PR 3:** the Multiplayer mod forwards crash damage as an item hit (`Combat.KindOf`: anything not a gun or explosion), so
+  telling a crash from a melee item needs `Combat.Current` (`Source.Crash`) on the attacker's side when the hit is sent.
+- **`tools/eventsim`**: up to 20 pretend machines over a pretend network (50 to 250 ms, in order per sender and receiver), 14
+  scenarios (the plan's list, plus a full lobby, joining a race that is on, a late joiner's snapshot, a lobby of one outside a room,
+  the rules, stale and bad messages, and 3000 random actions by 20 players who come and go), checking after each step that every
+  machine's lobbies match the arbiter's byte for byte. Five seeds pass.
+- **`MultiplayerLink`** checked against protocol 8: the message numbers it converts are unchanged and its hooks are the same; the
+  comment now says protocol 8, and `AiRespawned` (33) is in the table. `ModData` (the mods' bytes) has no positions.
+- `mod.json` asks for HalfGripTools 1.0.6 (`ctx.Net`), version 0.22.0.
+
+The owner's first try of 0.22.0 (log): the box still started the solo event at once, no panel. As intended for PR 1, which wired
+nothing into the game, but it read as nothing done; PR 2 followed straight away.
+
+### Events in a room: in the game (0.23.0, PR 2)
+
+On branch `claude/epic-goodall-zas0pe`: compiled against the game, meshcheck and eventsim clean. Not yet tested in game (TESTING.md
+30 alone, 31 with two players).
+
+- **`EventLink.cs`**: `EventRoom.ILink` over `ctx.Net` (`SendToHost`, `Send`, `OnReceive`, hooked once in `Mod.Load`), the room's
+  host the arbiter, this machine alone outside a room (id 1, nothing sent). `PlayerJoined`/`PlayerLeft` go to the arbiter. Each frame
+  it watches the room and its host; on a change every lobby is forgotten and the new arbiter asked for its own (`Hello`, a new
+  request: a player whose world builds after the host's had missed the lobbies sent when they joined; eventsim checks it).
+- **`EventRace`** follows the local player's lobby instead of signing on: stopping in a box in neutral and letting go of the shifter
+  opens the course's **panel** (driving muted, cursor freed, the hand hidden, as the garage; closed by Esc, Close, joining, or the
+  car leaving the box or being knocked). Joining or creating moves the car to the course's first free waiting spot (no car within 8,
+  `GameMode.CarNear`), done in the next `Update`, not inside `OnGUI`, and not when the race has already started. A new
+  (lobby, race) pair in Racing with this car Running puts it on its slot and holds it; the countdown runs to the lobby's start time on
+  the race clock (`TrackManager.TimeSinceRaceStart`); green starts this car's own clock. Each gate goes to the arbiter
+  (`Passed`); off the course for 10 s, a teleport, a wreck or a move off the grid before green retires it (still in the lobby). The
+  local best time is kept as before. Alone the panel's button is **Start**: create and start at once.
+- **The board**: in a lobby, its entrants and Waiting (or "Race on: wait"); on the grid the slot; racing the place (`P2/3`) and the
+  time left or the cut-off (the best, alone); after, the standings (place and time, then the first three) or the results.
+- **The strip** (`EventUi.cs`, a part of `GarageUi`, its styles): under the board's measured outline (`EventBoard.Home`), the course,
+  Host, entrants, rules and state, the last refusal; **Start** for the Host (greyed "Race on" while another lobby has the course) and
+  **Leave**. Pressed with the hand: `Grabber.cursor` over the button and `GameInput.HandDown(0)` (once a frame), so it works with the
+  hardware cursor locked and with a pad; a plain button if no hand is found.
+- **The room's call-outs**: a lobby opening, a race on at a course, joins and leaves in this car's lobby, the results (listed in the
+  log), out at the cut-off or the limit. Queued behind what is showing, never during a countdown.
+- **Labels**: "EVENT" over a box says `RACE ON` or how many lobbies wait there. **Not done: the map marks' states** (the marks are
+  painted into the tiles' map pictures, which MiniMap reads; a state change would repaint those tiles). To agree with the owner.
+- Not yet: the weapon rules (PR 3, 0.24.0); the panel and README say so.
+
+### 0.23.1: the strip off the screen in the race, the hand over it (the owner's notes on 0.23.0)
+
+- **The strip goes once the race begins**: from the Start (the grid) through the race and its results it is hidden
+  (`EventRace.Strip` is false unless the lobby waits), so only the board is on the screen. Leaving mid-race is then by driving off
+  the course (a DNF); a Leave there could come back as a small key if the owner wants one.
+- **The hand over the strip**: the hand is the game's sprites in the cockpit (`Grabber.idleSprite`, `interactibleSprite`, those under
+  `handIndicator`), and IMGUI is always drawn over the scene, so the strip hid it. After the strip, each sprite the hand shows that
+  overlaps it is drawn again on the GUI (its corners projected through the hand's camera, turned and flipped as it is, its colour), so
+  the hand points over the buttons; elsewhere the game's own drawing is untouched. The panel needs nothing: it frees the hardware
+  cursor, which the system draws over everything.
+
+### 0.23.2: leaving a race leaves the lobby (the owner's report on 0.23.1)
+
+The owner started a race and left it early (off the course, the strip being hidden in the race); after the results the strip came
+back and they were still the Host. Giving up only retired them from the race (`Retire`, a DNF still in the lobby).
+
+- Giving up (off the course for 10 s, a teleport, a wreck or a move off the grid before green) is now **Leave**: out of the race
+  (a DNF in the others' results) and out of the lobby. The Host passes to the next still in (as before for Leave).
+- `EventRoom.Leaving` closes a lobby as soon as nobody is left in it (not only those who left), in its race too: it no longer
+  holds the course through results nobody is there to see. `Retire` stays in the messages, unused by the game.
+- eventsim's new "leaving a race early": the Host leaves mid-race (B Host, A a DNF, A never back after the results), the last one
+  out mid-race (the lobby gone at once, the course free), a lobby of one.
+
+### 0.23.3: more than two players (checked before merging to main)
+
+The owner asked to confirm events work with more than two players. `EventRoom` was built for that (the room's host the arbiter,
+every message to every machine over Multiplayer's full mesh, grid slots dealt in join order up to the course's `MaxEntrants`), and
+eventsim's "many players at random" drives twenty players: every machine agrees with the arbiter over seeds 1, 2, 3, 7 and 42.
+One gap in the game, not the room: each course had 4 waiting spots while a lobby takes 12 (8 on the stage and the climb), so the
+fifth to join was put on the first spot, on top of a car.
+
+- **Waiting spots one per grid slot** (`Course.Waits.Count == MaxEntrants`): the circuit's pit lane 6 rows of two; the service area
+  and the paddock 4 rows of two, `WaitRow` (9) apart from `WaitFirst` (0.12) of the lot's depth, clear of the vans at the back; the
+  highway's westbound carriageway two abreast (one in each lane), 6 rows. meshcheck's `events` checks the count against
+  `MaxEntrants` and every spot's footprint as before (all 40 pass).
+- **No car put on another.** Several lobbies at one course can still outnumber the spots: when every spot is taken the car stays
+  where it is (`Every waiting spot is taken: wait here`).
+- Main's 0.21.1 (the trees' cost) merged in.
+- **Checked:** compiled against the game (`tools/check.sh`), meshcheck passes, eventsim passes. Not yet tested in game with three
+  or more (TESTING.md 34).
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
@@ -1004,7 +1151,7 @@ most 8 cars, its list fixed at the scene's start; the others see kinematic stand
 5. **Retirement:** a car that has been knocked about cannot rejoin the timetable; once outside every player's reach it is despawned
    for the rest of that cycle, with one short "retired" message.
 
-This needs the Multiplayer mod's mod channel (step 3 of the events plan above), the Multiplayer mod's owner's change to make.
+This needs a mod channel between players: HalfGripTools 1.0.6 has it now (`ctx.Net`).
 
 **Waiting on the Multiplayer mod.** No solo traffic first (the owner's call): traffic is built once, for rooms, when the
 Multiplayer mod has the mod channel. Then all of it together: the driver on the game's car prefabs, per-tile spawning, the two

@@ -8,8 +8,9 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// What the player sees of a garage: a "GARAGE" label over each circle nearby, a line telling them how to open it while they are in
-	/// one, and the garage's own window while it is open. The events' start boxes are offered the same way ("EVENT" over each box, the
-	/// event's panel while the car is in one, from <see cref="EventRace.Prompt"/>), so the two read as one kind of place. The game's drag-and-drop garage exists only in the menu scene, so this is drawn
+	/// one, and the garage's own window while it is open. The events' start boxes are offered the same way ("EVENT" over each box with
+	/// what is on there, the line from <see cref="EventRace.Prompt"/> while the car is in one, then the course's panel and the lobby
+	/// strip, in <c>EventUi.cs</c>), so the two read as one kind of place. The game's drag-and-drop garage exists only in the menu scene, so this is drawn
 	/// with Unity's immediate-mode GUI, as the debug overlay is, at a size that follows the screen's height, in the game's pixel look:
 	/// bevelled panels made of chunky pixels (<see cref="Px"/> units each) in the vanilla garage's colours (worn grey metal, black
 	/// wells, red and the unlock bar's green for accents) with grime over them, and the m6x11 font.
@@ -20,7 +21,7 @@ namespace HalfGripOpenWorld
 	/// goes along the bottom, Close at the top. Items are dragged onto a slot to fit them and off it to
 	/// take them off, as in the game's own garage; a right click fits an item (or takes it off if it is fitted), and takes a slot's off.
 	/// </summary>
-	internal sealed class GarageUi
+	internal sealed partial class GarageUi
 	{
 		/// <summary>One of the car's slots: the category it takes, its name in the window, and what is in it.</summary>
 		private sealed class Slot
@@ -262,12 +263,18 @@ namespace HalfGripOpenWorld
 				{
 					Window(w, h);
 				}
+				else if (EventRace.Instance != null && EventRace.Instance.PanelAt != null)
+				{
+					EndPress();
+					EventWindow(w, h);
+				}
 				else
 				{
 					EndPress();
 					Labels(scale);
 					Prompt(w, h);
 					EventPrompt(w, h);
+					Strip(w, h, scale);
 				}
 			}
 			catch (Exception e)
@@ -296,9 +303,10 @@ namespace HalfGripOpenWorld
 			}
 			if (EventRace.Instance != null)
 			{
-				foreach (Courses.Course c in Courses.All)
+				List<Courses.Course> all = Courses.All;
+				for (int i = 0; i < all.Count; i++)
 				{
-					Label(cam, scale, EventRace.ScenePoint(c), "EVENT", eventLabel);
+					Label(cam, scale, EventRace.ScenePoint(all[i]), EventRace.Instance.BoxLabel(i), eventLabel);
 				}
 			}
 		}
@@ -319,7 +327,7 @@ namespace HalfGripOpenWorld
 			float x = s.x / scale, y = (Screen.height - s.y) / scale;
 			Color c = GUI.color;
 			GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((220f - distance) / 60f));
-			Shadowed(new Rect(x - 80f, y - 14f, 160f, 28f), words, style);
+			Shadowed(new Rect(x - 130f, y - 14f, 260f, 28f), words, style);
 			GUI.color = c;
 		}
 

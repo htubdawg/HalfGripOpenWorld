@@ -37,6 +37,16 @@ namespace HalfGripOpenWorld
 			public int LapEnd;
 		}
 
+		/// <summary>A place a car is put: a grid slot or a waiting spot, its surface's height from sea level, facing (Dx, Dz).</summary>
+		internal struct Spot
+		{
+			public double X;
+			public double Z;
+			public double Y;
+			public double Dx;
+			public double Dz;
+		}
+
 		internal sealed class Course
 		{
 			public Kind Kind;
@@ -88,6 +98,29 @@ namespace HalfGripOpenWorld
 			public double GridY;
 			public double GridDx;
 			public double GridDz;
+
+			/// <summary>
+			/// The grid for a race in a room, in the order the slots are dealt (join order): the first is the grid spot above. Staggered
+			/// pairs where the road is wide enough for two cars abreast (the circuit, the highway's eastbound carriageway), single file on
+			/// the narrow rally stage and hill climb. Its length is the most entrants a race on the course takes.
+			/// </summary>
+			public readonly List<Spot> Slots = new List<Spot>();
+
+			/// <summary>
+			/// Where a car that has joined a lobby waits for the start, just clear of the start box so the box is free for the next
+			/// player: further along the pit lane, across the service area or the paddock from the box, along the westbound carriageway
+			/// past it. A few: the one with no car on it is taken, as a garage's respawn does.
+			/// </summary>
+			public readonly List<Spot> Waits = new List<Spot>();
+
+			/// <summary>The most entrants a race on this course takes: one per grid slot.</summary>
+			public int MaxEntrants => Slots.Count;
+
+			/// <summary>
+			/// How long a race on the course may run, in seconds from green: its distance at a slow average (<see cref="LimitSpeed"/>),
+			/// rounded up to a whole half minute. Those still running then are out (DNF).
+			/// </summary>
+			public double TimeLimit => Math.Ceiling(Distance / LimitSpeed / 30.0) * 30.0;
 
 			/// <summary>Height of the surface round the box at (x, z), from sea level.</summary>
 			public double BoxSurface(double x, double z)
@@ -162,6 +195,34 @@ namespace HalfGripOpenWorld
 		/// <summary>In the service area and the paddock the box is this fraction of the lot's width to one side of the garage's circle in its middle.</summary>
 		internal const double BoxAside = 0.3;
 
+		/// <summary>
+		/// The slow average a race's time limit is reckoned at: about 40 real km/h (11.1 m/s), in game units (3.3 to the metre) a second.
+		/// </summary>
+		internal const double LimitSpeed = 40.0 / 3.6 * 3.3;
+
+		/// <summary>Grid slots in staggered pairs: this far apart along the road, each a car's length (14) and a little behind the one beside it.</summary>
+		internal const double PairStep = 13.0;
+
+		/// <summary>Grid slots in single file: this far apart (a car's length and a gap).</summary>
+		internal const double FileStep = 18.0;
+
+		/// <summary>The most grid slots in single file: a longer queue would reach far back down the road.</summary>
+		internal const int FileSlots = 8;
+
+		/// <summary>The most grid slots in pairs (the circuit's own grid has as many).</summary>
+		internal const int PairSlots = 12;
+
+		/// <summary>The highway's lanes: the middle of each, right of its centre line (the carriageway's middle less and plus half a lane of 11).</summary>
+		internal const double HighwayInner = Carriageway - 5.5;
+		internal const double HighwayOuter = Carriageway + 5.5;
+
+		/// <summary>
+		/// The rows of waiting spots in a course's lot are this far apart across it (a car is 6 wide), the first <see cref="WaitFirst"/>
+		/// of the lot's depth in from its road side: the paddock's four rows end clear of the vans at its back.
+		/// </summary>
+		internal const double WaitRow = 9.0;
+		internal const double WaitFirst = 0.12;
+
 		/// <summary>The circuit's laps.</summary>
 		internal const int CircuitLaps = 3;
 
@@ -177,6 +238,9 @@ namespace HalfGripOpenWorld
 		/// two lanes of 11 each side and a shoulder of 4 outside them (RoadMesh's texture).
 		/// </summary>
 		internal const double Carriageway = 17.5;
+
+		/// <summary>The highway's first waiting spot is this far past its start box (towards the tunnel).</summary>
+		internal const double WaitPast = 25.0;
 
 		/// <summary>How far a highway checkpoint may be moved from its even spacing to put the respawn after it off a bridge.</summary>
 		internal const double BridgeShift = 400.0;
@@ -276,6 +340,11 @@ namespace HalfGripOpenWorld
 			c.GridY = Circuit.PlaneAt(c.GridX, c.GridZ) + Circuit.Lift;
 			c.GridDx = Circuit.DirX;
 			c.GridDz = Circuit.DirZ;
+			for (int k = 0; k < Math.Min(PairSlots, Circuit.GridSlots); k++)
+			{
+				Circuit.Slot(k, out double sx, out double sz);
+				c.Slots.Add(new Spot { X = sx, Z = sz, Y = Circuit.PlaneAt(sx, sz) + Circuit.Lift, Dx = Circuit.DirX, Dz = Circuit.DirZ });
+			}
 			// In the pit lane between the last garage's circle and the end of the lane's full width, midway across it.
 			double u = (Circuit.GaragesA + (Circuit.GaragesB - Circuit.GaragesA) * 0.75 + Circuit.PitB) * 0.5, v = (Circuit.PitWallOut + Circuit.PitLaneOut) * 0.5;
 			Circuit.Straight(u, v, out c.BoxX, out c.BoxZ);
@@ -285,6 +354,14 @@ namespace HalfGripOpenWorld
 			c.BoxRadius = BoxRadius;
 			c.BoxGx = Circuit.Px;
 			c.BoxGz = Circuit.Pz;
+			// Further along the pit lane than the box, two abreast across it (a car's width and more apart), facing out of the pits:
+			// one for every grid slot, so a full lobby waits with no car put on another.
+			double across = (Circuit.PitLaneOut - Circuit.PitWallOut) * 0.25;
+			for (int k = 0; k < c.MaxEntrants; k++)
+			{
+				Circuit.Straight(u + 22.0 + FileStep * (k / 2), v + (k % 2 == 0 ? -across : across), out double wx, out double wz);
+				c.Waits.Add(new Spot { X = wx, Z = wz, Y = Circuit.PlaneAt(wx, wz) + Circuit.Lift, Dx = Circuit.DirX, Dz = Circuit.DirZ });
+			}
 			return c;
 		}
 
@@ -312,6 +389,13 @@ namespace HalfGripOpenWorld
 			c.BoxDx = c.GridDx;
 			c.BoxDz = c.GridDz;
 			c.BoxRadius = BoxRadius;
+			// Single file: neither road takes two cars abreast (the stage is 16 across, the climb 15, a car 6).
+			for (int n = 0; n < FileSlots; n++)
+			{
+				Spot slot = new Spot();
+				c.At(startS - GridBack - FileStep * n, out slot.X, out slot.Z, out slot.Y, out slot.Dx, out slot.Dz);
+				c.Slots.Add(slot);
+			}
 			foreach (Town.Lot lot in Town.Lots)
 			{
 				if (lot.Kind != lotKind)
@@ -320,6 +404,7 @@ namespace HalfGripOpenWorld
 				}
 				// Level with the garage's circle (GarageSites), to the side of it nearer the grid.
 				double v = lot.D * 0.3, best = double.MaxValue;
+				int boxSide = 1;
 				foreach (int side in new[] { -1, 1 })
 				{
 					double u = lot.W * BoxAside * side;
@@ -328,6 +413,7 @@ namespace HalfGripOpenWorld
 					if (d < best)
 					{
 						best = d;
+						boxSide = side;
 						c.BoxX = x;
 						c.BoxZ = z;
 						c.BoxY = Town.Surface(lot, u);
@@ -335,6 +421,15 @@ namespace HalfGripOpenWorld
 				}
 				c.BoxGx = lot.Grade * lot.Dx;
 				c.BoxGz = lot.Grade * lot.Dz;
+				// Across the lot from the box, past the garage's circle in the middle: two by two, in front of the vans and awnings at
+				// the back, facing the way the box's chevron points; one for every grid slot, so a full lobby waits with no car put on
+				// another.
+				for (int n = 0; n < c.MaxEntrants; n++)
+				{
+					double u = -boxSide * lot.W * (n % 2 == 0 ? 0.25 : 0.4), wv = lot.D * WaitFirst + WaitRow * (n / 2);
+					Town.World(lot, u, wv, out double wx, out double wz);
+					c.Waits.Add(new Spot { X = wx, Z = wz, Y = Town.Surface(lot, u), Dx = c.BoxDx, Dz = c.BoxDz });
+				}
 				break;
 			}
 			return c;
@@ -343,8 +438,8 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// The highway: the trunk road (the network's one road of its class, made first, west edge to east edge and on into each edge's
 		/// tunnel) from <see cref="HighwayStart"/> past the west tunnel mouth to <see cref="HighwayFinish"/> short of the east one. Its
-		/// centre line is the road's own (the median), its gates reach over both carriageways; the grid is in the middle of the
-		/// eastbound carriageway (<see cref="Carriageway"/>) <see cref="GridBack"/> behind the start line, the box in the middle of the
+		/// centre line is the road's own (the median), its gates reach over both carriageways; the grid is on the eastbound
+		/// carriageway, pole in its inner lane (<see cref="HighwayInner"/>) <see cref="GridBack"/> behind the start line, the box in the middle of the
 		/// westbound one <see cref="HighwayBoxBack"/> behind it, on the road itself (the trunk road has no lay-by, and nothing ever
 		/// drives there but a car on its way to the tunnel, which is where the box is wanted). Null if there is no such road.
 		/// </summary>
@@ -391,8 +486,18 @@ namespace HalfGripOpenWorld
 			OffBridges(c, road, flip);
 			c.At(c.StartS - GridBack, out double gx, out double gz, out c.GridY, out c.GridDx, out c.GridDz);
 			// Right of the way the car faces is (dz, -dx).
-			c.GridX = gx + c.GridDz * Carriageway;
-			c.GridZ = gz - c.GridDx * Carriageway;
+			c.GridX = gx + c.GridDz * HighwayInner;
+			c.GridZ = gz - c.GridDx * HighwayInner;
+			// Staggered pairs on the eastbound carriageway, one in each lane, pole in the inner one.
+			for (int k = 0; k < PairSlots; k++)
+			{
+				Spot slot = new Spot();
+				c.At(c.StartS - GridBack - PairStep * k, out double sx, out double sz, out slot.Y, out slot.Dx, out slot.Dz);
+				double right = k % 2 == 0 ? HighwayInner : HighwayOuter;
+				slot.X = sx + slot.Dz * right;
+				slot.Z = sz - slot.Dx * right;
+				c.Slots.Add(slot);
+			}
 			c.At(c.StartS - HighwayBoxBack, out double bx, out double bz, out c.BoxY, out c.BoxDx, out c.BoxDz);
 			c.BoxX = bx - c.BoxDz * Carriageway;
 			c.BoxZ = bz + c.BoxDx * Carriageway;
@@ -403,6 +508,19 @@ namespace HalfGripOpenWorld
 			double grade = (ahead - behind) / 20.0;
 			c.BoxGx = grade * c.BoxDx;
 			c.BoxGz = grade * c.BoxDz;
+			// Further along the westbound carriageway than the box, towards the tunnel, two abreast (one in each lane), facing west as a
+			// car there does; one for every grid slot, so a full lobby waits with no car put on another.
+			for (int k = 0; k < c.MaxEntrants; k++)
+			{
+				Spot wait = new Spot();
+				c.At(c.StartS - HighwayBoxBack - WaitPast - FileStep * (k / 2), out double wx, out double wz, out wait.Y, out double wdx, out double wdz);
+				double left = k % 2 == 0 ? HighwayInner : HighwayOuter;
+				wait.X = wx - wdz * left;
+				wait.Z = wz + wdx * left;
+				wait.Dx = -wdx;
+				wait.Dz = -wdz;
+				c.Waits.Add(wait);
+			}
 			return c;
 		}
 
