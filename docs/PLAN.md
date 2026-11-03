@@ -1145,6 +1145,18 @@ What the chassis item spawns (its interior or exterior half) is not in the refs;
   drawn, how far its furthest part is), in the verbose log; a part over 50 from its gun is a warning whatever the setting. The
   per-sprite detail and the report as the garage opens are gone.
 
+### 0.23.9: the reset back to a road (asked for by the owner)
+
+Holding R put the car upright where it was, with a small lift; off in the woods or on a hillside that often left it no better off.
+`Streamer.Recover` now chooses, in order: already on a driven surface (a tile's roads, tracks, circuit, gravel or lot paving at
+ground level) with room: stay; on an event's grid or in its race: where it is if on a driven surface, else the nearest clear spot,
+never another road (no short cuts, and a move of 30 off the grid is out of the race); the nearest paved
+road within `RoadReach` (250, a tile): there, turned to the way along it nearer the car's heading, in the right-hand lane (the
+carriageway's middle on the trunk road), slid along the road if another car is on the spot; else the nearest clear spot on rings
+6 apart out to 60 (dry, the ground rising no more than 3 across a footprint of 18 by 9, no tree trunk within 9 from the tiles'
+tree data, nothing solid more than 2 above the ground from five rays down); else the nearest road however far; else in place.
+The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.

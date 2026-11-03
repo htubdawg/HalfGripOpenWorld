@@ -167,7 +167,7 @@ namespace HalfGripOpenWorld
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				TeleportNext(back ? -1 : 1);
 			}
-			// A car that has gone into a river, a lake or the sea is put back on the nearest road after a moment (nothing here floats).
+			// A car that has gone into a river, a lake or the sea is put back on dry land after a moment (nothing here floats): see Recover.
 			Origin.World(player.transform.position, out double wx, out double wz);
 			if (Rivers.Water(wx, wz, out double level) && player.transform.position.y < level + Network.Lift - 1.0)
 			{
@@ -175,7 +175,7 @@ namespace HalfGripOpenWorld
 				if (underwater > 1.5f)
 				{
 					underwater = 0f;
-					ToRoad(wx, wz);
+					Mod.Info("In the water: " + Recover(wx, wz, player.transform.forward));
 					TextController.EnqueueRandomText(1f, "Reset.");
 				}
 			}
@@ -185,16 +185,260 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Puts the car on the nearest road to world (x, z), facing along it. False (and the car left alone) if no road is near.</summary>
-		internal bool ToRoad(double x, double z)
+		/// <summary>A reset puts the car on the nearest paved road if one is this close (a tile: about 75 m, 18 car lengths).</summary>
+		private const double RoadReach = 250.0;
+
+		/// <summary>Further from a road than <see cref="RoadReach"/>, a reset looks this far round the car for a clear spot.</summary>
+		private const double OpenReach = 60.0;
+
+		/// <summary>The rings the clear spot is looked for on are this far apart (about half a car's length).</summary>
+		private const double OpenStep = 6.0;
+
+		/// <summary>Half a car's footprint, along and across, with room to spare: the car is about 14 long and 5.4 wide.</summary>
+		private const double SpotAlong = 9.0;
+		private const double SpotAcross = 4.5;
+
+		/// <summary>The most the ground may rise across the footprint (a 1 in 6 slope along the car): steeper, the car would roll off.</summary>
+		private const double SpotRise = 3.0;
+
+		/// <summary>Anything solid more than this above the ground in the footprint (a wall, a roof, a car) blocks it; lot paving and kerbs do not.</summary>
+		private const float SpotHeadroom = 2.0f;
+
+		private readonly RaycastHit[] spotHits = new RaycastHit[16];
+
+		/// <summary>
+		/// Puts the car back on its wheels somewhere it can drive off from, after a reset or a dunking, near world (x, z), facing as near
+		/// <paramref name="heading"/> as the place allows. On an event's grid or in its race, see below. Otherwise: where it is if that is
+		/// a road, track, course or car park with room; on the nearest paved road if there is one within <see cref="RoadReach"/>; else
+		/// the nearest clear spot round it (dry, flat enough, no tree, building or car on it), which is where it is if that is clear; else
+		/// the nearest road however far (deep in the woods a long way back beats being stuck); else where it is. Returns what it chose, for the log.
+		/// </summary>
+		internal string Recover(double x, double z, Vector3 heading)
 		{
-			if (!Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz))
+			heading.y = 0f;
+			if (heading.sqrMagnitude < 1e-4f)
+			{
+				heading = Vector3.forward;
+			}
+			heading.Normalize();
+			double hx = heading.x, hz = heading.z;
+			BuildAround(x, z, 1);
+			bool driveable = Driveable(x, z);
+			// On the grid or in an event's race the car stays on the course and off the other roads (no short cuts, and a move off the
+			// grid is out of the race): where it is if that is driven on, else the nearest clear spot, else where it is unless that is
+			// in the water (then on to the nearest road, below, or it would be dunked again and again).
+			if (EventRace.Racing)
+			{
+				if (driveable)
+				{
+					Place(x, z, Quaternion.LookRotation(heading, Vector3.up));
+					return "in a race, in place";
+				}
+				if (OpenSpot(x, z, hx, hz, out double ex, out double ez))
+				{
+					Place(ex, ez, Quaternion.LookRotation(heading, Vector3.up));
+					return "in a race, clear spot " + Math.Sqrt((ex - x) * (ex - x) + (ez - z) * (ez - z)).ToString("0") + " away";
+				}
+				if (!(Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5))
+				{
+					Place(x, z, Quaternion.LookRotation(heading, Vector3.up));
+					return "in a race, in place";
+				}
+			}
+			// Already on something driven on (a road, a farm track, the circuit, the rally stage, a car park) with room: stay there.
+			// The circuit and the rally stage are not paved roads of the network, so the nearest road would carry the car off them.
+			if (driveable && Clear(x, z, hx, hz))
+			{
+				Place(x, z, Quaternion.LookRotation(heading, Vector3.up));
+				return "in place, on a road";
+			}
+			bool road = Network.NearestRoad(x, z, TileSize, out double rx, out double rz, out double dx, out double dz, out Network.Road found);
+			double away = road ? Math.Sqrt((rx - x) * (rx - x) + (rz - z) * (rz - z)) : double.MaxValue;
+			if (road && away <= RoadReach)
+			{
+				OnRoad(rx, rz, dx, dz, found, hx, hz);
+				return "road " + away.ToString("0") + " away";
+			}
+			if (OpenSpot(x, z, hx, hz, out double ox, out double oz))
+			{
+				BuildAround(ox, oz, 1);
+				Place(ox, oz, Quaternion.LookRotation(heading, Vector3.up));
+				double moved = Math.Sqrt((ox - x) * (ox - x) + (oz - z) * (oz - z));
+				return moved < 0.5 ? "in place" : "clear spot " + moved.ToString("0") + " away";
+			}
+			if (road)
+			{
+				OnRoad(rx, rz, dx, dz, found, hx, hz);
+				return "no clear spot near, road " + away.ToString("0") + " away";
+			}
+			Place(x, z, Quaternion.LookRotation(heading, Vector3.up));
+			return "nothing clear or paved near, in place";
+		}
+
+		/// <summary>
+		/// Puts the car on a road at (rx, rz), whose direction there is (dx, dz): turned to whichever way along it is nearer the way the
+		/// car was facing, in the right-hand lane for that way (traffic keeps right; on the trunk road the carriageway's middle, not the
+		/// median), and a little along the road if another car is on the spot.
+		/// </summary>
+		private void OnRoad(double rx, double rz, double dx, double dz, Network.Road road, double hx, double hz)
+		{
+			if (dx * hx + dz * hz < 0.0)
+			{
+				dx = -dx;
+				dz = -dz;
+			}
+			// Right of the way the car faces is (dz, -dx); a lane is about 11 wide. Lanes and the hill climb are a single track.
+			double keep = road == null ? 0.0 : road.Kind == RoadKind.Trunk ? Courses.Carriageway : road.Half >= 10.0 ? 4.0 : 0.0;
+			double x = rx + dz * keep, z = rz - dx * keep;
+			Quaternion rotation = Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up);
+			double[] along = { 0.0, 16.0, -16.0, 32.0, -32.0 };
+			foreach (double a in along)
+			{
+				double px = x + dx * a, pz = z + dz * a;
+				if (!Blocked(px, pz, WorldGen.Height(px, pz)))
+				{
+					BuildAround(px, pz, 1);
+					Place(px, pz, rotation);
+					return;
+				}
+			}
+			Place(x, z, rotation);
+		}
+
+		/// <summary>
+		/// The nearest clear spot to world (x, z), for a car facing (hx, hz): where it is first, then on rings <see cref="OpenStep"/>
+		/// apart out to <see cref="OpenReach"/>, each starting ahead of the car. Only the loaded tiles count (their trees and colliders
+		/// are what is checked), which the car's own tile and those round it always are.
+		/// </summary>
+		private bool OpenSpot(double x, double z, double hx, double hz, out double ox, out double oz)
+		{
+			double start = Math.Atan2(hz, hx);
+			for (double r = 0.0; r <= OpenReach; r += OpenStep)
+			{
+				int n = r == 0.0 ? 1 : Math.Max(8, (int)Math.Ceiling(2.0 * Math.PI * r / OpenStep));
+				for (int k = 0; k < n; k++)
+				{
+					// Ahead, then alternately to either side of ahead, round to behind.
+					int side = (k + 1) / 2 * (k % 2 == 0 ? 1 : -1);
+					double angle = start + side * 2.0 * Math.PI / n;
+					ox = x + Math.Cos(angle) * r;
+					oz = z + Math.Sin(angle) * r;
+					WorldGen.ClampInside(ref ox, ref oz, 50.0);
+					if (Clear(ox, oz, hx, hz))
+					{
+						return true;
+					}
+				}
+			}
+			ox = oz = 0.0;
+			return false;
+		}
+
+		/// <summary>True if a car facing (hx, hz) can stand at world (x, z): loaded ground, dry, flat enough, no tree trunk near, nothing standing on it.</summary>
+		private bool Clear(double x, double z, double hx, double hz)
+		{
+			if (!IsLoaded(TileOf(x), TileOf(z)))
 			{
 				return false;
 			}
-			BuildAround(rx, rz, 1);
-			Place(rx, rz, Quaternion.LookRotation(new Vector3((float)dx, 0f, (float)dz), Vector3.up));
+			if (Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5)
+			{
+				return false;
+			}
+			// The centre and the footprint's four corners: (along, across), across being to the right, (hz, -hx).
+			double lo = double.MaxValue, hi = double.MinValue;
+			for (int i = 0; i < 5; i++)
+			{
+				double a = i == 0 ? 0.0 : (i < 3 ? SpotAlong : -SpotAlong);
+				double b = i == 0 ? 0.0 : (i % 2 == 1 ? SpotAcross : -SpotAcross);
+				double g = WorldGen.Height(x + hx * a + hz * b, z + hz * a - hx * b);
+				lo = Math.Min(lo, g);
+				hi = Math.Max(hi, g);
+			}
+			if (hi - lo > SpotRise || TreeNear(x, z, SpotAlong))
+			{
+				return false;
+			}
+			for (int i = 0; i < 5; i++)
+			{
+				double a = i == 0 ? 0.0 : (i < 3 ? SpotAlong : -SpotAlong);
+				double b = i == 0 ? 0.0 : (i % 2 == 1 ? SpotAcross : -SpotAcross);
+				double px = x + hx * a + hz * b, pz = z + hz * a - hx * b;
+				if (Blocked(px, pz, WorldGen.Height(px, pz)))
+				{
+					return false;
+				}
+			}
 			return true;
+		}
+
+		/// <summary>The tile parts a car drives on (see <see cref="Make"/>): a reset on one leaves the car there.</summary>
+		private static readonly HashSet<string> driven = new HashSet<string> { "Roads", "Sidewalks", "Tracks", "Circuit", "Gravel", "Buildings" };
+
+		/// <summary>True if one of the tiles' driven surfaces is at ground level at world (x, z) (a bridge's deck high over the ground is not: the car is moved off it).</summary>
+		private bool Driveable(double x, double z)
+		{
+			const float above = 4f;
+			double ground = WorldGen.Height(x, z);
+			Vector3 top = Origin.Local(x, (float)ground + above, z);
+			int count = Physics.RaycastNonAlloc(top, Vector3.down, spotHits, above + 3f, ~0, QueryTriggerInteraction.Ignore);
+			for (int i = 0; i < count; i++)
+			{
+				Collider c = spotHits[i].collider;
+				if (c != null && driven.Contains(c.gameObject.name) && c.transform.parent != null && c.transform.parent.parent == transform)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>True if a loaded tile's tree trunk stands within <paramref name="reach"/> of world (x, z) (from the trees' data, not their colliders, which only the tiles nearest the car have).</summary>
+		private bool TreeNear(double x, double z, double reach)
+		{
+			int cx = TileOf(x), cz = TileOf(z);
+			for (int j = cz - 1; j <= cz + 1; j++)
+			{
+				for (int i = cx - 1; i <= cx + 1; i++)
+				{
+					if (!treesOf.TryGetValue(Key(i, j), out Plant[] trees))
+					{
+						continue;
+					}
+					double bx = i * (double)TileSize - x, bz = j * (double)TileSize - z;
+					foreach (Plant p in trees)
+					{
+						double ox = bx + p.Pos.x, oz = bz + p.Pos.z;
+						double r = reach + 0.9 + 0.4 * p.Scale;
+						if (ox * ox + oz * oz < r * r)
+						{
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// True if something solid (a building, a wall, a bridge deck, another car) is more than <see cref="SpotHeadroom"/> above the
+		/// ground <paramref name="ground"/> at world (x, z): a ray down from well above, stopping short of the ground, hits it. The car's own colliders do not count.
+		/// </summary>
+		private bool Blocked(double x, double z, double ground)
+		{
+			const float above = 60f;
+			Vector3 top = Origin.Local(x, (float)ground + above, z);
+			int count = Physics.RaycastNonAlloc(top, Vector3.down, spotHits, above - SpotHeadroom, ~0, QueryTriggerInteraction.Ignore);
+			for (int i = 0; i < count; i++)
+			{
+				Collider c = spotHits[i].collider;
+				if (c == null || (player != null && (c.attachedRigidbody == player.rb || c.transform.IsChildOf(player.transform))))
+				{
+					continue;
+				}
+				return true;
+			}
+			return false;
 		}
 
 		private void LateUpdate()

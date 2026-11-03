@@ -4303,7 +4303,14 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static bool NearestRoad(double x, double z, float tileSize, out double rx, out double rz, out double dx, out double dz)
 		{
+			return NearestRoad(x, z, tileSize, out rx, out rz, out dx, out dz, out Road _);
+		}
+
+		/// <summary>As above, with the road found (for its kind and width: a reset puts the car in a lane, not on the trunk road's median).</summary>
+		internal static bool NearestRoad(double x, double z, float tileSize, out double rx, out double rz, out double dx, out double dz, out Road found)
+		{
 			rx = rz = dx = dz = 0.0;
+			found = null;
 			int tx = (int)Math.Floor(x / tileSize), tz = (int)Math.Floor(z / tileSize);
 			for (int reach = 1; reach <= 8; reach *= 2)
 			{
@@ -4334,6 +4341,7 @@ namespace HalfGripOpenWorld
 								double len = Math.Max(1e-9, road.S[k + 1] - road.S[k]);
 								dx = (road.X[k + 1] - road.X[k]) / len;
 								dz = (road.Z[k + 1] - road.Z[k]) / len;
+								found = road;
 							}
 						}
 					}

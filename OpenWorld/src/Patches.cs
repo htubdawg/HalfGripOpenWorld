@@ -131,8 +131,9 @@ namespace HalfGripOpenWorld
 	}
 
 	/// <summary>
-	/// A reset (holding R) puts the car back on its wheels where it is, on the ground, facing the way it was going (or on the nearest road,
-	/// if it is in water). The respawn after a wreck (<see cref="GameMode"/>'s, or the Multiplayer mod's) puts it back at the spawn, or at the garage chosen as the respawn point. The game's own reset would carry it back to the token loop at the spawn, kilometres away.
+	/// A reset (holding R) puts the car back on its wheels on the nearest paved road if one is close, in its lane facing the way it was
+	/// going; further off, on the nearest clear, flat, dry spot round it (where it is, if that is); failing that, on the nearest road
+	/// however far (<see cref="Streamer.Recover"/>). The respawn after a wreck (<see cref="GameMode"/>'s, or the Multiplayer mod's) puts it back at the spawn, or at the garage chosen as the respawn point. The game's own reset would carry it back to the token loop at the spawn, kilometres away.
 	/// </summary>
 	[HarmonyPatch(typeof(PlayerResetLogic), nameof(PlayerResetLogic.ResetOnTrack))]
 	internal static class ResetInPlace
@@ -144,26 +145,14 @@ namespace HalfGripOpenWorld
 			{
 				return true;
 			}
-			Origin.World(___player.transform.position, out double x, out double z);
-			WorldGen.ClampInside(ref x, ref z, 50.0);
-			Vector3 heading = ___player.transform.forward;
-			heading.y = 0f;
-			if (heading.sqrMagnitude < 1e-4f)
-			{
-				heading = Vector3.forward;
-			}
 			if (GameMode.TakeWreck())
 			{
 				GameMode.ToSpawn(streamer);
 				return false;
 			}
-			bool wet = Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level;
-			// In a river, a lake or the sea: back on the nearest road instead (where it is, if there is none near).
-			if (!(wet && streamer.ToRoad(x, z)))
-			{
-				streamer.BuildAround(x, z, 1);
-				streamer.Place(x, z, Quaternion.LookRotation(heading.normalized, Vector3.up));
-			}
+			Origin.World(___player.transform.position, out double x, out double z);
+			WorldGen.ClampInside(ref x, ref z, 50.0);
+			Mod.Info("Reset: " + streamer.Recover(x, z, ___player.transform.forward));
 			TextController.EnqueueRandomText(1f, "Reset.");
 			return false;
 		}

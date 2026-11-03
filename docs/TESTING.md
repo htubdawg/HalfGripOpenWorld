@@ -63,7 +63,11 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
 16. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
-17. Hold R far out: the car is put back on its wheels where it was.
+17. Reset (0.23.9). Hold R: (a) in a field within about 75 m of a road: on the road, in the right-hand lane, facing the way the car
+   faced (on the trunk road on a carriageway, not the median); (b) in open country further from a road: where it is, upright; (c)
+   in the woods or against a building far from a road: on the nearest clear patch close by, not inside a tree or a wall; (d) on a
+   road, a farm track, the circuit and the rally stage: where it is; (e) in an event's race off the course: never onto another road;
+   (f) drive into a lake: back on the bank or a road. With `VerboseLog` on, each logs `Reset: ...` with what it chose.
 17b. Get wrecked (into a wall at speed, or the dev console's `kill player` or `hp 0`): `WRECKED`, the car burns, and after 3 seconds (`RespawnSeconds`)
    it is at the start, on the spawn's grid slot facing up the road, at full health, driving normally (it accelerates, no flames);
    `BACK AT THE START` shows. Get wrecked far out (teleport first): the same, and the ground round the start is there. The race does

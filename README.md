@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.8**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.9**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.8` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.9` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -57,8 +57,11 @@ If something does not work, `BepInEx\LogOutput.log` in the game folder should ha
 - **Multiplayer:** with the [Multiplayer mod](https://github.com/4l3x4nd3r0/HalfGripMods), the host picks **OpenWorld** in the room's
   map list. Everyone needs this mod at the same version. The host ends the race from the pause menu.
 - You start on the road into Kingsbridge, the main town, just outside it and facing its middle.
-- **Reset** (hold R) puts the car back on its wheels where it is, not back at the spawn. A car that ends up in a river, a lake or the
-  sea is put back on the nearest road.
+- **Reset** (hold R) puts the car back on its wheels, not back at the spawn: on the nearest road if there is one within about 75 m
+  (in the right-hand lane, facing the way you were going); further out, on the nearest clear, flat, dry spot round the car, clear of
+  trees and buildings (where it is, if that is clear); on the nearest road however far if nothing round it is clear. On a road, a
+  farm track, the circuit or the rally stage it stays where it is; in an event's race it is never moved onto another road. A car that
+  ends up in a river, a lake or the sea is put back on dry land the same way.
 - **Wrecked:** the drive goes on. After a few seconds the car is back at the start, repaired (on the first free grid slot, so
   players respawning together do not land on each other), or at the garage you made the respawn point (see [Garages](#garages)). In a Multiplayer room the room's respawn time counts, and an Open World
   race is always played with respawns (a Demolition is played as a race, and "out, watch" as respawn), since it has no finish.
