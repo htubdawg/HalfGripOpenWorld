@@ -127,6 +127,9 @@ namespace HalfGripOpenWorld
 		/// <summary>True while a race's clock runs: the reset after a wreck goes to its last gate.</summary>
 		internal static bool Running => Instance != null && Instance.state == State.Running;
 
+		/// <summary>True on the grid and while the race runs: a reset (holding R) then keeps the car on the course (see <see cref="Streamer.Recover"/>).</summary>
+		internal static bool Racing => Instance != null && (Instance.state == State.Grid || Instance.state == State.Running);
+
 		/// <summary>The course whose panel is open, or null.</summary>
 		internal Courses.Course PanelAt { get; private set; }
 		internal int PanelIndex { get; private set; } = -1;
