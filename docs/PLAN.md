@@ -1104,7 +1104,7 @@ fifth to join was put on the first spot, on top of a car.
 - **Checked:** compiled against the game (`tools/check.sh`), meshcheck passes, eventsim passes. Not yet tested in game with three
   or more (TESTING.md 34).
 
-### 0.23.4 to 0.23.7: guns gone after a garage refit (the owner's report on 0.23.3; fixed in 0.23.7)
+### 0.23.4 to 0.23.7: guns gone after a garage refit (the owner's report on 0.23.3; fixed in 0.23.7, log trimmed in 0.23.8)
 
 The owner fitted Aero Tough (`aero_tough`) at the rally stage's service area with the shotgun on, then took the shotgun off and
 put it back: no gun could be used after. The log has no error: each refit emptied the car, put the four guns back as built and
@@ -1140,7 +1140,10 @@ What the chassis item spawns (its interior or exterior half) is not in the refs;
   works in the gun's own plane) but never drawn. Not the chassis, not 0.419: any refit after an origin shift.
 - **Fixed (0.23.7):** the holder is on the INTERIOR layer, so the origin skips it and all under it, as it does the cockpit. The
   gun reports stay, in the verbose log only. No offline check can reach this (it needs the scene and a shift); TESTING.md 35 covers it.
-- **Checked:** compiled against 0.418 and 0.419 (`tools/check.sh`). Not yet tested in game.
+- **Checked:** compiled against 0.418 and 0.419 (`tools/check.sh`). **Owner tested 0.23.7: "looks like it works".**
+- **0.23.8, the log toned back:** the report is one line per refit and as the garage closes (the gun on, its grip, its sprites
+  drawn, how far its furthest part is), in the verbose log; a part over 50 from its gun is a warning whatever the setting. The
+  per-sprite detail and the report as the garage opens are gone.
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 

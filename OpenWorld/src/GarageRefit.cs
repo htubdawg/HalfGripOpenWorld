@@ -380,112 +380,42 @@ namespace HalfGripOpenWorld
 			return fresh;
 		}
 
+		/// <summary>A gun's part this far from its gun is not where the gun is drawn: what the origin did to the copies before 0.23.7.</summary>
+		private const float StrayPart = 50f;
+
 		/// <summary>
-		/// Writes the cockpit's guns to the log as the hand would find them: which is on, whether its grip can be grabbed, its colliders
-		/// in the hand's list and their sorting layer, and anything else in that list sorted at or over them (it would be picked instead
-		/// where the two overlap: the hand takes the highest layer under it). Owners reported guns that could not be used after a chassis
-		/// change with nothing in the log; this showed their sprites kilometres from the gun (see the holder in <see cref="CaptureGun"/>).
-		/// In the verbose log.
+		/// One line on the gun that is on, after a refit and as the garage closes: whether its grip can be grabbed, how many of its
+		/// sprites a camera drew, and how far its furthest part is from it. In the verbose log; a part far from its gun (the gun
+		/// grabbable but not drawn, as when the origin moved the copies) is a warning either way.
 		/// </summary>
 		internal static void Report(string when)
 		{
-			if (Mod.Verbose == null || !Mod.Verbose.Value)
-			{
-				return;
-			}
 			try
 			{
-				List<string> lines = new List<string>();
-				int lowest = int.MaxValue;
-				HashSet<InteriorCollider> gunColliders = new HashSet<InteriorCollider>();
-				foreach (Gun gun in UnityEngine.Object.FindObjectsByType<Gun>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-				{
-					if (holder != null && gun.transform.root == holder.transform)
-					{
-						continue;
-					}
-					InteriorCollider[] colliders = gun.GetComponentsInChildren<InteriorCollider>(true);
-					int listed = 0;
-					foreach (InteriorCollider c in colliders)
-					{
-						gunColliders.Add(c);
-						if (InteriorCollider.Active.Contains(c))
-						{
-							listed++;
-							if (gun.gameObject.activeInHierarchy)
-							{
-								lowest = Math.Min(lowest, c.sortingLayer);
-							}
-						}
-					}
-					Grabbable body = gun.body;
-					lines.Add(gun.name + " (" + gun.RequiredGunType + ") " + (gun.gameObject.activeInHierarchy ? "ON" : gun.gameObject.activeSelf ? "on under an off parent" : "off")
-						+ " at " + PathOf(gun.transform)
-						+ "; grip " + (body == null ? "none" : (body.isActiveAndEnabled ? "enabled" : "disabled") + (body.canBeGrabbed ? "" : ", cannot be grabbed") + (body.frozen ? ", frozen" : ""))
-						+ "; colliders " + listed + " of " + colliders.Length + " in the hand's list, layers " + string.Join("/", colliders.Select(c => c.sortingLayer.ToString()).Distinct().ToArray())
-						+ "; held model " + (gun.aimModel == null ? "missing" : gun.aimModel.gameObject.activeSelf ? "shown" : "hidden"));
-				}
-				List<string> over = new List<string>();
-				if (lowest != int.MaxValue)
-				{
-					foreach (InteriorCollider c in InteriorCollider.Active)
-					{
-						if (c != null && !gunColliders.Contains(c) && c.sortingLayer >= lowest)
-						{
-							over.Add(PathOf(c.transform) + " (layer " + c.sortingLayer + ")");
-						}
-					}
-				}
-				// How the gun that is on is drawn: the owner sees it vanish from the cockpit while it is on and can be grabbed.
-				Camera cockpit = Camera.allCameras.FirstOrDefault(c => c.name == "InteriorCamera") ?? UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsSortMode.None).FirstOrDefault(c => c.name.IndexOf("Interior", StringComparison.OrdinalIgnoreCase) >= 0);
-				int interior = LayerMask.NameToLayer("INTERIOR");
 				foreach (Gun gun in UnityEngine.Object.FindObjectsByType<Gun>(FindObjectsSortMode.None))
 				{
 					if (holder != null && gun.transform.root == holder.transform)
 					{
 						continue;
 					}
-					lines.Add("  drawn: " + gun.name + " at " + gun.transform.position.ToString("0.00") + (cockpit == null ? ", no interior camera" : ", " + cockpit.name + " " + (cockpit.isActiveAndEnabled ? "on" : "off") + " sees INTERIOR " + ((cockpit.cullingMask & (1 << interior)) != 0) + ", gun at viewport " + cockpit.WorldToViewportPoint(gun.transform.position).ToString("0.00")));
-					foreach (SpriteRenderer r in gun.GetComponentsInChildren<SpriteRenderer>(true))
+					SpriteRenderer[] sprites = gun.GetComponentsInChildren<SpriteRenderer>(false);
+					float furthest = sprites.Length == 0 ? 0f : sprites.Max(r => Vector3.Distance(r.transform.position, gun.transform.position));
+					string line = "Garage: " + gun.name + " on " + when + ", grip " + (gun.body != null && gun.body.isActiveAndEnabled && gun.body.canBeGrabbed ? "ready" : "NOT ready")
+						+ ", " + sprites.Count(r => r.isVisible) + " of " + sprites.Length + " sprites drawn, parts within " + furthest.ToString("0.0") + " of it";
+					if (furthest > StrayPart)
 					{
-						Color c = r.color;
-						lines.Add("    " + r.name + ": " + (r.gameObject.activeInHierarchy ? "active" : "INACTIVE") + (r.enabled ? "" : " DISABLED") + ", sprite " + (r.sprite == null ? "NONE" : r.sprite.name)
-							+ ", alpha " + c.a.ToString("0.00") + ", layer " + LayerMask.LayerToName(r.gameObject.layer) + ", sorting " + r.sortingLayerName + "/" + r.sortingOrder
-							+ ", material " + (r.sharedMaterial == null ? "none" : r.sharedMaterial.name) + ", scale " + r.transform.lossyScale.ToString("0.00") + Changer(r.GetComponent<SpriteUpgradeChanger>())
-							+ ", at " + r.transform.position.ToString("0.00") + ", bounds " + r.bounds.size.ToString("0.00") + (r.isVisible ? ", DRAWN" : ", not drawn") + ", rendering layers " + r.renderingLayerMask
-							+ (cockpit == null ? "" : ", viewport " + cockpit.WorldToViewportPoint(r.bounds.center).ToString("0.00")));
+						Mod.Log.LogWarning(line + ": its art is away from the gun, so it will not show in the cockpit");
+					}
+					else
+					{
+						Mod.Info(line);
 					}
 				}
-				Mod.Info("Garage guns " + when + ": PlayerStats.gun " + PlayerStats.gun + ", " + InteriorCollider.Active.Count + " colliders in the hand's list\n    "
-					+ string.Join("\n    ", lines.ToArray())
-					+ (lowest == int.MaxValue ? "\n    no gun on with a collider in the hand's list" : "\n    sorted at or over the gun on (layer " + lowest + "): " + (over.Count == 0 ? "nothing" : over.Count + ": " + string.Join(", ", over.Take(20).ToArray()))));
 			}
 			catch (Exception e)
 			{
-				Mod.Log.LogWarning("Garage: the guns could not be reported: " + e.Message);
+				Mod.Log.LogWarning("Garage: the gun could not be reported: " + e.Message);
 			}
-		}
-
-		/// <summary>A sprite changer's settings (its fields are private): which upgrade's sprite it puts on, and whether it can switch its object off.</summary>
-		private static string Changer(SpriteUpgradeChanger changer)
-		{
-			if (changer == null)
-			{
-				return "";
-			}
-			Traverse t = Traverse.Create(changer);
-			return ", changer " + t.Field("upgradeType").GetValue() + " key '" + t.Field("customKey").GetValue() + "' apply " + t.Field("applySprite").GetValue()
-				+ " disable-if-not " + t.Field("disableIfVariantDoesentMatch").GetValue() + " variant " + t.Field("upgradeVariant").GetValue();
-		}
-
-		private static string PathOf(Transform t)
-		{
-			string path = t.name;
-			for (Transform p = t.parent; p != null; p = p.parent)
-			{
-				path = p.name + "/" + path;
-			}
-			return path;
 		}
 
 		internal static List<UpgradeComponent> Catalog()
