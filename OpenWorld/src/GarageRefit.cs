@@ -371,6 +371,77 @@ namespace HalfGripOpenWorld
 			return fresh;
 		}
 
+		/// <summary>
+		/// Writes the cockpit's guns to the log as the hand would find them: which is on, whether its grip can be grabbed, its colliders
+		/// in the hand's list and their sorting layer, and anything else in that list sorted at or over them (it would be picked instead
+		/// where the two overlap: the hand takes the highest layer under it). Owners reported guns that could not be used after a chassis
+		/// change with nothing in the log; this is what the next log needs to show where they went.
+		/// </summary>
+		internal static void Report(string when)
+		{
+			try
+			{
+				List<string> lines = new List<string>();
+				int lowest = int.MaxValue;
+				HashSet<InteriorCollider> gunColliders = new HashSet<InteriorCollider>();
+				foreach (Gun gun in UnityEngine.Object.FindObjectsByType<Gun>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+				{
+					if (holder != null && gun.transform.root == holder.transform)
+					{
+						continue;
+					}
+					InteriorCollider[] colliders = gun.GetComponentsInChildren<InteriorCollider>(true);
+					int listed = 0;
+					foreach (InteriorCollider c in colliders)
+					{
+						gunColliders.Add(c);
+						if (InteriorCollider.Active.Contains(c))
+						{
+							listed++;
+							if (gun.gameObject.activeInHierarchy)
+							{
+								lowest = Math.Min(lowest, c.sortingLayer);
+							}
+						}
+					}
+					Grabbable body = gun.body;
+					lines.Add(gun.name + " (" + gun.RequiredGunType + ") " + (gun.gameObject.activeInHierarchy ? "ON" : gun.gameObject.activeSelf ? "on under an off parent" : "off")
+						+ " at " + PathOf(gun.transform)
+						+ "; grip " + (body == null ? "none" : (body.isActiveAndEnabled ? "enabled" : "disabled") + (body.canBeGrabbed ? "" : ", cannot be grabbed") + (body.frozen ? ", frozen" : ""))
+						+ "; colliders " + listed + " of " + colliders.Length + " in the hand's list, layers " + string.Join("/", colliders.Select(c => c.sortingLayer.ToString()).Distinct().ToArray())
+						+ "; held model " + (gun.aimModel == null ? "missing" : gun.aimModel.gameObject.activeSelf ? "shown" : "hidden"));
+				}
+				List<string> over = new List<string>();
+				if (lowest != int.MaxValue)
+				{
+					foreach (InteriorCollider c in InteriorCollider.Active)
+					{
+						if (c != null && !gunColliders.Contains(c) && c.sortingLayer >= lowest)
+						{
+							over.Add(PathOf(c.transform) + " (layer " + c.sortingLayer + ")");
+						}
+					}
+				}
+				Mod.Log.LogInfo("Garage guns " + when + ": PlayerStats.gun " + PlayerStats.gun + ", " + InteriorCollider.Active.Count + " colliders in the hand's list\n    "
+					+ string.Join("\n    ", lines.ToArray())
+					+ (lowest == int.MaxValue ? "\n    no gun on with a collider in the hand's list" : "\n    sorted at or over the gun on (layer " + lowest + "): " + (over.Count == 0 ? "nothing" : over.Count + ": " + string.Join(", ", over.Take(20).ToArray()))));
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Garage: the guns could not be reported: " + e.Message);
+			}
+		}
+
+		private static string PathOf(Transform t)
+		{
+			string path = t.name;
+			for (Transform p = t.parent; p != null; p = p.parent)
+			{
+				path = p.name + "/" + path;
+			}
+			return path;
+		}
+
 		internal static List<UpgradeComponent> Catalog()
 		{
 			ItemCatalog catalog = ItemCatalog.Instance;

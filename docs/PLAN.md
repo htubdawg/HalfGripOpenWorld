@@ -1104,6 +1104,22 @@ fifth to join was put on the first spot, on top of a car.
 - **Checked:** compiled against the game (`tools/check.sh`), meshcheck passes, eventsim passes. Not yet tested in game with three
   or more (TESTING.md 34).
 
+### 0.23.4: guns after a chassis change (the owner's report on 0.23.3; open)
+
+The owner fitted Aero Tough (`aero_tough`) at the rally stage's service area with the shotgun on, then took the shotgun off and
+put it back: no gun could be used after. The log has no error: each refit emptied the car, put the four guns back as built and
+fitted the loadout (`aero_tough, shotgun, minimap.gps`), and the chassis switched the body model (`Paint of this car: 1:`).
+
+Read through and ruled out: `LoadoutRefit.Swap` (the chassis only sets stats and the body model), `CarSkinController.Refit` (turns
+one of the car's two body models on, `BodyModel` or `BodyModel2`; the guns are in `CarInterior` and their held models under the
+camera, in neither), `CarDamageVisuals` (shader values only), Dacia Body, the gun mods and Multiplayer (none react to the chassis).
+What the chassis item spawns (its interior or exterior half) is not in the refs; the game's assets are needed to see it.
+
+- **Diagnostics** (`GarageRefit.Report`): after each refit and as the garage closes, the log lists every gun (on or off, its path,
+  its grip, its colliders in the hand's list and their sorting layer, its held model) and anything in the hand's list sorted at or
+  over the gun that is on: what the hand would grab instead.
+- **Next:** the owner's log from TESTING.md 35 says which: the gun off, its grip disabled, or something over it.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
