@@ -165,6 +165,15 @@ namespace HalfGripOpenWorld
 					}
 					holder = new GameObject("OpenWorldGunTemplates");
 					holder.SetActive(false);
+					// On the cockpit's layer, so the floating origin leaves it and everything under it alone (Origin.Shift skips
+					// INTERIOR roots). On the world's layer the holder was moved with each shift while the copies' INTERIOR parts were
+					// put back, so they drifted a whole shift's distance from their gun every time: a gun built from them after the car
+					// had travelled sat kilometres off the cockpit camera, grabbable but never drawn (the owner's "the gun disappears").
+					int interior = LayerMask.NameToLayer("INTERIOR");
+					if (interior >= 0)
+					{
+						holder.layer = interior;
+					}
 					// Made while the scene loads: put with the gun, not in whatever scene is active (the one being left).
 					UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(holder, gun.gameObject.scene);
 					holderScene = scene;
@@ -369,6 +378,44 @@ namespace HalfGripOpenWorld
 				Mod.Log.LogWarning("Garage: " + fresh.name + " has " + renderers.Length + " sprites, its copy had " + (sprites == null ? 0 : sprites.Length) + "; its art is left as it is.");
 			}
 			return fresh;
+		}
+
+		/// <summary>A gun's part this far from its gun is not where the gun is drawn: what the origin did to the copies before 0.23.7.</summary>
+		private const float StrayPart = 50f;
+
+		/// <summary>
+		/// One line on the gun that is on, after a refit and as the garage closes: whether its grip can be grabbed, how many of its
+		/// sprites a camera drew, and how far its furthest part is from it. In the verbose log; a part far from its gun (the gun
+		/// grabbable but not drawn, as when the origin moved the copies) is a warning either way.
+		/// </summary>
+		internal static void Report(string when)
+		{
+			try
+			{
+				foreach (Gun gun in UnityEngine.Object.FindObjectsByType<Gun>(FindObjectsSortMode.None))
+				{
+					if (holder != null && gun.transform.root == holder.transform)
+					{
+						continue;
+					}
+					SpriteRenderer[] sprites = gun.GetComponentsInChildren<SpriteRenderer>(false);
+					float furthest = sprites.Length == 0 ? 0f : sprites.Max(r => Vector3.Distance(r.transform.position, gun.transform.position));
+					string line = "Garage: " + gun.name + " on " + when + ", grip " + (gun.body != null && gun.body.isActiveAndEnabled && gun.body.canBeGrabbed ? "ready" : "NOT ready")
+						+ ", " + sprites.Count(r => r.isVisible) + " of " + sprites.Length + " sprites drawn, parts within " + furthest.ToString("0.0") + " of it";
+					if (furthest > StrayPart)
+					{
+						Mod.Log.LogWarning(line + ": its art is away from the gun, so it will not show in the cockpit");
+					}
+					else
+					{
+						Mod.Info(line);
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Garage: the gun could not be reported: " + e.Message);
+			}
 		}
 
 		internal static List<UpgradeComponent> Catalog()

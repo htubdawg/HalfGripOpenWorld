@@ -178,6 +178,7 @@ namespace HalfGripOpenWorld
 			{
 				refillAt = -1f;
 				GarageRefit.RefillEffects();
+				GarageRefit.Report("after a refit");
 			}
 			CarControllerNew car = tm != null ? tm.playerCarController : null;
 			CarLink link = Link;
@@ -286,6 +287,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			Mod.Log.LogInfo("Garage closed");
+			GarageRefit.Report("as the garage closed");
 		}
 
 		/// <summary>Keeps the garage shut until the car goes into gear or leaves the circle: after a respawn into the circle.</summary>

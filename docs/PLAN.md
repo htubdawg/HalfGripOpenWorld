@@ -1104,6 +1104,47 @@ fifth to join was put on the first spot, on top of a car.
 - **Checked:** compiled against the game (`tools/check.sh`), meshcheck passes, eventsim passes. Not yet tested in game with three
   or more (TESTING.md 34).
 
+### 0.23.4 to 0.23.7: guns gone after a garage refit (the owner's report on 0.23.3; fixed in 0.23.7, log trimmed in 0.23.8)
+
+The owner fitted Aero Tough (`aero_tough`) at the rally stage's service area with the shotgun on, then took the shotgun off and
+put it back: no gun could be used after. The log has no error: each refit emptied the car, put the four guns back as built and
+fitted the loadout (`aero_tough, shotgun, minimap.gps`), and the chassis switched the body model (`Paint of this car: 1:`).
+
+Read through and ruled out: `LoadoutRefit.Swap` (the chassis only sets stats and the body model), `CarSkinController.Refit` (turns
+one of the car's two body models on, `BodyModel` or `BodyModel2`; the guns are in `CarInterior` and their held models under the
+camera, in neither), `CarDamageVisuals` (shader values only), Dacia Body, the gun mods and Multiplayer (none react to the chassis).
+What the chassis item spawns (its interior or exterior half) is not in the refs; the game's assets are needed to see it.
+
+- **Diagnostics** (`GarageRefit.Report`): after each refit and as the garage closes, the log lists every gun (on or off, its path,
+  its grip, its colliders in the hand's list and their sorting layer, its held model) and anything in the hand's list sorted at or
+  over the gun that is on: what the hand would grab instead.
+- **Next:** the owner's log from TESTING.md 35 says which: the gun off, its grip disabled, or something over it.
+- **The 0.23.4 log:** after Aero Tough the shotgun is on, its grip enabled, 6 of its 7 colliders in the hand's list, nothing over
+  it but the wheel, horn and shifter (as always): the same as with no chassis. The owner: "the gun literally just disappears from the
+  cockpit". So it is there and grabbable but not drawn.
+- **0.23.5:** the report also says how the gun on is drawn: each of its sprites (active, enabled, the sprite, alpha, layer, sorting,
+  material, scale, its `SpriteUpgradeChanger`'s settings, read by reflection), its position and where the interior camera sees it;
+  and a report as the garage opens, before any refit, to compare with.
+- **The 0.23.5 log:** any refit does it (taking the shotgun off and putting it back), not only a chassis. The fresh shotgun
+  matches the original as the garage opened in every sprite (active, enabled, sprite, alpha, layer, sorting, material, scale,
+  changer), its position and the interior camera's view of it. The owner's game is 0.419: the decompile (owner's `Managed` folder)
+  differs from 0.418 only in the steering (`HingedObject`'s spring limit, `CarLink`, `NSteeringWheel`), speedrun and stats code;
+  nothing in the guns, the loadout refit or the cockpit's drawing. An earlier log on 0.418 (0.17.0) did the same refits.
+- **0.23.6:** each sprite also logs where it is, its bounds, whether any camera drew it (`isVisible`), its rendering layers and
+  where in the interior camera's view it sits, before and after.
+- **The 0.23.6 log, the cause:** after the refit the shotgun's root is where it was (4.69, 8.77, 0) but every sprite under it is at
+  (14 254, 8.6, 15 000), not drawn. The copies' holder (`OpenWorldGunTemplates`) was a scene root on the world's layer, so
+  `Origin.Shift` moved it with the world; its guns' roots are on the Default layer and their parts on INTERIOR, so `KeepInterior`
+  put each part back as cockpit. Each shift left the copies' parts a shift further from their gun, and a gun built from them after
+  the car had travelled (the owner always teleports first) had its art kilometres off the interior camera: grabbable (the hand
+  works in the gun's own plane) but never drawn. Not the chassis, not 0.419: any refit after an origin shift.
+- **Fixed (0.23.7):** the holder is on the INTERIOR layer, so the origin skips it and all under it, as it does the cockpit. The
+  gun reports stay, in the verbose log only. No offline check can reach this (it needs the scene and a shift); TESTING.md 35 covers it.
+- **Checked:** compiled against 0.418 and 0.419 (`tools/check.sh`). **Owner tested 0.23.7: "looks like it works".**
+- **0.23.8, the log toned back:** the report is one line per refit and as the garage closes (the gun on, its grip, its sprites
+  drawn, how far its furthest part is), in the verbose log; a part over 50 from its gun is a warning whatever the setting. The
+  per-sprite detail and the report as the garage opens are gone.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
