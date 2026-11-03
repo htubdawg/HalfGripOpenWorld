@@ -1119,6 +1119,12 @@ What the chassis item spawns (its interior or exterior half) is not in the refs;
   its grip, its colliders in the hand's list and their sorting layer, its held model) and anything in the hand's list sorted at or
   over the gun that is on: what the hand would grab instead.
 - **Next:** the owner's log from TESTING.md 35 says which: the gun off, its grip disabled, or something over it.
+- **The 0.23.4 log:** after Aero Tough the shotgun is on, its grip enabled, 6 of its 7 colliders in the hand's list, nothing over
+  it but the wheel, horn and shifter (as always): the same as with no chassis. The owner: "the gun literally just disappears from the
+  cockpit". So it is there and grabbable but not drawn.
+- **0.23.5:** the report also says how the gun on is drawn: each of its sprites (active, enabled, the sprite, alpha, layer, sorting,
+  material, scale, its `SpriteUpgradeChanger`'s settings, read by reflection), its position and where the interior camera sees it;
+  and a report as the garage opens, before any refit, to compare with.
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 

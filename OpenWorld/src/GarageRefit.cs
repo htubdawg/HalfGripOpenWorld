@@ -422,6 +422,24 @@ namespace HalfGripOpenWorld
 						}
 					}
 				}
+				// How the gun that is on is drawn: the owner sees it vanish from the cockpit while it is on and can be grabbed.
+				Camera cockpit = Camera.allCameras.FirstOrDefault(c => c.name == "InteriorCamera") ?? UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsSortMode.None).FirstOrDefault(c => c.name.IndexOf("Interior", StringComparison.OrdinalIgnoreCase) >= 0);
+				int interior = LayerMask.NameToLayer("INTERIOR");
+				foreach (Gun gun in UnityEngine.Object.FindObjectsByType<Gun>(FindObjectsSortMode.None))
+				{
+					if (holder != null && gun.transform.root == holder.transform)
+					{
+						continue;
+					}
+					lines.Add("  drawn: " + gun.name + " at " + gun.transform.position.ToString("0.00") + (cockpit == null ? ", no interior camera" : ", " + cockpit.name + " " + (cockpit.isActiveAndEnabled ? "on" : "off") + " sees INTERIOR " + ((cockpit.cullingMask & (1 << interior)) != 0) + ", gun at viewport " + cockpit.WorldToViewportPoint(gun.transform.position).ToString("0.00")));
+					foreach (SpriteRenderer r in gun.GetComponentsInChildren<SpriteRenderer>(true))
+					{
+						Color c = r.color;
+						lines.Add("    " + r.name + ": " + (r.gameObject.activeInHierarchy ? "active" : "INACTIVE") + (r.enabled ? "" : " DISABLED") + ", sprite " + (r.sprite == null ? "NONE" : r.sprite.name)
+							+ ", alpha " + c.a.ToString("0.00") + ", layer " + LayerMask.LayerToName(r.gameObject.layer) + ", sorting " + r.sortingLayerName + "/" + r.sortingOrder
+							+ ", material " + (r.sharedMaterial == null ? "none" : r.sharedMaterial.name) + ", scale " + r.transform.lossyScale.ToString("0.00") + Changer(r.GetComponent<SpriteUpgradeChanger>()));
+					}
+				}
 				Mod.Log.LogInfo("Garage guns " + when + ": PlayerStats.gun " + PlayerStats.gun + ", " + InteriorCollider.Active.Count + " colliders in the hand's list\n    "
 					+ string.Join("\n    ", lines.ToArray())
 					+ (lowest == int.MaxValue ? "\n    no gun on with a collider in the hand's list" : "\n    sorted at or over the gun on (layer " + lowest + "): " + (over.Count == 0 ? "nothing" : over.Count + ": " + string.Join(", ", over.Take(20).ToArray()))));
@@ -430,6 +448,18 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogWarning("Garage: the guns could not be reported: " + e.Message);
 			}
+		}
+
+		/// <summary>A sprite changer's settings (its fields are private): which upgrade's sprite it puts on, and whether it can switch its object off.</summary>
+		private static string Changer(SpriteUpgradeChanger changer)
+		{
+			if (changer == null)
+			{
+				return "";
+			}
+			Traverse t = Traverse.Create(changer);
+			return ", changer " + t.Field("upgradeType").GetValue() + " key '" + t.Field("customKey").GetValue() + "' apply " + t.Field("applySprite").GetValue()
+				+ " disable-if-not " + t.Field("disableIfVariantDoesentMatch").GetValue() + " variant " + t.Field("upgradeVariant").GetValue();
 		}
 
 		private static string PathOf(Transform t)

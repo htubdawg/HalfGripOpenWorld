@@ -261,6 +261,7 @@ namespace HalfGripOpenWorld
 			Cursor.visible = true;
 			ui.Opened();
 			Mod.Log.LogInfo("Garage open: " + site.Name + ", health " + link.hp.ToString("0") + " of " + link.MaxHp.ToString("0"));
+			GarageRefit.Report("as the garage opened");
 		}
 
 		/// <summary>Closes the garage; the controls come back on the next frame (so the Escape that closed it does not also open the pause menu).</summary>
