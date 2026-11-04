@@ -179,6 +179,7 @@ namespace HalfGripOpenWorld
 			live.hideFlags = HideFlags.HideAndDontSave;
 			live.rain = false;
 			live.snow = false;
+			live.ash = false;
 			live.gripExponent = 1f;
 			live.gripMultiplier = 1f;
 			controller.activeProfile = live;
@@ -219,6 +220,11 @@ namespace HalfGripOpenWorld
 			if (controller.snowEffect != null)
 			{
 				controller.snowEffect.SetActive(false);
+			}
+			// No ash, ever: Weather's copies have it off, and this also covers a scene that started on a weather of its own.
+			if (controller.ashEffect != null)
+			{
+				controller.ashEffect.SetActive(false);
 			}
 
 			// The rain's sound is ours, as loud as it rains (a weather that brought its own is stopped).
@@ -496,6 +502,7 @@ namespace HalfGripOpenWorld
 		{
 			if (!ready || tm == null || tm.playerCarController == null)
 			{
+				WeatherView.Clear();
 				return;
 			}
 			if (Mod.WeatherSkip.Value && Mod.WeatherSkipKey != null && Mod.WeatherSkipKey.Down)
@@ -521,6 +528,7 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogWarning("The sky stopped: " + e);
 				ready = false;
+				WeatherView.Clear();
 			}
 		}
 
@@ -712,6 +720,10 @@ namespace HalfGripOpenWorld
 
 			// ---- rain and snow ----
 			float falling = rain < 0.02f ? 0f : rain;
+			// For other mods (WeatherView): what falls here, split as the particles are, before their budget.
+			WeatherView.Set(falling * (1f - snowShare), falling * snowShare,
+				new Vector3((float)(storms.WindSpeed * DetMath.Cos(storms.WindAngle)), 0f, (float)(storms.WindSpeed * DetMath.Sin(storms.WindAngle))),
+				cloud, wet, hour);
 			Fall(controller.rainEffect, rainParticles, falling * (1f - snowShare), out live.rain);
 			Fall(controller.snowEffect, snowParticles, falling * snowShare, out live.snow);
 			MovePlanes();
@@ -1014,6 +1026,7 @@ namespace HalfGripOpenWorld
 		private void OnDestroy()
 		{
 			Status = null;
+			WeatherView.Clear();
 			FarView.DrawnReach = 0f;
 			if (live != null)
 			{

@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.23.9**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.24.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +47,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.23.9` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.24.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -187,6 +187,23 @@ member name). **Do not rename it or change its members' names or signatures.** A
 A tile's map picture is its land use with water and roads painted in, in the colours of `docs/world.png` (roads at least 2 pixels
 wide), car parks and the circuit in greys, and each garage (or group of garages within 250 units) a cyan disc in a dark ring about
 100 units across, over everything. It is made on a worker thread and kept only while the tile is loaded. Display only.
+## Weather API for other mods
+
+`HalfGripOpenWorld.WeatherView` (`WeatherView.cs`, since 0.24.0; asked for by the Slap Pack mod's windscreen) is the weather at the
+player's car, read by reflection the same way as `MapView`. **Do not rename it or change its members' names or signatures**; if a
+member's meaning ever changes, `ApiVersion` goes up. All static, all main thread, nothing worked out or allocated on a read:
+
+| Member | |
+|---|---|
+| `int ApiVersion` | 1. |
+| `bool Active` | True while an Open World race is loaded and its sky is running. False before the sky starts, on a scene change, after it stopped on an error, and outside the Open World; then every value reads 0. |
+| `float Rain`, `float Snow` | What falls at the car, 0 to 1 each, `Rain + Snow` at most 1 (both above 0 is sleet). Eased, after the cut-off under which nothing falls, split by height round the day's snow line; independent of the particles' graphics budget. |
+| `Vector3 Wind` | The wind the storms drift on, in world units a second, the way the air moves: x east, z north, y 0. About 4 to 11 (a car is about 14 long), fixed for a race. The floating origin moves only positions, so it is the same in scene coordinates. |
+| `float Cloud` | Cloud over the car, 0 to 1 (comes before a storm and stays after it). |
+| `float Wetness` | How wet the road is at the car, 0 to 1 (stays wet after a shower, then dries). |
+| `float Hour` | Time of day, 0 to 24. |
+| `bool TryGetLocalWeather(out float rain, out float snow, out Vector3 wind)` | `Rain`, `Snow` and `Wind` in one call; false and all 0 when not `Active`. Plain parameter types, so it can be bound to a delegate of the reader's own and polled each frame. |
+
 ## Checking a change
 
 Compile against the game without starting it (Linux or macOS, or WSL; the game folder can be the HalfGripRefs repo's `game/`):
