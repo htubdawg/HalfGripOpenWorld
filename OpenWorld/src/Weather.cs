@@ -11,7 +11,7 @@ namespace HalfGripOpenWorld
 	/// mountain night, the factory night). <see cref="Sky"/> blends their light and fog between them as the race's clock goes round (the
 	/// sky itself is painted by <see cref="SkyPaint"/>, with a little of their fog colours as haze; their skies are only used if it cannot
 	/// be), and brings the rain and snow from <see cref="Storms"/>, so the copies here have their own rain, snow, rain sounds and grip
-	/// taken out. Only the fog is changed besides, so it ends where the loaded tiles end.
+	/// taken out, and their ash too (the Stadium's and the red forest's fall everywhere all race long: no ash in the Open World, owner). Only the fog is changed besides, so it ends where the loaded tiles end.
 	///
 	/// The draws, the storms and the time of day all come from the room's seed (the Multiplayer mod's <c>Room.Seed</c>, the same for every
 	/// player and new each race), so everyone in a room gets the same sky. Outside a room (TestMode) the seed is random.
@@ -58,7 +58,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// A copy of every map's weather (one per name), sorted into day and night, with the fog set to the tile radius and the rain, snow,
-		/// rain sounds and grip changes taken out (the storms bring those).
+		/// rain sounds and grip changes taken out (the storms bring those), and the ash (never in the Open World).
 		/// </summary>
 		private static void Pool()
 		{
@@ -91,6 +91,7 @@ namespace HalfGripOpenWorld
 				w.fogStart = Mathf.Min(map.weather.fogActive ? map.weather.fogStart : reach * 0.25f, w.fogEnd * 0.5f);
 				w.rain = false;
 				w.snow = false;
+				w.ash = false;
 				w.gripExponent = 1f;
 				w.gripMultiplier = 1f;
 				if (w.ambientalSounds != null)
