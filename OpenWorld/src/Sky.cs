@@ -179,6 +179,7 @@ namespace HalfGripOpenWorld
 			live.hideFlags = HideFlags.HideAndDontSave;
 			live.rain = false;
 			live.snow = false;
+			live.ash = false;
 			live.gripExponent = 1f;
 			live.gripMultiplier = 1f;
 			controller.activeProfile = live;
@@ -219,6 +220,11 @@ namespace HalfGripOpenWorld
 			if (controller.snowEffect != null)
 			{
 				controller.snowEffect.SetActive(false);
+			}
+			// No ash, ever: Weather's copies have it off, and this also covers a scene that started on a weather of its own.
+			if (controller.ashEffect != null)
+			{
+				controller.ashEffect.SetActive(false);
 			}
 
 			// The rain's sound is ours, as loud as it rains (a weather that brought its own is stopped).

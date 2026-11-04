@@ -614,7 +614,7 @@ started on the host's go), so every player has the same sky and nothing is sent.
 - **Day and night (`Sky.cs`).** A day lasts 40 minutes (100 seconds an hour); three races in four start between 07:00 and 17:00,
   the rest at any hour. The sun goes from east to south to west, at most 55° up; the light is never put below 7° (long shadows
   flicker) and fades out round the horizon while the moon takes over opposite. The light turns gold low down. `Weather` now draws a
-  day look (the weathers with a sky and no headlights: Stadium ash, fiery factory, Forest rainy day, red forest, mountain day) and a
+  day look (the weathers with a sky and no headlights: Stadium ash, fiery factory, Forest rainy day, red forest, mountain day; the ash taken out in 0.23.10) and a
   night look (the night weathers with a sky); the light's and fog's colours and the sky blend from one to the other, the day sky
   dimmed and tinted at dusk, the night sky (its stars turning) swapped in once it is dark. The night weathers' moonlight is made
   for racing in an arena, so it is taken at 35 %. Headlights go on from dusk to dawn and under a black sky.
@@ -1158,6 +1158,15 @@ tree data, nothing solid more than 2 above the ground from five rays down), and 
 only 4.5 off; else in place. Never to a road far off (the owner: a driver in the deep woods does not want to be sent hundreds of
 metres to a road), except from the water with no dry land within 60, which would otherwise dunk the car again and again.
 The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
+
+### 0.23.10: no ash (asked for by the owner)
+
+Two of the day looks `Weather` draws from, the Stadium's `StadiumAsh` and the Forest Fire map's `RedForrest`, have `ash` set, and
+`Weather.Pool` took out their rain, snow and grip but not that, so on about two races in five the scene's `AshEffect` (falling ash
+particles, which `WeatherController` keeps over the car) fell all race long. The copies now have `ash` off, and `Sky.Take` switches
+`AshEffect` off with the vanilla rain and snow, so a scene that started on its own weather has none either. The looks' light, fog
+and colours are kept. The only rain and snow are `Storms`'s (the game sets its particles once, in `ApplyProfile` at the scene's
+start, and only moves them after).
 
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 

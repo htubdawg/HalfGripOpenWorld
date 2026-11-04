@@ -248,3 +248,6 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    the gun is still in the cockpit, grabs, aims and fires. Then drive or teleport far again, come back to a garage and swap guns
    once more: still there. With `VerboseLog` on, each refit logs `Garage: ShotgunAssembly on after a refit, grip ready, n of n
    sprites drawn, parts within` a few units; a warning `its art is away from the gun` must never appear.
+36. No ash (0.23.10). Start a few races (or rooms) until the verbose log says `Weather: StadiumAsh by day` or `RedForrest by day`:
+   no ash falls, anywhere, all race; the light and fog still look like that weather. Rain and snow come only with a storm (the overlay's
+   `rain` above 0), never on a dry stretch.
