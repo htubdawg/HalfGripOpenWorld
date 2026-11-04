@@ -56,6 +56,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `SkyPaint.cs` | The sky painted in code into a panoramic texture: the gradient, the sun's glow and disc, the moon, the stars turning, drifting cloud, the land past the far view lit and fogged; where the sun and moon are at an hour. No Unity types (`tools/skyview` draws it) |
 | `Skyline.cs`, `SkylineBuild.cs` | The land past the far view's drawn edge as the painted sky shows it: per sky texel round the horizon, the land a ray meets, its distance, colour and slope (the data; and its build, rays marched over `FarGrid` on a worker). No Unity types (`tools/farview` checks it) |
 | `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
+| `WeatherView.cs` | **Public API** for other mods (Slap Pack reads it by reflection): rain, snow, wind, cloud, wetness and the hour at the car, set by `Sky`. See README |
 | `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
 | `FarGrid.cs` | The far view's low-detail world: heights every 50 (the tiles' vertices; water lifted, woods' canopy), a picture every 25, the skirts' depths along tile edges. Pure, built after the layout |
 | `FarView.cs` | The far view: chunk meshes past the loaded tiles (holes where tiles are, skirts), the sea to the horizon, the cameras' reach |
@@ -87,6 +88,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - Do not invent an `ObjectiveKind` (a saved run with one is deleted).
 - `HalfGripOpenWorld.MapView` is a public API that other mods (MiniMap) read by reflection: never rename it or change its members'
   names or signatures. It is left out of `tools/meshcheck` (it needs `Streamer`).
+- `HalfGripOpenWorld.WeatherView` is the same kind of public API (Slap Pack reads it): the weather at the car, written by `Sky` each
+  frame. Never rename it or its members; if a member's meaning changes, bump its `ApiVersion`. See the README's Weather API.
 
 ## Checking changes
 

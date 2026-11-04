@@ -1214,3 +1214,14 @@ tiers, `meshcheck` checks on the routes, the timetable, ownership, handoff and r
 separate thing: they can use the game's own `EnemyController` unchanged, since a course is a closed lap, as the token loop is.)
 
 Open questions for the owner: whether traffic should be shootable and wreckable; how dense.
+
+### 0.24.0: a weather API for other mods (asked for by Slap Pack)
+
+Slap Pack's windscreen (the `test/windshield-weather` branch, `docs/public-weather-api.md` there) read `Sky`'s private fields and
+`Storms` by reflection, and asked for a public contract instead. **Done:** `WeatherView` (`WeatherView.cs`), static members like
+`MapView`'s (a snapshot struct, as proposed, could not be named by a mod compiled on its own): `ApiVersion` 1, `Active`, `Rain`,
+`Snow`, `Wind` (world units a second, the way the air moves, x east, z north), `Cloud`, `Wetness`, `Hour`, and
+`TryGetLocalWeather(out float rain, out float snow, out Vector3 wind)`. `Sky.Step` sets it where it splits the rain and snow for the
+particles (same 0.02 cut-off, before the particles' budget); cleared when the sky is not running, stops or is destroyed. Checked:
+compiles (`tools/check.sh`, meshcheck builds). **Not tested in game**; Slap Pack's side (prefer `WeatherView`, keep its old adapter as
+a fallback) is for that mod's maintainer.
