@@ -1168,9 +1168,18 @@ Made for game 0.419 and HalfGripTools 1.0.6. The world is unchanged, so the same
 - `Weather.Pool` cached an empty pool when it ran before the run config existed, which left every later race of the session on the
   map's own weather. An empty pool is now looked for again at the next race.
 - `MapEntry.Ensure` had the same missing-map check twice: the second copy is gone.
+- Every Open World race made a new set of about 40 materials and their textures (ground, roads, verges, sidewalks, tracks, water,
+  buildings, the circuit, gravel, the tunnel mouths' dark, the grass) and never freed them: made HideAndDontSave, they outlive the
+  scene and Unity's unloading, so memory grew with each race of a session. `WorldAssets` (on the world's root) and
+  `Foliage.OnDestroy` now free them, and their textures, with the world; only what the mod made (DontSave) is ever destroyed. The
+  tunnel mouths use the roads' concrete instead of making a second set of road materials.
+- Read through for the audit: every file that runs in the game and no tool runs (`Origin`, `MultiplayerLink` against the
+  Multiplayer mod's protocol 8 source, `Streamer`, `WorldScene`, `Garage`, `GarageRefit`, `EventRace`, `EventBoard`, `EventLink`,
+  `ShifterHand`, `GameMode`, `Patches`, `Sky`, `FarView`, `Foliage`, `Weather`, `MapEntry`). Nothing else found that needs
+  changing; the generator is left to preview and meshcheck.
 - Checks: every file compiled against HalfGripRefs' 0.419 `game/` (C# 10, netstandard2.1), with a stand-in for the HalfGripTools
   members the mod uses in place of the DLL, because building HalfGripTools was refused in that session; so `tools/check.sh` itself
-  did not run. eventsim, preview and meshcheck pass.
+  did not run. eventsim, preview and meshcheck pass (meshcheck and jview also build with the change).
 - Next: the owner's test in game (TESTING.md 37 and 38 still stand), then PR B below.
 
 ## Next: towns laid out like real ones (agreed with the owner; PR A done, 0.26.0)

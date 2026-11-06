@@ -25,6 +25,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `MapEntry.cs` | Adds the OpenWorld map to `RunConfig.maps` as a copy of TokyoNeon with its own track index (30) |
 | `Patches.cs` | Harmony: track index, TestMode and weather draw, kept out of run map draws, no laps, no solo AI, reset in place, fell-under-ground |
 | `WorldScene.cs` | Builds the world in the Tokyo scene: hides Tokyo's arena and city, grid on the trunk road, tunnel mouths, token track loop |
+| `WorldAssets.cs` | Frees the materials and textures made for a race when the world goes (they are HideAndDontSave, so nothing else would) |
 | `WorldGen.cs`, `Noise.cs`, `Rng.cs`, `Heap.cs` | The land's height function (layers) and the deterministic randomness and ordering under it |
 | `Rivers.cs` | Drainage (priority flood), rivers and lakes, and their cut into the land |
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
