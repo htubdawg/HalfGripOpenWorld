@@ -51,7 +51,7 @@ namespace HalfGripOpenWorld
 	/// Built once, with <see cref="Rng"/> and plain arithmetic only, so every player gets the same roads, and never changed afterwards,
 	/// so the worker threads that build tiles can read it freely.
 	/// </summary>
-	internal static class Network
+	internal static partial class Network
 	{
 		internal sealed class Road
 		{
@@ -296,6 +296,7 @@ namespace HalfGripOpenWorld
 			Places.Build(rng);
 			segments = new Segments();
 			router = new Router();
+			Reserved.Clear();
 			RallyAccess = null;
 			ClimbAccess = null;
 
@@ -386,11 +387,15 @@ namespace HalfGripOpenWorld
 				}
 			}
 
-			// 3. Streets, grown out from the roads in each town and village.
+			// 3. Streets: each town laid out ring by ring (TownPlan.cs), each village's grown out from its roads.
 			for (int i = 0; i < Places.All.Count; i++)
 			{
 				Places.Place p = Places.All[i];
-				if (p.Kind != PlaceKind.Hamlet)
+				if (p.Kind == PlaceKind.Town)
+				{
+					Plan(new Rng(Noise.Mix(WorldGen.Seed + 7000UL + (ulong)i)), p);
+				}
+				else if (p.Kind == PlaceKind.Village)
 				{
 					Grow(new Rng(Noise.Mix(WorldGen.Seed + 7000UL + (ulong)i)), p);
 				}
@@ -3701,6 +3706,7 @@ namespace HalfGripOpenWorld
 			const double seg = 30.0;
 			List<(double x, double z)> pts = new List<(double x, double z)> { (x, z) };
 			double endPin = double.NaN;
+			int endRoad = -1;
 			double walked = 0.0;
 			double h = WorldGen.Base(x, z);
 			while (walked < length)
@@ -3742,6 +3748,7 @@ namespace HalfGripOpenWorld
 					{
 						pts.Add((ix, iz));
 						endPin = iy;
+						endRoad = segments.Hit;
 						break;
 					}
 				}
@@ -3750,6 +3757,7 @@ namespace HalfGripOpenWorld
 				{
 					pts.Add((sx, sz));
 					endPin = sy;
+					endRoad = segments.Hit;
 					break;
 				}
 				pts.Add((nx, nz));
@@ -3762,7 +3770,37 @@ namespace HalfGripOpenWorld
 			{
 				return null;
 			}
-			if (steered && (double.IsNaN(endPin) || Roads[segments.Hit].Kind > smallest))
+			if (steered && (double.IsNaN(endPin) || Roads[endRoad].Kind > smallest))
+			{
+				return null;
+			}
+			// A village's old road leaving from the middle of a road (not where roads end) leaves it square too.
+			if (from < 0 && !steered && pts.Count >= 3 && segments.Snap(pts[0].x, pts[0].z, 0.5, -1, out double _, out double _, out double _))
+			{
+				int on = segments.Hit;
+				Road o = Roads[on];
+				double e0 = Math.Abs(o.X[0] - pts[0].x) + Math.Abs(o.Z[0] - pts[0].z), e1 = Math.Abs(o.X[o.Count - 1] - pts[0].x) + Math.Abs(o.Z[o.Count - 1] - pts[0].z);
+				if (e0 > 3.0 && e1 > 3.0)
+				{
+					End begin = new End { Road = on, X = pts[0].x, Z = pts[0].z, Y = y };
+					pts.Reverse();
+					SquareEnd(pts, ref begin);
+					pts.Reverse();
+					y = begin.Road >= 0 ? begin.Y : WorldGen.Base(pts[0].x, pts[0].z);
+				}
+			}
+			// Meeting a road at a slant, it bends round to meet it square (or stops short of it, a dead end).
+			if (endRoad >= 0)
+			{
+				End end = new End { Road = endRoad, X = pts[pts.Count - 1].x, Z = pts[pts.Count - 1].z, Y = endPin };
+				SquareEnd(pts, ref end);
+				if (end.Road < 0 && steered)
+				{
+					return null;
+				}
+				endPin = end.Road < 0 ? double.NaN : end.Y;
+			}
+			if (pts.Count < 3 && double.IsNaN(endPin))
 			{
 				return null;
 			}

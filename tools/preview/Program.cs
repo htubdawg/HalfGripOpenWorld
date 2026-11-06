@@ -39,10 +39,14 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("  " + places[0] + " towns, " + places[1] + " villages, " + places[2] + " hamlets and farms");
-		int[] lots = new int[7];
+		int[] lots = new int[8];
 		foreach (Town.Lot lot in Town.Lots)
 		{
 			lots[(int)lot.Kind]++;
+			if (lot.Kind == LotKind.Market)
+			{
+				Console.WriteLine("  market place at " + lot.Place + " (" + lot.X.ToString("0") + ", " + lot.Z.ToString("0") + ")");
+			}
 			if (lot.Kind == LotKind.Retail)
 			{
 				Console.WriteLine("  retail park at " + lot.Place + " (" + lot.X.ToString("0") + ", " + lot.Z.ToString("0") + ")");
@@ -227,6 +231,52 @@ internal static class Program
 		}
 		Console.WriteLine("junctions: " + tees + " T-junction ends, about " + crossings / 2 + " crossroads, " + deadEnds + " dead ends; in the country " + country[(int)RoadKind.Lane] + " lanes', " + country[(int)RoadKind.Track] + " tracks', " + country[(int)RoadKind.Path] + " footpaths'");
 
+		// Streets meeting square: in every town and village, each street or lane end on another road (not a dead end, nor two roads
+		// meeting end to end), the angle it comes in at over its last 30 against the road it meets; 10 to 60 degrees is a slant (under
+		// 10 a street carrying on alongside). The towns are laid out to meet square (Network.SquareEnd): at most 3% slanted.
+		int ends = 0, slanted = 0;
+		List<string> slants = new List<string>();
+		for (int q = 0; q < Network.Roads.Count; q++)
+		{
+			Network.Road r = Network.Roads[q];
+			if (r.Kind != RoadKind.Street && r.Kind != RoadKind.Lane)
+			{
+				continue;
+			}
+			for (int e = 0; e < 2; e++)
+			{
+				int i = e == 0 ? 0 : r.Count - 1;
+				if ((e == 0 ? r.Dead0 || r.Joined0 : r.Dead1 || r.Joined1) || !InSettlement(r.X[i], r.Z[i]))
+				{
+					continue;
+				}
+				int j = e == 0 ? 1 : r.Count - 2;
+				while (j > 0 && j < r.Count - 1 && Math.Sqrt((r.X[j] - r.X[i]) * (r.X[j] - r.X[i]) + (r.Z[j] - r.Z[i]) * (r.Z[j] - r.Z[i])) < 30.0)
+				{
+					j += e == 0 ? 1 : -1;
+				}
+				double ax = r.X[i] - r.X[j], az = r.Z[i] - r.Z[j], al = Math.Sqrt(ax * ax + az * az);
+				if (!MetRoad(q, r.X[i], r.Z[i], out double tx, out double tz) || al <= 0.0)
+				{
+					continue;
+				}
+				ends++;
+				double cos = Math.Abs(ax * tx + az * tz) / al;
+				if (cos < 0.9848 && cos > 0.5)
+				{
+					slanted++;
+					slants.Add("(" + r.X[i].ToString("0") + ", " + r.Z[i].ToString("0") + ")");
+				}
+			}
+		}
+		double slantShare = slanted / (double)Math.Max(1, ends);
+		Console.WriteLine("square: " + ends + " street and lane ends on another road in towns and villages, " + slanted + " meeting it at 10 to 60 degrees (" + (slantShare * 100.0).ToString("0.0") + "%)" + (slants.Count > 0 ? ": " + string.Join(" ", slants.Take(12)) : ""));
+		if (slantShare > 0.03)
+		{
+			Console.WriteLine("FAIL: more than 3% of streets meet their road at a slant");
+			ok = false;
+		}
+
 		// The ground meets each road's bed at its centre (bridges and cuts at junctions excepted; junctions may differ a little by design).
 		double worstBed = 0.0;
 		foreach (Network.Road r in Network.Roads)
@@ -283,6 +333,58 @@ internal static class Program
 		Write(labelled, size, size, map, false);
 		Console.WriteLine("wrote " + labelled);
 		return ok ? 0 : 1;
+	}
+
+	/// <summary>Whether (x, z) is in a town or village.</summary>
+	private static bool InSettlement(double x, double z)
+	{
+		foreach (Places.Place p in Places.All)
+		{
+			if (p.Kind != PlaceKind.Hamlet && (x - p.X) * (x - p.X) + (z - p.Z) * (z - p.Z) < p.Radius * p.Radius * 1.1)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// The road road <paramref name="own"/>'s end at (x, z) is on (its centre line within its half width and 3), and its way there; false
+	/// if none, or if that road also ends there (roads meeting end to end, or at a hub).
+	/// </summary>
+	private static bool MetRoad(int own, double x, double z, out double tx, out double tz)
+	{
+		tx = tz = 0.0;
+		double best = double.MaxValue;
+		bool found = false;
+		for (int q = 0; q < Network.Roads.Count; q++)
+		{
+			Network.Road o = Network.Roads[q];
+			if (q == own || Network.Unpaved(o.Kind) || o.Kind == RoadKind.Climb)
+			{
+				continue;
+			}
+			for (int k = 0; k + 1 < o.Count; k++)
+			{
+				double sx = o.X[k + 1] - o.X[k], sz = o.Z[k + 1] - o.Z[k], l2 = sx * sx + sz * sz;
+				if (Math.Abs(o.X[k] - x) > 60.0 || Math.Abs(o.Z[k] - z) > 60.0 || l2 <= 0.0)
+				{
+					continue;
+				}
+				double t = Math.Max(0.0, Math.Min(1.0, ((x - o.X[k]) * sx + (z - o.Z[k]) * sz) / l2));
+				double px = o.X[k] + sx * t - x, pz = o.Z[k] + sz * t - z, d = Math.Sqrt(px * px + pz * pz);
+				if (d < o.Half + 3.0 && d < best)
+				{
+					bool atEnd = Math.Sqrt((o.X[0] - x) * (o.X[0] - x) + (o.Z[0] - z) * (o.Z[0] - z)) < 3.0 || Math.Sqrt((o.X[o.Count - 1] - x) * (o.X[o.Count - 1] - x) + (o.Z[o.Count - 1] - z) * (o.Z[o.Count - 1] - z)) < 3.0;
+					best = d;
+					found = !atEnd;
+					double l = Math.Sqrt(l2);
+					tx = sx / l;
+					tz = sz / l;
+				}
+			}
+		}
+		return found;
 	}
 
 	private static bool OnAnother(Network.Road self, double x, double z)

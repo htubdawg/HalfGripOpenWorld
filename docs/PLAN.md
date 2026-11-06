@@ -1159,7 +1159,38 @@ only 4.5 off; else in place. Never to a road far off (the owner: a driver in the
 metres to a road), except from the water with no dry land within 60, which would otherwise dunk the car again and again.
 The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
 
-## Next (proposed, to agree with the owner): towns laid out like real ones
+## Next: towns laid out like real ones (agreed with the owner; PR A in progress)
+
+**Agreed** (the owner's answers to the open questions below): grid patches about a third of a town, as planned; the market place
+both a square and a widened high street; back alleys both (some drivable lanes, some footpaths); Westhaven gets a seafront.
+
+**Status of PR A (work in progress on `claude/nifty-cray-9frs2i`, not finished, version not bumped):**
+
+- Done: `OpenWorld/src/TownPlan.cs` (`Network` is now `partial`): `Plan` replaces `Grow` for towns (villages keep `Grow`): the
+  seafront (`Seafront`), old roads into gaps over about 115 degrees, pointed where there is room (`Room`, `OldRoad`), back lanes
+  and their short lanes (`BackLanes`, `Connector`, as `RoadKind.Lane`), ring roads per wedge with fallback radii (`RingRoad`),
+  terrace grids per wedge with alleys (`Terraces`, `Line`), crescents and closes (`Estates`, `Crescent`, `Close`, `Closes`). All
+  laid by `Follow` (march with `Walk`'s stop rules; crosses roads of its own patch at 60 degrees or more; stops at the beach,
+  `Beach` = LandUse's sand rule; never ends on the trunk) and `Lay`/`Both`. `SquareEnd` bends a street meeting a road at more than
+  25 degrees off square (or stops it 60 short); also used in `Walk` (ends, and a village old road's start).
+- Ground kept for lots (`Reserved`, `Kept`; parks keep off it too): the retail park (`ReserveRetail`, works: the retail park is
+  back) and the market place (`ReserveMarket`).
+- `LotKind.Market = 7` (`Town.cs`: size 150 by 70, open to the back; placed first in `Town.Build`, from 0.05 to 0.2 out on a main
+  road in each town); drawn in `Buildings.Lot` (paving, market cross, stalls) with `Buildings.Market` (a row of shopfront terraces
+  behind it); the teleport goes to it (`Destinations`). The seafront builds houses on its landward side only (`Plots`).
+- `tools/preview`: new `square` check (street and lane ends meeting at 10 to 60 degrees, fails over 3%): now 1.9% (the four left
+  are villages' near end-to-end joints). Lots array sized 8, market places listed. TownPlan.cs added to the preview, farview and
+  stormview projects. `tools/jview` built again (its exclude list lacked EventLink.cs and EventUi.cs; broken on main).
+- **Not working yet: no market place is placed.** Kingsbridge: `ReserveMarket` found no side flat enough (roughness test against
+  `WorldGen.Base`; try `Network.Ground` or a looser limit, or other arms). Westhaven: kept ground at (11858, -10519) but every
+  `Town.Fit` there failed the `Claims`/`Parks.At` test (fail 8) and the bend test (fail 3) near it: check which road claims it
+  (maybe the seafront or the hub's other main road) and that parks now keep off (`Parks.Raster` checks `Network.Kept`).
+- Then: run `meshcheck` (baseline on main passes; HalfGripRefs clone at `../halfgriprefs`), look at junctions with `jview`
+  (crossroads in the grids, back lanes), `check.sh` (needs HalfGripTools.dll: clone and build HalfGripTools), update DESIGN.md
+  (World 5, 8), README, bump to 0.26.0, open the PR. Maps of the towns before and after: `tools/preview` round Kingsbridge
+  (`-4490 -1939 4400`) and Westhaven (`9722 -8524 4400`).
+
+## The proposal (as written before it was agreed)
 
 Asked for by the owner: the major towns' roads and buildings a bit more realistic, some gridding but not too much.
 
