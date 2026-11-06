@@ -1289,6 +1289,15 @@ met its lane a few units short of the farm, leaving a stub. **Done** (`Network.c
 - `meshcheck`: `homes` (mailboxes and houses clear of roads and water, houses at their drives' ends), `backroads` (at most 10 country
   lane dead ends, no through way hooking round), covered bridges counted under `bridges`.
 
+**Status (handoff):** branch `claude/eager-sagan-jmc0fj`. The last full meshcheck (before the fixes below) failed only `faces` (1),
+`signs` (1), `joints` (1), `tucked` (1); `homes` and `backroads` pass. Fixed since, **not yet re-run**: a sign's post kept off the
+benches (`Signs.Free`); two ribbons ending on a paved road no longer joined end to end (`Network.Covered` counts paved roads for
+ribbon ends); `Tuck` also samples a ribbon's own edge; a mailbox that would stand on a road or in water is left out. Still open: one
+face pointing down at (-11566, 2521), in the road mesh's submesh 0, where Farm 8's lane and the link `Farm 8 - Farm 9` meet start to
+start (the new `ToEnd` snapping makes such joints); look with `jview at out.ppm -11566 2521 80` (jview's project now leaves out the
+same files as meshcheck's, so it builds again). Next: run the full meshcheck, fix what is left, regenerate `docs/world.png` and
+`docs/world-labels.png` from `tools/preview`, then open the PR.
+
 Not compiled with `tools/check.sh` in this session (building HalfGripTools there was not allowed): the files it alone covers
 (`Streamer.cs`: the drive's map colour; `WorldScene.cs`: the log line) changed by a line each; meshcheck compiles the rest against
 the game. **Not tested in game.**

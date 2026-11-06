@@ -693,7 +693,7 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
-		/// <summary>Whether a sign's part may stand at (x, z): <paramref name="margin"/> off every road's edge, off lots, parks, water and the circuit.</summary>
+		/// <summary>Whether a sign's part may stand at (x, z): <paramref name="margin"/> off every road's edge, off lots, parks, benches, water and the circuit.</summary>
 		private static bool Free(double x, double z, double margin)
 		{
 			// The circuit's own test walks its whole lap: only near it.
@@ -701,6 +701,14 @@ namespace HalfGripOpenWorld
 			if (!Network.Claims(x, z, -1, 0.0, margin) || Town.Taken(x, z, 1.0) || Parks.At(x, z) || (nearCircuit && !Circuit.Clear(x, z, 5.0)))
 			{
 				return false;
+			}
+			// Benches on the trails and in the parks are placed before the signs.
+			foreach (Parks.Bench bench in Parks.Benches)
+			{
+				if (Math.Abs(bench.X - x) < 6.0 && Math.Abs(bench.Z - z) < 6.0)
+				{
+					return false;
+				}
 			}
 			return !(Rivers.Water(x, z, out double level) && Ground(x, z) < level + 0.5);
 		}

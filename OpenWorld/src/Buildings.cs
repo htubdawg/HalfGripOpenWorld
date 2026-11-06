@@ -783,11 +783,11 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// A drive's mailbox by the road (<see cref="Network.Home"/>): a timber post a metre and a bit high and a metal box on it, its
-		/// door to the road. Left out if a sign stands there.
+		/// door to the road. Left out if a sign stands there, or a road or water (a road that came after the drive, a bend of the river).
 		/// </summary>
 		private static void Mailbox(Builder b, Data data, Network.Home home)
 		{
-			if (Signs.Near(home.MailX, home.MailZ, 2.0))
+			if (Signs.Near(home.MailX, home.MailZ, 2.0) || !Network.Claims(home.MailX, home.MailZ, -1, 0.0, 0.5) || (Rivers.Water(home.MailX, home.MailZ, out double level) && WorldGen.Height(home.MailX, home.MailZ) - Network.Lift < level + 0.5))
 			{
 				return;
 			}

@@ -2033,9 +2033,12 @@ namespace HalfGripOpenWorld
 				{
 					foreach (double t in new[] { 0.0, 0.5, 1.0 })
 					{
-						for (int side = -1; side <= 1; side++)
+						// The middle, and each side at the ribbon's edge and at its soft edge's foot (a mouth's tilted surface may be lowest
+						// between them).
+						for (int at = -2; at <= 2; at++)
 						{
-							double edge = side == 0 ? 0.0 : EdgeOf(road.Kind) * Fade(road, road.S[i] + (road.S[i + 1] - road.S[i]) * t);
+							int side = Math.Sign(at);
+							double edge = Math.Abs(at) < 2 ? 0.0 : EdgeOf(road.Kind) * Fade(road, road.S[i] + (road.S[i + 1] - road.S[i]) * t);
 							Point(road, i, t, side, edge, out double x, out double z, out double _);
 							if (!PavedTop(x, z, out double surface))
 							{
@@ -2337,19 +2340,21 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Whether a road other than those ending in <paramref name="here"/> has its paving (or ribbon, for <paramref name="unpaved"/>)
-		/// at (x, z): one passing through, so the ends there meet it at a junction.
+		/// Whether a road other than those ending in <paramref name="here"/> has its paving (or, for <paramref name="unpaved"/> ends,
+		/// its paving or ribbon) at (x, z): one passing through, so the ends there meet it at a junction.
 		/// </summary>
 		private static bool Covered(List<(int r, int end)> here, double x, double z, bool unpaved)
 		{
 			foreach (int o in segments.RoadsNear(x, z, 40.0))
 			{
 				Road road = Roads[o];
-				if (here.Exists(h => h.r == o) || Unpaved(road.Kind) != unpaved || road.Kind >= RoadKind.Rally)
+				// A paved road through counts for ribbons' ends too: two ribbons ending on a lane's paving each go under it (Tuck), and
+				// joined they were eased to one height over it.
+				if (here.Exists(h => h.r == o) || (!unpaved && Unpaved(road.Kind)) || road.Kind >= RoadKind.Rally)
 				{
 					continue;
 				}
-				double margin = unpaved ? EdgeOf(road.Kind) : 1.0;
+				double margin = Unpaved(road.Kind) ? EdgeOf(road.Kind) : 1.0;
 				if (segments.Nearest(o, x, z, road.Half + margin, out double d, out int _, out double _) && d < road.Half + margin)
 				{
 					return true;
