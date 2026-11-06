@@ -55,6 +55,10 @@ using UnityEngine;
 //  25. facades: houses round the main town and a village: every wall drawn from an atlas reads one row of it per face, and a window,
 //                lancet or door row whole from its bottom to its top (no window cut off by the eaves or the ground); no roof covering
 //                drawn facing down (a roof is a slab with an underside in the trim, not a sheet drawn both ways); chimneys and trim drawn
+//  26. homes:   every drive's home: its mailbox off every road's paving and verge and out of the water (or left out, 1 in 50 at most); a roadside house's footprint
+//                clear of every road, lot, park and the water, at its drive's end
+//  27. backroads: the back roads joined up (Network.Links, Throughs, Drives): few lane dead ends out in the country (a farm at the
+//                end of a long lane boxed in by water or hills), and no through way hooking round on itself
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -96,6 +100,8 @@ internal static class Program
 			("hubs", HubChecks),
 			("farview", FarChecks),
 			("facades", Facades),
+			("homes", Homes),
+			("backroads", BackRoads),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -316,7 +322,7 @@ internal static class Program
 	}
 
 	/// <summary>Steepest grade each class is held to (as in Network's classes); a road with cuts at junctions has Network.Leeway.</summary>
-	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.18, 0.12, HillClimb.Grade };
+	private static readonly double[] Grade = { 0.05, 0.07, 0.09, 0.11, 0.11, 0.14, 0.14, 0.18, 0.12, HillClimb.Grade };
 
 	private static bool Grades()
 	{
@@ -346,7 +352,7 @@ internal static class Program
 
 	private static bool Bridges()
 	{
-		int over = 0, bad = 0, decks = 0;
+		int over = 0, bad = 0, decks = 0, covered = 0;
 		double worst = double.MaxValue;
 		foreach (Network.Road r in Network.Roads)
 		{
@@ -354,6 +360,7 @@ internal static class Program
 			{
 				if (r.Bridge[i] && (i == 0 || !r.Bridge[i - 1]))
 				{
+					covered += RoadMesh.Covered(r, i, out bool _, out bool _) ? 1 : 0;
 					decks++;
 				}
 				bool track = Network.Unpaved(r.Kind);
@@ -384,7 +391,7 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("bridges: " + decks + " decks; " + bad + " of " + over + " road points over water less than 4 above it, lowest " + (over > 0 ? worst.ToString("0.0") : "-"));
+		Console.WriteLine("bridges: " + decks + " decks (" + covered + " covered); " + bad + " of " + over + " road points over water less than 4 above it, lowest " + (over > 0 ? worst.ToString("0.0") : "-"));
 		return bad == 0;
 	}
 
@@ -392,7 +399,7 @@ internal static class Program
 	{
 		int samples = 0, bad = 0;
 		double worst = 0;
-		int[] byKind = new int[9];
+		int[] byKind = new int[10];
 		foreach (Network.Road r in Network.Roads)
 		{
 			bool track = Network.Unpaved(r.Kind);
@@ -764,22 +771,30 @@ internal static class Program
 				}
 				foreach ((double x, double z, double r) in d.Footprints)
 				{
+					// Each vertex in the footprint's circle against the ground under that vertex, not under the middle: a terrace's
+					// houses abut, so the circle takes in the next house's base too, which stands lower on a slope (with the
+					// terraced streets, a house 4.8 under its own ground read as 7.3 by its lower neighbour's base).
 					float lo = float.MaxValue;
+					double deepest = double.MinValue;
+					double g = WorldGen.Height(x, z);
 					foreach (Vector3 v in d.Mesh.Vertices)
 					{
 						double wx = v.x + tx * 250.0, wz = v.z + tz * 250.0;
 						if ((wx - x) * (wx - x) + (wz - z) * (wz - z) < r * r * 1.05)
 						{
 							lo = Math.Min(lo, v.y);
+							if (v.y < g + 1.0)
+							{
+								deepest = Math.Max(deepest, WorldGen.Height(wx, wz) - v.y);
+							}
 						}
 					}
 					if (lo == float.MaxValue)
 					{
 						continue;
 					}
-					double g = WorldGen.Height(x, z);
 					n++;
-					sunk = Math.Max(sunk, g - lo);
+					sunk = Math.Max(sunk, deepest);
 					raised = Math.Max(raised, lo - g);
 				}
 			}
@@ -877,14 +892,22 @@ internal static class Program
 						continue;
 					}
 					most = Math.Max(most, d.Vertices.Length);
-					foreach (int[] t in d.Triangles)
+					for (int m = 0; m < d.Triangles.Length; m++)
 					{
+						// A covered bridge's roof has an underside.
+						if (d == road && m == RoadMesh.Shingles)
+						{
+							continue;
+						}
+						int[] t = d.Triangles[m];
 						for (int k = 0; k < t.Length; k += 3)
 						{
 							Vector3 nrm = Vector3.Cross(d.Vertices[t[k + 1]] - d.Vertices[t[k]], d.Vertices[t[k + 2]] - d.Vertices[t[k]]);
 							if (nrm.y < -0.5f * nrm.magnitude)
 							{
 								down++;
+								Vector3 c = (d.Vertices[t[k]] + d.Vertices[t[k + 1]] + d.Vertices[t[k + 2]]) / 3f;
+								Console.WriteLine("  a face down at (" + (tx * 250f + c.x).ToString("0.0") + ", " + (tz * 250f + c.z).ToString("0.0") + ") in submesh " + m);
 							}
 						}
 					}
@@ -926,7 +949,8 @@ internal static class Program
 					}
 					// The rally service area's own track leaves from its back, as Town.Fit allows.
 					int also = lot.Kind == LotKind.Service && Network.RallyAccess != null ? Network.Roads.IndexOf(Network.RallyAccess) : -1;
-					if (v > 0.0 && !Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0, also))
+					// A market place only keeps other roads off it (see Town.Fit).
+					if (v > 0.0 && !(lot.Kind == LotKind.Market ? Network.Clear(x, z, lot.Road, 14.0) : Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0, also)))
 					{
 						roads++;
 					}
@@ -1416,6 +1440,7 @@ internal static class Program
 				if (dist < sign.Radius + Math.Min(r, 4.0) && !Signs.All.Exists(o => o != sign && o.X == x && o.Z == z))
 				{
 					crowded++;
+					Console.WriteLine("  a building (" + x.ToString("0.0") + ", " + z.ToString("0.0") + ", radius " + r.ToString("0.0") + ") on the sign at (" + sign.X.ToString("0.0") + ", " + sign.Z.ToString("0.0") + ")");
 				}
 			}
 			undrawn += own && d.Mesh != null && d.Mesh.Triangles[Buildings.Board].Length > 0 ? 0 : 1;
@@ -2034,8 +2059,14 @@ internal static class Program
 		{
 			if (d != null)
 			{
-				foreach (int[] t in d.Triangles)
+				for (int m = 0; m < d.Triangles.Length; m++)
 				{
+					// A covered bridge's walls and roof stand over its deck: only the surfaces are looked at.
+					if (d == road && m >= RoadMesh.Boards)
+					{
+						continue;
+					}
+					int[] t = d.Triangles[m];
 					for (int k = 0; k < t.Length; k += 3)
 					{
 						list.Add((d.Vertices[t[k]] + o, d.Vertices[t[k + 1]] + o, d.Vertices[t[k + 2]] + o, kind));
@@ -2291,6 +2322,7 @@ internal static class Program
 				if (bad > 0.02)
 				{
 					apart++;
+					Console.WriteLine("  '" + a.Name + "' and '" + b.Name + "' apart by " + bad.ToString("0.000") + " at (" + a.X[ka].ToString("0") + ", " + a.Z[ka].ToString("0") + ")");
 				}
 			}
 		}
@@ -2427,6 +2459,92 @@ internal static class Program
 		return bad == 0;
 	}
 
+	private static bool Homes()
+	{
+		int farms = 0, houses = 0, mailBad = 0, houseBad = 0, far = 0;
+		foreach (Network.Home home in Network.Homes)
+		{
+			// Buildings leaves such a mailbox out: a few may be missing, not many.
+			if (!Network.Claims(home.MailX, home.MailZ, -1, 0.0, 0.5) || Wet(home.MailX, home.MailZ))
+			{
+				mailBad++;
+			}
+			if (!home.House)
+			{
+				farms++;
+				continue;
+			}
+			houses++;
+			double ax = home.DirZ, az = -home.DirX;
+			bool bad = false;
+			foreach ((double u, double v) in new[] { (-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5), (0.0, 0.0), (0.0, -0.5), (0.0, 0.5), (-0.5, 0.0), (0.5, 0.0) })
+			{
+				double x = home.X + ax * u * Network.HomeWidth + home.DirX * v * Network.HomeDepth;
+				double z = home.Z + az * u * Network.HomeWidth + home.DirZ * v * Network.HomeDepth;
+				bad |= !Network.Claims(x, z, -1, 0.0, 1.5) || Town.Taken(x, z, 2.0) || Parks.At(x, z) || Wet(x, z);
+			}
+			if (bad)
+			{
+				houseBad++;
+				Console.WriteLine("  house not clear at (" + home.X.ToString("0") + ", " + home.Z.ToString("0") + ")");
+			}
+			// Its drive ends just in front of it.
+			double best = double.MaxValue;
+			foreach (Network.Road road in Network.Roads)
+			{
+				if (road.Kind == RoadKind.Drive)
+				{
+					int e = road.Count - 1;
+					best = Math.Min(best, Math.Sqrt((road.X[e] - home.X) * (road.X[e] - home.X) + (road.Z[e] - home.Z) * (road.Z[e] - home.Z)));
+				}
+			}
+			far += best > Network.HomeDepth * 0.5 + 10.0 ? 1 : 0;
+		}
+		Console.WriteLine("homes:   " + farms + " farm drives, " + houses + " houses on drives; " + mailBad + " mailboxes left out (on a road or in water), " + houseBad + " houses not clear, " + far + " away from their drive's end");
+		return houses > 50 && mailBad * 50 <= Network.Homes.Count && houseBad == 0 && far == 0;
+	}
+
+	/// <summary>Whether (x, z) is under a river's or lake's water.</summary>
+	private static bool Wet(double x, double z)
+	{
+		return Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5;
+	}
+
+	private static bool BackRoads()
+	{
+		int dead = 0, hooks = 0, lanes = 0;
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (road.Kind != RoadKind.Lane)
+			{
+				continue;
+			}
+			lanes++;
+			for (int end = 0; end < 2; end++)
+			{
+				int k = end == 0 ? 0 : road.Count - 1;
+				if ((end == 0 ? road.Dead0 : road.Dead1) && Places.At(road.X[k], road.Z[k]) is not { Kind: not PlaceKind.Hamlet })
+				{
+					dead++;
+					Console.WriteLine("  lane dead end '" + road.Name + "' at (" + road.X[k].ToString("0") + ", " + road.Z[k].ToString("0") + ")");
+				}
+			}
+			if (road.Name != null && road.Name.EndsWith(" on", StringComparison.Ordinal) && road.Count > 4)
+			{
+				int n = road.Count;
+				double h0 = Math.Atan2(road.Z[2] - road.Z[0], road.X[2] - road.X[0]), h1 = Math.Atan2(road.Z[n - 1] - road.Z[n - 3], road.X[n - 1] - road.X[n - 3]);
+				double turn = Math.Abs(Math.IEEERemainder(h1 - h0, 2.0 * Math.PI));
+				if (turn > 2.6)
+				{
+					hooks++;
+					Console.WriteLine("  through way '" + road.Name + "' hooks round at (" + road.X[n - 1].ToString("0") + ", " + road.Z[n - 1].ToString("0") + ")");
+				}
+			}
+		}
+		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round");
+		return dead <= 10 && hooks == 0;
+	}
+
 	/// <summary>Whether (x, z) is within the paving of a road other than <paramref name="self"/>.</summary>
 	private static bool OnOtherRoad(Network.Road self, double x, double z)
 	{
@@ -2476,6 +2594,7 @@ internal static class Program
 							{
 								bad++;
 								worst = Math.Max(worst, y - surface);
+								Console.WriteLine("  a ribbon at (" + x.ToString("0.0") + ", " + z.ToString("0.0") + ") " + (y - surface).ToString("0.000") + " from the surface over it");
 							}
 						}
 					}

@@ -1159,6 +1159,135 @@ only 4.5 off; else in place. Never to a road far off (the owner: a driver in the
 metres to a road), except from the water with no dry land within 60, which would otherwise dunk the car again and again.
 The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
 
+## Next: towns laid out like real ones (agreed with the owner; PR A done, 0.26.0)
+
+**Agreed** (the owner's answers to the open questions below): grid patches about a third of a town, as planned; the market place
+both a square and a widened high street; back alleys both (some drivable lanes, some footpaths); Westhaven gets a seafront.
+
+**Status of PR A (0.26.0, on `claude/open-world-mod-9htcss`, ready for the owner's test):**
+
+- `OpenWorld/src/TownPlan.cs` (`Network` is now `partial`): `Plan` replaces `Grow` for towns (villages keep `Grow`): the seafront
+  (`Seafront`), old roads into gaps over about 115 degrees, pointed where there is room (`Room`, `OldRoad`), back lanes and their
+  short lanes (`BackLanes`, `Connector`, as `RoadKind.Lane`), ring roads per wedge with fallback radii (`RingRoad`), terrace grids
+  per wedge with alleys (`Terraces`, `Line`), crescents and closes (`Estates`, `Crescent`, `Close`, `Closes`). All laid by `Follow`
+  (march with `Walk`'s stop rules; crosses roads of its own patch at 60 degrees or more; stops at the beach, `Beach` = LandUse's
+  sand rule; never ends on the trunk) and `Lay`/`Both`. `SquareEnd` bends a street meeting a road at more than 25 degrees off
+  square (or stops it 60 short); also used in `Walk` (ends, and a village old road's start).
+- Ground kept for lots (`Reserved` discs, `Rects` rectangles, `Kept`; parks keep off it too): the retail park (`ReserveRetail`) and
+  the market place (`ReserveMarket`: along every main road within 250 of the middle, 150 to 330 out, the straight, evenly graded
+  spot with the flattest land and no road on it; kept as the lot plus 30 each way along and 25 behind; recorded in
+  `Network.Markets`, and `Town.Build` fits the lot exactly there). Kept as a disc and found by `Town`'s own 40-unit walk, the lot
+  landed 10 to 30 off the kept ground and the short lanes beside it clipped its ends, so no market place was laid out.
+- `LotKind.Market = 7` (`Town.cs`: 150 by 70, open to the back). Other roads are kept 16 clear of its paving (`Network.Clear`)
+  rather than made to stand further off than the high street (`Claims`, which needs a block over 330 long); meshcheck's lots check
+  follows. Drawn in `Buildings.Lot` (paving, market cross, stalls) with `Buildings.Market` (a row of shopfront terraces behind it);
+  the teleport goes to it (`Destinations`). The seafront builds houses on its landward side only (`Plots`).
+- Fixed on the way: `Network.Join` makes ends taken as one (within 0.5) one point (two terrace footpaths ended 0.2 apart: meshcheck
+  joints); meshcheck's bases check measures each base vertex against the ground under it (a terrace's lower neighbour read as 7.3
+  under a house's middle; now 6.6, the house rule's most).
+- Checks: preview `square` 1.9% (the four left are villages' near end-to-end joints); meshcheck all pass; check.sh builds; the
+  centre junction at Kingsbridge (-2290, -4139) shows poke in jview as on main (worse on main). Maps: `tools/preview` round
+  Kingsbridge (`960 -4490 -1939 4400`, now `docs/town.png`) and Westhaven (`960 9722 -8524 4400`).
+- Next: the owner's test (TESTING.md 37), then PR B (buildings by plot, below).
+
+## The proposal (as written before it was agreed)
+
+Asked for by the owner: the major towns' roads and buildings a bit more realistic, some gridding but not too much.
+
+### What the towns are now
+
+Looked at with `tools/preview` round Kingsbridge (-2290, -4139) and Westhaven (11922, -10724), both 1800 radius, and measured
+(every street end, the angle it meets the road it ends on; under 10° is left out, as that is mostly a street carried on end to end):
+
+| | streets | mean piece | straightness | ends meeting at 10 to 60° | dead ends |
+|---|---|---|---|---|---|
+| Kingsbridge | 84 | 94 m | 0.99 | 24 of 154 (16%) | 14 |
+| Westhaven | 99 | 98 m | 0.98 | 23 of 183 (13%) | 15 |
+
+- **A starburst, not a town.** The five "old roads" `Grow` walks out of the centre are dead straight (a 0.08 wander over 30-unit
+  steps), and every branch off them is too (0.99 chord to length), so the streets read as long rays and spider legs running out
+  into the fields, with a house now and then along them.
+- **Slivers.** One street end in seven meet their road at under 60°: branches leave square but runs into the next ray at whatever
+  angle it lies, so blocks are thin triangles (Westhaven's south end is a tangle of them), and the parks land in triangles too.
+- **No centre.** Nothing marks where the main roads meet: no market place, no wider high street, no church (villages have one; towns
+  do not). The towers sit on whatever streets are within 0.16 of the radius.
+- **No grain.** Every part of town is the same street pattern at a different density; real towns have a medieval core, a band of
+  Victorian terraced streets (the grid), and looser suburbs, each with its own look.
+- **Streets ignore the ground.** A walk stops when too steep but never turns along the contour, so on Westhaven's slope to the sea
+  streets run straight down it and stop.
+- **Buildings by the yard, not by the block** (`Buildings.Plots`): a plot every 26/36/44 along each road piece, kept by a hash
+  (35 to 85% in a town outside the core), so suburban streets are gappy; nothing turns a corner, nothing knows how deep the block
+  behind it is, and the houses along one street are as mixed as across the whole town.
+
+### The plan: four zones, a bit of grid in one
+
+Towns grow in rings, and each ring has its own pattern. The generator lays a town out as a plan (zones and patches) first, then the
+streets in each zone by that zone's rule, then the buildings by plot. Villages keep `Grow` (they look right at their size), with
+the angle fix below. Deterministic as ever (`Rng`, `DetMath`, `Network.Atan2`, ties by index); it changes the world, so a version
+bump that everyone in a room needs.
+
+1. **The plan** (new `TownPlan.cs`, pure, built in `Network.Build` before step 3): per town, the **market place** where its main roads
+   meet nearest the middle (the junction `Grow` already snaps to), and three zones by distance and ground, their edges wobbled with
+   noise so they are not circles: **core** (to about 0.25 of the radius), **terraces** (to about 0.6), **suburbs** (to 1.0). The
+   terrace zone is cut into 3 to 6 **patches**, each a wedge between two main roads or old roads, with its own orientation: square
+   to the main road it fronts, turned towards the contour where the ground slopes more than 4%. Steep, flood plain and water cells
+   are left out of every patch.
+2. **Core: the old town.** The high street is the main road through it, widened (a street-class width more each side) for 300 to
+   500 units at the market place; the market place itself is a paved plate (as a hub's, or a lot surface) with buildings facing it
+   and the town's church (the village church, bigger, a churchyard) on one side. **Back lanes** run parallel to the high street 180
+   to 260 behind it on each side (the end of the burgage plots), joined to it by short lanes and alleys every 150 to 250, so the core
+   is a ladder, the oldest streets slightly bent (wander kept).
+3. **Terraces: the grid, in patches.** In each patch, parallel streets 110 to 140 apart (a terrace and its back yards each side,
+   back to back) along the patch's axis, cross streets 250 to 400 apart, each line's spacing jittered ±15%, the whole patch bent a
+   few degrees over its length (a slow noise on the axis) and clipped to the patch, the zone and the ground. Lines are laid as
+   `Make`/`Add` roads with the same stopping rules as `Walk` (water, steep, fences) and end on the road they meet. Crossroads inside a
+   patch, T-junctions where it meets its neighbours at their different angle: gridded locally, never one grid over the town.
+   About half the terrace streets get a **back alley** (a narrow paved way, `RoadKind.Path` paved or a new narrow street width)
+   down the middle of the block. This is the only gridding.
+4. **Suburbs: the estates.** Off the main roads and old roads, a **distributor** street curving along the contour, and off it
+   **crescents** (a loop back to it), **closes** (cul-de-sacs 80 to 200 long with a turning head) and a few through roads to the
+   next distributor. Curves from a stronger wander and a steer back, not straight walks. Ribbon houses go on along the main roads past
+   the suburb's edge (as now), but no street runs out past the town's edge: the edge is a footpath into the fields (as now).
+5. **Every street meets square.** In `Walk` (all places, villages too): when a street is about to end on a road at under 65°, its
+   last 60 to 90 units are bent to meet it at 75 to 90° (a Hermite turn); if it cannot (too short), it stops short and is dropped if
+   under 50. The old roads out of the centre get a wander like the others (0.15, not 0.08), and end at the core's back lanes, not at
+   the centre.
+
+Then the buildings, from plots, not from yards along a road:
+
+6. **Plots by zone, on one building line per street.** Each street side is cut into plots by its zone (core: 18 to 30 wide burgage
+   fronts, continuous, 3 to 4 storeys at the market; terraces: rows of 6 to 12 houses, 16 wide, continuous, a gap (a passage) between
+   rows; suburbs: semis in pairs and detached houses, 30 to 45 a plot, one setback for the whole street, from 6 to 14). Filled by
+   the zone's rate (core and terraces all; suburbs 90%), not 35 to 85%, so streets read as streets.
+7. **Depth from the block.** A plot's building and garden reach at most half way to the road behind (a lookup on `segments` from the
+   plot's back), so houses never back onto each other's walls and thin blocks get shallow houses, not none.
+8. **Corners.** A plot at a junction turns the corner: in the core and terraces an end house with its door and windows on the side
+   street (or a corner shop / pub with a shopfront on both faces, one in three corners at the market), in the suburbs the corner plot
+   left as a side garden. The plots next to a junction's mouth are dropped as now.
+9. **One street, one builder.** The wall, roof, window style and storeys come from a hash of the street (and the terrace row), with a
+   small per-house change (door colour, chimneys), so a terraced street is one brick and one slate, a suburban close one render,
+   while the next street differs. The core keeps its mix.
+10. **A few civic buildings.** The church at the market; a school on a big suburban plot (a long two-storey block, a playground lot);
+    a pub at one or two core corners. Towers stay in the main town's core, now on the plots round the market and the high street.
+
+Parks follow for free (`Parks` already takes whole blocks: the grid's blocks are compact, so they land in real squares; a park
+at the market's back, a green in one suburb). Lots (`Town`) are unchanged: still on the main roads at the edges.
+
+### Order of work (each PR runs check.sh, preview, meshcheck; adds checks)
+
+- **PR A, streets (0.26.0):** `TownPlan`, the three zone rules, the square-meeting rule, the market place's plate. Checks in `preview`:
+  street ends meeting at 10 to 60° (target under 3%), mean block area and its spread per zone, street length per km² per zone (keep the
+  town at 10 to 20 km/km²), crossroads and T counts, no street past the town's edge. `meshcheck` joints, holes, hubs and poke will be
+  stressed by the crossroads: look at a dozen with `jview` before and after. The map for the owner from `preview` round each town.
+- **PR B, buildings (0.27.0):** plots by zone, depth from the block, corners, one builder per street, the town church. `meshcheck`
+  bases and facades, plus a new `plots` check (no building over a road or another building, every terrace row continuous, every plot's
+  back short of the road behind). Watch the town tile's time (25.9 ms now) and the tile's triangle count with continuous terraces.
+- **PR C (if wanted):** schools and pubs, back alleys, a village green for the bigger villages.
+
+Open with the owner: how much grid (patches cover about a third of a town's area as planned); whether the market place should be a
+square or the widened street of a market town; back alleys driveable or footpaths; whether Westhaven gets a seafront (a promenade
+road along the shore with a terrace facing the sea) in place of streets ending at the beach.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
@@ -1259,3 +1388,73 @@ Checked: the builder and the textures compiled against stand-ins and rendered by
 144 views searched for cracks of background inside a building: none but single silhouette pixels; 670 with the old joins). **Not
 compiled against the game** (no access to HalfGripRefs in that session) and **meshcheck not run**: run `tools/check.sh` and
 `meshcheck bases facades` before merging. **Not tested in game.**
+
+### 0.26.0: back roads joined up, drives and mailboxes, covered bridges (asked for by the owner)
+
+The owner's screenshots: lanes ending in nothing, wide stretches of farmland between them with no way across, and lanes hooking round
+in a U at their ends. Measured first (`tools/preview`, new): between hamlets 1 to 4 km apart the way by road was a median 1.71 times
+the straight line, the worst tenth over 4.6 times, 48 pairs not joined at all; 55 lane dead ends in the country. Causes: every
+farm's lane went to the nearest road, so the lanes made a tree, each farm on its own branch (the 45% of farms also joined to their
+nearest neighbour made few loops); the through ways from dead ends stopped on the first road they touched (a farm track too, which
+then failed them), never crossed a stream, and aimed at points behind as well as ahead, so they hooked round; a link routed to a farm
+met its lane a few units short of the farm, leaving a stub. **Done** (`Network.cs`, `RoadMesh.cs`, `Buildings.cs`):
+- **Links** (`Network.Links`): the Gabriel graph of hamlets, villages and towns; for each pair with a hamlet in it, nearest first, if
+  the way by the paved roads already built (`RoadGraph`, a graph of every sample, joined at junctions) is more than 1.6 times the
+  straight line, a lane is routed between them, with following a road dearer (0.7 of a step, not 0.33) so it takes the new way,
+  kept off the towns' and villages' ground off their roads, and built only if much shorter. 88 links, 48 km real.
+- **Through ways** (`Network.Throughs`): from every lane dead end (most tracks' and paths'); a walk passes over roads smaller than it
+  may end on; targets only ahead (within 70 degrees) and a walk that turns more than 110 degrees gives up (no hooks); up to three
+  roads tried; a lane's way must save a detour by road of more than 1.5 times; then the router (which bridges streams) to targets
+  anywhere but behind. A lane's routed end within 30 of another road's end goes to that end (`ToEnd`).
+- **Drives** (`RoadKind.Drive`, between lanes and tracks, so no lane ends on one; a gravel ribbon like a track, 3 m wide): a farm's
+  lane, up to the first road that meets it if that is within 600, becomes its drive (`Split` keeps the rest a lane); along the lanes
+  and minor roads in the country, every few hundred units, a house set back 50 to 130 on a drive of its own where the ground lets it
+  (`Network.Homes`; `Buildings.Cottage`, a bungalow or two storeys, a shed now and then). A mailbox by the road at every drive's mouth.
+- **Covered bridges** (`RoadMesh.Covered`): a lane's bridge whose deck is no longer than 280 (85 m real) has red board walls with an
+  open band under the eaves, posts across it, a shingle roof with overhanging eaves and boarded gables over the portals; longer
+  bridges, and every bigger road's, keep concrete.
+- After: detour median 1.34, the worst tenth under 1.77, every pair joined; country lane dead ends 8 (preview) and 5 by the network's
+  own count, all farms boxed in by water, hills or the rally stage's fence; lanes 63 to 102 km real; about 280 drives.
+- `meshcheck`: `homes` (mailboxes and houses clear of roads and water, houses at their drives' ends), `backroads` (at most 10 country
+  lane dead ends, no through way hooking round), covered bridges counted under `bridges`.
+
+**Status:** finished on branch `claude/intelligent-knuth-y5ts79` (from `claude/eager-sagan-jmc0fj`). Fixed in the last pass: a
+sign's post kept off the benches, and no bench within a sign's whole reach either (a fingerpost's arms reached over one at (3244,
+-6177); `Signs.BenchesClear`); two ribbons ending on a paved road not joined end to end; `Tuck` samples a ribbon's own edge; a
+mailbox on a road or in water left out; the face drawn downwards at (-11566, 2521), where Farm 8's lane and the link `Farm 8 - Farm 9`
+meet start to start at 75 degrees: both take the side halfway round the bend at a joint, so on its inside the verge's outer edge
+swings round faster than the road runs on (w * dphi/dt over L * cos phi; no spreading of the turn over an 8-unit piece keeps 11.5
+out from folding at that bend) and the ribbon folded back. A verge quad that crosses over itself is now left out
+(`RoadMesh.Twisted`); the fold is covered by the ribbon's own layers either side (jview's picture there is unchanged, pixel for
+pixel). Tried first and dropped: refusing such bends as joints, which left the old notch of ground at the outer corner. Full
+meshcheck: **all checks pass** (joints 101, faces 0, signs 0 on a bench, homes and backroads pass). `tools/preview` passes;
+`docs/world.png` and `docs/world-labels.png` regenerated.
+
+Not compiled with `tools/check.sh` (building HalfGripTools was not allowed in either session): the files it alone covers
+(`Streamer.cs`: the drive's map colour; `WorldScene.cs`: the log line) changed by a line each; meshcheck compiles the rest against
+the game. **Not tested in game.**
+
+### 0.26.0: the back roads and the towns combined (one release)
+
+Two sessions worked from 0.25.0 (`fbc99c8`) at once, without reading each other's handoff, and both called their work 0.26.0: the
+back roads (`claude/intelligent-knuth-y5ts79`, PR #37, built on `claude/eager-sagan-jmc0fj`) and the towns laid out ring by ring
+(`claude/open-world-mod-9htcss`, PR #38, built on `claude/nifty-cray-9frs2i`). They are merged here as one 0.26.0, replacing both
+PRs. The code merged without a conflict: `Network.Build` runs `Plan` for towns (villages keep `Grow`), then `Links`, `Tracks`,
+`Throughs` and `Drives`. Only the text both sides added conflicted: `mod.json`'s description and `README.md` now name both, the
+CLAUDE.md table has both rows, TESTING keeps the back roads as 37 and the towns become 38, and `tools/preview` keeps both its back
+roads' measures and the towns' `square` check. `docs/world.png`, `docs/world-labels.png` and `docs/town.png` are drawn again from
+the combined world.
+
+Checked on the combined world: `tools/preview` passes (both market places found; back road detour median 1.33, 90% under 1.76,
+every hamlet pair joined; 6 country lane dead ends; `square` 2.4% of street ends slanted, under the 3% limit; repeatable; a tile
+14 ms). meshcheck (against HalfGripRefs' game files): **all checks pass**, after one fix the combination showed up.
+
+Fixed: `joints` failed once, 'Farm 88 lane' and 'Farm 88 lane on' 0.041 apart in height at (-7285, 1107). The "on" lane there (from
+the back roads) is a 62-unit stub lying along 'Farm 120 lane' and the link 'Farm 88 - Farm 104', cut for them 13 units from its
+joint (23 on the back roads branch alone, where the towns' changes had not moved its far end). `Network.Level` faded the cut's lift
+and cross-fall back along the road and onto the joined end's sample, so its height no longer matched the joint. A joined end's
+sample is now left alone by a cut's apron and corners (`Network.JointEnd`): its height and cross-fall are the joint's. jview's
+picture there still shows the stub lying under the other lanes' paving: worth dropping such stubs in a later change.
+
+`claude/adoring-euler-ywmpz8` (0.23.10, no ash; PR #35 closed) is dead: its fix reached `main` in 0.24.0. The older branches are
+all merged. **Not compiled with `tools/check.sh`** (building HalfGripTools was refused in this session too). **Not tested in game.**

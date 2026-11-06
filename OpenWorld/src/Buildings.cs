@@ -128,6 +128,17 @@ namespace HalfGripOpenWorld
 					Church(b, data, p);
 				}
 			}
+			foreach (Network.Home home in Network.Homes)
+			{
+				if (home.House && Math.Floor(home.X / tileSize) == tx && Math.Floor(home.Z / tileSize) == tz)
+				{
+					Cottage(b, data, home);
+				}
+				if (Math.Floor(home.MailX / tileSize) == tx && Math.Floor(home.MailZ / tileSize) == tz)
+				{
+					Mailbox(b, data, home);
+				}
+			}
 			foreach (Parks.Bench bench in Parks.Benches)
 			{
 				if (Math.Floor(bench.X / tileSize) == tx && Math.Floor(bench.Z / tileSize) == tz)
@@ -508,6 +519,14 @@ namespace HalfGripOpenWorld
 			bool high = main && !towers && (core || (place.Kind == PlaceKind.Village && from < 0.3));
 			bool terrace = core || high;
 			double spacing = towers ? 52.0 : terrace ? 26.0 : town ? 36.0 : 44.0;
+			// A seafront has houses on its landward side only: the other looks over the beach.
+			int seaSide = 0;
+			if (road.Name.EndsWith(" seafront"))
+			{
+				double len0 = Math.Max(1e-6, road.S[i + 1] - road.S[i]);
+				double ex = -(road.Z[i + 1] - road.Z[i]) / len0, ez = (road.X[i + 1] - road.X[i]) / len0;
+				seaSide = WorldGen.Base(mx + ex * 60.0, mz + ez * 60.0) < WorldGen.Base(mx - ex * 60.0, mz - ez * 60.0) ? 1 : -1;
+			}
 			double s0 = road.S[i], s1 = road.S[i + 1];
 			for (long k = (long)Math.Ceiling(s0 / spacing); k * spacing < s1; k++)
 			{
@@ -518,6 +537,10 @@ namespace HalfGripOpenWorld
 				double dx = (road.X[i + 1] - road.X[i]) / len, dz = (road.Z[i + 1] - road.Z[i]) / len;
 				for (int side = -1; side <= 1; side += 2)
 				{
+					if (side == seaSide)
+					{
+						continue;
+					}
 					ulong h = Noise.Mix(Salt ^ (ulong)r * 0x9E3779B97F4A7C15UL ^ (ulong)k * 0xBF58476D1CE4E5B9UL ^ (ulong)(side + 2));
 					double chance = towers ? 0.9 : terrace ? 0.95 : town ? 0.35 + 0.5 * (1.0 - from) : 0.7 * (1.0 - from * 0.6);
 					if (Unit(h, 0) >= chance)
@@ -584,6 +607,31 @@ namespace HalfGripOpenWorld
 						Wing(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, floor, h);
 					}
 				}
+			}
+		}
+
+		/// <summary>
+		/// The shops facing a market place from behind it: a terrace of three and four storeys with shopfronts, along its back, their fronts
+		/// a little behind its paving, each kept only where it fits clear of the roads behind (as any house on its plot).
+		/// </summary>
+		private static void Market(Builder b, Data data, Town.Lot lot)
+		{
+			const double width = 25.5, depth = 26.0;
+			// The fronts stand behind the lot's back edge, measured from its road's edge as a house's setback is.
+			double setback = Network.Verge + lot.D + 3.0;
+			for (int k = 0; k < 5; k++)
+			{
+				double u = (k - 2) * 26.0;
+				ulong h = Noise.Mix(Salt ^ lot.Hash ^ (ulong)k * 0x9E3779B97F4A7C15UL);
+				Town.World(lot, u, lot.D + 3.0 + depth * 0.5, out double cx, out double cz);
+				int floors = 3 + (int)(Unit(h, 3) * 2.0);
+				Look look = Look.Of(WallFor(h, true, false), RoofFor(h, true, false), floors * Storey);
+				look.Style = Sash;
+				look.EndOver = 0.15f;
+				look.Chimneys = Unit(h, 13) < 0.5 ? 1 : 2;
+				look.Front = Shopfront;
+				look.Variant = (int)(Unit(h, 7) * 4.0);
+				House(b, data, lot.Road, setback, cx, cz, lot.Dx, lot.Dz, width, depth, look, out float _);
 			}
 		}
 
@@ -744,6 +792,48 @@ namespace HalfGripOpenWorld
 				double ca = DetMath.Cos(a + turn), sa = DetMath.Sin(a + turn);
 				House(b, data, -1, 0.0, p.X + ca * dist, p.Z + sa * dist, ax, az, w, d, look, out float _);
 			}
+		}
+
+		/// <summary>
+		/// A house out in the country at the end of its drive (<see cref="Network.Drives"/>), its front to the drive.
+		/// A bungalow or two storeys, in the farmhouses' stone, render or white, slate or tile, from its own hash; a lean-to shed at one end now and then.
+		/// </summary>
+		private static void Cottage(Builder b, Data data, Network.Home home)
+		{
+			ulong h = Noise.Mix(Salt ^ 0xC077A6EUL ^ (ulong)(long)Math.Floor(home.X) * 0x632BE59BUL ^ (ulong)(long)Math.Floor(home.Z));
+			// Along the house is across the drive; its back (to the left of along) away from the road.
+			double ax = home.DirZ, az = -home.DirX;
+			Look look = Look.Of(Unit(h, 1) < 0.4 ? Stone : Unit(h, 3) < 0.5 ? Render : White, Unit(h, 2) < 0.6 ? Slate : RedTile, (Unit(h, 4) < 0.3 ? 1f : 2f) * Storey);
+			look.Style = Casement;
+			look.Chimneys = 1 + (int)(Unit(h, 5) * 2.0);
+			look.Door = 1;
+			House(b, data, -1, 0.0, home.X, home.Z, ax, az, Network.HomeWidth, Network.HomeDepth, look, out float _);
+			if (Unit(h, 6) < 0.5)
+			{
+				Look shed = Look.Of(Wood, Metal, 8f);
+				shed.EndOver = 0.4f;
+				double side = Unit(h, 7) < 0.5 ? -1.0 : 1.0;
+				double off = Network.HomeWidth * 0.5 + 9.0;
+				House(b, data, -1, 0.0, home.X + ax * off * side, home.Z + az * off * side, ax, az, 12.0, 10.0, shed, out float _);
+			}
+		}
+
+		/// <summary>
+		/// A drive's mailbox by the road (<see cref="Network.Home"/>): a timber post a metre and a bit high and a metal box on it, its
+		/// door to the road. Left out if a sign stands there, or a road or water (a road that came after the drive, a bend of the river).
+		/// </summary>
+		private static void Mailbox(Builder b, Data data, Network.Home home)
+		{
+			if (Signs.Near(home.MailX, home.MailZ, 2.0) || !Network.Claims(home.MailX, home.MailZ, -1, 0.0, 0.5) || (Rivers.Water(home.MailX, home.MailZ, out double level) && WorldGen.Height(home.MailX, home.MailZ) - Network.Lift < level + 0.5))
+			{
+				return;
+			}
+			// Along the box is towards the road.
+			double ax = home.MailDirX, az = home.MailDirZ;
+			float y = (float)WorldGen.Height(home.MailX, home.MailZ) - 0.4f;
+			b.Solid(home.MailX, home.MailZ, y, ax, az, 0.5f, 0.5f, 4.2f, Wood);
+			b.Solid(home.MailX, home.MailZ, y + 4.2f, ax, az, 2.0f, 1.1f, 1.1f, Metal);
+			data.Footprints.Add((home.MailX, home.MailZ, 1.5));
 		}
 
 		/// <summary>
@@ -916,6 +1006,32 @@ namespace HalfGripOpenWorld
 					b.Apron(lot, Asphalt);
 					b.Kerb(lot);
 					return;
+				case LotKind.Market:
+				{
+					// Paved to the back; a stone market cross on two steps in the middle, and a row of stalls under awnings each side of it.
+					Surface(b, lot, -half, half, 0.0, lot.D, Concrete);
+					Block(b, lot, 0.0, lot.D * 0.5, 9.0, 9.0, 1f, Stone, Flat);
+					Block(b, lot, 0.0, lot.D * 0.5, 6.0, 6.0, 2f, Stone, Flat);
+					Block(b, lot, 0.0, lot.D * 0.5, 1.6, 1.6, 16f, Stone, Flat);
+					Block(b, lot, 0.0, lot.D * 0.5, 4.0, 1.0, 1f, Stone, Flat, -1, 0f, -1, 13f);
+					foreach (double u in new[] { -52.0, -36.0, -20.0, 20.0, 36.0, 52.0 })
+					{
+						Block(b, lot, u, lot.D * 0.5, 10.0, 7.0, 3f, Wood, Flat);
+						Block(b, lot, u, lot.D * 0.5, 12.0, 9.0, 0.6f, Canopy, Flat, -1, 0f, -1, 8f);
+						foreach ((double cu, double cv) in new[] { (-5.5, -4.0), (5.5, -4.0), (-5.5, 4.0), (5.5, 4.0) })
+						{
+							Block(b, lot, u + cu, lot.D * 0.5 + cv, 0.4, 0.4, 8f, Metal, Flat);
+						}
+						Town.World(lot, u, lot.D * 0.5, out double sx, out double sz);
+						data.Footprints.Add((sx, sz, 8.0));
+					}
+					Town.World(lot, 0.0, lot.D * 0.5, out double mx, out double mz);
+					data.Footprints.Add((mx, mz, 6.0));
+					b.Apron(lot, Concrete);
+					b.Kerb(lot);
+					Market(b, data, lot);
+					return;
+				}
 				default:
 				{
 					Surface(b, lot, -half, half, 0.0, bv, Concrete);

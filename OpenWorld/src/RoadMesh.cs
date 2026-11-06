@@ -72,8 +72,17 @@ namespace HalfGripOpenWorld
 		/// <summary>Length of road one texture repeat covers (and the dash pattern's period).</summary>
 		internal const float TextureLength = 40f;
 
-		/// <summary>Materials of the paved mesh: one per paved class (Trunk to Lane), then the bridges' concrete.</summary>
-		internal const int Concrete = 5;
+		/// <summary>Materials of the paved mesh: one per paved class (Trunk to Lane), then the bridges' concrete, a covered bridge's boards and its roof.</summary>
+		internal const int Concrete = 5, Boards = 6, Shingles = 7;
+
+		/// <summary>
+		/// A lane's bridge this long or shorter (its whole deck, banks included) is a covered bridge (<see cref="Covered"/>); longer ones,
+		/// and every bigger road's, are concrete.
+		/// </summary>
+		private const double CoveredLongest = 280.0;
+
+		/// <summary>A covered bridge: its boarded walls' height, its eaves' (clear of any car), the roof's overhang and its pitch (rise over run).</summary>
+		private const float CoveredBoards = 8f, CoveredEaves = 13f, CoveredOver = 1.8f, CoveredPitch = 0.6f;
 
 		/// <summary>The verge's outer edge lies this far over the drawn ground, so it never flickers into it.</summary>
 		private const double VergeLift = 0.03;
@@ -81,8 +90,8 @@ namespace HalfGripOpenWorld
 		/// <summary>Pieces within this distance of a mouth are cut finer (2 units), so the flare's curve is smooth.</summary>
 		private const double Fine = 16.0;
 
-		/// <summary>Materials of the unpaved mesh: farm tracks, footpaths, then the rally stage.</summary>
-		internal const int TrackMaterial = 0, PathMaterial = 1, RallyMaterial = 2;
+		/// <summary>Materials of the unpaved mesh: farm tracks, footpaths, the rally stage, then drives.</summary>
+		internal const int TrackMaterial = 0, PathMaterial = 1, RallyMaterial = 2, DriveMaterial = 3;
 
 		/// <summary>The sidewalk's back stands this far over the ground before its kerb goes down under it.</summary>
 		private const double KerbOut = 0.8;
@@ -100,10 +109,10 @@ namespace HalfGripOpenWorld
 			{
 				return null;
 			}
-			Mesher roads = new Mesher(tx * (double)tileSize, tz * (double)tileSize, Concrete + 1);
+			Mesher roads = new Mesher(tx * (double)tileSize, tz * (double)tileSize, Shingles + 1);
 			Mesher sides = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 1);
 			Mesher walks = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 1);
-			Mesher ribbons = new Mesher(tx * (double)tileSize, tz * (double)tileSize, 3);
+			Mesher ribbons = new Mesher(tx * (double)tileSize, tz * (double)tileSize, DriveMaterial + 1);
 			List<(double t0, double t1)> spans = new List<(double, double)>();
 			List<(double apex, int side, double from, double to)> fans = new List<(double, int, double, double)>();
 			foreach (long piece in pieces)
@@ -467,7 +476,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private static void Ribbon(Mesher m, Network.Road road, int i, TerrainGrid terrain)
 		{
-			int material = road.Kind == RoadKind.Path ? PathMaterial : road.Kind == RoadKind.Rally ? RallyMaterial : TrackMaterial;
+			int material = road.Kind == RoadKind.Path ? PathMaterial : road.Kind == RoadKind.Rally ? RallyMaterial : road.Kind == RoadKind.Drive ? DriveMaterial : TrackMaterial;
 			double edge = Network.EdgeOf(road.Kind);
 			float across = (float)(road.Half + edge), inner = (float)(edge / (2.0 * across));
 			float va = V(road, i, 0.0), vb = V(road, i, 1.0);
@@ -540,7 +549,11 @@ namespace HalfGripOpenWorld
 			Vector3 ra = m.At(road, i, a, -1, 0.0), rb = m.At(road, i, b, -1, 0.0);
 			float va = V(road, i, a), vb = V(road, i, b);
 			m.Quad(Paving(road.Kind), la, lb, ra, rb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
-			if (bridge)
+			if (bridge && Covered(road, i, out bool first, out bool last))
+			{
+				CoveredPiece(m, road, i, a, b, first && a <= 0.0, last && b >= 1.0);
+			}
+			else if (bridge)
 			{
 				// The deck's sides, 3 deep, and a parapet 1.4 high along each edge, seen from both sides.
 				Vector3 down = Vector3.down * 3f, upward = Vector3.up * 1.4f;
@@ -548,6 +561,77 @@ namespace HalfGripOpenWorld
 				m.Wall(Concrete, ra + down, rb + down, ra, rb);
 				m.Wall(Concrete, la, lb, la + upward, lb + upward);
 				m.Wall(Concrete, ra, rb, ra + upward, rb + upward);
+			}
+		}
+
+		/// <summary>
+		/// Whether piece i (on a bridge) is part of a covered bridge: a lane's, its deck no longer than <see cref="CoveredLongest"/>, as
+		/// the back roads' timber bridges over the streams are (the owner's ask); and whether it is the deck's first or last piece, where
+		/// the roof ends in a gable over the portal.
+		/// </summary>
+		internal static bool Covered(Network.Road road, int i, out bool first, out bool last)
+		{
+			first = last = false;
+			if (road.Kind != RoadKind.Lane || !road.Bridge[i] || !road.Bridge[i + 1])
+			{
+				return false;
+			}
+			int a = i, b = i + 1;
+			while (a > 0 && road.Bridge[a - 1])
+			{
+				a--;
+			}
+			while (b < road.Count - 1 && road.Bridge[b + 1])
+			{
+				b++;
+			}
+			first = a == i;
+			last = b == i + 1;
+			return road.S[b] - road.S[a] <= CoveredLongest;
+		}
+
+		/// <summary>
+		/// Fractions a to b of a covered bridge's piece i: timber beams along the deck's sides, a boarded wall along each edge with an
+		/// open band under the eaves (posts across it at the piece's ends), the pitched roof over both, its eaves out past the walls;
+		/// a boarded gable over the portal at the deck's ends. All seen from both sides.
+		/// </summary>
+		private static void CoveredPiece(Mesher m, Network.Road road, int i, double a, double b, bool first, bool last)
+		{
+			Vector3 la = m.At(road, i, a, 1, 0.0), lb = m.At(road, i, b, 1, 0.0);
+			Vector3 ra = m.At(road, i, a, -1, 0.0), rb = m.At(road, i, b, -1, 0.0);
+			float sa = (float)(road.S[i] * (1.0 - a) + road.S[i + 1] * a) / 4f, sb = (float)(road.S[i] * (1.0 - b) + road.S[i + 1] * b) / 4f;
+			Vector3 down = Vector3.down * 3f, boards = Vector3.up * CoveredBoards, eaves = Vector3.up * CoveredEaves;
+			foreach ((Vector3 p, Vector3 q, int side) in new[] { (la, lb, 1), (ra, rb, -1) })
+			{
+				m.Panel(Boards, p + down, q + down, p, q, sa, sb, 0f, 0.75f);
+				m.Panel(Boards, p, q, p + boards, q + boards, sa, sb, 0f, CoveredBoards / 4f);
+				// Posts across the open band, at the piece's ends.
+				foreach ((Vector3 at, double t) in new[] { (p, a), (q, b) })
+				{
+					if (t > 0.0 && t < 1.0)
+					{
+						continue;
+					}
+					Vector3 along = (q - p).normalized * 0.4f;
+					m.Panel(Boards, at - along + boards, at + along + boards, at - along + eaves, at + along + eaves, 0f, 0.2f, 0f, 1.2f);
+				}
+			}
+			// The roof: from each eave, out past its wall, up to the ridge over the middle.
+			Vector3 oa = m.At(road, i, a, 1, CoveredOver) + eaves, ob = m.At(road, i, b, 1, CoveredOver) + eaves;
+			Vector3 pa = m.At(road, i, a, -1, CoveredOver) + eaves, pb = m.At(road, i, b, -1, CoveredOver) + eaves;
+			float rise = (float)(road.Half + CoveredOver) * CoveredPitch;
+			Vector3 ca = (oa + pa) * 0.5f + Vector3.up * rise, cb = (ob + pb) * 0.5f + Vector3.up * rise;
+			m.Panel(Shingles, oa, ob, ca, cb, sa, sb, 0f, 2f);
+			m.Panel(Shingles, pa, pb, ca, cb, sa, sb, 0f, 2f);
+			// The gables over the portals, under the roof: from where the roof crosses each wall up to the ridge.
+			Vector3 wall = eaves + Vector3.up * (CoveredOver * CoveredPitch);
+			if (first)
+			{
+				m.Gable(Boards, la + wall, ra + wall, ca);
+			}
+			if (last)
+			{
+				m.Gable(Boards, lb + wall, rb + wall, cb);
 			}
 		}
 
@@ -602,8 +686,26 @@ namespace HalfGripOpenWorld
 			Section(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 ma, out Vector3 oa, out double _, out double _);
 			Section(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 mb, out Vector3 ob, out double _, out double _);
 			float va = V(road, i, a), vb = V(road, i, b);
-			m.Quad(0, ia, ib, ma, mb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(0.5f, va), new Vector2(0.5f, vb));
-			m.Quad(0, ma, mb, oa, ob, new Vector2(0.5f, va), new Vector2(0.5f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+			if (!Twisted(ia, ib, ma, mb))
+			{
+				m.Quad(0, ia, ib, ma, mb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(0.5f, va), new Vector2(0.5f, vb));
+			}
+			if (!Twisted(ma, mb, oa, ob))
+			{
+				m.Quad(0, ma, mb, oa, ob, new Vector2(0.5f, va), new Vector2(0.5f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+			}
+		}
+
+		/// <summary>
+		/// Whether a quad from edge (a, b) to edge (c, d) crosses over itself seen from above, its two triangles facing opposite ways.
+		/// On the inside of a sharp joint (<see cref="Network.Joints"/>) both roads take the side halfway round the bend, so just past
+		/// it the verge's outer edge swings round faster than the road runs on and the ribbon folds back on itself: the fold is
+		/// covered by the ribbon's own layers either side of it, so it is left out (it was drawn facing down).
+		/// </summary>
+		private static bool Twisted(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+		{
+			float first = Vector3.Cross(b - a, c - a).y, second = Vector3.Cross(b - c, d - c).y;
+			return first * second < 0f;
 		}
 
 		/// <summary>
@@ -658,6 +760,53 @@ namespace HalfGripOpenWorld
 			internal void Wall(int material, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
 			{
 				RoadMesh.Wall(v, n, uv, tris[material], a, b, c, d);
+			}
+
+			/// <summary>A quad a, b, c, d (as <see cref="Wall"/>), seen from both sides, its texture from u0 to u1 along a-b and v0 to v1 up a-c.</summary>
+			internal void Panel(int material, Vector3 a, Vector3 b, Vector3 c, Vector3 d, float u0, float u1, float v0, float v1)
+			{
+				Vector2 ua = new Vector2(u0, v0), ub = new Vector2(u1, v0), uc = new Vector2(u0, v1), ud = new Vector2(u1, v1);
+				for (int side = 0; side < 2; side++)
+				{
+					Vector3 normal = Vector3.Cross(b - a, c - a).normalized * (side == 0 ? 1f : -1f);
+					int k = v.Count;
+					v.Add(a);
+					v.Add(b);
+					v.Add(c);
+					v.Add(d);
+					uv.Add(ua);
+					uv.Add(ub);
+					uv.Add(uc);
+					uv.Add(ud);
+					for (int j = 0; j < 4; j++)
+					{
+						n.Add(normal);
+					}
+					RoadMesh.Triangle(tris[material], v, k, k + 1, k + 2, normal);
+					RoadMesh.Triangle(tris[material], v, k + 2, k + 1, k + 3, normal);
+				}
+			}
+
+			/// <summary>A triangle a, b, c seen from both sides (a gable), its texture laid flat across it.</summary>
+			internal void Gable(int material, Vector3 a, Vector3 b, Vector3 c)
+			{
+				float w = (b - a).magnitude / 4f, h = (c - (a + b) * 0.5f).magnitude / 4f;
+				for (int side = 0; side < 2; side++)
+				{
+					Vector3 normal = Vector3.Cross(b - a, c - a).normalized * (side == 0 ? 1f : -1f);
+					int k = v.Count;
+					v.Add(a);
+					v.Add(b);
+					v.Add(c);
+					uv.Add(new Vector2(0f, 0f));
+					uv.Add(new Vector2(w, 0f));
+					uv.Add(new Vector2(w * 0.5f, h));
+					for (int j = 0; j < 3; j++)
+					{
+						n.Add(normal);
+					}
+					RoadMesh.Triangle(tris[material], v, k, k + 1, k + 2, normal);
+				}
 			}
 
 			/// <summary>A triangle facing up.</summary>
@@ -782,14 +931,53 @@ namespace HalfGripOpenWorld
 				Make(shader, TwoLane(20, new Color(0.26f, 0.26f, 0.28f), -1, white, 12), "OpenWorld Street"),
 				Make(shader, Lane(), "OpenWorld Lane"),
 				Make(shader, Blank(8, 8, new Color(0.58f, 0.57f, 0.54f), true), "OpenWorld Concrete"),
+				Make(shader, Planks(), "OpenWorld Covered Bridge Boards"),
+				Make(shader, Shingle(), "OpenWorld Covered Bridge Roof"),
 			};
+		}
+
+		/// <summary>A covered bridge's boards: upright planks in barn red, weathered, a dark seam between each; 4 units a repeat each way.</summary>
+		private static Texture2D Planks()
+		{
+			Texture2D t = Blank(16, 16, new Color(0.55f, 0.19f, 0.14f), false);
+			t.wrapModeU = TextureWrapMode.Repeat;
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					float worn = ((int)(Noise.Mix((ulong)(x / 4) * 7919UL + (ulong)y * 104729UL) >> 61) - 3.5f) * 0.02f;
+					Color c = x % 4 == 0 ? new Color(0.30f, 0.11f, 0.09f) : new Color(0.55f + worn, 0.19f + worn * 0.5f, 0.14f + worn * 0.5f);
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply();
+			return t;
+		}
+
+		/// <summary>A covered bridge's roof: rows of dark grey wooden shingles, each row's joints offset from the last's.</summary>
+		private static Texture2D Shingle()
+		{
+			Texture2D t = Blank(16, 16, new Color(0.30f, 0.29f, 0.28f), false);
+			t.wrapModeU = TextureWrapMode.Repeat;
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					int row = y / 4;
+					bool edge = y % 4 == 0 || (x + row * 2) % 5 == 0;
+					float tone = ((int)(Noise.Mix((ulong)(((x + row * 2) / 5) * 31 + row * 977)) >> 61) - 3.5f) * 0.015f;
+					t.SetPixel(x, y, edge ? new Color(0.18f, 0.17f, 0.17f) : new Color(0.31f + tone, 0.30f + tone, 0.29f + tone));
+				}
+			}
+			t.Apply();
+			return t;
 		}
 
 		/// <summary>
 		/// The unpaved ribbons' materials, in submesh order, at 4 pixels a unit across and 2 along (the ground's texture is a pixel to 2
 		/// units, far too coarse for ruts): a farm track (grass at its soft edges, two dirt ruts, a grass strip between them) and a
 		/// footpath (pale gravel, grass at its edges); the rally stage (loose gravel, two darker lines worn by the cars, loose stones
-		/// thrown to the edges).
+		/// thrown to the edges); a drive (gravel with two lines worn by the cars and a paler, looser middle, grass at its edges).
 		/// </summary>
 		internal static Material[] TrackMaterials(Shader shader)
 		{
@@ -811,7 +999,14 @@ namespace HalfGripOpenWorld
 				double d = Math.Abs(u - 0.5) * 2.0 * stageAcross / Network.HalfOf(RoadKind.Rally);
 				return d < 0.14 ? loose : d < 0.56 ? worn : d < 0.84 ? loose : thrown;
 			});
-			return new[] { Make(shader, track, "OpenWorld Farm Track"), Make(shader, path, "OpenWorld Footpath"), Make(shader, stage, "OpenWorld Rally Stage") };
+			double driveAcross = Network.HalfOf(RoadKind.Drive) + Network.EdgeOf(RoadKind.Drive);
+			Color driveWorn = new Color(0.57f, 0.53f, 0.46f);
+			Texture2D drive = Unpaved((int)(driveAcross * 8.0), Network.EdgeOf(RoadKind.Drive) / (2.0 * driveAcross), grass, (double u) =>
+			{
+				double d = Math.Abs(u - 0.5) * 2.0 * driveAcross / Network.HalfOf(RoadKind.Drive);
+				return d < 0.25 ? gravel * 1.03f : d < 0.7 ? driveWorn : gravel;
+			});
+			return new[] { Make(shader, track, "OpenWorld Farm Track"), Make(shader, path, "OpenWorld Footpath"), Make(shader, stage, "OpenWorld Rally Stage"), Make(shader, drive, "OpenWorld Drive") };
 		}
 
 		/// <summary>

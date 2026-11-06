@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Connectivity.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />
@@ -16,6 +17,7 @@
     <Compile Include="../../OpenWorld/src/Rivers.cs" />
     <Compile Include="../../OpenWorld/src/Places.cs" />
     <Compile Include="../../OpenWorld/src/Network.cs" />
+    <Compile Include="../../OpenWorld/src/TownPlan.cs" />
     <Compile Include="../../OpenWorld/src/LandUse.cs" />
     <Compile Include="../../OpenWorld/src/Town.cs" />
     <Compile Include="../../OpenWorld/src/Parks.cs" />

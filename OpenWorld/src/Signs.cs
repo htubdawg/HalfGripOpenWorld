@@ -214,7 +214,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The roads in the graph: every road but the footpaths and the courses themselves (their access roads are in).</summary>
 		private static bool InGraph(Network.Road road)
 		{
-			return road.Kind != RoadKind.Path && road.Kind != RoadKind.Rally && road.Kind != RoadKind.Climb && road.Count >= 2;
+			return road.Kind != RoadKind.Path && road.Kind != RoadKind.Drive && road.Kind != RoadKind.Rally && road.Kind != RoadKind.Climb && road.Count >= 2;
 		}
 
 		private const double PieceCell = 50.0;
@@ -693,7 +693,7 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
-		/// <summary>Whether a sign's part may stand at (x, z): <paramref name="margin"/> off every road's edge, off lots, parks, water and the circuit.</summary>
+		/// <summary>Whether a sign's part may stand at (x, z): <paramref name="margin"/> off every road's edge, off lots, parks, benches, water and the circuit.</summary>
 		private static bool Free(double x, double z, double margin)
 		{
 			// The circuit's own test walks its whole lap: only near it.
@@ -701,6 +701,14 @@ namespace HalfGripOpenWorld
 			if (!Network.Claims(x, z, -1, 0.0, margin) || Town.Taken(x, z, 1.0) || Parks.At(x, z) || (nearCircuit && !Circuit.Clear(x, z, 5.0)))
 			{
 				return false;
+			}
+			// Benches on the trails and in the parks are placed before the signs.
+			foreach (Parks.Bench bench in Parks.Benches)
+			{
+				if (Math.Abs(bench.X - x) < 6.0 && Math.Abs(bench.Z - z) < 6.0)
+				{
+					return false;
+				}
 			}
 			return !(Rivers.Water(x, z, out double level) && Ground(x, z) < level + 0.5);
 		}
@@ -1014,7 +1022,7 @@ namespace HalfGripOpenWorld
 					for (double d = half + Network.Verge + 2.0; d <= half + Network.Verge + 2.0 + reach + 12.0 && !placed; d += 2.0)
 					{
 						double px = nodes[n].x + bx * d, pz = nodes[n].z + bz * d;
-						if (!Free(px, pz, Network.Verge + 1.0) || !FingersClear(px, pz, sized))
+						if (!Free(px, pz, Network.Verge + 1.0) || !FingersClear(px, pz, sized) || !BenchesClear(px, pz, reach + PostSide))
 						{
 							continue;
 						}
@@ -1063,6 +1071,28 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+		}
+
+		/// <summary>A bench's footprint, as <see cref="Buildings"/> gives it.</summary>
+		private const double BenchRadius = 3.5;
+
+		/// <summary>
+		/// Whether no bench stands within a sign's reach (<paramref name="radius"/> round (x, z)). <see cref="Free"/> keeps each point
+		/// tested off a bench, but a bench could still sit between a fingerpost's arms or under its tip, where a car pulling up to read it
+		/// would find it.
+		/// </summary>
+		private static bool BenchesClear(double x, double z, double radius)
+		{
+			double r = radius + BenchRadius;
+			foreach (Parks.Bench bench in Parks.Benches)
+			{
+				double dx = bench.X - x, dz = bench.Z - z;
+				if (dx * dx + dz * dz < r * r)
+				{
+					return false;
+				}
+			}
+			return true;
 		}
 
 		/// <summary>Whether every finger at a post at (x, z) is clear of the roads' paving, so none reaches out over a road.</summary>
@@ -1162,7 +1192,7 @@ namespace HalfGripOpenWorld
 				double lx = -dz, lz = dx;
 				double near = Network.HalfAt(road, s) + Network.Verge + 1.0;
 				double mx = cx + lx * (near + w * 0.5), mz = cz + lz * (near + w * 0.5);
-				bool clear = !Crowded(mx, mz, w * 0.5 + 20.0);
+				bool clear = !Crowded(mx, mz, w * 0.5 + 20.0) && BenchesClear(mx, mz, w * 0.5 + 0.5);
 				for (double a = 0.0; a <= w + 0.01 && clear; a += Math.Max(1.0, w / 8.0))
 				{
 					clear = Free(cx + lx * (near + a), cz + lz * (near + a), Network.Verge + 0.5);

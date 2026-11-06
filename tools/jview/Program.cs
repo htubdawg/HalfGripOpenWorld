@@ -357,6 +357,11 @@ internal static class Program
 			}
 			for (int m = 0; m < d.Triangles.Length; m++)
 			{
+				// A covered bridge's walls and roof stand over its deck: the deck is what is looked at.
+				if (d == road && m >= RoadMesh.Boards)
+				{
+					continue;
+				}
 				int[] t = d.Triangles[m];
 				for (int k = 0; k < t.Length; k += 3)
 				{

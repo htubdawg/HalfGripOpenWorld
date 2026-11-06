@@ -290,7 +290,7 @@ namespace HalfGripOpenWorld
 			for (int kind = (int)RoadKind.Climb; kind >= 0; kind--)
 			{
 				RoadKind k = (RoadKind)kind;
-				if (k == RoadKind.Track || k == RoadKind.Path)
+				if (k == RoadKind.Track || k == RoadKind.Path || k == RoadKind.Drive)
 				{
 					continue;
 				}
