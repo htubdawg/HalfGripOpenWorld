@@ -1447,7 +1447,14 @@ the combined world.
 
 Checked on the combined world: `tools/preview` passes (both market places found; back road detour median 1.33, 90% under 1.76,
 every hamlet pair joined; 6 country lane dead ends; `square` 2.4% of street ends slanted, under the 3% limit; repeatable; a tile
-14 ms). meshcheck: running at the time of this commit; result to follow.
+14 ms). meshcheck (against HalfGripRefs' game files): **all checks pass**, after one fix the combination showed up.
+
+Fixed: `joints` failed once, 'Farm 88 lane' and 'Farm 88 lane on' 0.041 apart in height at (-7285, 1107). The "on" lane there (from
+the back roads) is a 62-unit stub lying along 'Farm 120 lane' and the link 'Farm 88 - Farm 104', cut for them 13 units from its
+joint (23 on the back roads branch alone, where the towns' changes had not moved its far end). `Network.Level` faded the cut's lift
+and cross-fall back along the road and onto the joined end's sample, so its height no longer matched the joint. A joined end's
+sample is now left alone by a cut's apron and corners (`Network.JointEnd`): its height and cross-fall are the joint's. jview's
+picture there still shows the stub lying under the other lanes' paving: worth dropping such stubs in a later change.
 
 `claude/adoring-euler-ywmpz8` (0.23.10, no ash; PR #35 closed) is dead: its fix reached `main` in 0.24.0. The older branches are
 all merged. **Not compiled with `tools/check.sh`** (building HalfGripTools was refused in this session too). **Not tested in game.**

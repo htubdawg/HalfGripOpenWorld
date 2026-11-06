@@ -3543,7 +3543,7 @@ namespace HalfGripOpenWorld
 				for (int k = k0; k >= 0 && k < n; k += end == 0 ? -1 : 1)
 				{
 					double fade = 1.0 - Noise.Step(0.0, 1.0, Math.Abs(road.S[k] - road.S[kh]) / Apron);
-					if (fade <= 0.0)
+					if (fade <= 0.0 || JointEnd(road, k))
 					{
 						break;
 					}
@@ -3570,9 +3570,23 @@ namespace HalfGripOpenWorld
 					// Mostly by the sample inside, at most a unit under where it was (a corner close to the sample out would take it far
 					// down); the rest by the sample out, at most 0.6, so the road keeps near its grade.
 					road.Y[kh] = Math.Max(road.Y[kh] - 1.0, Math.Min(road.Y[kh], (centre - road.Y[k0] * u) / (1.0 - u)));
-					road.Y[k0] = Math.Max(road.Y[k0] - 0.6, Math.Min(road.Y[k0], (centre - road.Y[kh] * (1.0 - u)) / u));
+					if (!JointEnd(road, k0))
+					{
+						road.Y[k0] = Math.Max(road.Y[k0] - 0.6, Math.Min(road.Y[k0], (centre - road.Y[kh] * (1.0 - u)) / u));
+					}
 				}
 			}
+		}
+
+		/// <summary>
+		/// Whether sample k is an end of the road joined to another road's end (<see cref="Joints"/>). Its height and cross-fall are the
+		/// joint's, shared with the other road, so a cut's apron leaves it alone: a cut within a sample of the joint (a short lane on
+		/// from a farm lying along two other lanes, at (-7285, 1107)) faded its lift and cross-fall onto it, and the two roads' end
+		/// edges stood 0.04 apart (meshcheck joints).
+		/// </summary>
+		private static bool JointEnd(Road road, int k)
+		{
+			return (k == 0 && road.Joined0) || (k == road.Count - 1 && road.Joined1);
 		}
 
 		/// <summary>
