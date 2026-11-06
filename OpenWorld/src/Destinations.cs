@@ -87,7 +87,7 @@ namespace HalfGripOpenWorld
 			bool garage = false, workshop = false;
 			foreach (Town.Lot lot in Town.Lots)
 			{
-				string name = lot.Kind == LotKind.Retail ? lot.Place + " retail park" : lot.Kind == LotKind.Garage && !garage ? lot.Place + " filling station" : lot.Kind == LotKind.Workshop && !workshop ? lot.Place + " workshop" : null;
+				string name = lot.Kind == LotKind.Market ? lot.Place + " market place" : lot.Kind == LotKind.Retail ? lot.Place + " retail park" : lot.Kind == LotKind.Garage && !garage ? lot.Place + " filling station" : lot.Kind == LotKind.Workshop && !workshop ? lot.Place + " workshop" : null;
 				if (name == null)
 				{
 					continue;

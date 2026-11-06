@@ -259,3 +259,10 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    now and then a house set back on a gravel drive with a mailbox by the road (solid, off the verge, standing on the ground); a farm
    at the end of a short lane has the lane as its drive. Drive up a drive: no ground through the gravel, no step where it meets the
    lane, tarmac grip on the lane and track grip on the drive. On MiniMap's map the drives are pale gravel, the lanes white.
+38. Towns laid out ring by ring (0.26.0). Teleport to `Kingsbridge market place` and `Westhaven market place`: a paved square beside
+   the high street, level with it (no bump driving on, no ground or grass through the paving, no flicker), the stone cross on its
+   steps and the stalls solid, the shops facing it along its back with their fronts to it; no street or house on it. Drive round
+   both towns: the old town's back lanes behind the high street and the short lanes to them, patches of straight terraced streets
+   (crossroads in them meet level, no lip or flicker), the ring road bending round, crescents and closes past it, Westhaven's
+   seafront along the top of the beach with houses on its landward side only; streets meet the roads they end on square, with
+   flared mouths as before, and footpaths and alleys between streets have no step where two meet end to end.

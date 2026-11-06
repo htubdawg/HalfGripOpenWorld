@@ -5,12 +5,16 @@ generated from a fixed seed (the same for every player) the way real country com
 
 - **Land and water:** a coastal plain and the sea to the south, uplands and mountains to the north; rivers that drain the land to
   the sea, with floodplains, banks and lakes.
-- **Places:** a market town (Kingsbridge), villages and about a hundred farms and hamlets, each where people would settle.
+- **Places:** two towns (Kingsbridge, the market town, and Westhaven by the sea), villages and about a hundred farms and hamlets,
+  each where people would settle. The towns are laid out as English market towns grew, ring by ring: a market place on the high
+  street, the old town's back lanes, patches of terraced streets each at its own angle, a ring road, crescents and closes past it,
+  and Westhaven's seafront; streets meet their roads square.
 - **Roads:** a dual-carriageway trunk road along the coast, main roads between neighbouring places, a mountain pass, town streets,
   country lanes joined up into a web with hardly a dead end (through woods, over streams on covered timber bridges), farms and
   roadside houses on gravel drives with a mailbox at the road, farm tracks and footpaths, with bridges, verges, sidewalks and
   tunnels at the world's edge.
-- **Buildings:** houses along every street, high-street shops, glass towers in the town centre, village churches, farms, a retail
+- **Buildings:** houses along every street, high-street shops, a market place with its cross, stalls and shops round it in each
+  town, glass towers in the town centre, village churches, farms, a retail
   park, and filling stations and workshops along the main roads. Houses in brick, stock brick, stone, whitewash and coloured
   render, with sash or casement windows a whole storey each, front doors, plinths taking up the slope, gabled or hipped roofs of
   slate, clay tiles or pantiles (thatch on village cottages) with real thickness, fascias and chimneys, and wings at the back.
@@ -159,7 +163,7 @@ the same ground.
 | World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
 | World | `ShiftDistance` | 1000 | Metres from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws. |
 | Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back), and the Weather fast key (F2) turns a 10x speed for it on and off: the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |

@@ -29,11 +29,12 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Rivers.cs` | Drainage (priority flood), rivers and lakes, and their cut into the land |
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the back roads joined up (links where the way by road is a long detour, through ways from dead ends), drives and their homes, the ground's road beds |
+| `TownPlan.cs` | The towns' streets ring by ring (seafront, old roads, back lanes, ring roads, terrace patches, crescents and closes), streets meeting square, ground kept for the retail park and market place (part of `Network`) |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track, drive and footpath, and water meshes and their pixel-art textures; covered bridges on the lanes |
 | `Destinations.cs` | The key places the debug teleport goes round |
 | `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, roadside houses and mailboxes on the drives, and the lots' buildings and surfaces (one mesh, one collider), their materials; houses' walls drawn a storey at a time from wall atlases, roofs as thick slabs |
-| `Town.cs` | Lots: the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
+| `Town.cs` | Lots: the towns' market places, the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Parks.cs` | Parks (town blocks and a riverside, ponds dug in), their paths, trails round the lakes, benches; laid out after the road index |
 | `Circuit.cs`, `CircuitMesh.cs`, `Rally.cs`, `HillClimb.cs` | The race courses: the circuit, the rally stage, the hill climb (sited and laid out in `Places.Build`; the stage's and the climb's roads made first in `Network.Build`) |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |

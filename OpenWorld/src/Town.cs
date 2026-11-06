@@ -19,6 +19,8 @@ namespace HalfGripOpenWorld
 		Paddock = 5,
 		/// <summary>The hill climb's turning area: a tarmac apron beside the top of the road, where the cars turn to come back down.</summary>
 		Turning = 6,
+		/// <summary>A town's market place: a paved square opening off the high street near the middle, a market cross and stalls on it, shops facing it from behind.</summary>
+		Market = 7,
 	}
 
 	/// <summary>
@@ -85,6 +87,7 @@ namespace HalfGripOpenWorld
 				case LotKind.Service: w = Rally.ServiceW; d = Rally.ServiceD; rough = 7.0; return;
 				case LotKind.Paddock: w = HillClimb.PaddockW; d = HillClimb.PaddockD; rough = 9.0; return;
 				case LotKind.Turning: w = HillClimb.TurnW; d = HillClimb.TurnD; rough = 9.0; return;
+				case LotKind.Market: w = 150.0; d = 70.0; rough = 5.0; return;
 				default: w = 64.0; d = 64.0; rough = 5.0; return;
 			}
 		}
@@ -104,6 +107,8 @@ namespace HalfGripOpenWorld
 				case LotKind.Service: w = 0.0; v0 = Rally.ServiceD; d = 0.0; return;
 				case LotKind.Paddock: w = 0.0; v0 = HillClimb.PaddockD; d = 0.0; return;
 				case LotKind.Turning: w = 0.0; v0 = HillClimb.TurnD; d = 0.0; return;
+				// Open to the back, where the shops facing it stand (see Buildings.Market).
+				case LotKind.Market: w = 0.0; v0 = 70.0; d = 0.0; return;
 				default: w = 26.0; v0 = 44.0; d = 16.0; return;
 			}
 		}
@@ -122,13 +127,37 @@ namespace HalfGripOpenWorld
 			index = null;
 			List<Lot> found = new List<Lot>();
 			Dictionary<Places.Place, int> count = new Dictionary<Places.Place, int>();
-			// The retail park first: the main town's, on the first spot along a main road at its edge where it fits.
+			// Each town's market place first, exactly where the town's plan kept ground for it (see Network.ReserveMarket).
+			foreach ((Network.Road road, double mx, double mz, int side) in Network.Markets)
+			{
+				int r = Network.Roads.IndexOf(road);
+				double s = Along(road, mx, mz, out double off);
+				if (r < 0 || off > 2.0)
+				{
+					continue;
+				}
+				Network.Locate(road, s, out int i, out double t);
+				double px = road.X[i] + (road.X[i + 1] - road.X[i]) * t, pz = road.Z[i] + (road.Z[i + 1] - road.Z[i]) * t;
+				double py = road.Y[i] + (road.Y[i + 1] - road.Y[i]) * t;
+				double len = Math.Max(1e-6, road.S[i + 1] - road.S[i]);
+				double dx = (road.X[i + 1] - road.X[i]) / len, dz = (road.Z[i + 1] - road.Z[i]) / len;
+				Lot lot = Fit(LotKind.Market, r, road, s, side, px, pz, py, dx * side, dz * side, Hash(r, (long)(s / Spacing), side), found);
+				Places.Place place = Places.At(px, pz);
+				if (lot == null || place == null)
+				{
+					continue;
+				}
+				lot.Place = place.Name;
+				found.Add(lot);
+			}
+			int before = found.Count;
+			// The retail park: the main town's, on the first spot along a main road at its edge where it fits.
 			Places.Place main = Places.All.Count > 0 && Places.All[0].Kind == PlaceKind.Town ? Places.All[0] : null;
 			if (main != null)
 			{
 				Walk(found, (r, k, side, place, from) =>
 				{
-					if (place != main || from < 0.6 || from > 1.05 || found.Count > 0)
+					if (place != main || from < 0.6 || from > 1.05 || found.Count > before)
 					{
 						return null;
 					}
@@ -379,8 +408,10 @@ namespace HalfGripOpenWorld
 					double x = lot.X + ax * u + nx * (v - d * 0.5), z = lot.Z + az * u + nz * (v - d * 0.5);
 					bool inside = v <= d && Math.Abs(u) <= w * 0.5;
 					// Its own road's edge is front + v away; every other road's must be further (but for the road it is let have behind it,
-					// the rally service area's track), and 4 clear of the lot. Not in a park.
-					if (!Network.Claims(x, z, r, front + v, inside ? 4.0 : 0.5, also) || Parks.At(x, z))
+					// the rally service area's track), and 4 clear of the lot. Not in a park. A market place is an open square that streets
+					// may run beside: every other road is only kept off its levelled ground and the bank round it (16 clear of the paving).
+					bool clear = kind == LotKind.Market ? Network.Clear(x, z, r, inside ? 16.0 : 10.0) : Network.Claims(x, z, r, front + v, inside ? 4.0 : 0.5, also);
+					if (!clear || Parks.At(x, z))
 					{
 						return null;
 					}
@@ -396,6 +427,23 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return lot;
+		}
+
+		/// <summary>How far along <paramref name="road"/> the point on it nearest (x, z) is, and how far off it (x, z) is.</summary>
+		private static double Along(Network.Road road, double x, double z, out double off)
+		{
+			off = double.MaxValue;
+			double best = 0.0;
+			for (int i = 0; i < road.Count - 1; i++)
+			{
+				Lines.Project(road.X, road.Z, i, x, z, out double t, out double d);
+				if (d < off)
+				{
+					off = d;
+					best = road.S[i] + (road.S[i + 1] - road.S[i]) * t;
+				}
+			}
+			return best;
 		}
 
 		private static double RoadY(Network.Road road, double s)

@@ -271,7 +271,7 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					if (Rivers.Water(x, z, out double _) || !Network.Claims(x, z, -1, 0.0, RoadMargin) || InPark(x, z))
+					if (Rivers.Water(x, z, out double _) || !Network.Claims(x, z, -1, 0.0, RoadMargin) || InPark(x, z) || Network.Kept(x, z))
 					{
 						continue;
 					}
