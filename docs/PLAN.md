@@ -1289,15 +1289,18 @@ met its lane a few units short of the farm, leaving a stub. **Done** (`Network.c
 - `meshcheck`: `homes` (mailboxes and houses clear of roads and water, houses at their drives' ends), `backroads` (at most 10 country
   lane dead ends, no through way hooking round), covered bridges counted under `bridges`.
 
-**Status (handoff):** branch `claude/eager-sagan-jmc0fj`. The last full meshcheck (before the fixes below) failed only `faces` (1),
-`signs` (1), `joints` (1), `tucked` (1); `homes` and `backroads` pass. Fixed since, **not yet re-run**: a sign's post kept off the
-benches (`Signs.Free`); two ribbons ending on a paved road no longer joined end to end (`Network.Covered` counts paved roads for
-ribbon ends); `Tuck` also samples a ribbon's own edge; a mailbox that would stand on a road or in water is left out. Still open: one
-face pointing down at (-11566, 2521), in the road mesh's submesh 0, where Farm 8's lane and the link `Farm 8 - Farm 9` meet start to
-start (the new `ToEnd` snapping makes such joints); look with `jview at out.ppm -11566 2521 80` (jview's project now leaves out the
-same files as meshcheck's, so it builds again). Next: run the full meshcheck, fix what is left, regenerate `docs/world.png` and
-`docs/world-labels.png` from `tools/preview`, then open the PR.
+**Status:** finished on branch `claude/intelligent-knuth-y5ts79` (from `claude/eager-sagan-jmc0fj`). Fixed in the last pass: a
+sign's post kept off the benches, and no bench within a sign's whole reach either (a fingerpost's arms reached over one at (3244,
+-6177); `Signs.BenchesClear`); two ribbons ending on a paved road not joined end to end; `Tuck` samples a ribbon's own edge; a
+mailbox on a road or in water left out; the face drawn downwards at (-11566, 2521), where Farm 8's lane and the link `Farm 8 - Farm 9`
+meet start to start at 75 degrees: both take the side halfway round the bend at a joint, so on its inside the verge's outer edge
+swings round faster than the road runs on (w * dphi/dt over L * cos phi; no spreading of the turn over an 8-unit piece keeps 11.5
+out from folding at that bend) and the ribbon folded back. A verge quad that crosses over itself is now left out
+(`RoadMesh.Twisted`); the fold is covered by the ribbon's own layers either side (jview's picture there is unchanged, pixel for
+pixel). Tried first and dropped: refusing such bends as joints, which left the old notch of ground at the outer corner. Full
+meshcheck: **all checks pass** (joints 101, faces 0, signs 0 on a bench, homes and backroads pass). `tools/preview` passes;
+`docs/world.png` and `docs/world-labels.png` regenerated.
 
-Not compiled with `tools/check.sh` in this session (building HalfGripTools there was not allowed): the files it alone covers
+Not compiled with `tools/check.sh` (building HalfGripTools was not allowed in either session): the files it alone covers
 (`Streamer.cs`: the drive's map colour; `WorldScene.cs`: the log line) changed by a line each; meshcheck compiles the rest against
 the game. **Not tested in game.**
