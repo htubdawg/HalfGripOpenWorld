@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Connectivity.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />

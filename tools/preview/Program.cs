@@ -227,6 +227,10 @@ internal static class Program
 		}
 		Console.WriteLine("junctions: " + tees + " T-junction ends, about " + crossings / 2 + " crossroads, " + deadEnds + " dead ends; in the country " + country[(int)RoadKind.Lane] + " lanes', " + country[(int)RoadKind.Track] + " tracks', " + country[(int)RoadKind.Path] + " footpaths'");
 
+		// How the country's paved roads join up: the detour by road between hamlets 1 to 4 km apart, and the farmland's reach to a road.
+		Connectivity.Result join = Connectivity.Measure();
+		Console.WriteLine("back roads: " + join.Pairs + " hamlet pairs 1-4 km apart, detour by road median " + join.Median.ToString("0.00") + ", 90% under " + join.P90.ToString("0.00") + ", " + join.OverTwo + " over 2, " + join.Unreachable + " not joined; farmland to a road 90% under " + (join.GapP90 / PerMetre).ToString("0") + " m real, furthest " + (join.GapMost / PerMetre).ToString("0") + " m at (" + join.GapMostX.ToString("0") + ", " + join.GapMostZ.ToString("0") + ")");
+
 		// The ground meets each road's bed at its centre (bridges and cuts at junctions excepted; junctions may differ a little by design).
 		double worstBed = 0.0;
 		foreach (Network.Road r in Network.Roads)
