@@ -1159,6 +1159,104 @@ only 4.5 off; else in place. Never to a road far off (the owner: a driver in the
 metres to a road), except from the water with no dry land within 60, which would otherwise dunk the car again and again.
 The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
 
+## Next (proposed, to agree with the owner): towns laid out like real ones
+
+Asked for by the owner: the major towns' roads and buildings a bit more realistic, some gridding but not too much.
+
+### What the towns are now
+
+Looked at with `tools/preview` round Kingsbridge (-2290, -4139) and Westhaven (11922, -10724), both 1800 radius, and measured
+(every street end, the angle it meets the road it ends on; under 10° is left out, as that is mostly a street carried on end to end):
+
+| | streets | mean piece | straightness | ends meeting at 10 to 60° | dead ends |
+|---|---|---|---|---|---|
+| Kingsbridge | 84 | 94 m | 0.99 | 24 of 154 (16%) | 14 |
+| Westhaven | 99 | 98 m | 0.98 | 23 of 183 (13%) | 15 |
+
+- **A starburst, not a town.** The five "old roads" `Grow` walks out of the centre are dead straight (a 0.08 wander over 30-unit
+  steps), and every branch off them is too (0.99 chord to length), so the streets read as long rays and spider legs running out
+  into the fields, with a house now and then along them.
+- **Slivers.** One street end in seven meet their road at under 60°: branches leave square but runs into the next ray at whatever
+  angle it lies, so blocks are thin triangles (Westhaven's south end is a tangle of them), and the parks land in triangles too.
+- **No centre.** Nothing marks where the main roads meet: no market place, no wider high street, no church (villages have one; towns
+  do not). The towers sit on whatever streets are within 0.16 of the radius.
+- **No grain.** Every part of town is the same street pattern at a different density; real towns have a medieval core, a band of
+  Victorian terraced streets (the grid), and looser suburbs, each with its own look.
+- **Streets ignore the ground.** A walk stops when too steep but never turns along the contour, so on Westhaven's slope to the sea
+  streets run straight down it and stop.
+- **Buildings by the yard, not by the block** (`Buildings.Plots`): a plot every 26/36/44 along each road piece, kept by a hash
+  (35 to 85% in a town outside the core), so suburban streets are gappy; nothing turns a corner, nothing knows how deep the block
+  behind it is, and the houses along one street are as mixed as across the whole town.
+
+### The plan: four zones, a bit of grid in one
+
+Towns grow in rings, and each ring has its own pattern. The generator lays a town out as a plan (zones and patches) first, then the
+streets in each zone by that zone's rule, then the buildings by plot. Villages keep `Grow` (they look right at their size), with
+the angle fix below. Deterministic as ever (`Rng`, `DetMath`, `Network.Atan2`, ties by index); it changes the world, so a version
+bump that everyone in a room needs.
+
+1. **The plan** (new `TownPlan.cs`, pure, built in `Network.Build` before step 3): per town, the **market place** where its main roads
+   meet nearest the middle (the junction `Grow` already snaps to), and three zones by distance and ground, their edges wobbled with
+   noise so they are not circles: **core** (to about 0.25 of the radius), **terraces** (to about 0.6), **suburbs** (to 1.0). The
+   terrace zone is cut into 3 to 6 **patches**, each a wedge between two main roads or old roads, with its own orientation: square
+   to the main road it fronts, turned towards the contour where the ground slopes more than 4%. Steep, flood plain and water cells
+   are left out of every patch.
+2. **Core: the old town.** The high street is the main road through it, widened (a street-class width more each side) for 300 to
+   500 units at the market place; the market place itself is a paved plate (as a hub's, or a lot surface) with buildings facing it
+   and the town's church (the village church, bigger, a churchyard) on one side. **Back lanes** run parallel to the high street 180
+   to 260 behind it on each side (the end of the burgage plots), joined to it by short lanes and alleys every 150 to 250, so the core
+   is a ladder, the oldest streets slightly bent (wander kept).
+3. **Terraces: the grid, in patches.** In each patch, parallel streets 110 to 140 apart (a terrace and its back yards each side,
+   back to back) along the patch's axis, cross streets 250 to 400 apart, each line's spacing jittered ±15%, the whole patch bent a
+   few degrees over its length (a slow noise on the axis) and clipped to the patch, the zone and the ground. Lines are laid as
+   `Make`/`Add` roads with the same stopping rules as `Walk` (water, steep, fences) and end on the road they meet. Crossroads inside a
+   patch, T-junctions where it meets its neighbours at their different angle: gridded locally, never one grid over the town.
+   About half the terrace streets get a **back alley** (a narrow paved way, `RoadKind.Path` paved or a new narrow street width)
+   down the middle of the block. This is the only gridding.
+4. **Suburbs: the estates.** Off the main roads and old roads, a **distributor** street curving along the contour, and off it
+   **crescents** (a loop back to it), **closes** (cul-de-sacs 80 to 200 long with a turning head) and a few through roads to the
+   next distributor. Curves from a stronger wander and a steer back, not straight walks. Ribbon houses go on along the main roads past
+   the suburb's edge (as now), but no street runs out past the town's edge: the edge is a footpath into the fields (as now).
+5. **Every street meets square.** In `Walk` (all places, villages too): when a street is about to end on a road at under 65°, its
+   last 60 to 90 units are bent to meet it at 75 to 90° (a Hermite turn); if it cannot (too short), it stops short and is dropped if
+   under 50. The old roads out of the centre get a wander like the others (0.15, not 0.08), and end at the core's back lanes, not at
+   the centre.
+
+Then the buildings, from plots, not from yards along a road:
+
+6. **Plots by zone, on one building line per street.** Each street side is cut into plots by its zone (core: 18 to 30 wide burgage
+   fronts, continuous, 3 to 4 storeys at the market; terraces: rows of 6 to 12 houses, 16 wide, continuous, a gap (a passage) between
+   rows; suburbs: semis in pairs and detached houses, 30 to 45 a plot, one setback for the whole street, from 6 to 14). Filled by
+   the zone's rate (core and terraces all; suburbs 90%), not 35 to 85%, so streets read as streets.
+7. **Depth from the block.** A plot's building and garden reach at most half way to the road behind (a lookup on `segments` from the
+   plot's back), so houses never back onto each other's walls and thin blocks get shallow houses, not none.
+8. **Corners.** A plot at a junction turns the corner: in the core and terraces an end house with its door and windows on the side
+   street (or a corner shop / pub with a shopfront on both faces, one in three corners at the market), in the suburbs the corner plot
+   left as a side garden. The plots next to a junction's mouth are dropped as now.
+9. **One street, one builder.** The wall, roof, window style and storeys come from a hash of the street (and the terrace row), with a
+   small per-house change (door colour, chimneys), so a terraced street is one brick and one slate, a suburban close one render,
+   while the next street differs. The core keeps its mix.
+10. **A few civic buildings.** The church at the market; a school on a big suburban plot (a long two-storey block, a playground lot);
+    a pub at one or two core corners. Towers stay in the main town's core, now on the plots round the market and the high street.
+
+Parks follow for free (`Parks` already takes whole blocks: the grid's blocks are compact, so they land in real squares; a park
+at the market's back, a green in one suburb). Lots (`Town`) are unchanged: still on the main roads at the edges.
+
+### Order of work (each PR runs check.sh, preview, meshcheck; adds checks)
+
+- **PR A, streets (0.26.0):** `TownPlan`, the three zone rules, the square-meeting rule, the market place's plate. Checks in `preview`:
+  street ends meeting at 10 to 60° (target under 3%), mean block area and its spread per zone, street length per km² per zone (keep the
+  town at 10 to 20 km/km²), crossroads and T counts, no street past the town's edge. `meshcheck` joints, holes, hubs and poke will be
+  stressed by the crossroads: look at a dozen with `jview` before and after. The map for the owner from `preview` round each town.
+- **PR B, buildings (0.27.0):** plots by zone, depth from the block, corners, one builder per street, the town church. `meshcheck`
+  bases and facades, plus a new `plots` check (no building over a road or another building, every terrace row continuous, every plot's
+  back short of the road behind). Watch the town tile's time (25.9 ms now) and the tile's triangle count with continuous terraces.
+- **PR C (if wanted):** schools and pubs, back alleys, a village green for the bigger villages.
+
+Open with the owner: how much grid (patches cover about a third of a town's area as planned); whether the market place should be a
+square or the widened street of a market town; back alleys driveable or footpaths; whether Westhaven gets a seafront (a promenade
+road along the shore with a terrace facing the sea) in place of streets ending at the beach.
+
 ## Later: traffic (investigated after 0.17.0, to agree with the owner)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
