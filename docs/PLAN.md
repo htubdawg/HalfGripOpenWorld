@@ -1234,3 +1234,28 @@ particles, which `WeatherController` keeps over the car) fell all race long. The
 `AshEffect` off with the vanilla rain and snow, so a scene that started on its own weather has none either. The looks' light, fog
 and colours are kept. The only rain and snow are `Storms`'s (the game sets its particles once, in `ApplyProfile` at the scene's
 start, and only moves them after).
+
+### 0.25.0: better buildings (asked for by the owner)
+
+The owner's screenshot: windows cut off under the eaves, wall texture on the gables at the wrong scale, roofs paper-thin, too little
+variety. The cause of the cut windows: a house's walls ran `floors * Storey + 1.5 + slope`, so the top storey was a part storey whose
+window the eaves cut, and the slope moved every row. **Done** (`Buildings.cs`):
+- **Walls a storey at a time.** The house walls are atlases (`WallAtlas`, 16 by 20 pixels a bay and storey, twice the old detail),
+  rows: sash, casement, lancet, front door, plain, plinth. A wall is one quad per storey reading one row, so windows are always whole;
+  a plinth (the plinth row, a coping at the floor) takes up the slope from the base under the lowest ground to the floor over the
+  highest. Gables, chimneys and parapets read the plain row. The front door sits in its bay (a terrace's at one end, a detached
+  house's in the middle); every band of a wall is cut at the door's bay alike, so there are no T-junctions.
+- **Roofs as slabs.** Tiles and slate 1.1 thick, thatch 2.4, sheet 0.5; a top, an underside (painted trim, timber under thatch), a
+  fascia along the eaves and barge boards up the verges. The eaves drop so the underside passes through the walls' tops, and the
+  walls (gables too) carry on up into the slab, so no crack of sky shows where they meet. Gabled or hipped (same pitch all round);
+  chimney stacks with copings; parapets with copings round flat roofs; a base under the spire.
+- **Variety.** New walls: stock brick, sage and rose render; new roofs: pantiles and thatch; trim. Walls and roofs picked by place
+  (terraces, suburbs, villages), sash or casement, hipped roofs on detached houses, 0 to 2 chimneys, a wing at the back of two in
+  five detached houses, one-storey thatched cottages in villages; the church's lancets and tower door; the farmhouse's casements.
+  Shopfronts redrawn at the walls' detail. New materials go on the end of the list (indices 23 to 28).
+- `meshcheck facades`: every atlas wall face reads one row, window rows whole, no roof covering facing down, trim drawn.
+
+Checked: the builder and the textures compiled against stand-ins and rendered by a small software rasterizer (a street of each kind,
+144 views searched for cracks of background inside a building: none but single silhouette pixels; 670 with the old joins). **Not
+compiled against the game** (no access to HalfGripRefs in that session) and **meshcheck not run**: run `tools/check.sh` and
+`meshcheck bases facades` before merging. **Not tested in game.**

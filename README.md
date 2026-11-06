@@ -9,7 +9,9 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Roads:** a dual-carriageway trunk road along the coast, main roads between neighbouring places, a mountain pass, town streets,
   country lanes, farm tracks and footpaths, with bridges, verges, sidewalks and tunnels at the world's edge.
 - **Buildings:** houses along every street, high-street shops, glass towers in the town centre, village churches, farms, a retail
-  park, and filling stations and workshops along the main roads.
+  park, and filling stations and workshops along the main roads. Houses in brick, stock brick, stone, whitewash and coloured
+  render, with sash or casement windows a whole storey each, front doors, plinths taking up the slope, gabled or hipped roofs of
+  slate, clay tiles or pantiles (thatch on village cottages) with real thickness, fascias and chimneys, and wings at the back.
 - **Parks and trails:** town parks with ponds, paths and benches, a riverside walk, and trails round the lakes.
 - **Race courses:** a 2.9 km tarmac circuit with kerbs, gravel traps, pits and grandstands; a 5 km gravel rally stage through the
   upland forest; a 1.5 km hill climb up a mountain valley. Each has a timed solo event (see [Events](#events)), and so has the
@@ -26,7 +28,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in 250 m tiles around the car, and a floating origin keeps the physics as precise 15 km out as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.24.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.25.0**, made for game version 0.418 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -47,7 +49,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.24.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.25.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
