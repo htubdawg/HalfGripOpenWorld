@@ -6,7 +6,7 @@ using UnityEngine.SceneManagement;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The floating origin. Unity keeps positions as 32-bit floats: 16 km from 0,0 a position is only good to about 1 mm, which a car's
+	/// The floating origin. Unity keeps positions as 32-bit floats: 16,000 units from 0,0 a position is only good to about 0.002 of a unit, which a car's
 	/// suspension, wheel contacts and camera already show as jitter. So the scene never gets that far: whenever the car is more than ShiftDistance from
 	/// 0,0, everything in the scene is moved back by the same whole number of tiles, and the offset is added here. The physics always
 	/// runs near 0,0; world coordinates (what the terrain and the network use) are scene coordinates plus <see cref="X"/>, <see cref="Z"/>.
@@ -20,7 +20,7 @@ namespace HalfGripOpenWorld
 	/// </summary>
 	internal static class Origin
 	{
-		/// <summary>World coordinates of the scene's 0,0 (metres). Doubles: they reach 16 km and must stay exact.</summary>
+		/// <summary>World coordinates of the scene's 0,0 (game units). Doubles: they reach 16,000 and must stay exact.</summary>
 		internal static double X;
 		internal static double Z;
 

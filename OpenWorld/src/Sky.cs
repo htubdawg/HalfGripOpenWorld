@@ -103,7 +103,7 @@ namespace HalfGripOpenWorld
 		private float reach = -1f;
 
 		/// <summary>With the land painted past the far view (<see cref="Skyline"/>), how far one sees on the clearest day: across the whole
-		/// world (32,000) and some, the mountains 30 km off faint in the haze. Without it, the config's FarViewDistance, as the meshes stop there.</summary>
+		/// world (32,000) and some, the mountains 30,000 units (about 9 km) off faint in the haze. Without it, the config's FarViewDistance, as the meshes stop there.</summary>
 		private const float ClearSight = 40000f;
 
 		/// <summary>The land past the far view's edge for the painted sky: the one being painted and a spare built into on a worker when the

@@ -7,7 +7,7 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// Keeps the ground loaded around the player car: square tiles of TileSize metres, each a mesh with a collider, built from
+	/// Keeps the ground loaded around the player car: square tiles of TileSize units (about 75 m), each a mesh with a collider, built from
 	/// <see cref="WorldGen.Height"/>, with the road surfaces that fall in the tile as a second mesh (<see cref="RoadMesh"/>). Both are
 	/// worked out on worker threads (pure arithmetic, no Unity calls); the meshes and colliders are made on the main thread, a few tiles
 	/// a frame, nearest first. Tiles beyond the radius are destroyed.
@@ -16,10 +16,10 @@ namespace HalfGripOpenWorld
 	/// </summary>
 	internal sealed class Streamer : MonoBehaviour
 	{
-		/// <summary>Side of one tile in metres. The origin shifts by whole tiles.</summary>
+		/// <summary>Side of one tile in game units (about 75 m). The origin shifts by whole tiles.</summary>
 		internal const float TileSize = 250f;
 
-		/// <summary>Quads along a tile's side: 5 m apart, fine enough for the car on ground whose smallest bumps are 70 m across.</summary>
+		/// <summary>Quads along a tile's side: 5 units apart, fine enough for the car on ground whose smallest bumps are 70 units across.</summary>
 		private const int Quads = 50;
 
 		/// <summary>Tiles whose heights are being worked out at once.</summary>
@@ -1126,7 +1126,7 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Origin.World(player.transform.position, out double x, out double z);
-			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " km   height " + player.transform.position.y.ToString("0") + " m\n"
+			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + player.transform.position.y.ToString("0") + " m\n"
 				+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
 				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
 				+ (Sky.Status != null ? "\n" + Sky.Status : "")

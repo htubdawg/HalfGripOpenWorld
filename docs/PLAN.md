@@ -1173,6 +1173,10 @@ Made for game 0.419 and HalfGripTools 1.0.6. The world is unchanged, so the same
   scene and Unity's unloading, so memory grew with each race of a session. `WorldAssets` (on the world's root) and
   `Foliage.OnDestroy` now free them, and their textures, with the world; only what the mod made (DontSave) is ever destroyed. The
   tunnel mouths use the roads' concrete instead of making a second set of road materials.
+- The world was described as 32 km (20 miles) square, its tiles as 250 m and the settings' reaches in metres, all of them game
+  units read as metres. At 3.3 units to the metre it is about 9.7 km (6 miles) across, a tile about 75 m. Corrected in `mod.json`,
+  the README, the config descriptions, the build's log line, the ShowCoords overlay (thousands of units, not km), TESTING.md and
+  the comments; CLAUDE.md now says so. Nothing in the world changed.
 - Read through for the audit: every file that runs in the game and no tool runs (`Origin`, `MultiplayerLink` against the
   Multiplayer mod's protocol 8 source, `Streamer`, `WorldScene`, `Garage`, `GarageRefit`, `EventRace`, `EventBoard`, `EventLink`,
   `ShifterHand`, `GameMode`, `Patches`, `Sky`, `FarView`, `Foliage`, `Weather`, `MapEntry`). Nothing else found that needs

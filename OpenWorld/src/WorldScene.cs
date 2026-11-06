@@ -173,7 +173,7 @@ namespace HalfGripOpenWorld
 			root.AddComponent<EventRace>().Setup(tm, lit);
 			RaiseCameras();
 
-			Mod.Log.LogInfo("Open World built: " + (WorldGen.Half * 2.0 / 1000.0).ToString("0") + " km square, seed " + WorldGen.Seed.ToString("X") + ", " + streamer.Loaded + " tiles at the spawn, "
+			Mod.Log.LogInfo("Open World built: " + (WorldGen.Half * 2.0 / 3300.0).ToString("0.0") + " km square, seed " + WorldGen.Seed.ToString("X") + ", " + streamer.Loaded + " tiles at the spawn, "
 				+ ((Time.realtimeSinceStartup - started) * 1000f).ToString("0") + " ms");
 		}
 
@@ -430,7 +430,7 @@ namespace HalfGripOpenWorld
 			Mod.Info("Token loop: " + line.sampledPoints.Count + " samples, " + line.trackLength.ToString("0") + " m");
 		}
 
-		/// <summary>The cameras that draw the world (the dev free-flight one too) draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never
+		/// <summary>The cameras that draw the world (the dev free-flight one too) draw as far as the tiles reach (Tokyo's draw to 1500 units); never
 		/// lowered. With the far view on, <see cref="FarView"/> sets them further.</summary>
 		private static void RaiseCameras()
 		{

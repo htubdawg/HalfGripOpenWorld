@@ -23,7 +23,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal const ulong Seed = 0x0E7A_2026_1029_0001UL;
 
-		/// <summary>Half the side of the world square: 16 km, so the world is 32 km (20 miles) across.</summary>
+		/// <summary>Half the side of the world square, in game units: the world is 32,000 across, about 9.7 km (6 miles) at 3.3 to the metre.</summary>
 		internal const double Half = 16000.0;
 
 		/// <summary>The mountain wall at the edge starts this far inside it.</summary>
@@ -137,7 +137,7 @@ namespace HalfGripOpenWorld
 			return Math.Abs(x) <= Half && Math.Abs(z) <= Half;
 		}
 
-		/// <summary>The nearest point at least <paramref name="margin"/> metres inside the edge wall (for resets).</summary>
+		/// <summary>The nearest point at least <paramref name="margin"/> units inside the edge wall (for resets).</summary>
 		internal static void ClampInside(ref double x, ref double z, double margin)
 		{
 			double limit = Half - WallDepth - margin;
