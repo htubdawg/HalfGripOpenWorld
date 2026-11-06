@@ -297,6 +297,8 @@ namespace HalfGripOpenWorld
 			segments = new Segments();
 			router = new Router();
 			Reserved.Clear();
+			Rects.Clear();
+			Markets.Clear();
 			RallyAccess = null;
 			ClimbAccess = null;
 
@@ -1773,6 +1775,13 @@ namespace HalfGripOpenWorld
 			Road a = Roads[p.r], b = Roads[q.r];
 			int ea = p.end, eb = q.end;
 			int ka = ea == 0 ? 0 : a.Count - 1, kb = eb == 0 ? 0 : b.Count - 1;
+			// Ends taken as one within half a unit are made one point, so the two ribbons' end edges meet (two footpaths ending 0.2 apart
+			// on a street in a town's terraces were drawn with a step between them).
+			double mx = (a.X[ka] + b.X[kb]) * 0.5, mz = (a.Z[ka] + b.Z[kb]) * 0.5;
+			a.X[ka] = b.X[kb] = mx;
+			a.Z[ka] = b.Z[kb] = mz;
+			Lengths(a);
+			Lengths(b);
 			Direction(a, ea, out double ix, out double iz);
 			Direction(b, eb, out double ox, out double oz);
 			// The way through the joint, from a into b, halfway round the bend.
@@ -4328,6 +4337,33 @@ namespace HalfGripOpenWorld
 				Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
 				double edge = d - road.Half;
 				if (edge < margin || (own >= 0 && r != own && r != also && edge < ownEdge - 0.5))
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/// <summary>Whether (x, z) is at least <paramref name="margin"/> from the edge of every road but <paramref name="own"/>, and from its own a verge's width less a hair (the lot's front is a verge's width from it; bridges' decks aside).</summary>
+		internal static bool Clear(double x, double z, int own, double margin)
+		{
+			if (cellStart == null)
+			{
+				return true;
+			}
+			int c = CellOf(z) * Cells + CellOf(x);
+			for (int k = cellStart[c]; k < cellStart[c + 1]; k++)
+			{
+				long item = cellItems[k];
+				int r = (int)(item >> 32);
+				Road road = Roads[r];
+				int i = (int)(uint)item;
+				if (Deck(road, i))
+				{
+					continue;
+				}
+				Lines.Project(road.X, road.Z, i, x, z, out double _, out double d);
+				if (d - road.Half < (r == own ? Verge - 0.5 : margin))
 				{
 					return false;
 				}

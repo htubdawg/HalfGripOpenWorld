@@ -764,22 +764,30 @@ internal static class Program
 				}
 				foreach ((double x, double z, double r) in d.Footprints)
 				{
+					// Each vertex in the footprint's circle against the ground under that vertex, not under the middle: a terrace's
+					// houses abut, so the circle takes in the next house's base too, which stands lower on a slope (with the
+					// terraced streets, a house 4.8 under its own ground read as 7.3 by its lower neighbour's base).
 					float lo = float.MaxValue;
+					double deepest = double.MinValue;
+					double g = WorldGen.Height(x, z);
 					foreach (Vector3 v in d.Mesh.Vertices)
 					{
 						double wx = v.x + tx * 250.0, wz = v.z + tz * 250.0;
 						if ((wx - x) * (wx - x) + (wz - z) * (wz - z) < r * r * 1.05)
 						{
 							lo = Math.Min(lo, v.y);
+							if (v.y < g + 1.0)
+							{
+								deepest = Math.Max(deepest, WorldGen.Height(wx, wz) - v.y);
+							}
 						}
 					}
 					if (lo == float.MaxValue)
 					{
 						continue;
 					}
-					double g = WorldGen.Height(x, z);
 					n++;
-					sunk = Math.Max(sunk, g - lo);
+					sunk = Math.Max(sunk, deepest);
 					raised = Math.Max(raised, lo - g);
 				}
 			}
@@ -926,7 +934,8 @@ internal static class Program
 					}
 					// The rally service area's own track leaves from its back, as Town.Fit allows.
 					int also = lot.Kind == LotKind.Service && Network.RallyAccess != null ? Network.Roads.IndexOf(Network.RallyAccess) : -1;
-					if (v > 0.0 && !Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0, also))
+					// A market place only keeps other roads off it (see Town.Fit).
+					if (v > 0.0 && !(lot.Kind == LotKind.Market ? Network.Clear(x, z, lot.Road, 14.0) : Network.Claims(x, z, lot.Road, Network.Verge + v, 2.0, also)))
 					{
 						roads++;
 					}

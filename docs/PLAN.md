@@ -1159,36 +1159,36 @@ only 4.5 off; else in place. Never to a road far off (the owner: a driver in the
 metres to a road), except from the water with no dry land within 60, which would otherwise dunk the car again and again.
 The dunk in water goes the same way. Not part of the generator: it reads the loaded tiles, so it changes nothing in a room.
 
-## Next: towns laid out like real ones (agreed with the owner; PR A in progress)
+## Next: towns laid out like real ones (agreed with the owner; PR A done, 0.26.0)
 
 **Agreed** (the owner's answers to the open questions below): grid patches about a third of a town, as planned; the market place
 both a square and a widened high street; back alleys both (some drivable lanes, some footpaths); Westhaven gets a seafront.
 
-**Status of PR A (work in progress on `claude/nifty-cray-9frs2i`, not finished, version not bumped):**
+**Status of PR A (0.26.0, on `claude/open-world-mod-9htcss`, ready for the owner's test):**
 
-- Done: `OpenWorld/src/TownPlan.cs` (`Network` is now `partial`): `Plan` replaces `Grow` for towns (villages keep `Grow`): the
-  seafront (`Seafront`), old roads into gaps over about 115 degrees, pointed where there is room (`Room`, `OldRoad`), back lanes
-  and their short lanes (`BackLanes`, `Connector`, as `RoadKind.Lane`), ring roads per wedge with fallback radii (`RingRoad`),
-  terrace grids per wedge with alleys (`Terraces`, `Line`), crescents and closes (`Estates`, `Crescent`, `Close`, `Closes`). All
-  laid by `Follow` (march with `Walk`'s stop rules; crosses roads of its own patch at 60 degrees or more; stops at the beach,
-  `Beach` = LandUse's sand rule; never ends on the trunk) and `Lay`/`Both`. `SquareEnd` bends a street meeting a road at more than
-  25 degrees off square (or stops it 60 short); also used in `Walk` (ends, and a village old road's start).
-- Ground kept for lots (`Reserved`, `Kept`; parks keep off it too): the retail park (`ReserveRetail`, works: the retail park is
-  back) and the market place (`ReserveMarket`).
-- `LotKind.Market = 7` (`Town.cs`: size 150 by 70, open to the back; placed first in `Town.Build`, from 0.05 to 0.2 out on a main
-  road in each town); drawn in `Buildings.Lot` (paving, market cross, stalls) with `Buildings.Market` (a row of shopfront terraces
-  behind it); the teleport goes to it (`Destinations`). The seafront builds houses on its landward side only (`Plots`).
-- `tools/preview`: new `square` check (street and lane ends meeting at 10 to 60 degrees, fails over 3%): now 1.9% (the four left
-  are villages' near end-to-end joints). Lots array sized 8, market places listed. TownPlan.cs added to the preview, farview and
-  stormview projects. `tools/jview` built again (its exclude list lacked EventLink.cs and EventUi.cs; broken on main).
-- **Not working yet: no market place is placed.** Kingsbridge: `ReserveMarket` found no side flat enough (roughness test against
-  `WorldGen.Base`; try `Network.Ground` or a looser limit, or other arms). Westhaven: kept ground at (11858, -10519) but every
-  `Town.Fit` there failed the `Claims`/`Parks.At` test (fail 8) and the bend test (fail 3) near it: check which road claims it
-  (maybe the seafront or the hub's other main road) and that parks now keep off (`Parks.Raster` checks `Network.Kept`).
-- Then: run `meshcheck` (baseline on main passes; HalfGripRefs clone at `../halfgriprefs`), look at junctions with `jview`
-  (crossroads in the grids, back lanes), `check.sh` (needs HalfGripTools.dll: clone and build HalfGripTools), update DESIGN.md
-  (World 5, 8), README, bump to 0.26.0, open the PR. Maps of the towns before and after: `tools/preview` round Kingsbridge
-  (`-4490 -1939 4400`) and Westhaven (`9722 -8524 4400`).
+- `OpenWorld/src/TownPlan.cs` (`Network` is now `partial`): `Plan` replaces `Grow` for towns (villages keep `Grow`): the seafront
+  (`Seafront`), old roads into gaps over about 115 degrees, pointed where there is room (`Room`, `OldRoad`), back lanes and their
+  short lanes (`BackLanes`, `Connector`, as `RoadKind.Lane`), ring roads per wedge with fallback radii (`RingRoad`), terrace grids
+  per wedge with alleys (`Terraces`, `Line`), crescents and closes (`Estates`, `Crescent`, `Close`, `Closes`). All laid by `Follow`
+  (march with `Walk`'s stop rules; crosses roads of its own patch at 60 degrees or more; stops at the beach, `Beach` = LandUse's
+  sand rule; never ends on the trunk) and `Lay`/`Both`. `SquareEnd` bends a street meeting a road at more than 25 degrees off
+  square (or stops it 60 short); also used in `Walk` (ends, and a village old road's start).
+- Ground kept for lots (`Reserved` discs, `Rects` rectangles, `Kept`; parks keep off it too): the retail park (`ReserveRetail`) and
+  the market place (`ReserveMarket`: along every main road within 250 of the middle, 150 to 330 out, the straight, evenly graded
+  spot with the flattest land and no road on it; kept as the lot plus 30 each way along and 25 behind; recorded in
+  `Network.Markets`, and `Town.Build` fits the lot exactly there). Kept as a disc and found by `Town`'s own 40-unit walk, the lot
+  landed 10 to 30 off the kept ground and the short lanes beside it clipped its ends, so no market place was laid out.
+- `LotKind.Market = 7` (`Town.cs`: 150 by 70, open to the back). Other roads are kept 16 clear of its paving (`Network.Clear`)
+  rather than made to stand further off than the high street (`Claims`, which needs a block over 330 long); meshcheck's lots check
+  follows. Drawn in `Buildings.Lot` (paving, market cross, stalls) with `Buildings.Market` (a row of shopfront terraces behind it);
+  the teleport goes to it (`Destinations`). The seafront builds houses on its landward side only (`Plots`).
+- Fixed on the way: `Network.Join` makes ends taken as one (within 0.5) one point (two terrace footpaths ended 0.2 apart: meshcheck
+  joints); meshcheck's bases check measures each base vertex against the ground under it (a terrace's lower neighbour read as 7.3
+  under a house's middle; now 6.6, the house rule's most).
+- Checks: preview `square` 1.9% (the four left are villages' near end-to-end joints); meshcheck all pass; check.sh builds; the
+  centre junction at Kingsbridge (-2290, -4139) shows poke in jview as on main (worse on main). Maps: `tools/preview` round
+  Kingsbridge (`960 -4490 -1939 4400`, now `docs/town.png`) and Westhaven (`960 9722 -8524 4400`).
+- Next: the owner's test (TESTING.md 37), then PR B (buildings by plot, below).
 
 ## The proposal (as written before it was agreed)
 

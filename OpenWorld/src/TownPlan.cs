@@ -278,7 +278,7 @@ namespace HalfGripOpenWorld
 					mains.Add(r);
 				}
 			}
-			ReserveMarket(place, mains);
+			ReserveMarket(place);
 			foreach (int r in mains)
 			{
 				Road road = Roads[r];
@@ -363,57 +363,112 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Keeps ground for the town's market place (laid out later by <see cref="Town"/> as a lot beside the high street), so the short
-		/// lanes to the back lanes leave a gap for it: beside the first main road out of the middle, about 64 m out, on the side whose
-		/// ground lies nearest the road's height.
+		/// Keeps ground for the town's market place, which <see cref="Town"/> lays out later as a lot beside the high street exactly where
+		/// it is kept (<see cref="Markets"/>), so the short lanes to the back lanes, the old roads and the parks leave room for it. Tried
+		/// along every arm of a main road out of the middle, from 150 to 330 out, on each side: the spot where the road runs about straight
+		/// and evenly graded past it, no road already laid is on it, and the land under it lies nearest the road's line (within the lot's
+		/// own limit). The ground kept is the lot's rectangle with 30 to spare each way along the road and 25 behind, so a street meeting
+		/// the high street beside it stands clear of the lot's ends (kept as a disc, the lanes beside a lot placed 10 to 30 off it clipped
+		/// its ends, and no market place was laid out).
 		/// </summary>
-		private static void ReserveMarket(Places.Place place, List<int> mains)
+		private static void ReserveMarket(Places.Place place)
 		{
-			Town.Size(LotKind.Market, out double w, out double d, out double _);
-			foreach (int r in mains)
+			Town.Size(LotKind.Market, out double w, out double d, out double limit);
+			double bestRough = limit, bestS = 0.0;
+			int bestR = -1, bestSide = 0;
+			foreach (int r in segments.RoadsNear(place.X, place.Z, 250.0))
 			{
 				Road road = Roads[r];
-				// The end of the road at the middle, and 210 out from it.
-				bool atStart = (road.X[0] - place.X) * (road.X[0] - place.X) + (road.Z[0] - place.Z) * (road.Z[0] - place.Z) < 80.0 * 80.0;
-				bool atEnd = (road.X[road.Count - 1] - place.X) * (road.X[road.Count - 1] - place.X) + (road.Z[road.Count - 1] - place.Z) * (road.Z[road.Count - 1] - place.Z) < 80.0 * 80.0;
-				double length = road.S[road.Count - 1];
-				if ((!atStart && !atEnd) || length < 500.0)
+				if (road.Kind != RoadKind.Primary && road.Kind != RoadKind.Secondary)
 				{
 					continue;
 				}
-				foreach (double out0 in new[] { 210.0, 290.0 })
+				int k0 = 0;
+				double near = double.MaxValue;
+				for (int i = 0; i < road.Count; i++)
 				{
-				double s = atStart ? out0 : length - out0;
-				PointOn(road, s, out double x, out double z, out double y, out double tx, out double tz);
-				int bestSide = 0;
-				double best = 5.0;
-				for (int side = -1; side <= 1; side += 2)
-				{
-					double nx = -tz * side, nz = tx * side, off = road.Half + Verge + d * 0.5;
-					double rough = 0.0;
-					for (int i = -1; i <= 1; i++)
+					double dx = road.X[i] - place.X, dz = road.Z[i] - place.Z;
+					if (dx * dx + dz * dz < near)
 					{
-						for (int j = -1; j <= 1; j++)
+						near = dx * dx + dz * dz;
+						k0 = i;
+					}
+				}
+				double length = road.S[road.Count - 1];
+				for (int dir = -1; dir <= 1; dir += 2)
+				{
+					for (double out0 = 150.0 - Math.Sqrt(near); out0 <= 330.0; out0 += 10.0)
+					{
+						double s = road.S[k0] + dir * out0;
+						if (s - w < 0.0 || s + w > length)
 						{
-							double px = x + nx * off + tx * w * 0.4 * i + nx * d * 0.4 * j, pz = z + nz * off + tz * w * 0.4 * i + nz * d * 0.4 * j;
-							rough = Math.Max(rough, double.IsNaN(Rivers.SurfaceAt(px, pz)) ? Math.Abs(WorldGen.Base(px, pz) - y) : 99.0);
+							continue;
+						}
+						PointOn(road, s, out double x, out double z, out double y, out double tx, out double tz);
+						// About straight (the road's line within a 5 wide strip along the lot and its pads) and evenly graded, gently (as Town.Fit asks).
+						PointOn(road, s - w * 0.5, out double _, out double _, out double ya, out double _, out double _);
+						PointOn(road, s + w * 0.5, out double _, out double _, out double yb, out double _, out double _);
+						double grade = (yb - ya) / w;
+						bool even = Math.Abs(grade) <= 0.06;
+						double most = double.MinValue, least = double.MaxValue;
+						for (double u = -w * 0.5 - 10.0; u <= w * 0.5 + 10.0 + 1e-9 && even; u += 5.0)
+						{
+							PointOn(road, s + u, out double ux, out double uz, out double uy, out double _, out double _);
+							double across = (ux - x) * -tz + (uz - z) * tx;
+							most = Math.Max(most, across);
+							least = Math.Min(least, across);
+							even = most - least <= 5.0 && (Math.Abs(u) > w * 0.5 || Math.Abs(uy - y - grade * u) <= 0.25);
+						}
+						if (!even)
+						{
+							continue;
+						}
+						for (int side = -1; side <= 1; side += 2)
+						{
+							double nx = -tz * side, nz = tx * side, front = road.Half + Verge + 6.0;
+							double rough = 0.0;
+							for (double v = 0.0; v <= d + 20.0 + 1e-9 && rough < bestRough; v += 10.0)
+							{
+								for (double u = -w * 0.5 - 30.0; u <= w * 0.5 + 30.0 + 1e-9 && rough < bestRough; u += 10.0)
+								{
+									double px = x + tx * u + nx * (front + v), pz = z + tz * u + nz * (front + v);
+									// No other road on it or within 30 of its sides and 20 of its back (Town.Fit wants every other road 16 clear).
+									if (!double.IsNaN(Rivers.SurfaceAt(px, pz)) || Beach(px, pz, WorldGen.Base(px, pz)) || Kept(px, pz) || segments.Snap(px, pz, 12.0, r, out double _, out double _, out double _))
+									{
+										rough = double.MaxValue;
+									}
+									else if (v <= d && Math.Abs(u) <= w * 0.5)
+									{
+										rough = Math.Max(rough, Math.Abs(WorldGen.Base(px, pz) - y - grade * u));
+									}
+								}
+							}
+							if (rough < bestRough)
+							{
+								bestRough = rough;
+								bestR = r;
+								bestS = s;
+								bestSide = side;
+							}
 						}
 					}
-					if (rough < best)
-					{
-						best = rough;
-						bestSide = side;
-					}
-				}
-				if (bestSide != 0)
-				{
-					double off = road.Half + Verge + d * 0.5;
-					Reserved.Add((x - tz * bestSide * off, z + tx * bestSide * off, Math.Sqrt(w * w + d * d) * 0.5 + 12.0));
-					return;
-				}
 				}
 			}
+			if (bestR < 0)
+			{
+				return;
+			}
+			Road at = Roads[bestR];
+			PointOn(at, bestS, out double mx, out double mz, out double _, out double mtx, out double mtz);
+			double back = at.Half + Verge + 6.0;
+			// The lot's frame: u along the road, v away from its centre line.
+			double half = (back + d + 25.0) * 0.5;
+			Rects.Add((mx - mtz * bestSide * half, mz + mtx * bestSide * half, mtx, mtz, w * 0.5 + 30.0, half));
+			Markets.Add((at, mx, mz, bestSide));
 		}
+
+		/// <summary>The towns' market places as kept by <see cref="ReserveMarket"/>: the high street, the point on it at the lot's middle, and the side the lot is on (1 to the right of the way the road runs).</summary>
+		internal static readonly List<(Road road, double x, double z, int side)> Markets = new List<(Road road, double x, double z, int side)>();
 
 		/// <summary>A short lane square off the arm of road <paramref name="r"/> at <paramref name="at"/> out from the middle, kept only if it reaches the back lane.</summary>
 		private static void Connector(Places.Place place, int r, Road road, int k0, int dir, double at, int side, double length, int lane)
@@ -850,9 +905,20 @@ namespace HalfGripOpenWorld
 		/// <summary>Ground kept clear of the towns' streets (the retail park's), as discs.</summary>
 		private static readonly List<(double x, double z, double r)> Reserved = new List<(double x, double z, double r)>();
 
+		/// <summary>Ground kept clear of the towns' streets as rectangles (the market places'): centre, the way along, half lengths along and across.</summary>
+		private static readonly List<(double x, double z, double tx, double tz, double hu, double hv)> Rects = new List<(double x, double z, double tx, double tz, double hu, double hv)>();
+
 		/// <summary>Whether (x, z) is on ground kept for a lot (the parks keep off it too).</summary>
 		internal static bool Kept(double x, double z)
 		{
+			foreach ((double rx, double rz, double tx, double tz, double hu, double hv) in Rects)
+			{
+				double u = (x - rx) * tx + (z - rz) * tz, v = (x - rx) * -tz + (z - rz) * tx;
+				if (Math.Abs(u) < hu && Math.Abs(v) < hv)
+				{
+					return true;
+				}
+			}
 			foreach ((double rx, double rz, double rr) in Reserved)
 			{
 				if ((x - rx) * (x - rx) + (z - rz) * (z - rz) < rr * rr)

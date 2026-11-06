@@ -135,12 +135,23 @@ drainage; and central place theory and rank-size for settlements.
    never pull down the part over the water, though the ends over the banks may ramp; concrete sides and parapets; the ground under it
    is left alone, and the banks beside it never fill the channel). Every paved road has a gravel verge 4 wide each side, from its edge
    down to the drawn ground (none on bridges).
-5. **Grown streets** (Parish and Müller's local rules): first a few old roads radiate from the centre to the place's fields (5 in a
-   town, 2 in a village), between the roads already arriving. Then along every road in the place, side streets branch off at a right
-   angle (give or take 12 degrees) every 60-115 units in a town (further apart towards the edge, and less often), each a walk of
-   30-unit steps turning a little; it **stops on a road it would cross** (a junction), **joins a road it comes within 26 of**, and stops
-   before leaving the place, reaching water or getting too steep. Streets branch again, less often (3 levels in a town, 2 in a village).
-   That gives the dense middle, the radial arms and the T-junctions real towns have, not a grid.
+5. **Streets.** In a **village** they are grown (Parish and Müller's local rules): first two old roads radiate from the centre to
+   the fields, between the roads already arriving. Then along every road in the place, side streets branch off at a right angle
+   (give or take 12 degrees) every 60-115 units, each a walk of 30-unit steps turning a little; it **stops on a road it would cross**
+   (a junction), **joins a road it comes within 26 of**, and stops before leaving the place, reaching water or getting too steep.
+   Streets branch again, less often (2 levels). A **town** is laid out ring by ring as English market towns grew (`TownPlan.cs`;
+   grown like a village, a town was a starburst of straight rays with thin triangles of land between them): a seafront along the top
+   of the beach (Westhaven), so streets coming down to the shore end on it; old roads into the gaps of more than about 115 degrees
+   between the main roads, bending gently; in the old town (to about 0.3 of the radius) a back lane 170 to 210 behind each side of
+   every main road through it, joined to the main road by short lanes every 150 to 250, a ladder of long narrow plots along the high
+   street; a ring road of streets about two thirds out between each pair of old roads; between the core and the ring road, in each
+   wedge, a patch of terraced streets 52 to 64 m apart crossed every 105 to 150 m, square to one of its old roads or along the slope,
+   with an alley (a lane or a footpath) down about half the blocks, so the town is gridded in patches each at its own angle, never
+   one grid; past the ring road, crescents and closes. Every street that ends on another road (in villages too) meets it square:
+   one coming in more than 25 degrees off square bends round over its last stretch, or stops 60 short. Ground is kept clear of
+   streets (and parks) for the retail park and each town's **market place**: the spot beside a main road 150 to 330 out of the middle
+   where the road runs straight and evenly graded past it and the land is flattest, kept as the lot's rectangle with 30 to spare
+   along the road and 25 behind; `Town` lays the market out exactly there.
 6. **The ground under the roads** (`Network.Ground`): the bed (0.5 under the surface) of the road that claims a point most, fully
    within half its width plus 4, then a bank back to the land, wider the bigger the cut or fill (1.6 x the height difference + 8, up to
    the class's limit). Of a road's segments the nearest one counts (the others' ends are a little higher or lower along a grade), and
@@ -187,8 +198,11 @@ drainage; and central place theory and rank-size for settlements.
    take glass towers instead: 8 to 14 storeys (taller nearer the middle), in two or three stacked blocks each set back from the one
    under it, plant rooms and now and then a mast on the roof. A stone church with a tower and spire near each village's middle (the
    first spot, ring by ring outwards, that fits off the roads).
-   **Lots** (`Town`): laid out once with the roads, walking every main road through a town or village in 40-unit steps: the main
-   town's retail park (220 wide, 200 deep: a car park of two double rows of bays with a lamp-post island, a 170 by 66 building with a
+   **Lots** (`Town`): laid out once with the roads. First each town's market place (150 along the high street, 70 deep), where the
+   town's plan kept ground for it: paved, a stone market cross on its steps in the middle, three stalls under awnings each side, and a
+   terrace of three- and four-storey shops facing it along its back; streets may run beside it (other roads are kept 16 clear of its
+   paving, not made to stand further off than the high street as for other lots). Then, walking every main road through a town or
+   village in 40-unit steps: the main town's retail park (220 wide, 200 deep: a car park of two double rows of bays with a lamp-post island, a 170 by 66 building with a
    glass front and a sign) on the first spot at its edge where it fits, then shops (a row of bays), workshops (a concrete yard) and
    filling stations (a forecourt under a canopy, pumps, a kiosk) at the edges of towns (up to 8) and villages (up to 2). A lot fits
    on a straight stretch of road (the road's line strays at most 6 across its front) that runs about straight in height (at most
@@ -250,15 +264,15 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 | Layout built | about 2.5 to 3 s (.NET 8; done in the background at game start); the rally stage's routing adds about a tenth |
 | Water | 31 rivers, 8 lakes |
 | Places | 2 towns, 16 villages, 120 farms and hamlets |
-| Roads, real km | trunk 10, main 18, minor 14, streets 25, lanes 52, tracks 7, footpaths 17, rally stage 5: 148 km |
-| Density | 1.8 km of road per km² of land (rural England about 2, its towns 10 to 20) |
-| Junctions | about 870 T-junction ends, 55 crossroads, 300 dead ends (farm lanes, tracks and paths) |
+| Roads, real km | trunk 10, main 18, minor 14, streets 21, lanes 65, tracks 10, footpaths 19, rally stage 5, hill climb 1.5: 163 km |
+| Density | 2.0 km of road per km² of land (rural England about 2, its towns 10 to 20) |
+| Junctions | about 980 T-junction ends, 45 crossroads, 234 dead ends (farm lanes, tracks and paths); 2% of town and village street ends meeting their road at 10 to 60 degrees |
 | Steepest | trunk 5%, main 11%, minor 14%, streets 19%, lanes 19%, tracks 14%, paths 18%, rally stage 12% (the extra only in mouths at junctions) |
-| Parks | 6 (Kingsbridge Park, Gardens, Green and Riverside; Westhaven Park and Gardens), 0.3 to 1 ha, 4 with a pond 22 m across; 6 lake trails, 9 km real; 164 benches |
+| Parks | 5 (Kingsbridge Park, Gardens and Green; Westhaven Park and Gardens), 0.6 to 1.3 ha, each with a pond 22 m across; 6 lake trails, 9 km real; 140 benches |
 | Round the main town (225 tiles) | about 600 buildings, 4000 trees, 2200 grass tufts a tile |
 | A tile on a worker thread | 10 to 13 ms (heights, ground, buildings, trees and grass, meshes) |
 
-![Kingsbridge from above: grown streets, houses along them (roofs), gardens with trees behind, fields round the town](town.png)
+![Kingsbridge from above: the old town's back lanes either side of the main roads by the market place (grey, by the middle), patches of terraced streets each at its own angle, the ring road bending round, closes and crescents past it, parks, the retail park on the main road to the south-west, fields round the town](town.png)
 
 ## How the code works (by file)
 
@@ -271,7 +285,9 @@ grid slots are turned so their markings (drawn along a slot's +x) run along the 
 - **Places** (`Places.cs`): every spot is scored for settling; a town, villages and farms are taken best first, each tier keeping its
   distance.
 - **Roads** (`Network.cs`): routed by A* over the land, costed by grade per class, with bridges dear and road-sharing cheap; built in
-  order of importance; town streets grown with local rules (stop at a crossing, join a road nearby). See [World](#world).
+  order of importance; village streets grown with local rules (stop at a crossing, join a road nearby), towns' laid out ring by ring
+  (`TownPlan.cs`: seafront, old roads, the old town's back lanes, ring roads, terrace patches, crescents and closes, the market
+  place's ground kept). See [World](#world).
 - **Parks and trails** (`Parks.cs`): a town's blocks are the connected ground left between its roads; a few compact ones near the
   middle become parks (a pond dug in the big ones), and a river's bank through the built-up town another; their paths are footpaths
   added to the network. Each lake's shore is traced and a trail laid a little way up from it.
