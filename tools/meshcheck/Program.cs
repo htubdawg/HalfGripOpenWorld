@@ -52,6 +52,9 @@ using UnityEngine;
 //  24. farview: the far view's grid (FarGrid) on the tiles' own vertices at tile corners; along the edges of tiles across the world, the
 //                far view's straight edge (its canopy too) never more than its skirt above the drawn ground or water, so no gap shows
 //                between a loaded tile and the far view; its build time and what its picture shows
+//  25. facades: houses round the main town and a village: every wall drawn from an atlas reads one row of it per face, and a window,
+//                lancet or door row whole from its bottom to its top (no window cut off by the eaves or the ground); no roof covering
+//                drawn facing down (a roof is a slab with an underside in the trim, not a sheet drawn both ways); chimneys and trim drawn
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -92,6 +95,7 @@ internal static class Program
 			("tucked", Tucked),
 			("hubs", HubChecks),
 			("farview", FarChecks),
+			("facades", Facades),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -782,6 +786,79 @@ internal static class Program
 		}
 		Console.WriteLine("bases:   " + n + " buildings round " + town.Name + ", base at most " + sunk.ToString("0.0") + " under the ground, " + raised.ToString("0.0") + " above");
 		return sunk < 7.0 && raised < 0.1;
+	}
+
+	private static bool Facades()
+	{
+		List<(int tx, int tz)> tiles = new List<(int, int)>();
+		Places.Place town = Places.All[0];
+		Places.Place village = Places.All.FirstOrDefault(p => p.Kind == PlaceKind.Village);
+		foreach (Places.Place p in new[] { town, village })
+		{
+			if (p == null)
+			{
+				continue;
+			}
+			int tx0 = (int)Math.Floor(p.X / 250), tz0 = (int)Math.Floor(p.Z / 250), reach = p == town ? 4 : 2;
+			for (int tz = tz0 - reach; tz <= tz0 + reach; tz++)
+			{
+				for (int tx = tx0 - reach; tx <= tx0 + reach; tx++)
+				{
+					tiles.Add((tx, tz));
+				}
+			}
+		}
+		int walls = 0, mixed = 0, cut = 0, roofs = 0, paper = 0, trim = 0;
+		int[] coverings = { Buildings.RedTile, Buildings.Slate, Buildings.BrownTile, Buildings.Thatch };
+		foreach ((int tx, int tz) in tiles)
+		{
+			RoadMeshData d = Buildings.Build(tx, tz, 250f).Mesh;
+			if (d == null)
+			{
+				continue;
+			}
+			trim += d.Triangles[Buildings.Trim].Length / 3;
+			for (int m = 0; m < d.Triangles.Length; m++)
+			{
+				int[] t = d.Triangles[m];
+				bool atlas = Buildings.Atlas(m), covering = Array.IndexOf(coverings, m) >= 0;
+				for (int k = 0; k + 2 < t.Length; k += 3)
+				{
+					if (covering)
+					{
+						roofs++;
+						paper += d.Normals[t[k]].y < -0.01f ? 1 : 0;
+					}
+					if (!atlas)
+					{
+						continue;
+					}
+					walls++;
+					// Which row each corner reads, and how far up it (0 to 1).
+					float lo = float.MaxValue, hi = float.MinValue;
+					int row = -1;
+					bool same = true;
+					for (int c = 0; c < 3; c++)
+					{
+						float v = d.Uv[t[k + c]].y * Buildings.AtlasRows;
+						int r = Math.Min(Buildings.AtlasRows - 1, (int)Math.Floor(v));
+						same &= row < 0 || r == row;
+						row = r;
+						lo = Math.Min(lo, v - r);
+						hi = Math.Max(hi, v - r);
+					}
+					if (!same)
+					{
+						mixed++;
+						continue;
+					}
+					bool window = row == Buildings.Sash || row == Buildings.Casement || row == Buildings.Lancet || row == Buildings.DoorRow;
+					cut += window && (lo > 0.05f || hi < 0.95f) ? 1 : 0;
+				}
+			}
+		}
+		Console.WriteLine("facades: " + walls + " wall triangles on " + tiles.Count + " tiles, " + mixed + " reading two atlas rows, " + cut + " with a window row cut short; " + paper + " of " + roofs + " roof covering triangles facing down; " + trim + " trim triangles");
+		return walls > 0 && mixed == 0 && cut == 0 && roofs > 0 && paper == 0 && trim > 0;
 	}
 
 	private static bool Faces()

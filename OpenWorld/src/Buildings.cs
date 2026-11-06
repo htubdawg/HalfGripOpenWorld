@@ -22,14 +22,58 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Materials, in submesh order: five walls, three pitched roofs, a flat roof; glass curtain wall, shopfronts, metal cladding,
 		/// signs, a filling station's canopy; the lots' asphalt, parking bays and concrete; the circuit's garage doors and stand seats;
-		/// the rally stage's gravel yard, straw bales and arch banners; the road signs' boards and posts (their lettering atlas).
+		/// the rally stage's gravel yard, straw bales and arch banners; the road signs' boards and posts (their lettering atlas); then
+		/// three more walls (yellow stock brick, sage and rose render), two more roofs (brown pantiles, thatch) and the painted trim
+		/// (fascias, barge boards, soffits, copings). The new ones go on the end so the old indices keep their meaning.
 		/// </summary>
 		internal const int Brick = 0, Render = 1, White = 2, Stone = 3, Wood = 4, RedTile = 5, Slate = 6, Metal = 7, Flat = 8;
 		internal const int Glass = 9, Shopfront = 10, Cladding = 11, Sign = 12, Canopy = 13, Asphalt = 14, Bays = 15, Concrete = 16, GarageDoor = 17, Seats = 18;
-		internal const int Gravel = 19, Straw = 20, Banner = 21, Board = 22, Count = 23;
+		internal const int Gravel = 19, Straw = 20, Banner = 21, Board = 22;
+		internal const int Stock = 23, Sage = 24, Rose = 25, BrownTile = 26, Thatch = 27, Trim = 28, Count = 29;
 
 		/// <summary>No roof (a box drawn with walls only).</summary>
 		private const int None = -1;
+
+		/// <summary>
+		/// The rows of a wall atlas (<see cref="WallAtlas"/>), each one bay by one storey: two kinds of window (a sash, a wider casement),
+		/// a church's lancet, a front door, plain wall (gables, chimneys, parapets) and the plinth under the ground floor. A wall is drawn
+		/// a storey at a time, each storey's quad reading one row, so windows always sit whole in their storey, the door in its bay.
+		/// </summary>
+		internal const int Sash = 0, Casement = 1, Lancet = 2, DoorRow = 3, PlainRow = 4, PlinthRow = 5, AtlasRows = 6;
+
+		/// <summary>The wall materials drawn from an atlas a storey at a time (the rest tile one texture over the whole wall).</summary>
+		internal static bool Atlas(int material)
+		{
+			return material == Brick || material == Render || material == White || material == Stone || material == Stock || material == Sage || material == Rose;
+		}
+
+		/// <summary>
+		/// How a building looks: its walls (material and window style), how high its plinth stands before the ground floor starts and how
+		/// high its walls go from there, its roof (pitched with gables, hipped, or flat; how far the gables' ends overhang; chimneys), a
+		/// shop or other front on its ground floor, and the bay its front door is in.
+		/// </summary>
+		internal struct Look
+		{
+			internal int Wall, Roof, Style;
+			internal float Plinth, Walls;
+			internal bool Hip;
+			/// <summary>How far the roof runs past the gable walls (small on a terrace, so neighbours' roofs never overlap).</summary>
+			internal float EndOver;
+			/// <summary>0, 1 (at the far gable) or 2 (one at each).</summary>
+			internal int Chimneys;
+			internal int Front, Variant;
+			/// <summary>The bay of the front wall the door is in (-1: none).</summary>
+			internal int Door;
+			/// <summary>How high the front material goes from the base (0: the ground storey). A lot's shop is drawn so.</summary>
+			internal float FrontH;
+			/// <summary>Whether a flat roof on an atlas wall has a parapet round it.</summary>
+			internal bool Parapet;
+
+			internal static Look Of(int wall, int roof, float walls)
+			{
+				return new Look { Wall = wall, Roof = roof, Style = Sash, Walls = walls, EndOver = 0.8f, Front = -1, Variant = -1, Door = -1, Parapet = true };
+			}
+		}
 
 		/// <summary>A storey's height (3 m), and a bay's width (one window).</summary>
 		private const float Storey = 10f;
@@ -494,18 +538,104 @@ namespace HalfGripOpenWorld
 					{
 						floors = Math.Max(2, floors);
 					}
+					bool village = place.Kind == PlaceKind.Village;
+					// A cottage now and then in a village: one storey under a deep thatch.
+					bool thatched = village && !terrace && Unit(h, 10) < 0.18;
+					if (thatched)
+					{
+						floors = 1;
+						depth = Math.Min(depth, 22.0);
+					}
 					// A terrace stands at the back of the sidewalk.
 					double setback = terrace ? Network.Verge + 0.5 : 6.0 + 8.0 * Unit(h, 4);
 					double off = road.Half + setback + depth * 0.5;
 					double cx = px + nx * off, cz = pz + nz * off;
-					int wall = (int)(Unit(h, 5) * 4.0);
-					int roof = floors >= 4 ? Flat : RedTile + (int)(Unit(h, 6) * 2.0);
-					// A shop on the ground floor of every high-street building: its front (the road side) a shopfront, in one of four colours.
-					int front = high ? Shopfront : -1;
+					Look look = Look.Of(WallFor(h, terrace, village), RoofFor(h, terrace, village), floors * Storey);
+					if (thatched)
+					{
+						look.Roof = Thatch;
+						look.Wall = Unit(h, 11) < 0.6 ? White : Stone;
+					}
+					if (floors >= 4)
+					{
+						look.Roof = Flat;
+					}
+					// Sashes in towns and terraces, casements more often out in the villages.
+					look.Style = Unit(h, 9) < (terrace ? 0.8 : village ? 0.35 : 0.55) ? Sash : Casement;
+					// A terrace's roofs stop short of the party walls; detached houses are hipped as often as gabled, more so when low.
+					look.EndOver = terrace ? 0.15f : 0.8f;
+					look.Hip = !terrace && !thatched && width > depth + 4.0 && Unit(h, 12) < (floors == 1 ? 0.6 : 0.4);
+					look.Chimneys = Unit(h, 13) < 0.25 ? 0 : Unit(h, 13) < 0.75 ? 1 : 2;
+					int bays = Math.Max(1, (int)Math.Round(width / Bay));
+					if (high)
+					{
+						// A shop on the ground floor of every high-street building: its front (the road side) a shopfront, in one of four colours.
+						look.Front = Shopfront;
+						look.Variant = (int)(Unit(h, 7) * 4.0);
+					}
+					else
+					{
+						// A terrace's door at one end of its front (they pair up along the row), a detached house's in its middle.
+						look.Door = terrace ? (Unit(h, 14) < 0.5 ? 0 : bays - 1) : bays / 2;
+					}
 					// The house's frame turned so its across axis points away from the road on this side.
-					House(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, floors * Storey + 1.5f, wall, roof, front, (int)(Unit(h, 7) * 4.0));
+					if (House(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, out float floor) && !terrace && !thatched && Unit(h, 8) < 0.4)
+					{
+						Wing(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, floor, h);
+					}
 				}
 			}
+		}
+
+		/// <summary>A house's walls: brick and render in town, more render, whitewash and stone in a village; terraces in rows of brick and colour.</summary>
+		private static int WallFor(ulong h, bool terrace, bool village)
+		{
+			int[] choices = village ? new[] { Stone, Stone, White, Render, Brick, Rose, Stock }
+				: terrace ? new[] { Brick, Brick, Stock, Stock, Render, White, Sage, Rose }
+				: new[] { Brick, Brick, Brick, Render, Render, White, Stock, Sage };
+			return choices[Math.Min(choices.Length - 1, (int)(Unit(h, 5) * choices.Length))];
+		}
+
+		/// <summary>A house's roof: slate on town terraces, clay tiles in the suburbs, a mix in the villages.</summary>
+		private static int RoofFor(ulong h, bool terrace, bool village)
+		{
+			int[] choices = terrace ? new[] { Slate, Slate, Slate, RedTile }
+				: village ? new[] { Slate, Slate, RedTile, BrownTile }
+				: new[] { RedTile, RedTile, BrownTile, Slate };
+			return choices[Math.Min(choices.Length - 1, (int)(Unit(h, 6) * choices.Length))];
+		}
+
+		/// <summary>
+		/// A wing at the back of a detached house, if it fits: a storey lower (at least one), narrower, its ridge running back from the
+		/// house's at right angles, standing on the house's floor (or a little higher where the ground rises behind).
+		/// </summary>
+		private static void Wing(Builder b, Data data, int own, double front, double cx, double cz, double dx, double dz, double w, double d, Look house, float floor, ulong h)
+		{
+			double nx = -dz, nz = dx;
+			double ww = Math.Max(14.0, w * (0.35 + 0.15 * Unit(h, 15))), wd = 12.0 + 6.0 * Unit(h, 16);
+			// Off to one side of the back, overlapping the house by 2 so the two read as one building.
+			double shift = (Unit(h, 17) < 0.5 ? -1.0 : 1.0) * (w - ww) * 0.5;
+			double wx = cx + dx * shift + nx * (d * 0.5 + wd * 0.5 - 2.0), wz = cz + dz * shift + nz * (d * 0.5 + wd * 0.5 - 2.0);
+			if (!Fits(own, front + d - 2.0, wx, wz, dx, dz, ww, wd, 1.5, out double lo, out double hi))
+			{
+				return;
+			}
+			float wingFloor = Math.Max(floor, (float)hi + 0.6f);
+			if (wingFloor - floor > 3f)
+			{
+				return;
+			}
+			Look look = house;
+			look.Walls = Math.Max(Storey, house.Walls - Storey);
+			look.Plinth = wingFloor - (float)(lo - 0.6);
+			look.Hip = false;
+			look.EndOver = 0.6f;
+			look.Chimneys = 0;
+			look.Front = -1;
+			look.Door = -1;
+			// Turned so its ridge runs back from the house: along it is away from the road, its across along the road.
+			b.Building(wx, wz, (float)(lo - 0.6), nx, nz, (float)wd, (float)ww, look);
+			data.Footprints.Add((wx, wz, Math.Sqrt(ww * ww + wd * wd) * 0.5));
 		}
 
 		/// <summary>
@@ -569,11 +699,20 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					float y = (float)(lo - 0.6), extra = (float)(hi - lo) + 0.6f;
-					b.Box(cx + ax * 7.0, cz + az * 7.0, y, ax, az, 40f, 18f, 14f + extra, Stone, Slate);
+					float y = (float)(lo - 0.6), plinth = (float)(hi - lo) + 1.2f;
+					// The nave: tall lancets down its sides, a steep slate roof, its door in the tower's foot.
+					Look nave = Look.Of(Stone, Slate, 14f);
+					nave.Style = Lancet;
+					nave.Plinth = plinth;
+					b.Building(cx + ax * 7.0, cz + az * 7.0, y, ax, az, 40f, 18f, nave);
 					double tx = cx - ax * 20.0, tz = cz - az * 20.0;
-					b.Box(tx, tz, y, ax, az, 12f, 12f, 32f + extra, Stone, Flat);
-					b.Spire(tx, tz, y + 32f + extra, ax, az, 12.5f, 20f, Slate);
+					Look tower = Look.Of(Stone, Flat, 30f);
+					tower.Style = Lancet;
+					tower.Plinth = plinth;
+					tower.Door = 0;
+					// Turned so its front (where the door is) faces west, out of the nave's end.
+					b.Building(tx, tz, y, az, -ax, 12f, 12f, tower);
+					b.Spire(tx, tz, y + plinth + 30f + 1.4f, ax, az, 12.5f, 20f, Slate);
 					data.Footprints.Add((cx, cz, Math.Sqrt(length * length + width * width) * 0.5));
 					return;
 				}
@@ -586,34 +725,47 @@ namespace HalfGripOpenWorld
 			ulong h = Noise.Mix(Salt ^ (ulong)(long)Math.Floor(p.X) * 0x632BE59BUL ^ (ulong)(long)Math.Floor(p.Z));
 			double a = Unit(h, 0) * 2.0 * DetMath.Pi;
 			double ax = DetMath.Cos(a), az = DetMath.Sin(a);
-			(double dist, double turn, double w, double d, float height, int wall, int roof)[] parts =
+			Look house = Look.Of(Unit(h, 1) < 0.5 ? Stone : Unit(h, 3) < 0.5 ? Render : White, Unit(h, 2) < 0.5 ? Slate : RedTile, 2f * Storey);
+			house.Style = Casement;
+			house.Chimneys = 2;
+			house.Door = 1;
+			Look barn = Look.Of(Wood, Metal, 16f);
+			barn.EndOver = 0.6f;
+			Look shed = Look.Of(Wood, Metal, 9f);
+			shed.EndOver = 0.4f;
+			(double dist, double turn, double w, double d, Look look)[] parts =
 			{
-				(45.0, 0.0, 24.0, 20.0, 2f * Storey + 1.5f, Unit(h, 1) < 0.5 ? Stone : Render, Unit(h, 2) < 0.5 ? Slate : RedTile),
-				(55.0, 2.2, 50.0, 30.0, 16f, Wood, Metal),
-				(48.0, 4.1, 18.0, 14.0, 9f, Wood, Metal),
+				(45.0, 0.0, 24.0, 20.0, house),
+				(55.0, 2.2, 50.0, 30.0, barn),
+				(48.0, 4.1, 18.0, 14.0, shed),
 			};
-			foreach ((double dist, double turn, double w, double d, float height, int wall, int roof) in parts)
+			foreach ((double dist, double turn, double w, double d, Look look) in parts)
 			{
 				double ca = DetMath.Cos(a + turn), sa = DetMath.Sin(a + turn);
-				House(b, data, -1, 0.0, p.X + ca * dist, p.Z + sa * dist, ax, az, w, d, height, wall, roof);
+				House(b, data, -1, 0.0, p.X + ca * dist, p.Z + sa * dist, ax, az, w, d, look, out float _);
 			}
 		}
 
 		/// <summary>
 		/// One building, if it fits: <paramref name="w"/> along (dx, dz), <paramref name="d"/> across (to the left of (dx, dz), away
-		/// from its road), <paramref name="height"/> to the eaves. <paramref name="own"/> is the road it fronts (-1 for none), its front
-		/// <paramref name="front"/> from that road's edge. With a <paramref name="shop"/> material, its ground floor's front is that, in
-		/// colour <paramref name="variant"/>.
+		/// from its road). <paramref name="own"/> is the road it fronts (-1 for none), its front <paramref name="front"/> from that
+		/// road's edge. Its base is a little under the lowest ground under it and its ground floor a little over the highest, the plinth
+		/// between taking up the slope, so its storeys (<see cref="Look.Walls"/>) and their windows stand level and whole whatever the
+		/// ground does; <paramref name="floor"/> is that ground floor's scene height.
 		/// </summary>
-		private static void House(Builder b, Data data, int own, double front, double cx, double cz, double dx, double dz, double w, double d, float height, int wall, int roof, int shop = -1, int variant = -1)
+		private static bool House(Builder b, Data data, int own, double front, double cx, double cz, double dx, double dz, double w, double d, Look look, out float floor)
 		{
+			floor = 0f;
 			if (!Fits(own, front, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))
 			{
-				return;
+				return false;
 			}
 			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
-			float extra = (float)(hi - lo);
-			b.Box(cx, cz, (float)(lo - 0.6), dx, dz, (float)w, (float)d, height + extra, wall, roof, shop, Storey + 0.6f + extra, variant);
+			float y = (float)(lo - 0.6);
+			floor = (float)hi + 0.6f;
+			look.Plinth = floor - y;
+			b.Building(cx, cz, y, dx, dz, (float)w, (float)d, look);
+			return true;
 		}
 
 		/// <summary>Where a footprint is tested, as shares of its width and depth: corners, middle, and the middles of its sides (a lot's corner can poke into a long building's side).</summary>
@@ -879,60 +1031,370 @@ namespace HalfGripOpenWorld
 			/// </summary>
 			internal void Box(double cx, double cz, float y, double dx, double dz, float w, float d, float h, int wall, int roof, int front = -1, float frontH = 0f, int variant = -1)
 			{
-				// y is already a scene height (WorldGen.Height includes the world's lift).
+				// The lots' buildings and vans: plain walls (an atlas wall's front the bottom frontH of it, as on any other), no parapet.
+				Look look = Look.Of(wall, roof, h);
+				look.Style = PlainRow;
+				look.Front = front;
+				look.Variant = variant;
+				look.FrontH = frontH;
+				look.Parapet = false;
+				Building(cx, cz, y, dx, dz, w, d, look, frontH);
+			}
+
+			/// <summary>
+			/// A building standing on <paramref name="y"/> (a scene height), <paramref name="w"/> along (dx, dz) and <paramref name="d"/>
+			/// across, as <paramref name="k"/> says: a plinth, then its storeys, then its roof. An atlas wall is drawn a storey at a time
+			/// (whole windows, a door in its bay, plain gables); any other wall tiles its texture over the whole face as it always has, the
+			/// bottom <paramref name="frontH"/> of its front in the front material.
+			/// </summary>
+			internal void Building(double cx, double cz, float y, double dx, double dz, float w, float d, Look k, float frontH = 0f)
+			{
 				Vector3 c = new Vector3((float)(cx - ox), y, (float)(cz - oz));
 				Vector3 along = new Vector3((float)dx, 0f, (float)dz);
 				Vector3 across = new Vector3((float)-dz, 0f, (float)dx);
-				Vector3 a = along * (w * 0.5f), b = across * (d * 0.5f), up = Vector3.up * h;
+				Vector3 a = along * (w * 0.5f), b = across * (d * 0.5f);
 				Vector3 p0 = c - a - b, p1 = c + a - b, p2 = c + a + b, p3 = c - a + b;
-				if (front >= 0)
+				bool atlas = Atlas(k.Wall);
+				float top = k.Plinth + k.Walls;
+				if (atlas)
 				{
-					float lower = Mathf.Min(frontH, h);
-					Vector3 split = Vector3.up * lower;
-					float bays = Mathf.Max(1f, Mathf.Round(w / Bay));
-					bool four = front == Shopfront || front == Sign;
-					float v0 = four ? Mathf.Max(0, variant) * 0.25f : 0f, v1 = four ? v0 + 0.25f : lower / Storey;
-					Quad(p0, p1, p0 + split, p1 + split, -across, front, 0f, bays, v0, v1);
-					if (h > lower)
-					{
-						Quad(p0 + split, p1 + split, p0 + up, p1 + up, -across, wall, 0f, bays, lower / Storey, h / Storey);
-					}
+					Facade(p0, p1, k, -across, true);
+					Facade(p1, p2, k, along, false);
+					Facade(p2, p3, k, across, false);
+					Facade(p3, p0, k, -along, false);
 				}
 				else
 				{
-					Wall(p0, p1, h, wall, -across);
+					if (k.Front >= 0)
+					{
+						float lower = Mathf.Min(frontH, top);
+						Vector3 split = Vector3.up * lower, up = Vector3.up * top;
+						float bays = Mathf.Max(1f, Mathf.Round(w / Bay));
+						bool four = k.Front == Shopfront || k.Front == Sign;
+						float v0 = four ? Mathf.Max(0, k.Variant) * 0.25f : 0f, v1 = four ? v0 + 0.25f : lower / Storey;
+						Quad(p0, p1, p0 + split, p1 + split, -across, k.Front, 0f, bays, v0, v1);
+						if (top > lower)
+						{
+							Quad(p0 + split, p1 + split, p0 + up, p1 + up, -across, k.Wall, 0f, bays, lower / Storey, top / Storey);
+						}
+					}
+					else
+					{
+						Wall(p0, p1, top, k.Wall, -across);
+					}
+					Wall(p1, p2, top, k.Wall, along);
+					Wall(p2, p3, top, k.Wall, across);
+					Wall(p3, p0, top, k.Wall, -along);
 				}
-				Wall(p1, p2, h, wall, along);
-				Wall(p2, p3, h, wall, across);
-				Wall(p3, p0, h, wall, -along);
-				if (roof == None)
+				if (k.Roof == None)
 				{
 					return;
 				}
-				if (roof == Flat)
+				Vector3 eave = Vector3.up * top;
+				if (k.Roof == Flat)
 				{
-					Quad(p0 + up, p1 + up, p3 + up, p2 + up, Vector3.up, roof, w / Bay, d / Bay);
-					Quad(p0 + up, p1 + up, p3 + up, p2 + up, Vector3.down, roof, w / Bay, d / Bay);
+					Quad(p0 + eave, p1 + eave, p3 + eave, p2 + eave, Vector3.up, k.Roof, w / Bay, d / Bay);
+					Quad(p0 + eave, p1 + eave, p3 + eave, p2 + eave, Vector3.down, k.Roof, w / Bay, d / Bay);
+					if (atlas && k.Parapet)
+					{
+						Parapet(new[] { p0 + eave, p1 + eave, p2 + eave, p3 + eave }, c + eave, k.Wall);
+					}
 					return;
 				}
-				// Pitched: the ridge runs along the width, over the middle, a little past the walls.
-				// About 48 degrees, a usual pitch: shallower, and from the street the near slope hides behind the front wall's top.
-				float rise = Mathf.Min(d * 0.55f, 16f);
-				Vector3 eave = Vector3.up * h, ridge = Vector3.up * (h + rise);
-				Vector3 over = across * 1.2f, end = along * 0.8f;
-				Vector3 r0 = c - a - end + ridge, r1 = c + a + end + ridge;
-				Vector3 e0 = p0 - end - over + eave, e1 = p1 + end - over + eave, e2 = p2 + end + over + eave, e3 = p3 - end + over + eave;
-				float slope = Mathf.Sqrt(rise * rise + d * d * 0.25f);
-				Vector3 out0 = (Vector3.up * (d * 0.5f) - across * rise).normalized, out1 = (Vector3.up * (d * 0.5f) + across * rise).normalized;
-				Quad(e0, e1, r0, r1, out0, roof, (w + 1.6f) / Bay, slope / Bay);
-				Quad(e3, e2, r0, r1, out1, roof, (w + 1.6f) / Bay, slope / Bay);
-				// The undersides too: the eaves overhang the walls, and a roof drawn one side only is see-through from below.
-				Quad(e0, e1, r0, r1, -out0, roof, (w + 1.6f) / Bay, slope / Bay);
-				Quad(e3, e2, r0, r1, -out1, roof, (w + 1.6f) / Bay, slope / Bay);
-				Triangle(p0 + eave, p3 + eave, c - a + ridge, -along, wall);
-				Triangle(p1 + eave, p2 + eave, c + a + ridge, along, wall);
-				Triangle(p0 + eave, p3 + eave, c - a + ridge, along, wall);
-				Triangle(p1 + eave, p2 + eave, c + a + ridge, -along, wall);
+				Roof(c, along, across, w, d, top, k, atlas);
+			}
+
+			/// <summary>
+			/// One wall of an atlas building, bottom edge p to q, facing <paramref name="facing"/>: the plinth (the top of the plinth row
+			/// at the ground floor), then a quad per storey, each the wall's whole length and a whole number of bays, reading the window
+			/// row (or on the front's ground storey, the shopfront, or the door row in the door's bay).
+			/// </summary>
+			private void Facade(Vector3 p, Vector3 q, Look k, Vector3 facing, bool front)
+			{
+				float len = (q - p).magnitude;
+				int bays = Mathf.Max(1, Mathf.RoundToInt(len / Bay));
+				Vector3 up = Vector3.up;
+				// Where the wall is cut along: at the door's bay if it has one, and every band of it cut there alike, so no edge of one quad
+				// ends part way along another's (a T-junction opens hairline cracks).
+				int door = front && k.Door >= 0 && k.Front < 0 ? Mathf.Min(k.Door, bays - 1) : -1;
+				int[] cuts = door >= 0 ? new[] { 0, door, door + 1, bays } : new[] { 0, bays };
+				if (k.Plinth > 0.01f)
+				{
+					// Read down from the row's top, at the walls' scale, so its coping line sits at the floor (squeezed past a storey).
+					float share = Mathf.Min(1f, k.Plinth / Storey);
+					for (int i = 0; i + 1 < cuts.Length; i++)
+					{
+						Vector3 s0 = p + (q - p) * ((float)cuts[i] / bays), s1 = p + (q - p) * ((float)cuts[i + 1] / bays);
+						Quad(s0, s1, s0 + up * k.Plinth, s1 + up * k.Plinth, facing, k.Wall, cuts[i], cuts[i + 1], Row(PlinthRow, 1f - share), Row(PlinthRow, 1f));
+					}
+				}
+				if (front && k.Front >= 0 && k.FrontH > 0f)
+				{
+					// A lot's shop: the front material up to FrontH, plain wall over it.
+					float split = Mathf.Min(k.FrontH, k.Plinth + k.Walls);
+					bool four = k.Front == Shopfront || k.Front == Sign;
+					float f0 = four ? Mathf.Max(0, k.Variant) * 0.25f : 0f, f1 = four ? f0 + 0.25f : 1f;
+					Quad(p, q, p + up * split, q + up * split, facing, k.Front, 0f, bays, f0, f1);
+					if (k.Plinth + k.Walls > split + 0.01f)
+					{
+						Span(p, q, up * split, up * (k.Plinth + k.Walls), 0, bays, bays, k.Wall, PlainRow, facing);
+					}
+					return;
+				}
+				int storeys = Mathf.Max(1, Mathf.RoundToInt(k.Walls / Storey));
+				float sh = k.Walls / storeys;
+				for (int s = 0; s < storeys; s++)
+				{
+					Vector3 lo = up * (k.Plinth + s * sh), hi = up * (k.Plinth + (s + 1) * sh);
+					if (s == 0 && front && k.Front >= 0)
+					{
+						bool four = k.Front == Shopfront || k.Front == Sign;
+						float v0 = four ? Mathf.Max(0, k.Variant) * 0.25f : 0f, v1 = four ? v0 + 0.25f : 1f;
+						Quad(p + lo, q + lo, p + hi, q + hi, facing, k.Front, 0f, bays, v0, v1);
+						continue;
+					}
+					for (int i = 0; i + 1 < cuts.Length; i++)
+					{
+						Span(p, q, lo, hi, cuts[i], cuts[i + 1], bays, k.Wall, s == 0 && cuts[i] == door ? DoorRow : k.Style, facing);
+					}
+				}
+				float tuck = Tuck(k);
+				if (tuck > 0f)
+				{
+					// On up into a pitched roof's slab, in plain wall (see Roof).
+					float top = k.Plinth + k.Walls;
+					for (int i = 0; i + 1 < cuts.Length; i++)
+					{
+						Vector3 s0 = p + (q - p) * ((float)cuts[i] / bays), s1 = p + (q - p) * ((float)cuts[i + 1] / bays);
+						Quad(s0 + up * top, s1 + up * top, s0 + up * (top + tuck), s1 + up * (top + tuck), facing, k.Wall, cuts[i], cuts[i + 1], Row(PlainRow, 0f), Row(PlainRow, tuck / Storey));
+					}
+				}
+			}
+
+			/// <summary>Bays <paramref name="b0"/> to <paramref name="b1"/> of <paramref name="bays"/> along wall p-q, from lo to hi up it, reading atlas row <paramref name="row"/>.</summary>
+			private void Span(Vector3 p, Vector3 q, Vector3 lo, Vector3 hi, int b0, int b1, int bays, int material, int row, Vector3 facing)
+			{
+				if (b1 <= b0)
+				{
+					return;
+				}
+				Vector3 s = p + (q - p) * ((float)b0 / bays), e = p + (q - p) * ((float)b1 / bays);
+				Quad(s + lo, e + lo, s + hi, e + hi, facing, material, b0, b1, Row(row, 0f), Row(row, 1f));
+			}
+
+			/// <summary>The texture's v at height <paramref name="t"/> (0 bottom, 1 top) up atlas row <paramref name="row"/>, kept a hair inside it so point sampling never reads the next row.</summary>
+			private static float Row(int row, float t)
+			{
+				const float px = 20f, inset = 0.25f;
+				return (row * px + inset + t * (px - 2f * inset)) / (AtlasRows * px);
+			}
+
+			/// <summary>How thick a roof slab is: deep thatch, thin sheet, tiles and slate between.</summary>
+			private static float Thick(int roof)
+			{
+				return roof == Thatch ? 2.4f : roof == Metal ? 0.5f : 1.1f;
+			}
+
+			/// <summary>How far a pitched roof's walls carry on up into its slab (inside it, never through its top).</summary>
+			private static float Tuck(Look k)
+			{
+				return k.Roof == None || k.Roof == Flat ? 0f : Mathf.Min(0.6f, Thick(k.Roof) * 0.5f);
+			}
+
+			/// <summary>
+			/// A pitched roof over walls <paramref name="top"/> high: a slab as thick as its covering (tiles, slate, deep thatch, thin
+			/// sheet) with an underside, a fascia along its eaves and barge boards up its verges, so it reads as a roof from any side and
+			/// never as a sheet of paper. Gabled (ridge along the width, gable walls at its ends) or hipped (sloping on all four sides, its
+			/// ridge shortened so every slope has the same pitch). Its underside meets the walls' tops; chimneys stand through it.
+			/// </summary>
+			private void Roof(Vector3 c, Vector3 along, Vector3 across, float w, float d, float top, Look k, bool atlas)
+			{
+				bool thatch = k.Roof == Thatch;
+				float half = d * 0.5f;
+				// About 48 degrees, a usual pitch (thatch steeper): shallower, and from the street the near slope hides behind the front wall's top.
+				float rise = thatch ? Mathf.Min(d * 0.65f, 18f) : Mathf.Min(d * 0.55f, 16f);
+				float slope = rise / half;
+				float over = thatch ? 1.8f : 1.2f;
+				// The eaves dropped so the underside's plane passes through the walls' tops: no gap under the eaves to see into the roof.
+				float drop = over * slope;
+				float thick = Thick(k.Roof);
+				// The edges in the covering's own stuff for thatch (the straw's ends) and sheet; painted boards otherwise. Under thatch, timber.
+				int trim = thatch ? Thatch : k.Roof == Metal ? Metal : Trim;
+				int soffit = thatch ? Wood : trim;
+				bool hip = k.Hip && w > d + 1f;
+				float ends = hip ? over : k.EndOver;
+				float ridgeHalf = hip ? w * 0.5f - half : w * 0.5f + ends;
+				Vector3 a = along * (w * 0.5f + ends), b = across * (half + over);
+				Vector3 eave = Vector3.up * (top - drop), ridge = Vector3.up * (top + rise);
+				Vector3 e0 = c - a - b + eave, e1 = c + a - b + eave, e2 = c + a + b + eave, e3 = c - a + b + eave;
+				Vector3 r0 = c - along * ridgeHalf + ridge, r1 = c + along * ridgeHalf + ridge;
+				// The walls carried on up into the slab: two faces that only meet on a line leave a crack of sky between them at a distance.
+				// (An atlas wall's band is drawn with its facade, cut where its storeys are.)
+				float tuck = Tuck(k);
+				if (!atlas)
+				{
+					Vector3 wa = along * (w * 0.5f), wb = across * half, lo = Vector3.up * top, hi = Vector3.up * (top + tuck);
+					Vector3[] corner = { c - wa - wb, c + wa - wb, c + wa + wb, c - wa + wb };
+					Vector3[] facing = { -across, along, across, -along };
+					for (int i = 0; i < 4; i++)
+					{
+						Vector3 s = corner[i], e = corner[(i + 1) % 4];
+						float u = Mathf.Max(1f, Mathf.Round((e - s).magnitude / Bay));
+						Quad(s + lo, e + lo, s + hi, e + hi, facing[i], k.Wall, 0f, u, top / Storey, (top + tuck) / Storey);
+					}
+				}
+				Facet(new[] { e0, e1, r1, r0 }, thick, k.Roof, soffit);
+				Facet(new[] { e3, e2, r1, r0 }, thick, k.Roof, soffit);
+				Edge(e0, e1, thick, trim, c);
+				Edge(e3, e2, thick, trim, c);
+				if (hip)
+				{
+					Facet(new[] { e0, e3, r0 }, thick, k.Roof, soffit);
+					Facet(new[] { e1, e2, r1 }, thick, k.Roof, soffit);
+					Edge(e0, e3, thick, trim, c);
+					Edge(e1, e2, thick, trim, c);
+				}
+				else
+				{
+					Edge(e0, r0, thick, trim, c);
+					Edge(e3, r0, thick, trim, c);
+					Edge(e1, r1, thick, trim, c);
+					Edge(e2, r1, thick, trim, c);
+					// The gables, both faces (from inside, under the overhang, they would be see-through), plain in an atlas wall; raised
+					// with the walls' band into the slab, so their sloping edges are hidden in it rather than meeting the underside on a line.
+					Vector3 wa = along * (w * 0.5f), wb = across * half, wall = Vector3.up * (top + tuck), apex = Vector3.up * (top + rise + tuck);
+					Gable(c - wa - wb + wall, c - wa + wb + wall, c - wa + apex, -along, k.Wall, atlas, d);
+					Gable(c + wa - wb + wall, c + wa + wb + wall, c + wa + apex, along, k.Wall, atlas, d);
+				}
+				if (k.Chimneys > 0 && atlas)
+				{
+					// On the ridge just inside a gable wall (on a hipped roof, at the ridge's ends: one if they are close), up through the
+					// roof and past its top.
+					float at = hip ? Mathf.Max(0f, ridgeHalf - 1f) : w * 0.5f - 2.2f;
+					int stacks = hip && at < 2.5f ? 1 : k.Chimneys;
+					float low = top + rise * 0.4f, high = top + rise + thick + 4.5f;
+					for (int s = 0; s < stacks; s++)
+					{
+						Chimney(c + along * (s == 0 ? at : -at), along, across, low, high, k.Wall);
+					}
+				}
+			}
+
+			/// <summary>
+			/// One face of a roof slab: its underside given (eave edge first), the top as far again straight up, the covering's texture laid
+			/// along the eave and up the slope (a bay a repeat), the underside in <paramref name="soffit"/>.
+			/// </summary>
+			private void Facet(Vector3[] under, float thick, int roof, int soffit)
+			{
+				Vector3 normal = Vector3.Cross(under[1] - under[0], under[2] - under[0]).normalized;
+				if (normal.y < 0f)
+				{
+					normal = -normal;
+				}
+				Vector3 e = (under[1] - under[0]).normalized;
+				Vector3 s = Vector3.Cross(normal, e);
+				if (s.y < 0f)
+				{
+					s = -s;
+				}
+				Vector3[] over = new Vector3[under.Length];
+				Vector2[] uvs = new Vector2[under.Length];
+				for (int i = 0; i < under.Length; i++)
+				{
+					over[i] = under[i] + Vector3.up * thick;
+					Vector3 r = under[i] - under[0];
+					uvs[i] = new Vector2(Vector3.Dot(r, e) / Bay, Vector3.Dot(r, s) / Bay);
+				}
+				Fan(over, uvs, normal, roof);
+				Fan(under, uvs, -normal, soffit);
+			}
+
+			/// <summary>A roof slab's edge from p to q (on its underside), <paramref name="thick"/> high, facing away from the building's middle <paramref name="c"/>.</summary>
+			private void Edge(Vector3 p, Vector3 q, float thick, int material, Vector3 c)
+			{
+				Vector3 outward = Vector3.Cross(q - p, Vector3.up);
+				outward.y = 0f;
+				Vector3 mid = (p + q) * 0.5f - c;
+				mid.y = 0f;
+				if (Vector3.Dot(outward, mid) < 0f)
+				{
+					outward = -outward;
+				}
+				float len = (q - p).magnitude;
+				Quad(p, q, p + Vector3.up * thick, q + Vector3.up * thick, outward.normalized, material, 0f, len / Bay, 0f, thick / Storey);
+			}
+
+			/// <summary>A gable, both faces: an atlas wall's plain row stretched over it, any other wall's texture tiled.</summary>
+			private void Gable(Vector3 p, Vector3 q, Vector3 apex, Vector3 facing, int wall, bool atlas, float d)
+			{
+				if (!atlas)
+				{
+					Triangle(p, q, apex, facing, wall);
+					Triangle(p, q, apex, -facing, wall);
+					return;
+				}
+				float u = d / Bay;
+				Vector2[] uvs = { new Vector2(0f, Row(PlainRow, 0f)), new Vector2(u, Row(PlainRow, 0f)), new Vector2(u * 0.5f, Row(PlainRow, 1f)) };
+				Fan(new[] { p, q, apex }, uvs, facing, wall);
+				Fan(new[] { p, q, apex }, uvs, -facing, wall);
+			}
+
+			/// <summary>A chimney stack (3.4 by 2.4) centred on <paramref name="at"/>, from <paramref name="low"/> to <paramref name="high"/> over the base, in the wall's plain row, a coping on top.</summary>
+			private void Chimney(Vector3 at, Vector3 along, Vector3 across, float low, float high, int wall)
+			{
+				Vector3 a = along * 1.7f, b = across * 1.2f, lo = Vector3.up * low, hi = Vector3.up * high;
+				Vector3[] p = { at - a - b, at + a - b, at + a + b, at - a + b };
+				Vector3[] facing = { -across, along, across, -along };
+				for (int i = 0; i < 4; i++)
+				{
+					Vector3 s = p[i], e = p[(i + 1) % 4];
+					float u = (e - s).magnitude / Bay;
+					Quad(s + lo, e + lo, s + hi, e + hi, facing[i], wall, 0f, u, Row(PlainRow, 0f), Row(PlainRow, 1f));
+				}
+				Vector3 cap = a * 1.15f, capB = b * 1.25f, capLo = hi, capHi = hi + Vector3.up * 0.7f;
+				Vector3[] q = { at - cap - capB, at + cap - capB, at + cap + capB, at - cap + capB };
+				for (int i = 0; i < 4; i++)
+				{
+					Vector3 s = q[i], e = q[(i + 1) % 4];
+					Quad(s + capLo, e + capLo, s + capHi, e + capHi, facing[i], Trim, 0f, 0.5f, 0f, 0.1f);
+				}
+				Quad(q[0] + capHi, q[1] + capHi, q[3] + capHi, q[2] + capHi, Vector3.up, Flat, 0f, 0.5f, 0f, 0.3f);
+				// Its underside, where it overhangs the stack: open, it would show the sky through the cap from below.
+				Quad(q[0] + capLo, q[1] + capLo, q[3] + capLo, q[2] + capLo, Vector3.down, Trim, 0f, 0.5f, 0f, 0.3f);
+			}
+
+			/// <summary>
+			/// A parapet round a flat roof whose corners are <paramref name="corners"/> (in order round it): a band of plain wall past the
+			/// roof, its inside face set in by a coping's width, and the coping over the top.
+			/// </summary>
+			private void Parapet(Vector3[] corners, Vector3 middle, int wall)
+			{
+				const float high = 1.4f, inset = 0.5f;
+				Vector3 up = Vector3.up * high;
+				int n = corners.Length;
+				Vector3[] inner = new Vector3[n];
+				for (int i = 0; i < n; i++)
+				{
+					Vector3 toward = middle - corners[i];
+					toward.y = 0f;
+					// Corners of a rectangle: in along both sides is in along the diagonal by inset times root two.
+					inner[i] = corners[i] + toward.normalized * inset * 1.4142f;
+				}
+				for (int i = 0; i < n; i++)
+				{
+					int j = (i + 1) % n;
+					Vector3 outward = Vector3.Cross(corners[j] - corners[i], Vector3.up);
+					if (Vector3.Dot(outward, (corners[i] + corners[j]) * 0.5f - middle) < 0f)
+					{
+						outward = -outward;
+					}
+					outward.Normalize();
+					float u = (corners[j] - corners[i]).magnitude / Bay;
+					float v0 = Row(PlainRow, 0f), v1 = Row(PlainRow, high / Storey);
+					Quad(corners[i], corners[j], corners[i] + up, corners[j] + up, outward, wall, 0f, u, v0, v1);
+					Quad(inner[i], inner[j], inner[i] + up, inner[j] + up, -outward, wall, 0f, u, v0, v1);
+					Quad(corners[i] + up, corners[j] + up, inner[i] + up, inner[j] + up, Vector3.up, Trim, 0f, u, 0f, 0.1f);
+				}
 			}
 
 			/// <summary>A small box all of one material, top and sides (a bench's seat, its legs): <paramref name="w"/> along (dx, dz), <paramref name="d"/> across, <paramref name="h"/> high.</summary>
@@ -1002,6 +1464,8 @@ namespace HalfGripOpenWorld
 					Vector3 facing = (mid.normalized * h + Vector3.up * mid.magnitude).normalized;
 					Triangle(p, q, top, facing, material);
 				}
+				// Its base, facing down: a spire a little wider than its tower would otherwise be see-through under the overhang.
+				Quad(corners[0], corners[1], corners[3], corners[2], Vector3.down, Flat, side / Bay, side / Bay);
 			}
 
 			/// <summary>
@@ -1174,13 +1638,14 @@ namespace HalfGripOpenWorld
 		internal static Material[] Materials(Shader shader)
 		{
 			Material[] m = new Material[Count];
-			m[Brick] = Make(shader, WallTexture(new Color(0.55f, 0.30f, 0.24f), true), "Brick");
-			m[Render] = Make(shader, WallTexture(new Color(0.86f, 0.80f, 0.66f), false), "Render");
-			m[White] = Make(shader, WallTexture(new Color(0.88f, 0.88f, 0.86f), false), "White");
-			m[Stone] = Make(shader, WallTexture(new Color(0.58f, 0.56f, 0.52f), true), "Stone");
+			Color frame = new Color(0.92f, 0.92f, 0.90f), dark = new Color(0.22f, 0.23f, 0.24f);
+			m[Brick] = Make(shader, WallAtlas(new Color(0.56f, 0.29f, 0.22f), Bond.Brick, frame, new Color(0.12f, 0.20f, 0.36f), 11), "Brick");
+			m[Render] = Make(shader, WallAtlas(new Color(0.86f, 0.80f, 0.66f), Bond.Render, frame, new Color(0.14f, 0.34f, 0.22f), 12), "Render");
+			m[White] = Make(shader, WallAtlas(new Color(0.90f, 0.90f, 0.87f), Bond.Render, dark, new Color(0.10f, 0.10f, 0.11f), 13), "White");
+			m[Stone] = Make(shader, WallAtlas(new Color(0.60f, 0.57f, 0.51f), Bond.Stone, frame, new Color(0.42f, 0.24f, 0.14f), 14), "Stone");
 			m[Wood] = Make(shader, Planks(new Color(0.46f, 0.22f, 0.16f)), "Wood");
-			m[RedTile] = Make(shader, Rows(new Color(0.62f, 0.27f, 0.20f)), "Red Tile");
-			m[Slate] = Make(shader, Rows(new Color(0.30f, 0.32f, 0.36f)), "Slate");
+			m[RedTile] = Make(shader, Tiles(new Color(0.64f, 0.28f, 0.20f), 0.05f), "Red Tile");
+			m[Slate] = Make(shader, Tiles(new Color(0.29f, 0.31f, 0.35f), 0.035f), "Slate");
 			m[Metal] = Make(shader, Rows(new Color(0.48f, 0.50f, 0.50f)), "Metal");
 			m[Flat] = Make(shader, Plain(new Color(0.40f, 0.40f, 0.40f)), "Flat Roof");
 			m[Glass] = Make(shader, CurtainWall(), "Glass");
@@ -1197,6 +1662,12 @@ namespace HalfGripOpenWorld
 			m[Straw] = Make(shader, StrawTexture(), "Straw");
 			m[Banner] = Make(shader, BannerTexture(), "Banner");
 			m[Board] = Make(shader, SignAtlas(), "Road Signs");
+			m[Stock] = Make(shader, WallAtlas(new Color(0.74f, 0.62f, 0.42f), Bond.Brick, frame, new Color(0.08f, 0.08f, 0.09f), 15), "Stock Brick");
+			m[Sage] = Make(shader, WallAtlas(new Color(0.68f, 0.74f, 0.64f), Bond.Render, frame, new Color(0.50f, 0.14f, 0.14f), 16), "Sage");
+			m[Rose] = Make(shader, WallAtlas(new Color(0.86f, 0.68f, 0.64f), Bond.Render, frame, new Color(0.16f, 0.24f, 0.40f), 17), "Rose");
+			m[BrownTile] = Make(shader, Pantiles(new Color(0.50f, 0.30f, 0.22f)), "Pantiles");
+			m[Thatch] = Make(shader, ThatchTexture(), "Thatch");
+			m[Trim] = Make(shader, Plain(new Color(0.91f, 0.90f, 0.86f)), "Trim");
 			return m;
 		}
 
@@ -1282,39 +1753,52 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// A shop's ground floor, a bay wide: a stall riser, a big window with a door in it, and a sign band with lettering over it; four
-		/// colours stacked (a quarter of the texture each, picked by a quad's v).
+		/// A shop's ground floor, a bay wide (16 by 20 pixels, as the wall atlases): a stall riser, a big window in a frame with a door
+		/// in the brand's colour on one side, and a fascia over it with a cornice and lettering; four colours stacked (a quarter of the
+		/// texture each, picked by a quad's v).
 		/// </summary>
 		private static Texture2D Shopfronts()
 		{
-			Texture2D t = New(8, 40);
-			Color glass = new Color(0.20f, 0.26f, 0.32f), frame = new Color(0.90f, 0.90f, 0.88f), riser = new Color(0.30f, 0.30f, 0.32f), letter = new Color(0.97f, 0.96f, 0.90f);
+			Texture2D t = New(16, 80);
+			Color glass = new Color(0.18f, 0.23f, 0.29f), shine = new Color(0.36f, 0.44f, 0.52f), frame = new Color(0.90f, 0.90f, 0.88f);
+			Color riser = new Color(0.28f, 0.28f, 0.30f), letter = new Color(0.97f, 0.96f, 0.90f), cornice = new Color(0.80f, 0.79f, 0.75f);
 			for (int k = 0; k < 4; k++)
 			{
 				Color brand = Brands[k];
-				for (int y = 0; y < 10; y++)
+				for (int y = 0; y < 20; y++)
 				{
-					for (int x = 0; x < 8; x++)
+					for (int x = 0; x < 16; x++)
 					{
 						Color c;
-						if (y >= 7)
+						if (y >= 18)
 						{
-							c = y == 8 && x > 0 && x < 7 && (Noise.Mix((ulong)(k * 8 + x)) & 3) != 0 ? letter : brand;
+							c = y == 19 ? cornice : cornice * 0.8f;
 						}
-						else if (y == 0)
+						else if (y >= 14)
 						{
-							c = riser;
+							// The fascia: lettering on its middle two rows, a letter's gaps from a hash so the bays read as words.
+							bool text = (y == 15 || y == 16) && x > 0 && x < 15 && (Noise.Mix((ulong)(k * 32 + x)) & 3) != 0;
+							c = text ? letter : y == 14 ? brand * 0.7f : brand;
 						}
-						else if (x == 0 || y == 6)
+						else if (y <= 1)
+						{
+							c = y == 1 ? frame : riser;
+						}
+						else if (x == 0 || x == 15 || y == 13)
 						{
 							c = frame;
 						}
+						else if (x >= 11 && x <= 14)
+						{
+							// A door in the brand's colour, glazed in its upper half.
+							c = x == 11 ? frame : y >= 8 && y <= 11 && x >= 12 && x <= 13 ? glass : brand * 0.75f;
+						}
 						else
 						{
-							c = x >= 5 && x <= 6 && y <= 5 ? brand * 0.7f : glass;
+							c = x == 5 ? frame : (x + 20 - y) % 6 == 0 ? shine : glass;
 						}
 						c.a = 1f;
-						t.SetPixel(x, k * 10 + y, c);
+						t.SetPixel(x, k * 20 + y, c);
 					}
 				}
 			}
@@ -1421,30 +1905,189 @@ namespace HalfGripOpenWorld
 			return t;
 		}
 
-		/// <summary>One bay of one storey (8 x 10 pixels): wall with a framed window, brick or stone with a course line.</summary>
-		private static Texture2D WallTexture(Color wall, bool courses)
+		/// <summary>How a wall's face is laid: render (a fine grain), brick (courses and staggered joints, each brick its own shade), stone (larger blocks).</summary>
+		private enum Bond
 		{
-			Texture2D t = New(8, 10);
-			Color glass = new Color(0.18f, 0.22f, 0.28f), frame = new Color(0.92f, 0.92f, 0.90f);
-			for (int y = 0; y < 10; y++)
+			Render,
+			Brick,
+			Stone,
+		}
+
+		/// <summary>
+		/// A wall atlas: <see cref="AtlasRows"/> rows of one bay by one storey (16 by 20 pixels, two to a unit), from the bottom a sash
+		/// window (two over two, a stone sill, a lintel), a casement (three lights and a transom), a church's lancet (leaded glass under
+		/// a pointed head), a front door (panelled, in its colour, a fanlight and a step), plain wall, and the plinth (darker, a coping
+		/// line at its top). Point-filtered, the pixels read as pixel art close up like the game's own.
+		/// </summary>
+		private static Texture2D WallAtlas(Color wall, Bond bond, Color frame, Color door, int salt)
+		{
+			const int w = 16, rh = 20;
+			Texture2D t = New(w, rh * AtlasRows);
+			Color glass = new Color(0.15f, 0.19f, 0.26f), shine = new Color(0.36f, 0.44f, 0.54f);
+			Color sill = bond == Bond.Render ? Color.Lerp(wall, Color.white, 0.5f) : new Color(0.84f, 0.82f, 0.77f);
+			for (int row = 0; row < AtlasRows; row++)
 			{
-				for (int x = 0; x < 8; x++)
+				for (int y = 0; y < rh; y++)
 				{
-					float grain = ((int)(Noise.Mix((ulong)(y * 8 + x) + (ulong)(wall.r * 1000f)) >> 61) - 3.5f) * 0.015f;
-					Color c = new Color(wall.r + grain, wall.g + grain, wall.b + grain);
-					if (courses && y % 3 == 0)
+					for (int x = 0; x < w; x++)
 					{
-						c *= 0.92f;
+						int gy = row * rh + y;
+						Color c = Face(wall, bond, x, y, gy, salt);
+						switch (row)
+						{
+							case Sash:
+								// Opening x 4-12, y 5-16: a frame round it, a glazing bar down the middle and the meeting rail across.
+								if (x >= 4 && x <= 12 && y >= 5 && y <= 16)
+								{
+									bool edge = x == 4 || x == 12 || y == 5 || y == 16 || x == 8 || y == 11;
+									c = edge ? frame : Pane(glass, shine, x, y);
+								}
+								else if (y == 4 && x >= 3 && x <= 13)
+								{
+									c = sill;
+								}
+								else if (y == 3 && x >= 4 && x <= 12)
+								{
+									c = c * 0.78f;
+								}
+								else if (y == 17 && x >= 3 && x <= 13 && bond != Bond.Render)
+								{
+									// A lintel: a soldier course over brick, a dressed stone over stone.
+									c = bond == Bond.Brick ? wall * (x % 2 == 0 ? 0.80f : 0.88f) : sill * 0.95f;
+								}
+								break;
+							case Casement:
+								// Opening x 2-13, y 6-15: mullions at 6 and 9, a transom at 12.
+								if (x >= 2 && x <= 13 && y >= 6 && y <= 15)
+								{
+									bool edge = x == 2 || x == 13 || y == 6 || y == 15 || x == 6 || x == 9 || y == 12;
+									c = edge ? frame : Pane(glass, shine, x, y);
+								}
+								else if (y == 5 && x >= 1 && x <= 14)
+								{
+									c = sill;
+								}
+								else if (y == 4 && x >= 2 && x <= 13)
+								{
+									c = c * 0.78f;
+								}
+								else if (y == 16 && x >= 1 && x <= 14 && bond != Bond.Render)
+								{
+									c = bond == Bond.Brick ? wall * (x % 2 == 0 ? 0.80f : 0.88f) : sill * 0.95f;
+								}
+								break;
+							case Lancet:
+							{
+								// x 5-10, y 2-18, its head pointed: the dressing round it in pale stone, leaded glass inside.
+								int inX = Math.Min(x - 5, 10 - x), top = 18 - (inX == 0 ? 2 : inX == 1 ? 1 : 0);
+								if (x >= 5 && x <= 10 && y >= 2 && y <= top)
+								{
+									bool edge = x == 5 || x == 10 || y == 2 || y == top || (x <= 6 || x >= 9) && y >= 16;
+									if (edge)
+									{
+										c = sill;
+									}
+									else
+									{
+										int tone = (int)(Noise.Mix((ulong)((y / 2) * 7 + x)) % 4);
+										c = tone == 0 ? new Color(0.30f, 0.14f, 0.16f) : tone == 1 ? new Color(0.48f, 0.38f, 0.16f) : new Color(0.14f, 0.18f, 0.30f);
+										if (y % 3 == 0)
+										{
+											c *= 0.6f;
+										}
+									}
+								}
+								break;
+							}
+							case DoorRow:
+								// The door x 5-10, y 1-13, in its frame; a fanlight y 15-16; a step under it.
+								if (y == 0 && x >= 3 && x <= 12)
+								{
+									c = sill;
+								}
+								else if (x >= 4 && x <= 11 && y >= 1 && y <= 17)
+								{
+									if (x == 4 || x == 11 || y == 14 || y == 17)
+									{
+										c = frame;
+									}
+									else if (y >= 15)
+									{
+										c = Pane(glass, shine, x, y);
+									}
+									else
+									{
+										// Four panels: their edges a shade darker; a brass knob.
+										bool panel = (x == 6 || x == 9) && (y >= 3 && y <= 6 || y >= 8 && y <= 12) || (y == 3 || y == 6 || y == 8 || y == 12) && x >= 6 && x <= 9;
+										c = x == 9 && y == 7 ? new Color(0.80f, 0.66f, 0.24f) : panel ? door * 0.72f : door;
+									}
+								}
+								break;
+							case PlinthRow:
+								c = bond == Bond.Render ? Face(new Color(0.46f, 0.46f, 0.46f), Bond.Render, x, y, gy, salt + 1) : c * 0.72f;
+								if (y == rh - 1)
+								{
+									c = sill * 0.92f;
+								}
+								break;
+						}
+						c.a = 1f;
+						t.SetPixel(x, gy, c);
 					}
-					if (x >= 2 && x <= 5 && y >= 3 && y <= 7)
-					{
-						c = x == 2 || x == 5 || y == 3 || y == 7 ? frame : glass;
-					}
-					t.SetPixel(x, y, c);
 				}
 			}
 			t.Apply();
 			return t;
+		}
+
+		/// <summary>A wall's face at pixel (x, y) of a storey (gy its row in the whole atlas, so courses' shades differ from storey to storey).</summary>
+		private static Color Face(Color wall, Bond bond, int x, int y, int gy, int salt)
+		{
+			switch (bond)
+			{
+				case Bond.Brick:
+				{
+					// Courses 4 pixels high (one of them mortar), bricks 4 long, every other course set over by half a brick.
+					int course = gy / 4, shift = course % 2 == 0 ? 0 : 2;
+					int brick = (x + shift) / 4;
+					if (gy % 4 == 3 || (x + shift) % 4 == 0)
+					{
+						return Color.Lerp(wall, new Color(0.70f, 0.68f, 0.64f), 0.32f);
+					}
+					float g = Shade(course * 31 + brick, salt) * 0.10f;
+					return new Color(wall.r + g, wall.g + g * 0.8f, wall.b + g * 0.7f);
+				}
+				case Bond.Stone:
+				{
+					// Courses 5 pixels high, blocks of 5 to 8 along, each its own shade.
+					int course = gy / 5;
+					int shift = (int)(Noise.Mix((ulong)course * 0x9E37UL + (ulong)salt) % 8);
+					int block = (x + shift) / 6;
+					if (gy % 5 == 4 || (x + shift) % 6 == 0)
+					{
+						return wall * 0.86f;
+					}
+					float g = Shade(course * 17 + block, salt) * 0.12f + Grain(x, gy, salt) * 0.6f;
+					return new Color(wall.r + g, wall.g + g, wall.b + g);
+				}
+				default:
+				{
+					float g = Grain(x, gy, salt) * 1.2f;
+					return new Color(wall.r + g, wall.g + g, wall.b + g);
+				}
+			}
+		}
+
+		/// <summary>A number from -0.5 to 0.5 for brick or block <paramref name="k"/>.</summary>
+		private static float Shade(int k, int salt)
+		{
+			return (Noise.Mix((ulong)k * 0xBF58476DUL + (ulong)salt * 0x94D049BBUL) >> 40) / (float)(1UL << 24) - 0.5f;
+		}
+
+		/// <summary>Glass at pixel (x, y): dark, with a glint running up to the right.</summary>
+		private static Color Pane(Color glass, Color shine, int x, int y)
+		{
+			return (x + 20 - y) % 7 == 0 ? shine : glass * (1f + (y % 20) * 0.012f);
 		}
 
 		private static Texture2D Planks(Color wood)
@@ -1458,6 +2101,91 @@ namespace HalfGripOpenWorld
 				}
 			}
 			t.Apply();
+			return t;
+		}
+
+		/// <summary>
+		/// Plain tiles or slates, a bay square at two pixels to a unit, with mipmaps: courses 4 pixels high, each tile its own shade
+		/// (by <paramref name="vary"/>), joints staggered course to course, a shadow under each course's lower edge.
+		/// </summary>
+		private static Texture2D Tiles(Color roof, float vary)
+		{
+			Texture2D t = New(16, 16, true);
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					int course = y / 4, shift = course % 2 == 0 ? 0 : 2;
+					int tile = (x + shift) / 4;
+					float g = Shade(course * 13 + tile, (int)(roof.r * 1000f)) * vary * 2f;
+					Color c = new Color(roof.r + g, roof.g + g, roof.b + g);
+					if (y % 4 == 0)
+					{
+						c *= 0.70f;
+					}
+					else if ((x + shift) % 4 == 0)
+					{
+						c *= 0.86f;
+					}
+					else if (y % 4 == 3)
+					{
+						c *= 1.06f;
+					}
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply(true);
+			return t;
+		}
+
+		/// <summary>Pantiles: rolls running down the slope (a lit crest, a shadowed trough), in courses with a shadow line, with mipmaps.</summary>
+		private static Texture2D Pantiles(Color roof)
+		{
+			Texture2D t = New(16, 16, true);
+			float[] roll = { 0.78f, 0.95f, 1.10f, 1.02f };
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					float g = Shade((y / 4) * 7 + x / 4, 77) * 0.06f;
+					Color c = new Color(roof.r + g, roof.g + g, roof.b + g) * roll[x % 4];
+					if (y % 4 == 0)
+					{
+						c *= 0.74f;
+					}
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply(true);
+			return t;
+		}
+
+		/// <summary>Thatch: straw running down the slope in streaks of gold and grey-brown, darker bands where each course's butts end, with mipmaps.</summary>
+		private static Texture2D ThatchTexture()
+		{
+			Texture2D t = New(16, 16, true);
+			Color straw = new Color(0.62f, 0.50f, 0.30f);
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					float g = Shade(x * 5 + (y / 3), 91) * 0.14f + Grain(x, y, 5);
+					Color c = new Color(straw.r + g, straw.g + g * 0.9f, straw.b + g * 0.7f);
+					if (y % 8 == 0)
+					{
+						c *= 0.72f;
+					}
+					else if (y % 8 == 1)
+					{
+						c *= 0.86f;
+					}
+					c.a = 1f;
+					t.SetPixel(x, y, c);
+				}
+			}
+			t.Apply(true);
 			return t;
 		}
 

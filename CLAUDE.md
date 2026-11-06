@@ -32,7 +32,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track and footpath, and water meshes and their pixel-art textures |
 | `Destinations.cs` | The key places the debug teleport goes round |
-| `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, and the lots' buildings and surfaces (one mesh, one collider), their materials |
+| `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, and the lots' buildings and surfaces (one mesh, one collider), their materials; houses' walls drawn a storey at a time from wall atlases, roofs as thick slabs |
 | `Town.cs` | Lots: the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Parks.cs` | Parks (town blocks and a riverside, ponds dug in), their paths, trails round the lakes, benches; laid out after the road index |
 | `Circuit.cs`, `CircuitMesh.cs`, `Rally.cs`, `HillClimb.cs` | The race courses: the circuit, the rally stage, the hill climb (sited and laid out in `Places.Build`; the stage's and the climb's roads made first in `Network.Build`) |
@@ -102,7 +102,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (faces), lots, track and path ribbons over the ground (ribbons), sidewalk kerbs, roads under drawn water (flooded), plants in
   the water (plants), ponds, lawns and benches (parks), the events' gates and start boxes (events), paving showing ground or a
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
-  (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview);
+  (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
+  house walls reading whole storeys and roofs with undersides (facades);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
