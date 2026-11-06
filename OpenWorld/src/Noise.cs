@@ -37,7 +37,7 @@ namespace HalfGripOpenWorld
 			return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 		}
 
-		/// <summary>Smooth noise from -1 to 1 with features about <paramref name="wavelength"/> metres across.</summary>
+		/// <summary>Smooth noise from -1 to 1 with features about <paramref name="wavelength"/> units across.</summary>
 		internal static double Value(ulong salt, double x, double z, double wavelength)
 		{
 			double fx = x / wavelength;
@@ -80,7 +80,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Gradient (Perlin) noise from about -1 to 1, features about <paramref name="wavelength"/> metres across. Unlike value noise its
+		/// Gradient (Perlin) noise from about -1 to 1, features about <paramref name="wavelength"/> units across. Unlike value noise its
 		/// zero crossings do not follow the lattice, so ridges made from it wander instead of running in squares.
 		/// </summary>
 		internal static double Gradient(ulong salt, double x, double z, double wavelength)

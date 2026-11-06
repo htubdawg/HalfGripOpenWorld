@@ -10,7 +10,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    lip, no flicker, nothing poking through); the same where two streets cross. More junctions and dead ends: 24.
 3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Follow a river and its
    tributaries, in the lowland and up in the mountains: the water's edge meets the bank everywhere, never hanging in the air with
-   ground or sky showing under it. The bridge at world 0.208, -2.517 km (a main road in a cutting over a river in a gorge): no ground
+   ground or sky showing under it. The bridge at world 0.208, -2.517 (thousands of units, as ShowCoords shows) (a main road in a cutting over a river in a gorge): no ground
    pokes through the deck at either end. Drive into a river or the sea and check you are put back on a road.
 4. The gravel verges either side of the paved roads: no step at the road's edge or where they meet the grass, a little less grip
    than the road, none on bridges. In Kingsbridge and the villages, sidewalks instead (no bump from the road, a kerb at their back,
@@ -59,9 +59,9 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    road it joins with a mouth like any other junction.
 14. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
    low bank above the shore.
-15. Past 1 km the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+15. Past 1000 units (about 300 m, `ShiftDistance`) the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
    counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
-16. Teleport (F7) round the key places, several of them 10 to 15 km out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+16. Teleport (F7) round the key places, several of them 10,000 to 15,000 units (3 to 4.5 km) out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
    and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
 17. Reset (0.23.9). Hold R: (a) in a field within about 75 m of a road: on the road, in the right-hand lane, facing the way the car
    faced (on the trunk road on a carriageway, not the median); (b) in open country further from a road: where it is, upright; (c)
@@ -136,7 +136,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    respawn the car is just past the last gate passed, facing on along the course, `BACK AT THE LAST CHECKPOINT`, and the clock ran
    on. Drive far off the course: `BACK TO THE COURSE`, then `EVENT OVER` after 10 s; teleport mid-event: `EVENT OVER`. Pause: the
    clock stops. In a Multiplayer room the same works for yourself.
-24. Junctions and dead ends (0.17.1). With `ShowCoords`, drive to these (world km) and look round each, from the car and from
+24. Junctions and dead ends (0.17.1). With `ShowCoords`, drive to these (world, in thousands of units, as ShowCoords shows) and look round each, from the car and from
    outside: no ground, grass or verge showing in a mouth, no wedge of ground where a road meets another at a slant (on either side),
    no sidewalk or verge lying across a mouth, no step or flicker where the surfaces meet, nothing of one road poking through
    another.
@@ -170,7 +170,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    near 0), from the spawn and from the mountain pass and the hill climb's finish (teleport): the country goes on past the loaded
    ground to the horizon, fading into the sky's colour with no band between: the mountains in the north with snow and rock, the woods
    standing up dark green, fields, lakes and the sea in the south going on past the coast to the horizon, the main roads as thin grey
-   lines. Where the loaded ground ends (about 1.3 km out with TileRadius 5) there is no gap, no sky showing through, no step, no
+   lines. Where the loaded ground ends (about 1,400 units, some 420 m, out with TileRadius 5) there is no gap, no sky showing through, no step, no
    flicker; buildings and trees appear there (that is expected). Drive a few kilometres fast and teleport: the far ground follows
    with no hole opening for a frame and nothing poking through the road or the ground near the car. Far mountains and coast do not
    flicker or shimmer (z-fighting at a distance would show as stripes; report a screenshot if so). Under cloud and in the rain the
@@ -185,7 +185,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    texels, M ms a build)` a few seconds into the race, and no `the land past the far view stopped`. On a clear day (`ShowCoords`:
    cloud near 0; its last line now `fog A to B, <camera> draws to C` with C about `FarViewDistance` and B up to 40000), from the
    highest road near the coast looking north and from the spawn: the mountains in the north stand on the horizon past where the far
-   view ends, hazy and lit from the same side as the near hills, their snow lighter. Where the far view ends (about 14 km out) there
+   view ends, hazy and lit from the same side as the near hills, their snow lighter. Where the far view ends (14,000 units, about 4 km, out) there
    is no line, no band of sky, no step in brightness or colour; take a screenshot of it from high ground. Drive along: the far
    mountains keep their places (they do not slide with the car) and do not flicker. The near country is a little clearer than in 0.19.
    At sunset and at night the painted land darkens with the meshes. A storm between you and the mountains hides them behind its rain.

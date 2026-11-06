@@ -238,6 +238,19 @@ namespace HalfGripOpenWorld
 		/// <summary>The height a tree of scale 1 is drawn at, whatever its model's own size: about 9 m.</summary>
 		private const float TreeHeight = 30f;
 
+		/// <summary>The grass made for this race (the trees' materials are the game's, or kept for the session by <see cref="Trees"/>).</summary>
+		private void OnDestroy()
+		{
+			if (grassMaterials != null)
+			{
+				WorldAssets.Free(grassMaterials);
+			}
+			if (tuft != null)
+			{
+				Destroy(tuft);
+			}
+		}
+
 		internal void Setup(Shader shader)
 		{
 			Trees.Fallback(shader);

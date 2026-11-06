@@ -1,6 +1,6 @@
 # HalfGripOpenWorld
 
-A Half Grip (Steam app 4163270, Unity, Windows) mod: Open World, free roam in a 32 km square of country generated from a fixed seed the
+A Half Grip (Steam app 4163270, Unity, Windows) mod: Open World, free roam in a square of country 32,000 units (about 9.7 km) across generated from a fixed seed the
 way real country comes about (rivers, settlements, a road hierarchy, land use), built in the Tokyo scene, streamed in tiles, with a
 floating origin. Current release: see `OpenWorld/mod.json`.
 
@@ -25,6 +25,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `MapEntry.cs` | Adds the OpenWorld map to `RunConfig.maps` as a copy of TokyoNeon with its own track index (30) |
 | `Patches.cs` | Harmony: track index, TestMode and weather draw, kept out of run map draws, no laps, no solo AI, reset in place, fell-under-ground |
 | `WorldScene.cs` | Builds the world in the Tokyo scene: hides Tokyo's arena and city, grid on the trunk road, tunnel mouths, token track loop |
+| `WorldAssets.cs` | Frees the materials and textures made for a race when the world goes (they are HideAndDontSave, so nothing else would) |
 | `WorldGen.cs`, `Noise.cs`, `Rng.cs`, `Heap.cs` | The land's height function (layers) and the deterministic randomness and ordering under it |
 | `Rivers.cs` | Drainage (priority flood), rivers and lakes, and their cut into the land |
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
@@ -77,6 +78,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - Bump `version` in `mod.json` with each release and keep `README.md` in step.
 - C# 10 and netstandard2.1 APIs only.
 - Units: game units, about 3.3 to a real metre (a car is about 14 long, a lane 11). Size things at real scale through that.
+  Text a player reads (README, `mod.json`, config descriptions, log lines, the overlay) gives real distances (units / 3.3) or
+  says "units": never units called metres. The world is 32,000 units, about 9.7 km, across; until 0.26.1 it was called 32 km.
 - Heights: `WorldGen.Height` is a scene height (includes `Network.Lift`); road `Y`, river `W` and place `Y` are from sea level (add
   `Network.Lift` for the scene). Mixing the two sank every building once.
 - Match the style: tabs, `///` summaries that explain *why*, `Mod.Info(...)` for verbose logging, `Mod.Log.LogWarning` and a try/catch

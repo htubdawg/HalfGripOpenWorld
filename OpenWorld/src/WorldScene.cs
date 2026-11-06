@@ -139,8 +139,16 @@ namespace HalfGripOpenWorld
 			Foliage foliage = root.AddComponent<Foliage>();
 			foliage.Setup(lit);
 			Material ground = GroundMaterial(lit), verge = RoadMesh.VergeMaterial(lit), sidewalk = RoadMesh.SidewalkMaterial(lit), gravel = CircuitMesh.GravelMaterial(lit);
-			Material[] roads = RoadMesh.Materials(lit), tracks = RoadMesh.TrackMaterials(lit), circuit = CircuitMesh.Materials(lit);
-			streamer.Setup(tm.playerCarController, ground, groundLayer >= 0 ? groundLayer : 0, roads, verge, sidewalk, tracks, WaterMaterial(lit), 0, Buildings.Materials(lit), circuit, gravel, foliage);
+			Material[] roads = RoadMesh.Materials(lit), tracks = RoadMesh.TrackMaterials(lit), circuit = CircuitMesh.Materials(lit), buildings = Buildings.Materials(lit);
+			Material water = WaterMaterial(lit);
+			streamer.Setup(tm.playerCarController, ground, groundLayer >= 0 ? groundLayer : 0, roads, verge, sidewalk, tracks, water, 0, buildings, circuit, gravel, foliage);
+			// Made for this race and kept from Unity's unloading (HideAndDontSave): freed with the world, or every race would add another set.
+			WorldAssets assets = root.AddComponent<WorldAssets>();
+			assets.Add(roads);
+			assets.Add(tracks);
+			assets.Add(circuit);
+			assets.Add(buildings);
+			assets.Add(ground, verge, sidewalk, gravel, water);
 			// The far view past the tiles, with the ground's look (so the wet weather darkens it too) and its own sea.
 			FarView far = root.AddComponent<FarView>();
 			Material farGround = FarView.MakeMaterial(ground, "OpenWorld Far"), farSea = FarView.MakeMaterial(ground, "OpenWorld Far Sea");
@@ -157,7 +165,7 @@ namespace HalfGripOpenWorld
 			root.AddComponent<Sky>().Setup(tm, paved.ToArray(), unpaved.ToArray());
 
 			PlaceGrid(tm, env, out Vector3 forward);
-			Tunnels(lit);
+			assets.Add(Tunnels(lit, roads[RoadMesh.Concrete]));
 			Rewire(tm, forward);
 			streamer.BuildAround(Network.SpawnX, Network.SpawnZ, 2);
 			root.AddComponent<Garage>().Setup(tm, lit);
@@ -165,7 +173,7 @@ namespace HalfGripOpenWorld
 			root.AddComponent<EventRace>().Setup(tm, lit);
 			RaiseCameras();
 
-			Mod.Log.LogInfo("Open World built: " + (WorldGen.Half * 2.0 / 1000.0).ToString("0") + " km square, seed " + WorldGen.Seed.ToString("X") + ", " + streamer.Loaded + " tiles at the spawn, "
+			Mod.Log.LogInfo("Open World built: " + (WorldGen.Half * 2.0 / 3300.0).ToString("0.0") + " km square, seed " + WorldGen.Seed.ToString("X") + ", " + streamer.Loaded + " tiles at the spawn, "
 				+ ((Time.realtimeSinceStartup - started) * 1000f).ToString("0") + " ms");
 		}
 
@@ -247,11 +255,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// A tunnel mouth where each road leaves the world: a concrete portal in the cutting at the road's end, dark inside, with a solid
-		/// block behind the dark so nobody drives in.
+		/// block behind the dark so nobody drives in. The concrete is the roads' own; the dark is returned, to be freed with the world.
 		/// </summary>
-		private static void Tunnels(Shader shader)
+		private static Material Tunnels(Shader shader, Material concrete)
 		{
-			Material concrete = RoadMesh.Materials(shader)[RoadMesh.Concrete];
 			Material dark = new Material(shader) { name = "OpenWorld Tunnel", hideFlags = HideFlags.HideAndDontSave };
 			if (dark.HasProperty("_BaseColor"))
 			{
@@ -275,6 +282,7 @@ namespace HalfGripOpenWorld
 				Block(portal.transform, dark, new Vector3(0f, height / 2f, 6f), new Vector3(width, height, 6f));
 			}
 			Mod.Info("Tunnel mouths: " + Network.Portals.Count);
+			return dark;
 		}
 
 		private static void Block(Transform parent, Material material, Vector3 at, Vector3 size)
@@ -422,7 +430,7 @@ namespace HalfGripOpenWorld
 			Mod.Info("Token loop: " + line.sampledPoints.Count + " samples, " + line.trackLength.ToString("0") + " m");
 		}
 
-		/// <summary>The cameras that draw the world (the dev free-flight one too) draw as far as the tiles reach (Tokyo's draw to about 1.2 km); never
+		/// <summary>The cameras that draw the world (the dev free-flight one too) draw as far as the tiles reach (Tokyo's draw to 1500 units); never
 		/// lowered. With the far view on, <see cref="FarView"/> sets them further.</summary>
 		private static void RaiseCameras()
 		{
