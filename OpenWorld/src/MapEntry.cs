@@ -33,11 +33,6 @@ namespace HalfGripOpenWorld
 						Mod.Log.LogWarning("The run config has no TokyoNeon map (another game version?), the Open World is not added.");
 						return;
 					}
-					if (source == null)
-					{
-						Mod.Log.LogWarning("The run config has no map to copy, the Open World is not added.");
-						return;
-					}
 					Mod.Map = Make(source);
 					Mod.Log.LogInfo("Open World map made from " + source.name + " (host track " + HostTrack + ")");
 				}

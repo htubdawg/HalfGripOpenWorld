@@ -62,7 +62,8 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private static void Pool()
 		{
-			if (day != null)
+			// An empty pool is looked for again next race: made before the run config existed, it would otherwise stay empty for the session.
+			if (day != null && day.Count > 0)
 			{
 				return;
 			}
