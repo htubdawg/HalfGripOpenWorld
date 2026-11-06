@@ -686,8 +686,26 @@ namespace HalfGripOpenWorld
 			Section(m, road, i, a, side, terrain, out Vector3 ia, out Vector3 ma, out Vector3 oa, out double _, out double _);
 			Section(m, road, i, b, side, terrain, out Vector3 ib, out Vector3 mb, out Vector3 ob, out double _, out double _);
 			float va = V(road, i, a), vb = V(road, i, b);
-			m.Quad(0, ia, ib, ma, mb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(0.5f, va), new Vector2(0.5f, vb));
-			m.Quad(0, ma, mb, oa, ob, new Vector2(0.5f, va), new Vector2(0.5f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+			if (!Twisted(ia, ib, ma, mb))
+			{
+				m.Quad(0, ia, ib, ma, mb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(0.5f, va), new Vector2(0.5f, vb));
+			}
+			if (!Twisted(ma, mb, oa, ob))
+			{
+				m.Quad(0, ma, mb, oa, ob, new Vector2(0.5f, va), new Vector2(0.5f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+			}
+		}
+
+		/// <summary>
+		/// Whether a quad from edge (a, b) to edge (c, d) crosses over itself seen from above, its two triangles facing opposite ways.
+		/// On the inside of a sharp joint (<see cref="Network.Joints"/>) both roads take the side halfway round the bend, so just past
+		/// it the verge's outer edge swings round faster than the road runs on and the ribbon folds back on itself: the fold is
+		/// covered by the ribbon's own layers either side of it, so it is left out (it was drawn facing down).
+		/// </summary>
+		private static bool Twisted(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+		{
+			float first = Vector3.Cross(b - a, c - a).y, second = Vector3.Cross(b - c, d - c).y;
+			return first * second < 0f;
 		}
 
 		/// <summary>
