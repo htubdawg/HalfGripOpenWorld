@@ -128,6 +128,17 @@ namespace HalfGripOpenWorld
 					Church(b, data, p);
 				}
 			}
+			foreach (Network.Home home in Network.Homes)
+			{
+				if (home.House && Math.Floor(home.X / tileSize) == tx && Math.Floor(home.Z / tileSize) == tz)
+				{
+					Cottage(b, data, home);
+				}
+				if (Math.Floor(home.MailX / tileSize) == tx && Math.Floor(home.MailZ / tileSize) == tz)
+				{
+					Mailbox(b, data, home);
+				}
+			}
 			foreach (Parks.Bench bench in Parks.Benches)
 			{
 				if (Math.Floor(bench.X / tileSize) == tx && Math.Floor(bench.Z / tileSize) == tz)
@@ -744,6 +755,48 @@ namespace HalfGripOpenWorld
 				double ca = DetMath.Cos(a + turn), sa = DetMath.Sin(a + turn);
 				House(b, data, -1, 0.0, p.X + ca * dist, p.Z + sa * dist, ax, az, w, d, look, out float _);
 			}
+		}
+
+		/// <summary>
+		/// A house out in the country at the end of its drive (<see cref="Network.Drives"/>), its front to the drive.
+		/// A bungalow or two storeys, in the farmhouses' stone, render or white, slate or tile, from its own hash; a lean-to shed at one end now and then.
+		/// </summary>
+		private static void Cottage(Builder b, Data data, Network.Home home)
+		{
+			ulong h = Noise.Mix(Salt ^ 0xC077A6EUL ^ (ulong)(long)Math.Floor(home.X) * 0x632BE59BUL ^ (ulong)(long)Math.Floor(home.Z));
+			// Along the house is across the drive; its back (to the left of along) away from the road.
+			double ax = home.DirZ, az = -home.DirX;
+			Look look = Look.Of(Unit(h, 1) < 0.4 ? Stone : Unit(h, 3) < 0.5 ? Render : White, Unit(h, 2) < 0.6 ? Slate : RedTile, (Unit(h, 4) < 0.3 ? 1f : 2f) * Storey);
+			look.Style = Casement;
+			look.Chimneys = 1 + (int)(Unit(h, 5) * 2.0);
+			look.Door = 1;
+			House(b, data, -1, 0.0, home.X, home.Z, ax, az, Network.HomeWidth, Network.HomeDepth, look, out float _);
+			if (Unit(h, 6) < 0.5)
+			{
+				Look shed = Look.Of(Wood, Metal, 8f);
+				shed.EndOver = 0.4f;
+				double side = Unit(h, 7) < 0.5 ? -1.0 : 1.0;
+				double off = Network.HomeWidth * 0.5 + 9.0;
+				House(b, data, -1, 0.0, home.X + ax * off * side, home.Z + az * off * side, ax, az, 12.0, 10.0, shed, out float _);
+			}
+		}
+
+		/// <summary>
+		/// A drive's mailbox by the road (<see cref="Network.Home"/>): a timber post a metre and a bit high and a metal box on it, its
+		/// door to the road. Left out if a sign stands there.
+		/// </summary>
+		private static void Mailbox(Builder b, Data data, Network.Home home)
+		{
+			if (Signs.Near(home.MailX, home.MailZ, 2.0))
+			{
+				return;
+			}
+			// Along the box is towards the road.
+			double ax = home.MailDirX, az = home.MailDirZ;
+			float y = (float)WorldGen.Height(home.MailX, home.MailZ) - 0.4f;
+			b.Solid(home.MailX, home.MailZ, y, ax, az, 0.5f, 0.5f, 4.2f, Wood);
+			b.Solid(home.MailX, home.MailZ, y + 4.2f, ax, az, 2.0f, 1.1f, 1.1f, Metal);
+			data.Footprints.Add((home.MailX, home.MailZ, 1.5));
 		}
 
 		/// <summary>

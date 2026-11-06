@@ -1259,3 +1259,36 @@ Checked: the builder and the textures compiled against stand-ins and rendered by
 144 views searched for cracks of background inside a building: none but single silhouette pixels; 670 with the old joins). **Not
 compiled against the game** (no access to HalfGripRefs in that session) and **meshcheck not run**: run `tools/check.sh` and
 `meshcheck bases facades` before merging. **Not tested in game.**
+
+### 0.26.0: back roads joined up, drives and mailboxes, covered bridges (asked for by the owner)
+
+The owner's screenshots: lanes ending in nothing, wide stretches of farmland between them with no way across, and lanes hooking round
+in a U at their ends. Measured first (`tools/preview`, new): between hamlets 1 to 4 km apart the way by road was a median 1.71 times
+the straight line, the worst tenth over 4.6 times, 48 pairs not joined at all; 55 lane dead ends in the country. Causes: every
+farm's lane went to the nearest road, so the lanes made a tree, each farm on its own branch (the 45% of farms also joined to their
+nearest neighbour made few loops); the through ways from dead ends stopped on the first road they touched (a farm track too, which
+then failed them), never crossed a stream, and aimed at points behind as well as ahead, so they hooked round; a link routed to a farm
+met its lane a few units short of the farm, leaving a stub. **Done** (`Network.cs`, `RoadMesh.cs`, `Buildings.cs`):
+- **Links** (`Network.Links`): the Gabriel graph of hamlets, villages and towns; for each pair with a hamlet in it, nearest first, if
+  the way by the paved roads already built (`RoadGraph`, a graph of every sample, joined at junctions) is more than 1.6 times the
+  straight line, a lane is routed between them, with following a road dearer (0.7 of a step, not 0.33) so it takes the new way,
+  kept off the towns' and villages' ground off their roads, and built only if much shorter. 88 links, 48 km real.
+- **Through ways** (`Network.Throughs`): from every lane dead end (most tracks' and paths'); a walk passes over roads smaller than it
+  may end on; targets only ahead (within 70 degrees) and a walk that turns more than 110 degrees gives up (no hooks); up to three
+  roads tried; a lane's way must save a detour by road of more than 1.5 times; then the router (which bridges streams) to targets
+  anywhere but behind. A lane's routed end within 30 of another road's end goes to that end (`ToEnd`).
+- **Drives** (`RoadKind.Drive`, between lanes and tracks, so no lane ends on one; a gravel ribbon like a track, 3 m wide): a farm's
+  lane, up to the first road that meets it if that is within 600, becomes its drive (`Split` keeps the rest a lane); along the lanes
+  and minor roads in the country, every few hundred units, a house set back 50 to 130 on a drive of its own where the ground lets it
+  (`Network.Homes`; `Buildings.Cottage`, a bungalow or two storeys, a shed now and then). A mailbox by the road at every drive's mouth.
+- **Covered bridges** (`RoadMesh.Covered`): a lane's bridge whose deck is no longer than 280 (85 m real) has red board walls with an
+  open band under the eaves, posts across it, a shingle roof with overhanging eaves and boarded gables over the portals; longer
+  bridges, and every bigger road's, keep concrete.
+- After: detour median 1.34, the worst tenth under 1.77, every pair joined; country lane dead ends 8 (preview) and 5 by the network's
+  own count, all farms boxed in by water, hills or the rally stage's fence; lanes 63 to 102 km real; about 280 drives.
+- `meshcheck`: `homes` (mailboxes and houses clear of roads and water, houses at their drives' ends), `backroads` (at most 10 country
+  lane dead ends, no through way hooking round), covered bridges counted under `bridges`.
+
+Not compiled with `tools/check.sh` in this session (building HalfGripTools there was not allowed): the files it alone covers
+(`Streamer.cs`: the drive's map colour; `WorldScene.cs`: the log line) changed by a line each; meshcheck compiles the rest against
+the game. **Not tested in game.**

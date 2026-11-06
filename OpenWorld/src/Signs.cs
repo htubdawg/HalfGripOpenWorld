@@ -214,7 +214,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The roads in the graph: every road but the footpaths and the courses themselves (their access roads are in).</summary>
 		private static bool InGraph(Network.Road road)
 		{
-			return road.Kind != RoadKind.Path && road.Kind != RoadKind.Rally && road.Kind != RoadKind.Climb && road.Count >= 2;
+			return road.Kind != RoadKind.Path && road.Kind != RoadKind.Drive && road.Kind != RoadKind.Rally && road.Kind != RoadKind.Climb && road.Count >= 2;
 		}
 
 		private const double PieceCell = 50.0;

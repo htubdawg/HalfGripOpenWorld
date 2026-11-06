@@ -251,3 +251,11 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 36. No ash (0.24.0). Start a few races (or rooms) until the verbose log says `Weather: StadiumAsh by day` or `RedForrest by day`:
    no ash falls, anywhere, all race; the light and fog still look like that weather. Rain and snow come only with a storm (the overlay's
    `rain` above 0), never on a dry stretch.
+37. Back roads (0.26.0). The log's `World layout:` line names the back road links (about 90). Drive the lanes out in the country
+   (teleport to a farm, or drive north from Kingsbridge): they run on from farm to farm and village to village, through woods and
+   over streams, hardly ever ending in nothing; no lane hooks round in a U back to the road beside it. A bridge on a lane over a
+   stream is a covered bridge: red board walls with an open band under the eaves, a shingle roof, a gable over each portal; drive
+   through it (no bump onto or off the deck, the roof well clear of the car, you hit the walls). Along the lanes and minor roads,
+   now and then a house set back on a gravel drive with a mailbox by the road (solid, off the verge, standing on the ground); a farm
+   at the end of a short lane has the lane as its drive. Drive up a drive: no ground through the gravel, no step where it meets the
+   lane, tarmac grip on the lane and track grip on the drive. On MiniMap's map the drives are pale gravel, the lanes white.

@@ -161,9 +161,9 @@ internal static class Program
 			}
 		}
 		double realKm2 = landArea / (PerMetre * 1000.0) / (PerMetre * 1000.0);
-		double[] length = new double[9];
-		int[] count = new int[9];
-		double[] steepest = new double[9];
+		double[] length = new double[10];
+		int[] count = new int[10];
+		double[] steepest = new double[10];
 		List<(double, double)> spans = new List<(double, double)>();
 		foreach (Network.Road r in Network.Roads)
 		{
@@ -183,7 +183,7 @@ internal static class Program
 		}
 		Console.WriteLine("land " + realKm2.ToString("0") + " km² at real scale");
 		double total = 0.0;
-		for (int k = 0; k < 9; k++)
+		for (int k = 0; k < 10; k++)
 		{
 			double km = length[k] / PerMetre / 1000.0;
 			total += km;
@@ -194,7 +194,7 @@ internal static class Program
 		// Junctions: a road end on another road is a T; roads crossing mid-way a crossroads; an end on nothing a dead end.
 		// Dead ends out in the country (outside every town and village) are counted by class: the through ways keep them down.
 		int tees = 0, deadEnds = 0, crossings = 0;
-		int[] country = new int[9];
+		int[] country = new int[10];
 		foreach (Network.Road r in Network.Roads)
 		{
 			foreach (int end in new[] { 0, r.Count - 1 })
@@ -229,6 +229,7 @@ internal static class Program
 
 		// How the country's paved roads join up: the detour by road between hamlets 1 to 4 km apart, and the farmland's reach to a road.
 		Connectivity.Result join = Connectivity.Measure();
+		Console.WriteLine("back road links: " + Network.LinkCount + ", " + (Network.LinkLength / PerMetre / 1000.0).ToString("0.0") + " km real");
 		Console.WriteLine("back roads: " + join.Pairs + " hamlet pairs 1-4 km apart, detour by road median " + join.Median.ToString("0.00") + ", 90% under " + join.P90.ToString("0.00") + ", " + join.OverTwo + " over 2, " + join.Unreachable + " not joined; farmland to a road 90% under " + (join.GapP90 / PerMetre).ToString("0") + " m real, furthest " + (join.GapMost / PerMetre).ToString("0") + " m at (" + join.GapMostX.ToString("0") + ", " + join.GapMostZ.ToString("0") + ")");
 
 		// The ground meets each road's bed at its centre (bridges and cuts at junctions excepted; junctions may differ a little by design).
@@ -363,8 +364,8 @@ internal static class Program
 				rgb[o + 3] = 255;
 			}
 		}
-		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 150, 110, 70 }, new byte[] { 196, 180, 150 }, new byte[] { 200, 120, 50 }, new byte[] { 200, 70, 150 } };
-		for (int kind = 8; kind >= 0; kind--)
+		byte[][] colours = { new byte[] { 225, 110, 40 }, new byte[] { 235, 190, 60 }, new byte[] { 240, 225, 130 }, new byte[] { 70, 70, 74 }, new byte[] { 238, 236, 228 }, new byte[] { 205, 195, 170 }, new byte[] { 150, 110, 70 }, new byte[] { 196, 180, 150 }, new byte[] { 200, 120, 50 }, new byte[] { 200, 70, 150 } };
+		for (int kind = 9; kind >= 0; kind--)
 		{
 			foreach (Network.Road r in Network.Roads)
 			{

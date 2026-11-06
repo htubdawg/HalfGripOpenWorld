@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using HalfGripOpenWorld;
 
 /// <summary>
-/// How well the country's paved roads (lanes and bigger) join up, as a driver finds it: a graph of every road sample, joined along
+/// How well the country's roads (drives, lanes and bigger) join up, as a driver finds it: a graph of every road sample, joined along
 /// each road and to any other road's sample within a junction's reach, then for pairs of hamlets and farms 1 to 4 km (game units)
 /// apart, the way by road over the straight line (the detour), and for the farmland round them, how far it is to the nearest road.
 /// Built here from the finished roads, not from the generator's own bookkeeping, so it checks what is drawn.
@@ -35,7 +35,7 @@ internal static class Connectivity
 		for (int r = 0; r < Network.Roads.Count; r++)
 		{
 			Network.Road road = Network.Roads[r];
-			if (road.Kind > RoadKind.Lane)
+			if (road.Kind > RoadKind.Drive)
 			{
 				continue;
 			}

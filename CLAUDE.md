@@ -28,11 +28,11 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `WorldGen.cs`, `Noise.cs`, `Rng.cs`, `Heap.cs` | The land's height function (layers) and the deterministic randomness and ordering under it |
 | `Rivers.cs` | Drainage (priority flood), rivers and lakes, and their cut into the land |
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
-| `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the ground's road beds |
+| `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the back roads joined up (links where the way by road is a long detour, through ways from dead ends), drives and their homes, the ground's road beds |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
-| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track and footpath, and water meshes and their pixel-art textures |
+| `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track, drive and footpath, and water meshes and their pixel-art textures; covered bridges on the lanes |
 | `Destinations.cs` | The key places the debug teleport goes round |
-| `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, and the lots' buildings and surfaces (one mesh, one collider), their materials; houses' walls drawn a storey at a time from wall atlases, roofs as thick slabs |
+| `Buildings.cs` | Per-tile houses, high-street shops, the main town's towers, village churches, farm buildings, roadside houses and mailboxes on the drives, and the lots' buildings and surfaces (one mesh, one collider), their materials; houses' walls drawn a storey at a time from wall atlases, roofs as thick slabs |
 | `Town.cs` | Lots: the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Parks.cs` | Parks (town blocks and a riverside, ponds dug in), their paths, trails round the lakes, benches; laid out after the road index |
 | `Circuit.cs`, `CircuitMesh.cs`, `Rally.cs`, `HillClimb.cs` | The race courses: the circuit, the rally stage, the hill climb (sited and laid out in `Places.Build`; the stage's and the climb's roads made first in `Network.Build`) |
@@ -95,7 +95,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 
 - `tools/check.sh <game folder> <HalfGripTools.dll>` compiles the mod (see README). Run it before every push.
 - `dotnet run -c Release --project tools/preview -- out.ppm [pixels] [x z span]` checks the generator (layout, road density at real
-  scale, junctions, grades, ground meets roads, repeatability, tile time) and draws a map; look at it after any generator change.
+  scale, junctions, grades, ground meets roads, repeatability, tile time, the back roads' detours and the farmland's reach to a road)
+  and draws a map; look at it after any generator change.
 - `dotnet run -c Release --project tools/meshcheck [-p:GameDir=<game folder>]` runs the world against Unity's types: road surfaces under
   the terrain (clip), roads poking through the roads drawn over them (poke), roads floating (float), grades, bridges clear of the
   water, river water meeting its banks (water), verges meeting the ground, farm track beds, building bases (bases), mesh faces
@@ -103,7 +104,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   the water (plants), ponds, lawns and benches (parks), the events' gates and start boxes (events), paving showing ground or a
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
   (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
-  house walls reading whole storeys and roofs with undersides (facades);
+  house walls reading whole storeys and roofs with undersides (facades), drives' houses and mailboxes clear of the roads and water
+  (homes), few country lane dead ends and no through way hooking round (backroads);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
