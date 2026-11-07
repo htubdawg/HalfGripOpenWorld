@@ -92,7 +92,7 @@ namespace HalfGripOpenWorld
 
 		private static void Sent(byte[] data, string to)
 		{
-			if (!EventRoom.IsClock(data))
+			if (!EventRoom.IsSync(data))
 			{
 				Mod.Info("Events: sent " + EventRoom.Describe(data) + " to " + to);
 			}
@@ -131,7 +131,7 @@ namespace HalfGripOpenWorld
 		{
 			try
 			{
-				bool clock = EventRoom.IsClock(data);
+				bool sync = EventRoom.IsSync(data);
 				if (Room == null)
 				{
 					if (held.Count >= HoldMost)
@@ -140,13 +140,13 @@ namespace HalfGripOpenWorld
 						lost++;
 					}
 					held.Add((from, data, Clock()));
-					if (!clock)
+					if (!sync)
 					{
 						Mod.Info("Events: held " + EventRoom.Describe(data) + " from " + Name(from) + " until the world is built");
 					}
 					return;
 				}
-				if (!clock)
+				if (!sync)
 				{
 					Mod.Info("Events: received " + EventRoom.Describe(data) + " from " + Name(from));
 				}

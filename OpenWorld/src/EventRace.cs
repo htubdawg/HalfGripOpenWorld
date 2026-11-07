@@ -13,10 +13,12 @@ namespace HalfGripOpenWorld
 	/// next player. While in a lobby a strip under the cockpit's board shows it, with Start (the Host's, while the course is free) and
 	/// Leave, pressed with the hand (pointed at and grabbed, as the cockpit's own controls are), so it never takes over from driving.
 	///
-	/// On the Start every entrant's car is put on its own grid slot (dealt in join order) and held there, and the game's start lights
-	/// (moved over the line) count down to the start time the arbiter dealt on its clock (<see cref="EventRoom.Now"/>: real time, set
-	/// to the arbiter's), which is the same moment on every machine. The car's own clock, its green and laps run on the same clock, so a
-	/// long frame (a teleport, tiles building, a refit) never holds one machine back.
+	/// On the Start every entrant's car is put on its own grid slot (dealt in join order) and held there. Once it is on the slot and the
+	/// teleport's long frames are over (<see cref="SettleFrames"/>, <see cref="SettleSeconds"/>), this machine syncs its clock with the
+	/// arbiter's (<see cref="EventRoom.Sync"/>) and is ready; when every entrant is, the arbiter deals green, and the game's start
+	/// lights (moved over the line) count down to it on the arbiter's clock (<see cref="EventRoom.Now"/>: real time, set to the
+	/// arbiter's), which is the same moment on every machine. The car's own clock, its green and laps run on real time, so a long frame
+	/// (tiles building, a refit) never holds one machine back.
 	/// Then each entrant's clock runs from their own green through the checkpoint gates in order to the finish; each gate passed goes to
 	/// the arbiter, which sends the standings back, so the board shows the place among the entrants. The next two gates stand across
 	/// the road, lit. A missed gate is called out and the clock runs on (that run sets no best time). A wreck puts the car back at the
@@ -49,6 +51,13 @@ namespace HalfGripOpenWorld
 
 		/// <summary>On the grid the car is held where it was put; a move further than this from there (the reset after a wreck) is out of the race.</summary>
 		private const double OffGrid = 30.0;
+
+		/// <summary>
+		/// After the car is put on the grid, the clock is synced only once this many frames and <see cref="SettleSeconds"/> have gone:
+		/// the teleport builds tiles in long frames, and a sync's ping read in one has a round trip long by it.
+		/// </summary>
+		private const int SettleFrames = 5;
+		private const double SettleSeconds = 0.5;
 
 		/// <summary>How long the green light stays on after the start.</summary>
 		private const float GreenSeconds = 3f;
@@ -112,6 +121,9 @@ namespace HalfGripOpenWorld
 		private bool havePrev;
 		private double prevX, prevZ;
 		private int placedFrame = -1;
+		/// <summary>This machine's own clock when the car was put on the grid, and whether the sync has been asked for since.</summary>
+		private double placedAt;
+		private bool syncAsked;
 		private int shownNext = -1;
 		private Courses.Course shownCourse;
 		private Rigidbody held;
@@ -577,6 +589,8 @@ namespace HalfGripOpenWorld
 			}
 			GameMode.FixFallbackHealth(tm.playerCarlink, "on the grid");
 			placedFrame = Time.frameCount;
+			placedAt = EventLink.Clock();
+			syncAsked = false;
 			havePrev = false;
 			heldX = s.X;
 			heldZ = s.Z;
@@ -593,8 +607,9 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The countdown to the lobby's start time on the race clock: red, amber, both, then green and this car's clock starts, with 3,
-		/// 2, 1, GO called out. The car is held on its slot until green (<see cref="FixedUpdate"/>), so there is no jump start.
+		/// On the grid: the clock synced once the car has settled, then (when the arbiter has dealt green) the countdown to the lobby's
+		/// start time on the race clock: red, amber, both, then green and this car's clock starts, with 3, 2, 1, GO called out. The car
+		/// is held on its slot until green (<see cref="FixedUpdate"/>), so there is no jump start.
 		/// </summary>
 		private void Counting(EventRoom.Lobby mine, CarLink carLink, double x, double z, double now)
 		{
@@ -606,6 +621,17 @@ namespace HalfGripOpenWorld
 				// Out first: when this machine is the arbiter the race may end inside the request, and its call-out reads the state.
 				Out("OUT OF THE RACE");
 				LeaveLobby();
+				return;
+			}
+			if (!syncAsked && Time.frameCount - placedFrame >= SettleFrames && EventLink.Clock() - placedAt >= SettleSeconds)
+			{
+				syncAsked = true;
+				Mod.Info("Event: settled on the grid " + (EventLink.Clock() - placedAt).ToString("0.00") + " s after the teleport: syncing the clock");
+				room.Sync(EventLink.Clock());
+			}
+			if (!mine.Dealt)
+			{
+				// Green is not dealt yet: the others are still being put on the grid, or syncing.
 				return;
 			}
 			double toGo = mine.StartAt - now;
@@ -951,6 +977,14 @@ namespace HalfGripOpenWorld
 					}
 					Mod.Log.LogInfo("Event: a race started at the " + c.Name + " with " + l.Count + " entrant(s)" + (mine ? ", this car among them" : ""));
 					break;
+				case EventRoom.Why.Counting:
+					if (mine)
+					{
+						int ready = l.Entrants.FindAll(e => e.Ready).Count;
+						Mod.Log.LogInfo("Event: green dealt at the " + c.Name + ", " + ready + " of " + l.Count + " entrant(s) synced on the grid; this machine's clock "
+							+ room.Offset.ToString("+0.000;-0.000") + " s from the host's");
+					}
+					break;
 				case EventRoom.Why.Ended:
 					EventRoom.Entrant mineAtEnd = l.Entrants.Find(e => e.Id == me);
 					if (mineAtEnd != null)
@@ -1279,7 +1313,8 @@ namespace HalfGripOpenWorld
 					case State.Grid:
 					{
 						double toGo = mine.StartAt - now;
-						string count = toGo > 3.0 ? "Ready" : Red + Math.Max(1, (int)Math.Ceiling(toGo)).ToString("0") + "</color>";
+						string count = !mine.Dealt ? "Grid " + mine.Entrants.FindAll(e => e.Ready && !e.Out).Count + "/" + mine.Count
+							: toGo > 3.0 ? "Ready" : Red + Math.Max(1, (int)Math.Ceiling(toGo)).ToString("0") + "</color>";
 						text = course.Name + "\n" + Info(course) + "\n" + (alone ? BestLine(course) : "Slot " + (slot + 1) + " of " + n) + "\n" + count;
 						lapLine = Laps(course, 0);
 						break;
@@ -1364,7 +1399,7 @@ namespace HalfGripOpenWorld
 			switch (mine.State)
 			{
 				case EventRoom.LobbyState.Racing:
-					what = now < mine.StartAt ? "GRID  " + Left(mine.StartAt - now) : "RACING";
+					what = !mine.Dealt ? "GRID" : now < mine.StartAt ? "GRID  " + Left(mine.StartAt - now) : "RACING";
 					break;
 				case EventRoom.LobbyState.Results:
 					what = "RESULTS";

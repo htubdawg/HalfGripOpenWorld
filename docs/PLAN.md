@@ -1529,12 +1529,23 @@ Done on `claude/keen-rubin-pmwc0d`: compiled (against the game's DLLs and a stub
 itself was not allowed in that session, so run `tools/check.sh` before merging), `tools/eventsim` passes on 20 seeds, not yet tested
 in game (test 40). Differs from the notes below:
 
-- **The clock's window.** `EventRoom` takes every machine's own clock (`EventLink.Clock`, `Time.realtimeSinceStartupAsDouble`) and
-  keeps the offset to the arbiter's (`Now`). The plan's 10 s window of the arbiter's messages left a machine up to 0.6 s behind in
-  eventsim when both its messages in the window came at the end of long frames; the window is 60 s, each older message marked down
-  1 ms a second of its age (`Drift`; two real-time clocks part by about 0.1 ms a second). Worst in eventsim over 20 seeds: greens
-  160 ms from the arbiter's, gate times 141 ms (messages are delayed 50 to 250 ms there).
-- **The arbiter's clock every 4 s** (`Msg.Clock`, not logged), so offsets stay fresh in a quiet room.
+- **The clock, synced once a race on the grid** (the owner's change after the first version of this PR, `EventRoom.Version` 3).
+  The first version stamped the arbiter's clock on every message it sent, sent it every 4 s besides, and kept the best offset of
+  the last 60 s. The offset only matters for green, so now it is taken where it is needed:
+  - The Start puts every entrant on the grid with no green (`StartAt` not dealt).
+  - Each machine, once its car is on its slot and 5 frames and 0.5 s have gone (the teleport's long frames over), pings the
+    arbiter every 0.2 s (`EventRoom.Sync`). The arbiter is often in its own teleport's long frames then, so a single answer's time
+    is no good; each `Pong` says when the arbiter could have got the ping (from its tick before last to when it read it), the
+    asker knows it was between sending and the answer, and the bounds of all the answers together hold the offset: a long frame
+    on either side only widens them. It stops at 5 answers once the offset is known to 100 ms either way, or at 5 s, then sends
+    `Ready`. In eventsim the first version (a fixed 5 pings, the shortest round trip's middle) left clocks 1.4 s off when every
+    ping fell in the host's teleport.
+  - The arbiter deals green 4 s after the last entrant is ready (`Why.Counting`), or 15 s after the Start whoever is ready.
+    Gates before green are ignored, and the time limit counts from green.
+  - From green each entrant times on their own clock, so nothing drifts in a race; no clock messages at all outside a grid.
+  - Worst in eventsim over 20 seeds, with stalls of up to 1.5 s and teleports of up to 3 s: greens 80 ms from the arbiter's, gate
+    times 70 ms; green at most 14.3 s after the Start there (about 5.5 s with no stalls).
+  - `MayHit` and `MayUse` read green on the clock this machine synced on its last grid (they are not called in the game yet).
 - **The snapshot's end carries every lobby's id**: a lobby the machine holds that is not in it is taken away (a `Gone` lost while the
   world was built would otherwise leave it for good). Messages held before the world is built: the newest 64, dropped if held more
   than 30 s (they were for a world long gone).

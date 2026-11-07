@@ -135,10 +135,12 @@ one has a chequered disc on the map.
 - **One race per course at a time:** the first Start takes the course; another lobby's Start reads "Race on" until its results are
   done. Races on different courses run at the same time, and the rest of the room roams.
 - On the Start every entrant's car is put on its own grid slot (in the order they joined: two abreast on the circuit and the highway,
-  single file on the rally stage and the hill climb) and held there while the start lights over the line count down to the same
-  moment for everybody (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green. The
-  events keep their own clock, real time set to the host's, so a long frame on one machine (a teleport, tiles building, a refit)
-  never holds that player on the grid after the others have gone (0.27.0; everyone in a room needs 0.27.0 or newer for the events).
+  single file on the rally stage and the hill climb) and held there. Once every car is on the grid and settled, each machine sets
+  its clock to the host's (a second or two; the board reads `Grid 1/2` while it waits for the others), then the start lights over
+  the line count down to the same moment for everybody (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you
+  wait: it goes on the green. The events keep their own clock, real time, so a long frame on one machine (a teleport, tiles
+  building, a refit) never holds that player on the grid after the others have gone. A machine that never answers holds the grid
+  15 s at most (0.27.0; everyone in a room needs 0.27.0 or newer for the events).
 - The clock runs from your own green through the checkpoints: an orange gate across the road, lit only while you race (the next one
   and the one after; the finish line's is white). The board shows the time, your place among the entrants, the checkpoints passed and
   the time left (your best, alone); the lap counter beside it the lap (on the circuit) or the checkpoint. A missed gate is called
@@ -259,7 +261,8 @@ through and steps marked; it also lists the roads near a point and the places (i
 `tools/eventsim` drives the events' lobbies in a room (`EventRoom.cs`) on pretend machines over a pretend network with delays:
 joins, leaves, the Host leaving, two creates and two Starts at once, races to the finish, the cut-off, the time limit, a player
 leaving the room mid-race, a late joiner, the weapon rules, twenty players at random, machines whose clocks are 30 s apart and
-stall now and then through races, and players whose world is built up to 20 s after they join, checking every machine agrees with
-the arbiter and keeps its clock to within a message's delay.
+stall now and then through races (and for up to 3 s when put on the grid), and players whose world is built up to 20 s after they
+join, checking every machine agrees with the arbiter, syncs its clock on the grid to within half a round trip, and sees green with
+the arbiter.
 
 The in-game test checklist is in [docs/TESTING.md](docs/TESTING.md); how the generator and the code work, in [docs/DESIGN.md](docs/DESIGN.md).
