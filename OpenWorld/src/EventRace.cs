@@ -13,9 +13,9 @@ namespace HalfGripOpenWorld
 	/// next player. While in a lobby a strip under the cockpit's board shows it, with Start (the Host's, while the course is free) and
 	/// Leave, pressed with the hand (pointed at and grabbed, as the cockpit's own controls are), so it never takes over from driving.
 	///
-	/// On the Start every entrant's car is put on its own grid slot (dealt in join order) and held there. Once it is on the slot and the
-	/// teleport's long frames are over (<see cref="SettleFrames"/>, <see cref="SettleSeconds"/>), this machine syncs its clock with the
-	/// arbiter's (<see cref="EventRoom.Sync"/>) and is ready; when every entrant is, the arbiter deals green, and the game's start
+	/// On the Start every entrant's car is put on its own grid slot (dealt in join order) and held there. Once this machine has settled
+	/// after the teleport (<see cref="Settling"/>: every tile round the slot built, and its frames as short as usual again), it syncs
+	/// its clock with the arbiter's (<see cref="EventRoom.Sync"/>) and is ready; when every entrant is, the arbiter deals green, and the game's start
 	/// lights (moved over the line) count down to it on the arbiter's clock (<see cref="EventRoom.Now"/>: real time, set to the
 	/// arbiter's), which is the same moment on every machine. The car's own clock, its green and laps run on real time, so a long frame
 	/// (tiles building, a refit) never holds one machine back.
@@ -53,11 +53,17 @@ namespace HalfGripOpenWorld
 		private const double OffGrid = 30.0;
 
 		/// <summary>
-		/// After the car is put on the grid, the clock is synced only once this many frames and <see cref="SettleSeconds"/> have gone:
-		/// the teleport builds tiles in long frames, and a sync's ping read in one has a round trip long by it.
+		/// On the grid the clock is synced once this many frames in a row have been short (see <see cref="Settling"/>) with every tile
+		/// round the car built: the teleport builds tiles in long frames, and a ping read in one says little.
 		/// </summary>
-		private const int SettleFrames = 5;
-		private const double SettleSeconds = 0.5;
+		private const int QuietFrames = 10;
+
+		/// <summary>A frame is short when it takes no more than this times the usual (<see cref="usualFrame"/>), plus <see cref="FrameSlack"/>.</summary>
+		private const float ShortFrame = 1.5f;
+		private const float FrameSlack = 0.005f;
+
+		/// <summary>A machine that has not settled this long after the teleport syncs anyway: the sync's bounds allow for long frames, only wider.</summary>
+		private const double SettleMost = 8.0;
 
 		/// <summary>How long the green light stays on after the start.</summary>
 		private const float GreenSeconds = 3f;
@@ -124,6 +130,13 @@ namespace HalfGripOpenWorld
 		/// <summary>This machine's own clock when the car was put on the grid, and whether the sync has been asked for since.</summary>
 		private double placedAt;
 		private bool syncAsked;
+		/// <summary>Short frames in a row with the tiles in, on the grid before the sync.</summary>
+		private int quietFrames;
+		/// <summary>
+		/// This machine's usual frame time, followed off the grid (slowly, and not over hitches): what a short frame is measured against,
+		/// so a slow machine is not held for frames it never has.
+		/// </summary>
+		private float usualFrame = 1f / 60f;
 		private int shownNext = -1;
 		private Courses.Course shownCourse;
 		private Rigidbody held;
@@ -426,6 +439,11 @@ namespace HalfGripOpenWorld
 				GameInput.Mute(muteKey, false);
 			}
 			double clock = EventLink.Clock();
+			float dt = Time.unscaledDeltaTime;
+			if (state != State.Grid && dt > 0f && dt < usualFrame * 3f)
+			{
+				usualFrame += (dt - usualFrame) * 0.02f;
+			}
 			if (link.Watch(clock) && state != State.Idle)
 			{
 				// Another room (or none): the lobby this car was in is gone with its arbiter.
@@ -591,6 +609,7 @@ namespace HalfGripOpenWorld
 			placedFrame = Time.frameCount;
 			placedAt = EventLink.Clock();
 			syncAsked = false;
+			quietFrames = 0;
 			havePrev = false;
 			heldX = s.X;
 			heldZ = s.Z;
@@ -623,11 +642,9 @@ namespace HalfGripOpenWorld
 				LeaveLobby();
 				return;
 			}
-			if (!syncAsked && Time.frameCount - placedFrame >= SettleFrames && EventLink.Clock() - placedAt >= SettleSeconds)
+			if (!syncAsked)
 			{
-				syncAsked = true;
-				Mod.Info("Event: settled on the grid " + (EventLink.Clock() - placedAt).ToString("0.00") + " s after the teleport: syncing the clock");
-				room.Sync(EventLink.Clock());
+				Settling();
 			}
 			if (!mine.Dealt)
 			{
@@ -659,6 +676,33 @@ namespace HalfGripOpenWorld
 				offSince = -1.0;
 				havePrev = false;
 			}
+		}
+
+		/// <summary>
+		/// On the grid until the sync is asked for: settled once <see cref="QuietFrames"/> frames in a row since the car was put there
+		/// have been short against this machine's usual frame (<see cref="ShortFrame"/>) with every tile round it built
+		/// (<see cref="Streamer.Settled"/>), then the clock is synced. Not a fixed wait: a fast machine syncs as soon as the teleport's
+		/// tiles are in, a slow one when its own are, and neither is caught mid-build. <see cref="SettleMost"/> at most.
+		/// </summary>
+		private void Settling()
+		{
+			double since = EventLink.Clock() - placedAt;
+			if (Time.frameCount > placedFrame)
+			{
+				Streamer streamer = Streamer.Instance;
+				bool tiles = streamer == null || streamer.Settled;
+				bool shortFrame = Time.unscaledDeltaTime <= usualFrame * ShortFrame + FrameSlack;
+				quietFrames = tiles && shortFrame ? quietFrames + 1 : 0;
+			}
+			bool settled = quietFrames >= QuietFrames;
+			if (!settled && since < SettleMost)
+			{
+				return;
+			}
+			syncAsked = true;
+			Mod.Log.LogInfo("Event: " + (settled ? "settled on the grid " + since.ToString("0.00") + " s after the teleport (tiles in, " + QuietFrames + " frames under "
+				+ ((usualFrame * ShortFrame + FrameSlack) * 1000f).ToString("0") + " ms)" : "not settled on the grid " + SettleMost.ToString("0") + " s after the teleport") + ": syncing the clock");
+			room.Sync(EventLink.Clock());
 		}
 
 		/// <summary>

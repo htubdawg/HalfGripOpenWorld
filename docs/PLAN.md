@@ -1533,8 +1533,11 @@ in game (test 40). Differs from the notes below:
   The first version stamped the arbiter's clock on every message it sent, sent it every 4 s besides, and kept the best offset of
   the last 60 s. The offset only matters for green, so now it is taken where it is needed:
   - The Start puts every entrant on the grid with no green (`StartAt` not dealt).
-  - Each machine, once its car is on its slot and 5 frames and 0.5 s have gone (the teleport's long frames over), pings the
-    arbiter every 0.2 s (`EventRoom.Sync`). The arbiter is often in its own teleport's long frames then, so a single answer's time
+  - Each machine waits until it has settled after the teleport, not for a fixed time (`EventRace.Settling`): every tile in reach
+    built with nothing in flight (`Streamer.Settled`) and 10 frames in a row short against its own usual frame time (1.5 times it
+    plus 5 ms; the usual followed off the grid, so a slow machine is not held for frames it never has), 8 s at most. If the
+    arbiter races too it was teleported at the same moment, so the machine then waits for the arbiter's Ready (it is ready as soon
+    as it settles), 6 s at most, and only then pings it every 0.2 s (`EventRoom.Sync`). The arbiter is often in its own teleport's long frames then, so a single answer's time
     is no good; each `Pong` says when the arbiter could have got the ping (from its tick before last to when it read it), the
     asker knows it was between sending and the answer, and the bounds of all the answers together hold the offset: a long frame
     on either side only widens them. It stops at 5 answers once the offset is known to 100 ms either way, or at 5 s, then sends

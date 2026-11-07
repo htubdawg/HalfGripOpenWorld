@@ -136,6 +136,36 @@ namespace HalfGripOpenWorld
 			return tiles.ContainsKey(Key(tx, tz));
 		}
 
+		/// <summary>
+		/// True when every tile in reach of the car is built and none is being worked out or waiting to be made: after a teleport the
+		/// ring round the new place is made a few tiles a frame, each a long frame, and this is when that is over (the events' grid
+		/// waits for it before syncing the clock).
+		/// </summary>
+		internal bool Settled
+		{
+			get
+			{
+				if (player == null || working.Count > 0 || !done.IsEmpty)
+				{
+					return false;
+				}
+				Origin.World(player.transform.position, out double x, out double z);
+				int cx = TileOf(x), cz = TileOf(z), radius = Mod.TileRadius.Value;
+				float reach = (radius + 0.5f) * (radius + 0.5f);
+				for (int dz = -radius; dz <= radius; dz++)
+				{
+					for (int dx = -radius; dx <= radius; dx++)
+					{
+						if (dx * dx + dz * dz <= reach && InWorld(cx + dx, cz + dz) && !tiles.ContainsKey(Key(cx + dx, cz + dz)))
+						{
+							return false;
+						}
+					}
+				}
+				return true;
+			}
+		}
+
 		/// <summary>Builds the tiles within <paramref name="radius"/> tiles of world (x, z) now, on this thread (the spawn, a teleport).</summary>
 		internal void BuildAround(double x, double z, int radius)
 		{

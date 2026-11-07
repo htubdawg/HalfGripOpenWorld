@@ -279,6 +279,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    `Events: every lobby is here`). The grid: B teleports (F7) a few times and opens a garage just before A presses Start; both cars
    are put on the grid, the board reads `Grid 0/2`, then `Grid 1/2`, for a second or two with no lights, then the lights count down
    and go green on both screens at the same moment (record both if you can), and both clocks read about the same at each
-   checkpoint. Each log has `Event: green dealt at the ..., 2 of 2 entrant(s) synced on the grid; this machine's clock ... from the
-   host's`, and with `VerboseLog` on, B's has `synced with the arbiter: its clock ... give or take ... ms`. Send `LogOutput.log`
+   checkpoint. Each log has `Event: settled on the grid ... s after the teleport (tiles in, 10 frames under ... ms)` and `Event:
+   green dealt at the ..., 2 of 2 entrant(s) synced on the grid; this machine's clock ... from the host's`, and with `VerboseLog`
+   on, B's has `the arbiter has settled on the grid` and `synced with the arbiter: its clock ... give or take ... ms`. Send `LogOutput.log`
    from both machines with `VerboseLog` on.

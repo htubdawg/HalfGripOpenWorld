@@ -19,10 +19,11 @@ namespace HalfGripOpenWorld
 	/// Times are the arbiter's clock: every machine passes in its own clock (real time since its game started, which a long frame never
 	/// holds back), and the room adds the offset to the arbiter's (<see cref="Now"/>). The offset matters for one thing only, that green
 	/// is the same moment on every machine, so it is taken once a race, where it is needed: the Start puts every entrant on the grid
-	/// with no green yet; once a car is on its slot and the teleport's long frames are over, its machine asks the arbiter for its clock
-	/// (<see cref="Sync"/>, a ping every <see cref="PingEvery"/>) until it knows it to <see cref="SyncGood"/> (or <see cref="SyncMost"/>
-	/// has gone) and tells the arbiter it is ready. The arbiter is likely in its
-	/// own teleport's long frames just then, and a ping read at the end of one waited there an unknown time; so each answer says when
+	/// with no green yet; once a car is on its slot and its machine has settled (the game says when: its tiles built, its frames short
+	/// again), it waits for the arbiter to have settled too if the arbiter races (its Ready, up to <see cref="ArbiterWaitMost"/>), then
+	/// asks the arbiter for its clock (<see cref="Sync"/>, a ping every <see cref="PingEvery"/>) until it knows it to
+	/// <see cref="SyncGood"/> (or <see cref="SyncMost"/> has gone) and tells the arbiter it is ready. The arbiter may still be in its
+	/// own long frames, and a ping read at the end of one waited there an unknown time; so each answer says when
 	/// the arbiter could have got the ping, from its frame before last to now, and the asker knows it was sent and answered between
 	/// its ping going and the answer coming. Each answer bounds the offset; the bounds of every answer are put together and the middle
 	/// taken, which a long frame on either side only ever widens, never moves. When every entrant is ready (or <see cref="GridMost"/> after the
@@ -62,6 +63,13 @@ namespace HalfGripOpenWorld
 
 		/// <summary>A sync goes on this long at most, then takes the middle of what it has (or the offset it had, with no answer).</summary>
 		internal const double SyncMost = 5.0;
+
+		/// <summary>
+		/// When the arbiter races too it was put on the grid at the same moment, and pinged in its teleport's long frames every answer
+		/// is as wide as the frame: so a sync waits for the arbiter to be ready (it is once it has settled) before it pings, this long
+		/// at most.
+		/// </summary>
+		internal const double ArbiterWaitMost = 6.0;
 
 		/// <summary>
 		/// From the Start, the arbiter waits this long at most for every entrant to be on the grid and synced, then deals green anyway:
@@ -277,6 +285,8 @@ namespace HalfGripOpenWorld
 			ulong Local { get; }
 			/// <summary>True on the machine that holds the lobbies: the room's host, or this machine alone outside a room.</summary>
 			bool Arbiter { get; }
+			/// <summary>The arbiter's player id (this player's alone).</summary>
+			ulong ArbiterId { get; }
 			void ToArbiter(byte[] data);
 			/// <summary>To every other player (the arbiter has already applied it to its own copy).</summary>
 			void ToAll(byte[] data);
@@ -298,6 +308,8 @@ namespace HalfGripOpenWorld
 		private bool syncing;
 		private int syncRace;
 		private double syncFrom;
+		/// <summary>When the pings began (after waiting for the arbiter); negative before.</summary>
+		private double pingFrom;
 		private double pingAt;
 		private int pings;
 		private int pongs;
@@ -414,6 +426,7 @@ namespace HalfGripOpenWorld
 			syncing = true;
 			syncRace = l.Race;
 			syncFrom = clock;
+			pingFrom = -1.0;
 			pingAt = double.NegativeInfinity;
 			pings = 0;
 			pongs = 0;
@@ -428,8 +441,22 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private void Syncs(double clock)
 		{
+			if (pingFrom < 0.0)
+			{
+				// The arbiter in this race and not settled yet: its answers would be as wide as its teleport's frames.
+				Lobby l = Mine;
+				Entrant arbiter = l != null && l.Race == syncRace ? l.In(link.ArbiterId) : null;
+				bool waiting = arbiter != null && arbiter.Run == Run.Running && !arbiter.Ready && !l.Dealt;
+				if (waiting && clock - syncFrom < ArbiterWaitMost)
+				{
+					return;
+				}
+				pingFrom = clock;
+				Note?.Invoke(waiting ? "the arbiter has not settled on the grid in " + ArbiterWaitMost + " s: pinging it anyway"
+					: arbiter != null ? "the arbiter has settled on the grid (" + (clock - syncFrom).ToString("0.00") + " s): pinging it" : "pinging the arbiter");
+			}
 			bool good = pongs >= SyncPings && high - low <= 2.0 * SyncGood;
-			if (!good && clock - syncFrom < SyncMost)
+			if (!good && clock - pingFrom < SyncMost)
 			{
 				if (clock - pingAt >= PingEvery)
 				{
@@ -443,7 +470,7 @@ namespace HalfGripOpenWorld
 			if (pongs > 0 && low <= high)
 			{
 				offset = (low + high) * 0.5;
-				Note?.Invoke("synced with the arbiter: its clock " + offset.ToString("+0.000;-0.000") + " s from this machine's, give or take " + ((high - low) * 500.0).ToString("0") + " ms (" + pongs + " answers to " + pings + " pings, " + (clock - syncFrom).ToString("0.00") + " s)");
+				Note?.Invoke("synced with the arbiter: its clock " + offset.ToString("+0.000;-0.000") + " s from this machine's, give or take " + ((high - low) * 500.0).ToString("0") + " ms (" + pongs + " answers to " + pings + " pings, " + (clock - pingFrom).ToString("0.00") + " s)");
 			}
 			else
 			{

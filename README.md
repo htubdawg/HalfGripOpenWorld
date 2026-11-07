@@ -135,8 +135,9 @@ one has a chequered disc on the map.
 - **One race per course at a time:** the first Start takes the course; another lobby's Start reads "Race on" until its results are
   done. Races on different courses run at the same time, and the rest of the room roams.
 - On the Start every entrant's car is put on its own grid slot (in the order they joined: two abreast on the circuit and the highway,
-  single file on the rally stage and the hill climb) and held there. Once every car is on the grid and settled, each machine sets
-  its clock to the host's (a second or two; the board reads `Grid 1/2` while it waits for the others), then the start lights over
+  single file on the rally stage and the hill climb) and held there. Once every car is on the grid and its machine has finished
+  building the ground round it (and the host's has too), each machine sets its clock to the host's (a second or two; the board reads
+  `Grid 1/2` while it waits for the others), then the start lights over
   the line count down to the same moment for everybody (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you
   wait: it goes on the green. The events keep their own clock, real time, so a long frame on one machine (a teleport, tiles
   building, a refit) never holds that player on the grid after the others have gone. A machine that never answers holds the grid

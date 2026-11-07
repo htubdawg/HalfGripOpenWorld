@@ -54,6 +54,8 @@ namespace HalfGripOpenWorld
 
 		public bool Arbiter => !InRoom || HalfGripTools.Net.IsHost;
 
+		public ulong ArbiterId => InRoom ? HalfGripTools.Net.HostId : Alone;
+
 		/// <summary>This machine's own clock for the events: real time since the game started, which no long frame holds back.</summary>
 		internal static double Clock()
 		{

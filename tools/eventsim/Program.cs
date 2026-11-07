@@ -12,7 +12,8 @@ using static HalfGripOpenWorld.EventRoom;
 // the first finisher, the time limit, a player leaving the room mid-race, a late joiner's snapshot, a full lobby, joining a race that
 // is on, a lobby of one outside a room, the weapon rules, stale and bad messages, machines that stall (long frames) through a race,
 // and players whose world is built up to 20 s after they join the room. Each machine does what the game does at a Start: its car is
-// put on the grid (a teleport, a long frame in the stalls), it settles, then it syncs its clock (EventRoom.Sync). After every step it
+// put on the grid (a teleport, a long frame in the stalls), it settles (steps in a row with no stall), then it syncs its clock
+// (EventRoom.Sync), waiting for the arbiter to settle first when it races too. After every step it
 // checks that every machine's lobbies are the arbiter's, byte for byte, and that a machine that has synced has the arbiter's clock to
 // within half a round trip. Exits 1 if a check fails.
 internal static class Program
@@ -75,8 +76,8 @@ internal static class Program
 	/// </summary>
 	private const double ClockMost = (MaxDelay - 0.05) / 2.0 + 0.045;
 
-	/// <summary>From a car put on the grid to its sync, as the game's: the teleport's frames and <c>EventRace.SettleSeconds</c>.</summary>
-	private const double SettleTime = 0.6;
+	/// <summary>Steps in a row with no stall after a car is put on the grid before it syncs, as the game's <c>EventRace.QuietFrames</c>.</summary>
+	private const int QuietSteps = 10;
 
 	/// <summary>The most messages a machine holds before its world is built (as <c>EventLink</c>); older ones are lost.</summary>
 	private const int HoldMost = 64;
@@ -92,8 +93,8 @@ internal static class Program
 		public readonly System.Random Rng;
 		/// <summary>Machines stall in this scenario: the clocks are checked against the stalls' own rule, not every step's.</summary>
 		public bool Stalls;
-		/// <summary>A machine's car is put on the grid: returns the seconds until it syncs (a scenario may stall it for the teleport).</summary>
-		public Func<Machine, double> ToGrid = m => SettleTime;
+		/// <summary>A machine's car is put on the grid (a scenario may stall it for the teleport).</summary>
+		public Action<Machine> ToGrid;
 		private long order;
 		public int Sent;
 
@@ -239,9 +240,11 @@ internal static class Program
 		public int Lost;
 		/// <summary>True once this machine has asked for a sync (its clock is checked from then on).</summary>
 		public bool SyncedOnce;
-		/// <summary>The race whose grid this car was put on, and when (true time) it syncs; negative once it has.</summary>
+		/// <summary>The race whose grid this car was put on, steps in a row with no stall since, and whether it has synced.</summary>
 		private (int, int) gridFor = (-1, -1);
-		private double syncAt = -1.0;
+		private int quiet;
+		private double lastGrid;
+		private bool synced;
 		private readonly List<(ulong from, byte[] data)> held = new List<(ulong, byte[])>();
 
 		public Machine(Room room, ulong id, double skew)
@@ -260,6 +263,7 @@ internal static class Program
 
 		public ulong Local { get; }
 		public bool Arbiter => room.Host == Local;
+		public ulong ArbiterId => room.Host;
 
 		public void ToArbiter(byte[] data)
 		{
@@ -296,8 +300,8 @@ internal static class Program
 		public void Retire() => Events.Retire(Mine.Race, Clock);
 
 		/// <summary>
-		/// As <c>EventRace</c>: a new race of this machine's lobby with it running puts its car on the grid; once it has settled, the
-		/// clock is synced.
+		/// As <c>EventRace</c>: a new race of this machine's lobby with it running puts its car on the grid; once it has settled
+		/// (<see cref="QuietSteps"/> steps in a row with no stall, a stall being a gap since the last step), the clock is synced.
 		/// </summary>
 		public void Grid()
 		{
@@ -310,11 +314,17 @@ internal static class Program
 			if (gridFor != (l.Id, l.Race))
 			{
 				gridFor = (l.Id, l.Race);
-				syncAt = room.Now + room.ToGrid(this);
+				quiet = 0;
+				synced = false;
+				lastGrid = room.Now;
+				room.ToGrid?.Invoke(this);
+				return;
 			}
-			if (syncAt >= 0.0 && room.Now >= syncAt)
+			quiet = room.Now - lastGrid < 0.03 ? quiet + 1 : 0;
+			lastGrid = room.Now;
+			if (!synced && quiet >= QuietSteps)
 			{
-				syncAt = -1.0;
+				synced = true;
 				SyncedOnce = true;
 				Events.Sync(Clock);
 			}
@@ -785,6 +795,8 @@ internal static class Program
 		Agree(room, "two lobbies");
 		b.Start();
 		Agree(room, "B racing");
+		// Past green, so what C hears after joining is the snapshot alone (on the grid it would hear B's Ready and green: news).
+		Green(room, b.Mine.Id);
 		Machine c = room.Add(3);
 		Agree(room, "after C joined the room");
 		Check(c.Events.Lobbies.Count() == 2, "C was sent both lobbies");
@@ -884,8 +896,9 @@ internal static class Program
 		}
 		a.Start();
 		c.Start();
-		Agree(room, "both racing");
+		room.Run(0.5);
 		Check(!a.Events.MayHit(1, 2, HitKind.Melee, a.Clock), "no hits on the grid before green");
+		Agree(room, "both racing");
 		Green(room, a.Mine.Id);
 		Green(room, c.Mine.Id);
 		Agree(room, "past green");
@@ -1080,7 +1093,6 @@ internal static class Program
 			double teleport = 0.3 + rng.NextDouble() * 2.7;
 			m.StalledUntil = room.Now + teleport;
 			longestGrid = Math.Max(longestGrid, teleport);
-			return teleport + SettleTime;
 		};
 		room.Watch = () =>
 		{
@@ -1167,7 +1179,7 @@ internal static class Program
 		{
 			m.StalledUntil = -1.0;
 		}
-		room.ToGrid = m => SettleTime;
+		room.ToGrid = null;
 		room.Run(1.0);
 		room.Stalls = false;
 		Agree(room, "after the stalls");
