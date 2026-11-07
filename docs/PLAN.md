@@ -1517,7 +1517,32 @@ health down by `MaxHp` every frame and never back up.
 at the race's start; a respawned stand-in is a new car. In `GameMode.Update`, once a second in a room: each alive `EnemyController`
 in `TrackManager.enemies` with no leaderboard entry gets `lapManager.RegisterCar(go)` (public), logged.
 
+### One PR for all of it (the owner's change of plan after PR A)
+
+The owner asked for the work to go up as one big PR instead of a chain of small ones: 0.26.3 (htubdawg/HalfGripOpenWorld#43), the
+plan, 0.26.4 (htubdawg/HalfGripOpenWorld#44) and PR B below are all on `claude/keen-rubin-pmwc0d`, released as 0.27.0. The two
+earlier PRs are superseded by it.
+
 ### PR B: 0.27.0. The events' messages change (`EventRoom.Version` 1 -> 2; everyone in a room needs 0.27.0)
+
+Done on `claude/keen-rubin-pmwc0d`: compiled (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools
+itself was not allowed in that session, so run `tools/check.sh` before merging), `tools/eventsim` passes on 20 seeds, not yet tested
+in game (test 40). Differs from the notes below:
+
+- **The clock's window.** `EventRoom` takes every machine's own clock (`EventLink.Clock`, `Time.realtimeSinceStartupAsDouble`) and
+  keeps the offset to the arbiter's (`Now`). The plan's 10 s window of the arbiter's messages left a machine up to 0.6 s behind in
+  eventsim when both its messages in the window came at the end of long frames; the window is 60 s, each older message marked down
+  1 ms a second of its age (`Drift`; two real-time clocks part by about 0.1 ms a second). Worst in eventsim over 20 seeds: greens
+  160 ms from the arbiter's, gate times 141 ms (messages are delayed 50 to 250 ms there).
+- **The arbiter's clock every 4 s** (`Msg.Clock`, not logged), so offsets stay fresh in a quiet room.
+- **The snapshot's end carries every lobby's id**: a lobby the machine holds that is not in it is taken away (a `Gone` lost while the
+  world was built would otherwise leave it for good). Messages held before the world is built: the newest 64, dropped if held more
+  than 30 s (they were for a world long gone).
+- Create, Join and Start before the arbiter has been heard are turned down on the machine (`Refusal.Linking`, "Linking to the
+  host..."); the panel's buttons read "Linking..." and the strip's Start is greyed until then.
+- A lobby message from anybody to the arbiter is ignored (only the arbiter sends lobbies; an old host's message during a change).
+- Box colour: the start box white (the finish colour) while a lobby waits there. The panel's button is `<` (minimise) and the tab
+  reads the count and `>`. The panel is hidden on the grid and in a race, as the strip is.
 
 **2. One player held on the grid.** The events run on `TrackManager.TimeSinceRaceStart` (`Time.time`, at most a third of a second
 a frame), started on the host's go; every long frame (teleport, tile builds, refit) puts that machine behind the host.

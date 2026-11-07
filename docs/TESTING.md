@@ -271,3 +271,12 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    with full health: the log's `Car spawned: health 100 of 100` (any warning `the stats are not in yet` or `Health was the game's 1%
    fallback ... filled` is worth sending). B wrecks and respawns: on A's leaderboard B is back within a second (`Leaderboard: ... put
    on it` in A's log). Send `LogOutput.log` from both machines.
+40. Events in a room with two or more players (0.27.0; everyone needs 0.27.0). Lobby notices: A creates a lobby at a course; on B's
+   screen a panel at the top left lists it (course, A, 1/12) at once, and that course's start box turns white. B joins it: the line
+   reads 2/12 on both screens. The panel's `<` button, pressed with the hand, slides it into the left edge leaving a tab with the
+   count; A creates or leaves while it is minimised and only the count changes; the tab brings it back. B quits to the menu and
+   loads the Open World again while A's lobby waits: B's panel lists it within a few seconds of the world being built (the log's
+   `Events: every lobby is here`). The grid: B teleports (F7) a few times and opens a garage just before A presses Start; both cars
+   are put on the grid and the lights go green on both screens at the same moment (record both if you can), and both clocks read
+   about the same at each checkpoint. Send `LogOutput.log` from both machines with `VerboseLog` on (each lobby message sent,
+   received or held is logged, with `linked to the arbiter, its clock ... from this machine's`).

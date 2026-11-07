@@ -16,17 +16,46 @@ namespace HalfGripOpenWorld
 	/// each change. Every machine keeps the copy it was sent, and reads its lobbies, its standings and the rules from it. A player who
 	/// joins the room is sent every lobby; one who leaves is taken out of every lobby by the arbiter (a DNF in a race).
 	///
-	/// Times are the race clock (<c>TrackManager.TimeSinceRaceStart</c>, which the Multiplayer mod starts on the host's go for
-	/// everybody), so the start time the arbiter deals is the same moment on every machine, give or take the room's latency. Each
-	/// entrant times their own run from their own green, so that latency never counts against anybody.
+	/// Times are the arbiter's clock: every machine passes in its own clock (real time since its game started, which a long frame never
+	/// holds back), and the room adds the offset to the arbiter's (<see cref="Now"/>). Every message the arbiter sends carries its clock;
+	/// each machine takes the offset from the least delayed message of the last <see cref="SyncWindow"/> seconds (the largest "arbiter's
+	/// clock minus mine" seen, each older one marked down by <see cref="Drift"/> for its age), so the start time the arbiter deals is
+	/// the same moment on every machine, give or take one message's delay. Until 0.26 the events ran on <c>TrackManager.TimeSinceRaceStart</c>, game time, which a long frame (a teleport, tiles
+	/// building, a refit) holds back by up to two thirds of it: one player was held on the grid after everyone else had gone. Each
+	/// entrant times their own run from their own green, so the delay never counts against anybody.
 	///
-	/// Every message starts with <see cref="Version"/>, then its <see cref="Msg"/>. A message of another version, or one that does not
-	/// read, is dropped (everybody in a room has the same mods, the Multiplayer mod checks, so that is only ever a fault).
+	/// A machine asks the arbiter for every lobby (<see cref="Hello"/>) when its world is built and every <see cref="HelloEvery"/>
+	/// seconds until a snapshot's end comes back (<see cref="Msg.SnapshotEnd"/>), which also takes away any lobby it holds that the
+	/// arbiter no longer has, so a lost message never leaves it with the wrong lobbies. Until it has heard the arbiter at all
+	/// (<see cref="Linked"/>) it cannot create, join or start.
+	///
+	/// Every message starts with <see cref="Version"/>, then its <see cref="Msg"/>, then (from the arbiter) its clock. A message of
+	/// another version, or one that does not read, is dropped (everybody in a room has the same mods, the Multiplayer mod checks, so
+	/// that is only ever a fault).
 	/// </summary>
 	internal sealed class EventRoom
 	{
 		/// <summary>The messages' layout. Raise it with any change to what they carry.</summary>
-		internal const byte Version = 1;
+		internal const byte Version = 2;
+
+		/// <summary>
+		/// The clock offset is the best of the arbiter's messages this many seconds back (on this machine's clock). Not just the last
+		/// few: a message read at the end of a long frame (a teleport, tiles building) gives an offset short by that frame, and in
+		/// <c>tools/eventsim</c> a 10 s window (the plan's) sometimes held only such messages and left a machine 0.6 s behind.
+		/// </summary>
+		internal const double SyncWindow = 60.0;
+
+		/// <summary>
+		/// An older message's offset is marked down this much a second of its age, so a clock that runs a little fast or slow against
+		/// the arbiter's is followed (two machines' real-time clocks part by well under this, about 0.1 ms a second).
+		/// </summary>
+		internal const double Drift = 0.001;
+
+		/// <summary>A machine with no snapshot yet asks again this often.</summary>
+		internal const double HelloEvery = 2.0;
+
+		/// <summary>The arbiter sends its clock this often in a room, so every machine's offset stays fresh when nothing happens.</summary>
+		internal const double ClockEvery = 4.0;
 
 		/// <summary>From the Start to green, on the race clock: time for every entrant's car to be put on its slot and settle.</summary>
 		internal const double StartLead = 5.0;
@@ -52,6 +81,10 @@ namespace HalfGripOpenWorld
 			Lobby = 20,
 			Gone = 21,
 			Refused = 22,
+			/// <summary>The end of a snapshot, with every lobby's id: a lobby not in it is gone.</summary>
+			SnapshotEnd = 23,
+			/// <summary>Only the arbiter's clock (every <see cref="ClockEvery"/> seconds).</summary>
+			Clock = 24,
 		}
 
 		internal enum LobbyState : byte
@@ -103,6 +136,8 @@ namespace HalfGripOpenWorld
 			CourseTaken = 5,
 			NotWaiting = 6,
 			NoCourse = 7,
+			/// <summary>On this machine: the arbiter has not been heard yet, so its clock is not known.</summary>
+			Linking = 8,
 		}
 
 		/// <summary>
@@ -221,12 +256,26 @@ namespace HalfGripOpenWorld
 		private readonly SortedDictionary<int, Lobby> lobbies = new SortedDictionary<int, Lobby>();
 		private int nextId;
 
+		/// <summary>The arbiter's clock minus this machine's (0 on the arbiter).</summary>
+		private double offset;
+		private bool linked;
+		private bool snapshot;
+		private double helloAt = double.NegativeInfinity;
+		private double clockAt = double.NegativeInfinity;
+		/// <summary>The offsets the arbiter's messages gave, and when (this machine's clock), for the last <see cref="SyncWindow"/> seconds.</summary>
+		private readonly List<double> sampleAt = new List<double>();
+		private readonly List<double> sampleValue = new List<double>();
+		/// <summary>The arbiter's clock now, for the messages it sends: set where each of its handlers begins.</summary>
+		private double sendNow;
+
 		/// <summary>A lobby was sent (created, changed, or in a snapshot): why, and who it was about (0 for nobody).</summary>
 		internal event Action<Lobby, Why, ulong> Changed;
 		/// <summary>A lobby was taken away (its last entrant left).</summary>
 		internal event Action<int> Removed;
 		/// <summary>This player's request was turned down.</summary>
 		internal event Action<Refusal> Refused;
+		/// <summary>What the room did with the network, for the log (snapshots, Hellos, a lobby taken away by a snapshot).</summary>
+		internal event Action<string> Note;
 
 		internal EventRoom(ILink link, CourseInfo[] courses)
 		{
@@ -278,60 +327,129 @@ namespace HalfGripOpenWorld
 		{
 			lobbies.Clear();
 			nextId = 0;
+			offset = 0.0;
+			linked = false;
+			snapshot = false;
+			helloAt = double.NegativeInfinity;
+			clockAt = double.NegativeInfinity;
+			sampleAt.Clear();
+			sampleValue.Clear();
+		}
+
+		// ---- the clock -----------------------------------------------------------------------------------------------
+
+		/// <summary>The arbiter's clock now, from this machine's: what every lobby's times are on.</summary>
+		internal double Now(double clock)
+		{
+			return link.Arbiter ? clock : clock + offset;
+		}
+
+		/// <summary>The arbiter's clock minus this machine's, as far as is known (0 on the arbiter).</summary>
+		internal double Offset => link.Arbiter ? 0.0 : offset;
+
+		/// <summary>True once the arbiter has been heard (always on the arbiter): its clock is known, so requests can be made.</summary>
+		internal bool Linked => link.Arbiter || linked;
+
+		/// <summary>True once a whole snapshot has come (always on the arbiter): this machine holds every lobby.</summary>
+		internal bool Synced => link.Arbiter || snapshot;
+
+		/// <summary>An arbiter's message sent at <paramref name="stamp"/> on its clock came at <paramref name="clock"/> on this one's.</summary>
+		private void Sample(double stamp, double clock)
+		{
+			double value = stamp - clock;
+			if (double.IsNaN(value) || double.IsInfinity(value))
+			{
+				return;
+			}
+			for (int i = sampleAt.Count - 1; i >= 0; i--)
+			{
+				if (clock - sampleAt[i] > SyncWindow || sampleAt[i] > clock)
+				{
+					sampleAt.RemoveAt(i);
+					sampleValue.RemoveAt(i);
+				}
+			}
+			sampleAt.Add(clock);
+			sampleValue.Add(value);
+			// The least delayed message gives the largest offset: every delay only makes it smaller.
+			double best = double.NegativeInfinity;
+			for (int i = 0; i < sampleValue.Count; i++)
+			{
+				best = Math.Max(best, sampleValue[i] - Drift * (clock - sampleAt[i]));
+			}
+			if (!linked)
+			{
+				Note?.Invoke("linked to the arbiter, its clock " + best.ToString("+0.000;-0.000") + " s from this machine's");
+			}
+			offset = best;
+			linked = true;
 		}
 
 		// ---- requests ------------------------------------------------------------------------------------------------
 
 		/// <summary>Creates a lobby at the course (leaving any other), its Host this player, with the weapons they allow.</summary>
-		internal void Create(int course, bool guns, bool melee, double now)
+		internal void Create(int course, bool guns, bool melee, double clock)
 		{
-			Request(new Writer(Msg.Create).U8(course).U8((guns ? 1 : 0) | (melee ? 2 : 0)).Done(), now);
+			Request(new Writer(Msg.Create).U8(course).U8((guns ? 1 : 0) | (melee ? 2 : 0)).Done(), clock);
 		}
 
 		/// <summary>Joins a lobby (leaving any other).</summary>
-		internal void Join(int lobby, double now)
+		internal void Join(int lobby, double clock)
 		{
-			Request(new Writer(Msg.Join).I32(lobby).Done(), now);
+			Request(new Writer(Msg.Join).I32(lobby).Done(), clock);
 		}
 
 		/// <summary>Leaves this player's lobby: at once while it waits; in its race, a DNF.</summary>
-		internal void Leave(double now)
+		internal void Leave(double clock)
 		{
-			Request(new Writer(Msg.Leave).Done(), now);
+			Request(new Writer(Msg.Leave).Done(), clock);
 		}
 
 		/// <summary>The Host starts the lobby's race, when the course is free.</summary>
-		internal void Start(double now)
+		internal void Start(double clock)
 		{
-			Request(new Writer(Msg.Start).Done(), now);
+			Request(new Writer(Msg.Start).Done(), clock);
 		}
 
 		/// <summary>
 		/// The local player passed gate <paramref name="gate"/> (0 on; the last is the finish) of the race, at <paramref name="time"/>
 		/// on their own clock from green, having missed <paramref name="missed"/> gates so far.
 		/// </summary>
-		internal void Passed(int race, int gate, float time, int missed, double now)
+		internal void Passed(int race, int gate, float time, int missed, double clock)
 		{
-			Request(new Writer(Msg.Gate).I32(race).U16(gate).F32(time).U16(missed).Done(), now);
+			Request(new Writer(Msg.Gate).I32(race).U16(gate).F32(time).U16(missed).Done(), clock);
 		}
 
 		/// <summary>The local player gave the race up (off the course too long, or a teleport): a DNF, still in the lobby.</summary>
-		internal void Retire(int race, double now)
+		internal void Retire(int race, double clock)
 		{
-			Request(new Writer(Msg.Retire).I32(race).Done(), now);
+			Request(new Writer(Msg.Retire).I32(race).Done(), clock);
 		}
 
-		/// <summary>This machine's world is built (or the room changed): the arbiter sends every lobby.</summary>
-		internal void Hello(double now)
+		/// <summary>This machine's world is built (or the room changed): the arbiter sends every lobby. Repeated by <see cref="Tick"/> until it has.</summary>
+		internal void Hello(double clock)
 		{
-			Request(new Writer(Msg.Hello).Done(), now);
+			helloAt = clock;
+			if (!link.Arbiter)
+			{
+				Note?.Invoke("asked the arbiter for every lobby");
+			}
+			Request(new Writer(Msg.Hello).Done(), clock);
 		}
 
-		private void Request(byte[] data, double now)
+		/// <summary>
+		/// To the arbiter (the arbiter's own, at once). A request other than Hello before the arbiter has been heard is turned down here:
+		/// its clock is not known yet, so a start time it dealt could not be kept (and its lobbies are not here to choose from).
+		/// </summary>
+		private void Request(byte[] data, double clock)
 		{
 			if (link.Arbiter)
 			{
-				Handle(link.Local, data, now);
+				Handle(link.Local, data, clock);
+			}
+			else if (!linked && data[1] != (byte)Msg.Hello)
+			{
+				Refused?.Invoke(Refusal.Linking);
 			}
 			else
 			{
@@ -341,8 +459,8 @@ namespace HalfGripOpenWorld
 
 		// ---- the room ------------------------------------------------------------------------------------------------
 
-		/// <summary>A message from another player (or the arbiter).</summary>
-		internal void Receive(ulong from, byte[] data, double now)
+		/// <summary>A message from another player (or the arbiter), come at <paramref name="clock"/> on this machine's clock.</summary>
+		internal void Receive(ulong from, byte[] data, double clock)
 		{
 			if (data == null || data.Length < 2 || data[0] != Version)
 			{
@@ -352,12 +470,18 @@ namespace HalfGripOpenWorld
 			{
 				if (link.Arbiter)
 				{
-					Handle(from, data, now);
+					Handle(from, data, clock);
 				}
+				return;
+			}
+			if (link.Arbiter)
+			{
+				// Lobbies come only from the arbiter: this is one (the room's host changing, an old host's message still on its way).
 				return;
 			}
 			try
 			{
+				// Read whole before anything is taken from it, so a message that does not read changes nothing.
 				Reader r = new Reader(data);
 				switch (r.Type)
 				{
@@ -365,18 +489,48 @@ namespace HalfGripOpenWorld
 						Why why = (Why)r.U8();
 						ulong who = r.U64();
 						Lobby l = ReadLobby(r);
+						Sample(r.Stamp, clock);
 						lobbies[l.Id] = l;
 						Changed?.Invoke(l, why, who);
 						break;
 					case Msg.Gone:
 						int id = r.I32();
+						Sample(r.Stamp, clock);
 						if (lobbies.Remove(id))
 						{
 							Removed?.Invoke(id);
 						}
 						break;
 					case Msg.Refused:
-						Refused?.Invoke((Refusal)r.U8());
+						Refusal refusal = (Refusal)r.U8();
+						Sample(r.Stamp, clock);
+						Refused?.Invoke(refusal);
+						break;
+					case Msg.SnapshotEnd:
+						int n = r.U16();
+						HashSet<int> ids = new HashSet<int>();
+						for (int i = 0; i < n; i++)
+						{
+							ids.Add(r.I32());
+						}
+						Sample(r.Stamp, clock);
+						foreach (int gone in new List<int>(lobbies.Keys))
+						{
+							if (!ids.Contains(gone))
+							{
+								lobbies.Remove(gone);
+								Note?.Invoke("lobby " + gone + " is no longer the arbiter's: taken away");
+								Removed?.Invoke(gone);
+							}
+						}
+						if (!snapshot)
+						{
+							Note?.Invoke("every lobby is here (" + n + ")");
+						}
+						snapshot = true;
+						break;
+					case Msg.Clock:
+						Sample(r.Stamp, clock);
 						break;
 				}
 			}
@@ -387,43 +541,64 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The arbiter: a player joined the room, so they are sent every lobby.</summary>
-		internal void PlayerJoined(ulong id)
+		internal void PlayerJoined(ulong id, double clock)
 		{
 			if (!link.Arbiter || id == link.Local)
 			{
 				return;
 			}
+			sendNow = clock;
 			Snapshot(id);
 		}
 
+		/// <summary>Every lobby to one player, then the snapshot's end with every lobby's id.</summary>
 		private void Snapshot(ulong id)
 		{
+			Writer end = new Writer(Msg.SnapshotEnd, sendNow).U16(lobbies.Count);
 			foreach (Lobby l in lobbies.Values)
 			{
-				link.ToOne(id, LobbyMessage(l, Why.Snapshot, 0UL));
+				link.ToOne(id, LobbyMessage(l, Why.Snapshot, 0UL, sendNow));
+				end.I32(l.Id);
 			}
+			link.ToOne(id, end.Done());
+			Note?.Invoke("sent every lobby (" + lobbies.Count + ") to player " + id);
 		}
 
 		/// <summary>The arbiter: a player left the room, so they leave every lobby (a DNF in a race).</summary>
-		internal void PlayerLeft(ulong id, double now)
+		internal void PlayerLeft(ulong id, double clock)
 		{
 			if (!link.Arbiter)
 			{
 				return;
 			}
+			sendNow = clock;
 			Lobby l = LobbyOf(id);
 			if (l != null)
 			{
-				Leaving(l, id, now);
+				Leaving(l, id, clock);
 			}
 		}
 
-		/// <summary>The arbiter, each frame: the cut-off and the time limit, and the results' end.</summary>
-		internal void Tick(double now)
+		/// <summary>
+		/// Each frame, on this machine's clock. The arbiter: the cut-off and the time limit, the results' end, and its clock to everybody
+		/// now and then. Any other machine: Hello again until a snapshot has come.
+		/// </summary>
+		internal void Tick(double clock)
 		{
 			if (!link.Arbiter)
 			{
+				if (!snapshot && clock - helloAt >= HelloEvery)
+				{
+					Hello(clock);
+				}
 				return;
+			}
+			double now = clock;
+			sendNow = now;
+			if (now - clockAt >= ClockEvery)
+			{
+				clockAt = now;
+				link.ToAll(new Writer(Msg.Clock, now).Done());
 			}
 			foreach (Lobby l in new List<Lobby>(lobbies.Values))
 			{
@@ -442,6 +617,7 @@ namespace HalfGripOpenWorld
 
 		private void Handle(ulong from, byte[] data, double now)
 		{
+			sendNow = now;
 			Reader r;
 			try
 			{
@@ -726,13 +902,13 @@ namespace HalfGripOpenWorld
 		private void Remove(Lobby l)
 		{
 			lobbies.Remove(l.Id);
-			link.ToAll(new Writer(Msg.Gone).I32(l.Id).Done());
+			link.ToAll(new Writer(Msg.Gone, sendNow).I32(l.Id).Done());
 			Removed?.Invoke(l.Id);
 		}
 
 		private void Send(Lobby l, Why why, ulong who)
 		{
-			link.ToAll(LobbyMessage(l, why, who));
+			link.ToAll(LobbyMessage(l, why, who, sendNow));
 			Changed?.Invoke(l, why, who);
 		}
 
@@ -744,7 +920,7 @@ namespace HalfGripOpenWorld
 			}
 			else
 			{
-				link.ToOne(to, new Writer(Msg.Refused).U8((int)why).Done());
+				link.ToOne(to, new Writer(Msg.Refused, sendNow).U8((int)why).Done());
 			}
 		}
 
@@ -820,10 +996,10 @@ namespace HalfGripOpenWorld
 		/// Whether this player may use a weapon of this kind now: anybody outside a lobby may; in a lobby, only while running in its
 		/// race past green and only what its Host allowed (a player waiting in a lobby can hurt nobody, so firing is no use).
 		/// </summary>
-		internal bool MayUse(ulong id, HitKind kind, double now)
+		internal bool MayUse(ulong id, HitKind kind, double clock)
 		{
 			Lobby l = LobbyOf(id);
-			return l == null || (Racing(l, id, now) && Allows(l, kind));
+			return l == null || (Racing(l, id, Now(clock)) && Allows(l, kind));
 		}
 
 		/// <summary>
@@ -831,21 +1007,22 @@ namespace HalfGripOpenWorld
 		/// lobby or its race and anybody outside it never hurt each other, crashes included. Two entrants of the same race hurt each
 		/// other only while both are running in it past green, by what its Host allowed; crashes always count there.
 		/// </summary>
-		internal bool MayHit(ulong attacker, ulong victim, HitKind kind, double now)
+		internal bool MayHit(ulong attacker, ulong victim, HitKind kind, double clock)
 		{
 			Lobby a = LobbyOf(attacker), v = LobbyOf(victim);
 			if (a == null && v == null)
 			{
 				return true;
 			}
+			double now = Now(clock);
 			return a == v && Racing(a, attacker, now) && Racing(a, victim, now) && Allows(a, kind);
 		}
 
 		// ---- the messages --------------------------------------------------------------------------------------------
 
-		internal static byte[] LobbyMessage(Lobby l, Why why, ulong who)
+		internal static byte[] LobbyMessage(Lobby l, Why why, ulong who, double stamp)
 		{
-			Writer w = new Writer(Msg.Lobby).U8((int)why).U64(who);
+			Writer w = new Writer(Msg.Lobby, stamp).U8((int)why).U64(who);
 			w.I32(l.Id).U8(l.Course).U64(l.Host).U8((l.Guns ? 1 : 0) | (l.Melee ? 2 : 0)).U8((int)l.State).I32(l.Race);
 			w.F64(l.StartAt).F64(l.EndsAt).F64(l.CutoffAt).F64(l.ResultsUntil).U8(l.Entrants.Count);
 			foreach (Entrant e in l.Entrants)
@@ -878,7 +1055,52 @@ namespace HalfGripOpenWorld
 		/// <summary>A lobby as its message, for comparing copies (eventsim): two lobbies are the same if their messages are.</summary>
 		internal static string Fingerprint(Lobby l)
 		{
-			return Convert.ToBase64String(LobbyMessage(l, Why.Snapshot, 0UL));
+			return Convert.ToBase64String(LobbyMessage(l, Why.Snapshot, 0UL, 0.0));
+		}
+
+		/// <summary>A message in a few words, for the log: its kind, and the lobby it is about if any.</summary>
+		internal static string Describe(byte[] data)
+		{
+			if (data == null || data.Length < 2)
+			{
+				return "an empty message";
+			}
+			if (data[0] != Version)
+			{
+				return "a message of version " + data[0];
+			}
+			try
+			{
+				Reader r = new Reader(data);
+				switch (r.Type)
+				{
+					case Msg.Lobby:
+						Why why = (Why)r.U8();
+						r.U64();
+						Lobby l = ReadLobby(r);
+						return "lobby " + l.Id + " (" + why + ", " + l.State + ", " + l.Count + " in)";
+					case Msg.Gone:
+						return "lobby " + r.I32() + " gone";
+					case Msg.Refused:
+						return "refused (" + (Refusal)r.U8() + ")";
+					case Msg.SnapshotEnd:
+						return "snapshot end (" + r.U16() + " lobbies)";
+					case Msg.Join:
+						return "join " + r.I32();
+					default:
+						return r.Type.ToString();
+				}
+			}
+			catch (Exception)
+			{
+				return "a message that does not read";
+			}
+		}
+
+		/// <summary>True for the arbiter's clock alone, which is sent too often to log.</summary>
+		internal static bool IsClock(byte[] data)
+		{
+			return data != null && data.Length >= 2 && data[1] == (byte)Msg.Clock;
 		}
 
 		private sealed class Writer
@@ -886,11 +1108,18 @@ namespace HalfGripOpenWorld
 			private readonly MemoryStream stream = new MemoryStream(64);
 			private readonly BinaryWriter w;
 
+			/// <summary>A request to the arbiter.</summary>
 			internal Writer(Msg type)
 			{
 				w = new BinaryWriter(stream);
 				w.Write(Version);
 				w.Write((byte)type);
+			}
+
+			/// <summary>A message from the arbiter, with its clock.</summary>
+			internal Writer(Msg type, double stamp) : this(type)
+			{
+				w.Write(stamp);
 			}
 
 			internal Writer U8(int v) { w.Write((byte)Math.Max(0, Math.Min(255, v))); return this; }
@@ -912,6 +1141,8 @@ namespace HalfGripOpenWorld
 			private readonly BinaryReader r;
 
 			internal readonly Msg Type;
+			/// <summary>The arbiter's clock when it sent the message (from the arbiter only).</summary>
+			internal readonly double Stamp;
 
 			internal Reader(byte[] data)
 			{
@@ -921,6 +1152,10 @@ namespace HalfGripOpenWorld
 					throw new InvalidDataException("another version");
 				}
 				Type = (Msg)r.ReadByte();
+				if ((byte)Type >= (byte)Msg.Lobby)
+				{
+					Stamp = r.ReadDouble();
+				}
 			}
 
 			internal int U8() { return r.ReadByte(); }

@@ -14,7 +14,9 @@ namespace HalfGripOpenWorld
 	/// Leave, pressed with the hand (pointed at and grabbed, as the cockpit's own controls are), so it never takes over from driving.
 	///
 	/// On the Start every entrant's car is put on its own grid slot (dealt in join order) and held there, and the game's start lights
-	/// (moved over the line) count down to the start time the arbiter dealt on the race clock, which is the same moment on every machine.
+	/// (moved over the line) count down to the start time the arbiter dealt on its clock (<see cref="EventRoom.Now"/>: real time, set
+	/// to the arbiter's), which is the same moment on every machine. The car's own clock, its green and laps run on the same clock, so a
+	/// long frame (a teleport, tiles building, a refit) never holds one machine back.
 	/// Then each entrant's clock runs from their own green through the checkpoint gates in order to the finish; each gate passed goes to
 	/// the arbiter, which sends the standings back, so the board shows the place among the entrants. The next two gates stand across
 	/// the road, lit. A missed gate is called out and the clock runs on (that run sets no best time). A wreck puts the car back at the
@@ -73,6 +75,7 @@ namespace HalfGripOpenWorld
 		private Material gateMaterial;
 		private Material finishMaterial;
 		private readonly List<GameObject> boxes = new List<GameObject>();
+		private readonly List<MeshRenderer> boxRenderers = new List<MeshRenderer>();
 		private GameObject[] gates;
 
 		private EventRoom room;
@@ -88,24 +91,24 @@ namespace HalfGripOpenWorld
 		private int race = -1;
 		private int slot;
 		private int countdownShown;
-		private float greenUntil = -1f;
+		private double greenUntil = -1.0;
 		private RaceStarter lights;
 		private float lightsHeight;
-		private float startedAt;
+		private double startedAt;
 		private int next;
 		private int missed;
 		private int lap;
-		private float lapStartedAt;
+		private double lapStartedAt;
 		private float lastLap;
 		private float finishTime;
 		private bool finished;
 		private bool newBest;
 		private float previousBest;
 		private string flash;
-		private float flashAt = -1f;
-		private float lastLapShown = -1f;
-		private float offSince = -1f;
-		private float offCheckAt;
+		private double flashAt = -1.0;
+		private double lastLapShown = -1.0;
+		private double offSince = -1.0;
+		private double offCheckAt;
 		private bool havePrev;
 		private double prevX, prevZ;
 		private int placedFrame = -1;
@@ -141,12 +144,18 @@ namespace HalfGripOpenWorld
 		internal EventRoom Room => room;
 		internal ulong Local => link != null ? link.Local : 0UL;
 
-		/// <summary>The race clock (<c>TrackManager.TimeSinceRaceStart</c>), the same moment on every machine in a room: every lobby's times are on it.</summary>
+		/// <summary>
+		/// The events' clock: the arbiter's (this machine's real time and the offset to it), the same moment on every machine in a room
+		/// to within a message's delay. Every lobby's times are on it, and the car's own timing.
+		/// </summary>
 		internal static double Clock()
 		{
 			EventRace e = Instance;
-			return e != null && e.tm != null ? e.tm.TimeSinceRaceStart : 0.0;
+			return e != null && e.room != null ? e.room.Now(EventLink.Clock()) : EventLink.Clock();
 		}
+
+		/// <summary>True once the room's host has been heard (always alone or as the host): until then Create, Join and Start wait.</summary>
+		internal bool Linked => room != null && room.Linked;
 
 		/// <summary>The last refusal or note, for the panel and the strip while it is fresh; null otherwise.</summary>
 		internal string Note => note != null && Time.unscaledTime < noteUntil ? note : null;
@@ -163,7 +172,9 @@ namespace HalfGripOpenWorld
 				finishMaterial = Garage.RingMaterial(lit, new Color(0.95f, 0.95f, 0.95f), "OpenWorld Event finish");
 				foreach (Courses.Course c in Courses.All)
 				{
-					boxes.Add(Box(c));
+					GameObject box = Box(c);
+					boxes.Add(box);
+					boxRenderers.Add(box.GetComponent<MeshRenderer>());
 				}
 				gates = new[] { GateMarker("Event gate (next)"), GateMarker("Event gate (after)") };
 				// The race's start lights: WorldScene hung them over the road at the spawn, as high over it as Tokyo's (the road there is at 0.5).
@@ -183,8 +194,10 @@ namespace HalfGripOpenWorld
 				room = new EventRoom(link, infos);
 				room.Changed += Changed;
 				room.Refused += Refused;
+				room.Note += n => Mod.Info("Events: " + n);
 				EventLink.Room = room;
-				link.Watch(Clock());
+				EventLink.Replay();
+				link.Watch(EventLink.Clock());
 				Mod.Log.LogInfo("Events: " + string.Join("; ", names.ToArray()));
 			}
 			catch (Exception e)
@@ -323,6 +336,70 @@ namespace HalfGripOpenWorld
 		}
 
 
+		/// <summary>
+		/// Each course with a lobby waiting there has its start box drawn in the finish colour (white), so a player driving past sees
+		/// that others are gathering; orange otherwise.
+		/// </summary>
+		private void BoxColours()
+		{
+			for (int i = 0; i < boxRenderers.Count; i++)
+			{
+				MeshRenderer r = boxRenderers[i];
+				if (r == null)
+				{
+					continue;
+				}
+				Material m = WaitingAt(i) ? finishMaterial : boxMaterial;
+				if (r.sharedMaterial != m)
+				{
+					r.sharedMaterial = m;
+				}
+			}
+		}
+
+		/// <summary>True when a lobby is waiting at the course.</summary>
+		private bool WaitingAt(int course)
+		{
+			foreach (EventRoom.Lobby l in room.Lobbies)
+			{
+				if (l.Course == course && l.State == EventRoom.LobbyState.Waiting)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// The open lobbies panel's lines (<see cref="GarageUi"/>, top left): one per lobby waiting, in the order they opened, with its
+		/// course, Host, and entrants against the course's grid. This player's own is marked. Empty with none.
+		/// </summary>
+		internal List<string> OpenLobbies()
+		{
+			List<string> lines = new List<string>();
+			if (room == null)
+			{
+				return lines;
+			}
+			ulong me = link.Local;
+			foreach (EventRoom.Lobby l in room.Lobbies)
+			{
+				if (l.State != EventRoom.LobbyState.Waiting || l.Course < 0 || l.Course >= Courses.All.Count)
+				{
+					continue;
+				}
+				Courses.Course c = Courses.All[l.Course];
+				string host = EventLink.Name(l.Host);
+				if (host.Length > 14)
+				{
+					host = host.Substring(0, 14);
+				}
+				string line = "<color=#ff8c1a>" + c.Name + "</color>  " + host + "  " + l.Count + "/" + c.MaxEntrants;
+				lines.Add(l.In(me) != null ? line + "  <color=#7cff7c>(yours)</color>" : line);
+			}
+			return lines;
+		}
+
 		// ---- following the lobby -------------------------------------------------------------------------------------
 
 		private void Update()
@@ -336,14 +413,16 @@ namespace HalfGripOpenWorld
 				unmuteFrame = -1;
 				GameInput.Mute(muteKey, false);
 			}
-			double now = Clock();
-			if (link.Watch(now) && state != State.Idle)
+			double clock = EventLink.Clock();
+			if (link.Watch(clock) && state != State.Idle)
 			{
 				// Another room (or none): the lobby this car was in is gone with its arbiter.
 				EndLocal();
 				state = State.Idle;
 			}
-			room.Tick(now);
+			room.Tick(clock);
+			double now = room.Now(clock);
+			BoxColours();
 			CarControllerNew car = tm != null ? tm.playerCarController : null;
 			CarLink carLink = tm != null ? tm.playerCarlink : null;
 			if (car == null || carLink == null || GameManager.raceOver)
@@ -385,9 +464,9 @@ namespace HalfGripOpenWorld
 				{
 					Follow(mine, mine.In(link.Local), carLink, x, z, now);
 				}
-				if (greenUntil >= 0f && Time.time > greenUntil)
+				if (greenUntil >= 0.0 && now > greenUntil)
 				{
-					greenUntil = -1f;
+					greenUntil = -1.0;
 					Lights(false, false, false);
 				}
 			}
@@ -466,7 +545,7 @@ namespace HalfGripOpenWorld
 						}
 						else if (state == State.Running)
 						{
-							Timing(carLink, x, z, now);
+							Timing(x, z, now);
 						}
 					}
 					else if (state != State.Done)
@@ -541,17 +620,17 @@ namespace HalfGripOpenWorld
 			{
 				held = null;
 				Lights(false, false, true);
-				greenUntil = Time.time + GreenSeconds;
+				greenUntil = now + GreenSeconds;
 				Say("GO!", 1f);
 				state = State.Running;
-				// From this car's own green (a late frame's lateness taken off), so the room's latency never counts.
-				startedAt = Time.time + (float)Math.Max(-1.0, toGo);
+				// From green (a late frame's lateness taken off, up to a second): every entrant's clock starts at the same moment.
+				startedAt = now + Math.Max(-1.0, toGo);
 				lapStartedAt = startedAt;
 				lap = 1;
 				missed = 0;
 				next = 0;
-				lastLapShown = -1f;
-				offSince = -1f;
+				lastLapShown = -1.0;
+				offSince = -1.0;
 				havePrev = false;
 			}
 		}
@@ -592,7 +671,7 @@ namespace HalfGripOpenWorld
 		{
 			held = null;
 			Lights(false, false, false);
-			greenUntil = -1f;
+			greenUntil = -1.0;
 			if (state == State.Grid || state == State.Running)
 			{
 				state = State.Done;
@@ -678,9 +757,9 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The clock running: gates crossed in order (each sent to the arbiter), a missed one called out, the race given up off the course.</summary>
-		private void Timing(CarLink carLink, double x, double z, double now)
+		private void Timing(double x, double z, double now)
 		{
-			float clock = Time.time - startedAt;
+			float clock = (float)(now - startedAt);
 			if (havePrev && placedFrame != Time.frameCount && placedFrame != Time.frameCount - 1)
 			{
 				double dx = x - prevX, dz = z - prevZ;
@@ -703,24 +782,24 @@ namespace HalfGripOpenWorld
 				}
 			}
 			// Off the course: checked twice a second (the whole centre line is looked at).
-			if (Time.time >= offCheckAt)
+			if (now >= offCheckAt)
 			{
-				offCheckAt = Time.time + 0.5f;
+				offCheckAt = now + 0.5;
 				if (course.Distance2(x, z) > OffCourse * OffCourse)
 				{
-					if (offSince < 0f)
+					if (offSince < 0.0)
 					{
-						offSince = Time.time;
+						offSince = now;
 						Say("BACK TO THE COURSE", 2f);
 					}
-					else if (Time.time - offSince > OffCourseSeconds)
+					else if (now - offSince > OffCourseSeconds)
 					{
 						GiveUp(now);
 					}
 				}
 				else
 				{
-					offSince = -1f;
+					offSince = -1.0;
 				}
 			}
 		}
@@ -747,7 +826,7 @@ namespace HalfGripOpenWorld
 				Say(n == 1 ? "MISSED A CHECKPOINT" : "MISSED " + n + " CHECKPOINTS", 1.5f);
 			}
 			next = j + 1;
-			room.Passed(race, j, clock, missed, now);
+			room.Passed(race, j, clock, missed, EventLink.Clock());
 			if (next >= course.Gates.Count)
 			{
 				Finish(clock);
@@ -755,15 +834,15 @@ namespace HalfGripOpenWorld
 			}
 			if (g.LapEnd > 0)
 			{
-				lastLap = Time.time - lapStartedAt;
-				lapStartedAt = Time.time;
+				lastLap = (float)(now - lapStartedAt);
+				lapStartedAt = now;
 				lap = g.LapEnd + 1;
-				lastLapShown = Time.time;
+				lastLapShown = now;
 				Say(lap == course.Laps ? "LAST LAP" : "LAP " + lap, 1f);
 			}
 			else
 			{
-				Flash("CP " + next + "  " + Clock(clock));
+				Flash("CP " + next + "  " + Clock(clock), now);
 			}
 		}
 
@@ -844,8 +923,8 @@ namespace HalfGripOpenWorld
 					}
 					else
 					{
-						News(name.ToUpperInvariant() + " OPENED A LOBBY " + at);
-						Mod.Info("Event: " + name + " opened a lobby at the " + c.Name);
+						// On the open lobbies panel (top left), not in the cockpit's text queue, which drops lines when it is busy.
+						Mod.Log.LogInfo("Event: " + name + " opened a lobby at the " + c.Name);
 					}
 					break;
 				case EventRoom.Why.Joined:
@@ -918,6 +997,9 @@ namespace HalfGripOpenWorld
 					break;
 				case EventRoom.Refusal.NoLobby:
 					text = "That lobby is gone";
+					break;
+				case EventRoom.Refusal.Linking:
+					text = "Linking to the host...";
 					break;
 				default:
 					text = "No such course";
@@ -1013,7 +1095,7 @@ namespace HalfGripOpenWorld
 		internal void Join(int lobby)
 		{
 			ClosePanel();
-			room.Join(lobby, Clock());
+			room.Join(lobby, EventLink.Clock());
 		}
 
 		/// <summary>From the panel: creates a lobby at its course with the rules chosen; alone (no room), starts it at once: a solo run.</summary>
@@ -1025,17 +1107,17 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			room.Create(index, NewGuns, NewMelee, Clock());
+			room.Create(index, NewGuns, NewMelee, EventLink.Clock());
 			if (!EventLink.InRoom)
 			{
-				room.Start(Clock());
+				room.Start(EventLink.Clock());
 			}
 		}
 
 		/// <summary>From the strip: the Host starts the lobby's race.</summary>
 		internal void StartRace()
 		{
-			room.Start(Clock());
+			room.Start(EventLink.Clock());
 		}
 
 		/// <summary>From the strip: leaves the lobby (in its race, a DNF).</summary>
@@ -1046,7 +1128,7 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogInfo("Event: left the lobby at the " + Courses.All[mine.Course].Name + (state == State.Running || state == State.Grid ? " (out of the race)" : ""));
 			}
-			room.Leave(Clock());
+			room.Leave(EventLink.Clock());
 			EndLocal();
 		}
 
@@ -1151,10 +1233,10 @@ namespace HalfGripOpenWorld
 			return n + suffix;
 		}
 
-		private void Flash(string text)
+		private void Flash(string text, double now)
 		{
 			flash = text;
-			flashAt = Time.time;
+			flashAt = now;
 		}
 
 		/// <summary>The best time's colour, as the game's own timing panel shows a best lap.</summary>
@@ -1204,14 +1286,14 @@ namespace HalfGripOpenWorld
 					}
 					case State.Running:
 					{
-						float clock = Time.time - startedAt;
-						string third = lastLapShown >= 0f && Time.time - lastLapShown < 4f ? "Lap " + Clock(lastLap)
-							: flash != null && Time.time - flashAt < 3f ? flash
+						float clock = (float)(now - startedAt);
+						string third = lastLapShown >= 0.0 && now - lastLapShown < 4.0 ? "Lap " + Clock(lastLap)
+							: flash != null && now - flashAt < 3.0 ? flash
 							: "CP " + next + "/" + course.Gates.Count + (missed > 0 ? " " + Red + "-" + missed + "</color>" : "");
 						string fourth = mine.CutoffAt >= 0.0 ? Red + "Cut-off " + Left(mine.CutoffAt - now) + "</color>"
 							: alone ? BestLine(course) : "Limit " + Left(mine.EndsAt - now);
 						string head = alone ? course.Name : course.Name + "  P" + EventRoom.Position(mine, link.Local) + "/" + n;
-						text = head + "\n" + (Time.time < greenUntil ? Green + Clock(clock) + "</color>" : Clock(clock)) + "\n" + third + "\n" + fourth;
+						text = head + "\n" + (now < greenUntil ? Green + Clock(clock) + "</color>" : Clock(clock)) + "\n" + third + "\n" + fourth;
 						lapLine = Laps(course, next);
 						break;
 					}
@@ -1293,7 +1375,7 @@ namespace HalfGripOpenWorld
 			}
 			top = "<color=#ff8c1a>" + c.Name.ToUpperInvariant() + "</color>  Host " + EventLink.Name(mine.Host) + "   " + mine.Count + "/" + c.MaxEntrants;
 			bottom = "Guns " + (mine.Guns ? "on" : "off") + "  Melee " + (mine.Melee ? "on" : "off") + "   " + what;
-			canStart = host && mine.State == EventRoom.LobbyState.Waiting && !taken;
+			canStart = host && mine.State == EventRoom.LobbyState.Waiting && !taken && room.Linked;
 			startLabel = taken ? "Race on" : "Start";
 			return true;
 		}

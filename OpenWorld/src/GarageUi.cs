@@ -292,6 +292,7 @@ namespace HalfGripOpenWorld
 					Prompt(w, h);
 					EventPrompt(w, h);
 					Strip(w, h, scale);
+					OpenLobbies(w, h, scale);
 				}
 			}
 			catch (Exception e)
