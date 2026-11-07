@@ -1495,7 +1495,7 @@ all merged. **Not compiled with `tools/check.sh`** (building HalfGripTools was r
 Seven points from a player testing the Open World in a room. Point 3 (the helicopter body keeps items it should not take, from an
 Open World garage) is done on `claude/vigilant-fermat-7n5z01` (0.26.3) and is not repeated here. Causes below were found by reading
 our code, the game's decompile (0.419) and the Multiplayer mod's source (`4l3x4nd3r0/HalfGripMods`, `mods/Multiplayer`, 1.0.0);
-none is confirmed in game yet. Ask the player for `LogOutput.log` from a session where 1, 2 or 4 happened.
+none is confirmed in game yet. Ask the player for `LogOutput.log` from a session where 1, 2, 4 or 6 happened (for 6, from both machines).
 
 ### 1. The mouse cursor gone after a race ends or a room is left (ours)
 
