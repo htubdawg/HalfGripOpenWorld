@@ -167,6 +167,12 @@ namespace HalfGripOpenWorld
 				bool back = GameInput.GetKey(KeyCode.LeftShift) || GameInput.GetKey(KeyCode.RightShift);
 				TeleportNext(back ? -1 : 1);
 			}
+			// An open garage holds god mode itself and leaves it on when it closes if it was on as it opened: then this lets go after.
+			if (teleportGodUntil >= 0f && Time.time >= teleportGodUntil && (Garage.Instance == null || Garage.Instance.OpenAt == null))
+			{
+				teleportGodUntil = -1f;
+				CarLink.godMode = false;
+			}
 			// A car that has gone into a river, a lake or the sea is put back on dry land after a moment (nothing here floats): see Recover.
 			Origin.World(player.transform.position, out double wx, out double wz);
 			if (Rivers.Water(wx, wz, out double level) && player.transform.position.y < level + Network.Lift - 1.0)
@@ -1091,12 +1097,53 @@ namespace HalfGripOpenWorld
 			}
 			destination = ((destination < 0 && step < 0 ? 0 : destination + step) % places.Count + places.Count) % places.Count;
 			Destinations.Place place = places[destination];
-			BuildAround(place.X, place.Z, 1);
-			Place(place.X, place.Z, Quaternion.LookRotation(new Vector3((float)place.Dx, 0f, (float)place.Dz), Vector3.up));
+			double len = Math.Sqrt(place.Dx * place.Dx + place.Dz * place.Dz);
+			double ux = len > 1e-6 ? place.Dx / len : 0.0, uz = len > 1e-6 ? place.Dz / len : 1.0;
+			// Another player may be standing on the place (the spawn, a grid): the first spot along the road, then beside it, with no car.
+			double x = place.X, z = place.Z;
+			string offset = "";
+			for (int i = 0; i < TeleportOffsets.Length; i++)
+			{
+				double along = TeleportOffsets[i].along, across = TeleportOffsets[i].across;
+				double tx = place.X + ux * along - uz * across, tz = place.Z + uz * along + ux * across;
+				WorldGen.ClampInside(ref tx, ref tz, 50.0);
+				if (!GameMode.CarNear(Origin.Local(tx, 0f, tz)))
+				{
+					x = tx;
+					z = tz;
+					offset = i == 0 ? "" : ", another car there so " + along.ToString("0") + " along and " + across.ToString("0") + " across";
+					break;
+				}
+				if (i == TeleportOffsets.Length - 1)
+				{
+					offset = ", cars on every spot tried so on the place itself";
+				}
+			}
+			BuildAround(x, z, 1);
+			Place(x, z, Quaternion.LookRotation(new Vector3((float)ux, 0f, (float)uz), Vector3.up));
+			// A moment of god mode, so landing against a car or a wall does not hurt; released only if this set it (as the garage does).
+			if (!CarLink.godMode)
+			{
+				CarLink.godMode = true;
+				teleportGodUntil = Time.time + TeleportGod;
+			}
+			else if (teleportGodUntil >= 0f)
+			{
+				teleportGodUntil = Time.time + TeleportGod;
+			}
 			destinationName = (destination + 1) + "/" + places.Count + "  " + place.Name;
 			destinationShown = Time.realtimeSinceStartup;
-			Mod.Log.LogInfo("Teleported to " + place.Name + ": world (" + place.X.ToString("0") + ", " + place.Z.ToString("0") + "), ground " + WorldGen.Height(place.X, place.Z).ToString("0") + " m");
+			Mod.Log.LogInfo("Teleported to " + place.Name + ": world (" + x.ToString("0") + ", " + z.ToString("0") + "), ground " + WorldGen.Height(x, z).ToString("0") + " units" + offset);
 		}
+
+		/// <summary>The spots a teleport tries in turn, along the road and across it from the place, in units (a car is about 14 long).</summary>
+		private static readonly (double along, double across)[] TeleportOffsets = { (0, 0), (30, 0), (-30, 0), (60, 0), (-60, 0), (0, 15), (0, -15) };
+
+		/// <summary>Seconds of god mode after a teleport.</summary>
+		private const float TeleportGod = 2f;
+
+		/// <summary>Game time the teleport's god mode ends; below zero when the teleport did not set it.</summary>
+		private float teleportGodUntil = -1f;
 
 		/// <summary>Puts the player car upright on the ground at world (x, z), stopped. Used by the teleport and by a reset.</summary>
 		internal void Place(double x, double z, Quaternion rotation)

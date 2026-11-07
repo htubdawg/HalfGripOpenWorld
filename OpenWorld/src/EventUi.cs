@@ -7,7 +7,8 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// The events' own windows, in the garage's look (its styles and pixel boxes, <see cref="GarageUi"/>): the course's panel, opened
 	/// by stopping in a start box in neutral (its lobbies with Join, and Create with the Guns and Melee rules), and the lobby strip under
-	/// the cockpit's board while in a lobby (the lobby, its state, Start for the Host and Leave).
+	/// the cockpit's board while in a lobby (the lobby, its state, Start for the Host and Leave), and the open lobbies panel at the top
+	/// left (every lobby waiting in the room, minimised to a tab at the screen's edge with the hand).
 	///
 	/// The panel frees the cursor, as the garage's window does. The strip never takes input from driving: its buttons are pressed with
 	/// the hand (pointed at with the mouse, or the pad, and grabbed, as the cockpit's own levers are), read from the game's
@@ -20,8 +21,19 @@ namespace HalfGripOpenWorld
 		private const float StripW = 560f;
 		private const float StripH = 92f;
 
+		private const float LobbiesW = 460f;
+		private const float LobbiesTab = 64f;
+		private const float LobbiesTop = 120f;
+		private const float LobbiesLine = 26f;
+		private const int LobbiesMost = 8;
+
 		private Grabber hand;
 		private int handPressFrame = -1;
+
+		/// <summary>The open lobbies panel minimised, for the rest of the game session (the owner's ask: remembered, not saved).</summary>
+		private static bool lobbiesMinimised;
+		/// <summary>0 out, 1 tucked into the left edge (negative before the first draw).</summary>
+		private float lobbiesTuck = -1f;
 
 		// ---- the panel -------------------------------------------------------------------------------------------
 
@@ -51,6 +63,8 @@ namespace HalfGripOpenWorld
 
 			// The course's lobbies.
 			bool alone = !EventLink.InRoom;
+			// Until the room's host has been heard its clock is not known, so nothing can be created, joined or started yet.
+			bool linked = race.Linked;
 			Shadowed(new Rect(win.x + 24f, win.y + 96f, 400f, 24f), "LOBBIES", heading);
 			Rect list = new Rect(win.x + 20f, win.y + 124f, PanelW - 40f, 260f);
 			Box(list, inset);
@@ -64,7 +78,7 @@ namespace HalfGripOpenWorld
 			}
 			if (here.Count == 0)
 			{
-				string none = alone ? "Outside a Multiplayer room the event is a solo run: press Start below." : "No lobby here yet. Create one below; the others in the room are told.";
+				string none = !linked ? "Linking to the host..." : alone ? "Outside a Multiplayer room the event is a solo run: press Start below." : "No lobby here yet. Create one below; the others in the room are told.";
 				GUI.Label(new Rect(list.x + 16f, list.y + 12f, list.width - 32f, 30f), none, small);
 			}
 			EventRoom.Lobby racing = room.Taking(race.PanelIndex);
@@ -82,7 +96,7 @@ namespace HalfGripOpenWorld
 				GUI.Label(new Rect(row.x + 320f, row.y, 90f, row.height), l.Count + " / " + c.MaxEntrants, small);
 				GUI.Label(new Rect(row.x + 410f, row.y, 200f, row.height), "Guns " + (l.Guns ? "on" : "off") + "  Melee " + (l.Melee ? "on" : "off"), small);
 				GUI.Label(new Rect(row.x + 610f, row.y, 130f, row.height), state, small);
-				bool open = l.State != EventRoom.LobbyState.Racing && l.Count < c.MaxEntrants;
+				bool open = l.State != EventRoom.LobbyState.Racing && l.Count < c.MaxEntrants && linked;
 				string join = l.State == EventRoom.LobbyState.Racing ? "Racing" : open ? "Join" : "Full";
 				if (Button(new Rect(row.xMax - 104f, row.y + 6f, 96f, 36f), join) && open)
 				{
@@ -107,7 +121,8 @@ namespace HalfGripOpenWorld
 			{
 				race.NewMelee = !race.NewMelee;
 			}
-			if (Button(new Rect(win.xMax - 244f, by, 220f, 42f), alone ? "Start" : "Create lobby"))
+			string create = alone ? "Start" : "Create lobby";
+			if (Button(new Rect(win.xMax - 244f, by, 220f, 42f), linked ? create : "<color=#9a9a9a>Linking...</color>") && linked)
 			{
 				race.Create();
 				return;
@@ -151,6 +166,63 @@ namespace HalfGripOpenWorld
 			if (HandButton(leave, "Leave", scale))
 			{
 				race.LeaveLobby();
+			}
+			HandOnTop(r, scale);
+		}
+
+		// ---- the open lobbies panel ------------------------------------------------------------------------------
+
+		/// <summary>
+		/// Every lobby waiting in the room, top left (the board is top right): one line each (course, Host, entrants and grid), there
+		/// while it waits and gone when it starts or closes. Until 0.26 a lobby opening was a line in the cockpit's text queue, which
+		/// drops lines when it is busy, so players missed them. Its button, pressed with the hand, slides it into the left edge, leaving
+		/// a tab with the number of open lobbies; the tab brings it back. Hidden on the grid and in a race, and with no lobby open.
+		/// </summary>
+		private void OpenLobbies(float w, float h, float scale)
+		{
+			EventRace race = EventRace.Instance;
+			if (race == null || EventRace.Racing)
+			{
+				return;
+			}
+			List<string> lines = race.OpenLobbies();
+			if (lines.Count == 0)
+			{
+				return;
+			}
+			float target = lobbiesMinimised ? 1f : 0f;
+			if (lobbiesTuck < 0f)
+			{
+				lobbiesTuck = target;
+			}
+			if (Event.current.type == EventType.Repaint)
+			{
+				lobbiesTuck = Mathf.MoveTowards(lobbiesTuck, target, Time.unscaledDeltaTime / 0.3f);
+			}
+			int shown = Mathf.Min(lines.Count, LobbiesMost);
+			float full = 50f + shown * LobbiesLine + (lines.Count > shown ? 22f : 0f) + 8f, tab = 46f;
+			float height = Mathf.Round(Mathf.Lerp(full, tab, lobbiesTuck));
+			float x = Mathf.Round(Mathf.Lerp(16f, LobbiesTab - LobbiesW, lobbiesTuck));
+			Rect r = new Rect(x, LobbiesTop, LobbiesW, height);
+			Box(r, panel);
+			float textW = LobbiesW - LobbiesTab - 16f;
+			if (lobbiesTuck < 0.99f)
+			{
+				Shadowed(new Rect(r.x + 14f, r.y + 8f, textW, 28f), "OPEN LOBBIES  <size=80%>" + lines.Count + "</size>", heading);
+				for (int i = 0; i < shown && 50f + (i + 1) * LobbiesLine <= height; i++)
+				{
+					GUI.Label(new Rect(r.x + 14f, r.y + 46f + i * LobbiesLine, textW, LobbiesLine), lines[i], small);
+				}
+				if (lines.Count > shown && full - 30f <= height)
+				{
+					GUI.Label(new Rect(r.x + 14f, r.y + 46f + shown * LobbiesLine, textW, 22f), "and " + (lines.Count - shown) + " more", faint);
+				}
+			}
+			Rect button = new Rect(r.xMax - LobbiesTab + 6f, r.y + 6f, LobbiesTab - 12f, 34f);
+			if (HandButton(button, lobbiesMinimised ? lines.Count + " >" : "<", scale))
+			{
+				lobbiesMinimised = !lobbiesMinimised;
+				Mod.Info("Events: the open lobbies panel " + (lobbiesMinimised ? "minimised" : "brought back"));
 			}
 			HandOnTop(r, scale);
 		}

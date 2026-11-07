@@ -34,7 +34,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.26.2**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.27.0**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -55,7 +55,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.26.2` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.27.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -121,8 +121,14 @@ one has a chequered disc on the map.
   on or off, **Melee** on or off (the rules are enforced in a later version). Alone (no Multiplayer room) the button is **Start**:
   a lobby of one is a solo run, and it starts at once.
 - Joining or creating moves the car just clear of the box to a waiting spot (one for every grid slot: 12 at the circuit and the highway, 8 at the rally stage and the hill climb), so the box is
-  free for the next player; if every spot is taken (several lobbies waiting at once) the car stays where it is. The room is told
-  when a lobby opens. While in a lobby a **strip** under the cockpit's board shows the course, the Host, the entrants, the rules and
+  free for the next player; if every spot is taken (several lobbies waiting at once) the car stays where it is.
+- **Open lobbies:** every lobby waiting in the room is listed on a panel at the top left of the screen (course, Host, entrants and
+  grid), there while it waits and gone when its race starts or it closes; a course with a lobby waiting has its start box drawn
+  white instead of orange. The panel's button, pressed with the hand, slides it into the left edge leaving a tab with the number of
+  open lobbies; the tab brings it back (it stays minimised until the game is closed). It is hidden on the grid and in a race.
+  Until a player has heard the room's host (a moment after their world is built) the panel's Join and Create wait ("Linking to
+  the host...").
+- While in a lobby a **strip** under the cockpit's board shows the course, the Host, the entrants, the rules and
   the state, with **Start** (the Host's) and **Leave**: point the hand at a button and grab, as with the cockpit's levers (the hand is drawn
   over the strip). The board
   lists the lobby's entrants.
@@ -130,7 +136,9 @@ one has a chequered disc on the map.
   done. Races on different courses run at the same time, and the rest of the room roams.
 - On the Start every entrant's car is put on its own grid slot (in the order they joined: two abreast on the circuit and the highway,
   single file on the rally stage and the hill climb) and held there while the start lights over the line count down to the same
-  moment for everybody (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green.
+  moment for everybody (red, amber, both, green; 3, 2, 1, GO). Put it in gear and rev while you wait: it goes on the green. The
+  events keep their own clock, real time set to the host's, so a long frame on one machine (a teleport, tiles building, a refit)
+  never holds that player on the grid after the others have gone (0.27.0; everyone in a room needs 0.27.0 or newer for the events).
 - The clock runs from your own green through the checkpoints: an orange gate across the road, lit only while you race (the next one
   and the one after; the finish line's is white). The board shows the time, your place among the entrants, the checkpoints passed and
   the time left (your best, alone); the lap counter beside it the lap (on the circuit) or the checkpoint. A missed gate is called
@@ -163,7 +171,7 @@ the same ground.
 | World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
 | World | `ShiftDistance` | 1000 | Game units (1000 is about 300 m) from the scene's origin before the scene is moved back. |
-| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. |
+| Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. If another car stands on the place, the car lands a little along the road or beside it, and nothing can hurt it for 2 seconds. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws. |
 | Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back), and the Weather fast key (F2) turns a 10x speed for it on and off: the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
@@ -250,7 +258,8 @@ round a point, a list of points, random junctions or dead ends, or every hub, wi
 through and steps marked; it also lists the roads near a point and the places (its modes are at the top of its `Program.cs`).
 `tools/eventsim` drives the events' lobbies in a room (`EventRoom.cs`) on pretend machines over a pretend network with delays:
 joins, leaves, the Host leaving, two creates and two Starts at once, races to the finish, the cut-off, the time limit, a player
-leaving the room mid-race, a late joiner, the weapon rules and twenty players at random, checking every machine agrees with the
-arbiter.
+leaving the room mid-race, a late joiner, the weapon rules, twenty players at random, machines whose clocks are 30 s apart and
+stall now and then through races, and players whose world is built up to 20 s after they join, checking every machine agrees with
+the arbiter and keeps its clock to within a message's delay.
 
 The in-game test checklist is in [docs/TESTING.md](docs/TESTING.md); how the generator and the code work, in [docs/DESIGN.md](docs/DESIGN.md).

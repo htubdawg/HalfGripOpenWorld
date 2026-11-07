@@ -48,6 +48,11 @@ namespace HalfGripOpenWorld
 
 		private bool setGodMode;
 		private float heldHp;
+		/// <summary>
+		/// The health held while open as a share of <c>MaxHp</c> (below zero until <c>MaxHp</c> is a real pool): held as a share, not
+		/// points, so a pool that grows while the garage is open (stats arriving late, an upgrade fitted) is not left with the old points.
+		/// </summary>
+		private float heldShare = -1f;
 		private UnityEngine.Object muteKey;
 		private int unmuteFrame = -1;
 		private float refillAt = -1f;
@@ -237,7 +242,25 @@ namespace HalfGripOpenWorld
 			if (OpenAt != null && link != null)
 			{
 				CarLink.godMode = true;
-				heldHp = Mathf.Min(heldHp, link.MaxHp);
+				float max = link.MaxHp;
+				if (max > 1f)
+				{
+					if (heldShare < 0f)
+					{
+						// The pool just became real: the held points may be the game's 1% fallback from before it was.
+						link.hp = heldHp;
+						if (GameMode.FixFallbackHealth(link, "in the garage"))
+						{
+							heldHp = link.hp;
+						}
+						heldShare = Mathf.Clamp01(heldHp / max);
+					}
+					heldHp = heldShare * max;
+				}
+				else
+				{
+					heldHp = Mathf.Min(heldHp, max);
+				}
 				link.hp = heldHp;
 			}
 		}
@@ -247,7 +270,9 @@ namespace HalfGripOpenWorld
 			CarLink link = Link;
 			OpenAt = site;
 			Armed = false;
+			GameMode.FixFallbackHealth(link, "as the garage opened");
 			heldHp = link.hp;
+			heldShare = link.MaxHp > 1f ? Mathf.Clamp01(link.hp / link.MaxHp) : -1f;
 			setGodMode = !CarLink.godMode;
 			CarLink.godMode = true;
 			unmuteFrame = -1;
@@ -345,6 +370,7 @@ namespace HalfGripOpenWorld
 			}
 			link.hp = link.MaxHp;
 			heldHp = link.hp;
+			heldShare = link.MaxHp > 1f ? 1f : -1f;
 		}
 
 		internal void Refill()

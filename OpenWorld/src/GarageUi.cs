@@ -154,7 +154,24 @@ namespace HalfGripOpenWorld
 			List<UpgradeComponent> wanted = slots.Where(s => s.Item != null).Select(s => s.Item).Concat(extras).ToList();
 			if (garage.Fit(wanted))
 			{
-				Say(item != null ? Name(item) + " fitted" : Name(before) + " taken off");
+				// Read back what the refit really put on: another mod may keep items off (the Helicopter fits alone but for guns and
+				// the GPS, refusing the rest inside the game's refit), and the window must show the car, not what was asked for.
+				ReadCar();
+				List<UpgradeComponent> on = slots.Where(s => s.Item != null).Select(s => s.Item).Concat(extras).ToList();
+				int dropped = wanted.Count(w => !on.Any(o => o.id == w.id));
+				if (item != null && !on.Any(o => o.id == item.id))
+				{
+					Say(Name(item) + " cannot go on with what is fitted");
+					Mod.Log.LogInfo("Garage: " + item.id + " was kept off by the refit");
+				}
+				else if (item != null)
+				{
+					Say(Name(item) + " fitted" + (dropped > 0 ? ", " + dropped + " other item(s) taken off" : ""));
+				}
+				else
+				{
+					Say(Name(before) + " taken off");
+				}
 			}
 			else
 			{
@@ -275,6 +292,7 @@ namespace HalfGripOpenWorld
 					Prompt(w, h);
 					EventPrompt(w, h);
 					Strip(w, h, scale);
+					OpenLobbies(w, h, scale);
 				}
 			}
 			catch (Exception e)
