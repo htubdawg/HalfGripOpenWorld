@@ -1551,15 +1551,33 @@ Fix: in the Open World, once a second, register any living stand-in (`EnemyContr
 (`RegisterCar` by reflection), with its player's name (the Multiplayer mod renames entries itself each frame). Report it to the
 Multiplayer mod's author too, so it is fixed for every map.
 
-### 6. Steam invites only work after a lobby has been opened once (Multiplayer mod)
+### 6. The events' lobby notices reach the other player only after a lobby has been raced and left once (ours; cause not found yet)
 
-Cause: the Multiplayer mod subscribes to Steam's invite callback (`SteamFriends.OnGameLobbyJoinRequested`) in its Steam backend,
-which is made only by `Room.EnsureBackend()`, the first time the player hosts or joins a room. Until then an invite clicked in Steam
-reaches nothing. (A game started from an invite works: `+connect_lobby` is read separately.) Not the Open World's code.
+What the player means: when one player opens an event lobby, the others are told ("NAME OPENED A LOBBY AT THE ...", from
+`EventRace.Changed`) and can join it from the course's panel. That works unreliably until a lobby has been started and backed out of
+once. (An earlier draft of this section read "invite" as a Steam invite and blamed the Multiplayer mod; that was a misreading of the
+report, not a finding.)
 
-Fix: report it to the Multiplayer mod's author (make the backend at load). A stopgap is possible from `MultiplayerLink.Hook`: call
-`Multiplayer.Room.EnsureBackend()` by reflection once the main menu loads, when Steam is ready. To agree with the owner: it reaches
-into another mod's internals.
+How a lobby reaches the others: the creator's request goes to the arbiter (the room's host), which records the lobby and sends it to
+everyone (`EventRoom.Send`, over `ctx.Net`, carried by the Multiplayer mod as `ModData`); each machine's `EventRoom.Receive` stores it
+and `Changed` shows the line. A machine whose world is built asks the arbiter for every lobby (`Hello`, answered with a silent
+`Snapshot`). Read from the code, three ways it can fail, none confirmed:
+
+- **Messages before the world is built are dropped.** `EventLink.Received` passes a message to `Room`, which is null until
+  `EventRace.Setup` runs. The world takes a different time to build on each machine, so a `Hello` that reaches a host still building is
+  lost and never asked again, and a lobby sent to a player still building is never seen by them. Their lobby list stays short until
+  some later message about that lobby arrives, which a race starting and ending sends: it matches "after we launched and backed out".
+- **The line is lost.** `News` goes through the game's `TextController.EnqueueRandomText`, whose queue takes a new line only when it
+  holds one or none (the reason `Say` clears it first); a line behind other call-outs is dropped, and none is shown while on a grid.
+- **A look at the room that changes.** `EventLink.Watch` resets the lobbies whenever the host or local id it reads from HalfGripTools
+  changes; if those flicker as the race goes from loading to racing, a client forgets the lobbies it had.
+
+Plan: first log it (every lobby message sent, received, dropped for want of a `Room`, every `Watch` reset, every `Hello` and
+`Snapshot`) and ask the player for both machines' `LogOutput.log` from a session where it fails. Fixes to make whatever the log says,
+since each is a real gap: `Hello` repeated until the arbiter's snapshot comes back; the arbiter sends a fresh snapshot to a player
+whose `Hello` arrives late; a new lobby's notice shown in our own on-screen strip (and the course's start box marked) rather than only
+through the game's lossy text queue. `tools/eventsim` gets players whose world is built late (messages before it dropped) and checks
+every machine still ends with the arbiter's lobbies.
 
 ### 7. Cars killing each other teleporting to the same key place (ours)
 
@@ -1574,6 +1592,7 @@ respawn's slots are kept clear). Check: two players cycling the teleport togethe
 
 1. 0.26.4 (after 0.26.3 is merged): 1, 7, 4's guard and logging, 5's re-registering. Small, no change to the world or to `EventRoom`.
 2. 0.27.0: 2, the room clock (`EventLink`, `EventRace`, `tools/eventsim`). Every player in a room needs it (a protocol change).
-3. Upstream: 5 and 6 reported to the Multiplayer mod's author; 6's stopgap only if the owner agrees.
+3. 6: the logging goes into 0.26.4; the fixes with the room clock in 0.27.0 (both touch `EventLink` and `eventsim`).
+4. Upstream: 5 reported to the Multiplayer mod's author.
 
 Each runs `tools/check.sh` and `tools/eventsim`; the world is unchanged, so `preview` and `meshcheck` only confirm that.
