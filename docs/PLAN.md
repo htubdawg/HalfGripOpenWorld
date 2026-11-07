@@ -1492,107 +1492,78 @@ all merged. **Not compiled with `tools/check.sh`** (building HalfGripTools was r
 
 ## Next: a player's report from two-player testing (after 0.26.2; to agree with the owner)
 
-Seven points from a player testing the Open World in a room. Point 3 (the helicopter body keeps items it should not take, from an
-Open World garage) is done on `claude/vigilant-fermat-7n5z01` (0.26.3) and is not repeated here. Causes below were found by reading
-our code, the game's decompile (0.419) and the Multiplayer mod's source (`4l3x4nd3r0/HalfGripMods`, `mods/Multiplayer`, 1.0.0);
-none is confirmed in game yet. Ask the player for `LogOutput.log` from a session where 1, 2, 4 or 6 happened (for 6, from both machines).
+Point 3 (helicopter body keeps items) is done on `claude/vigilant-fermat-7n5z01` (0.26.3). Causes were read from our code, the
+game's decompile (0.419) and the Multiplayer mod's source (`4l3x4nd3r0/HalfGripMods`, 1.0.0); none is confirmed in game. Ask the
+player for `LogOutput.log` (both machines) from sessions where 1, 2, 4 or 6 happen.
 
-### 1. The mouse cursor gone after a race ends or a room is left (ours)
+### PR A: 0.26.4 (after 0.26.3 merges). No change to the world or to `EventRoom`'s protocol
 
-Cause: leaving a race, the game frees the cursor (`PauseController.LeaveScene`, `TrackManager.EndRace`: `Confined`, visible). Our
-`Garage.OnDestroy` calls `Close()` and `EventRace.OnDestroy` calls `ClosePanel()`; with the garage's window or a course's panel open
-as the scene goes (the race ended, the room was left, the host ended it), they lock and hide the hardware cursor again
-(`grabber.lockHardwareCursor` is still true on a grabber not yet destroyed). The menu that loads never takes the lock off, so the
-mouse moves an invisible pointer until the game restarts. It depends on whether the grabber is destroyed before or after our
-component, which is why it is frequent but not every time. The same relock can happen mid-race if the window or panel closes on the
-frame the race ends.
+**1. Cursor.** Cause: `Garage.OnDestroy` -> `Close()` and `EventRace.OnDestroy` -> `ClosePanel()` relock and hide the cursor after
+the game freed it for the menu (`PauseController.LeaveScene`, `TrackManager.EndRace`).
+- `Garage.Close(bool relock = true)` and `EventRace.ClosePanel(bool relock = true)`; both `OnDestroy`s pass false.
+- The relock in both goes through one helper, `ShifterHand.RelockCursor(Grabber)`: locks only if the grabber is alive,
+  `lockHardwareCursor`, and `!GameManager.raceOver`.
+- `Garage.Update` and `EventRace.Update`: with the window or panel open and `GameManager.raceOver`, close them with `relock: false`.
+- `Mod` scene-load hook: loading a scene that is not the world with `Cursor.lockState == Locked` sets it `Confined`, visible, and
+  logs that it did (so a cause we missed shows in the log).
+- `docs/TESTING.md`: with the garage open, then with a panel open: end the race (host), leave the room, quit from pause. Cursor
+  shows in the menu each time.
 
-Fix: one helper for giving the cursor back that relocks only while a race is running (`!GameManager.raceOver`, not paused, the
-scene not unloading); `OnDestroy` closes without relocking. As a safety net, on loading a scene that is not a race, a cursor left
-`Locked` and hidden is set `Confined` and visible. Check: open the garage and the panel, then end the race, leave the room and quit
-from the pause menu with each open; the cursor shows in the menu every time (`docs/TESTING.md`).
+**7. Teleport onto another car.** `Streamer.TeleportNext`: before `Place`, test the spot with `GameMode.CarNear`. If taken, try
+points along the road's direction at +30, -30, +60, -60 units (about two car lengths each), taking the first free one; all taken,
+a sideways offset of 15. After any teleport, `CarLink.godMode` is held on for 2 s (released only if the teleport set it, the way
+`Garage.Open` does), so a near miss cannot wreck either car. Log the offset used.
 
-### 2. One player held on the grid for up to 20 seconds after an event's start (ours)
+**4. 1 health.** Cause: `CarLink.Start` sets `hp = 0.01 * maxHp` when `MaxHp <= 0` at spawn; the Multiplayer mod's respawn sets 1
+when `MaxHp < 1`; our `Garage.LateUpdate` clamps `heldHp` down by `MaxHp` every frame and never back up.
+- Harmony postfix on `CarLink.Start` (Patches.cs, world only): log `hp`, `MaxHp`, `maxHp` and the loadout's item names; a warning
+  when `MaxHp <= 1`.
+- `Garage`: hold health as a fraction (`heldFraction = hp / MaxHp` at open; `LateUpdate` sets `hp = heldFraction * MaxHp` while
+  `MaxHp > 1`, else leaves it). Log `hp`/`MaxHp` at close.
+- `GameMode.Update`: for 3 s after a spawn or respawn and in `EventRace.ToGrid`, if `hp <= 0.01 * maxHp + 0.01` and `MaxHp > 1`
+  and no damage was taken (hp unchanged since the spawn), set `hp = MaxHp` and log it.
+- If the logs then show an item driving `MaxHp` to nothing, the garage refuses that loadout (a follow-up).
 
-Cause: an event's times (the lobby's start, the cut-off, the time limit) are on `EventRace.Clock()`, the game's
-`TrackManager.TimeSinceRaceStart`, which is `Time.time - raceStartTime`. Each machine starts it at the host's go, but `Time.time` is
-scaled game time and never advances more than `Time.maximumDeltaTime` (a third of a second) in a frame: every long frame (a
-teleport's `BuildAround`, tiles built on the main thread, a garage refit, a scene hitch) loses the rest. A player who teleported or
-refitted a lot runs behind the arbiter by seconds, and their car is held on the grid until their own clock reaches the start the
-arbiter set (`EventRace.Counting`). A clock that ran ahead would start early, unheld. The other player starts on time.
+**5. Leaderboard after a respawn.** Cause: `LapManager` registers cars only while its leaderboard is empty; the Multiplayer mod's
+`OnRespawned` builds a new stand-in that nothing registers.
+- `GameMode.Update`, once a second in a room: for each alive `EnemyController` in `TrackManager.enemies` (read with `Traverse` as
+  `CarNear` does) with no key in `tm.lapManager.leaderboard`, call `tm.lapManager.RegisterCar(go)` (public) and log the name. The
+  Multiplayer mod renames entries to the player's name each frame (`RaceSync` line 399), so nothing else is needed.
+- Report it upstream with the cause and the two-line fix (register in `OnRespawned`).
 
-Fix: a room clock for the events: real time (`Time.realtimeSinceStartupAsDouble`) since the race began, with the arbiter's offset
-measured over `EventLink` (a ping and the arbiter's reply, the offset taken at the midpoint of the round trip, the lowest round trip
-of the last few kept); alone it is the local real time. `EventRoom` is unchanged except for the clock it is given. `tools/eventsim`
-gets machines whose clocks drift and stall, and checks every player's green is within a round trip of the arbiter's. Later, worth
-putting `Sky` and `Storms` on the same clock so the hour and the rain agree between players (cosmetic; not in this change).
+**6 (diagnosis part).** Logging only, so the logs from the next session say which of the gaps below it is:
+- `EventLink.Received`: log a message dropped because `Room` is null (its type byte and sender).
+- `EventRoom`: `Mod.Info` on each Lobby/Gone sent and received, each Hello and Snapshot; `EventLink.Watch`: log old and new host and
+  local id on each reset.
 
-### 4. Spawned into a race with 1 health (ours to guard; cause to confirm)
+Checks: `tools/check.sh`, `tools/eventsim`; `preview` and `meshcheck` unchanged.
 
-Two places set 1 health: the game's `CarLink.Start` sets `hp = 0.01 * maxHp` (1 of the base 100) when `MaxHp` (the base through the
-loadout's stats) is 0 or less as the car spawns, and the Multiplayer mod's respawn sets 1 when `MaxHp` is under 1 ("items can lower
-the maximum to nothing"). So at that moment the loadout's stats gave no health: an item lowering it, or stats not yet applied when the
-car spawned. Our garage also holds the health while it is open (`Garage.LateUpdate`: `heldHp = Min(heldHp, MaxHp)` every frame), so
-one frame with a tiny `MaxHp` during a refit keeps the health at that for good. Possibly tied to point 3 (items the helicopter
-body should not have).
+### PR B: 0.27.0. The events' protocol (`EventRoom.Version` 1 -> 2; every player needs 0.27.0)
 
-Fix: log `hp`, `MaxHp` and the loadout as the car spawns, at an event's start and as the garage closes; the garage holds health as a
-fraction of `MaxHp` (not clamped down for good by one bad frame); after the car spawns in the Open World, health left at the 1%
-fallback while `MaxHp` is now a real value is set to `MaxHp`. If the log shows an item driving `MaxHp` to nothing, the garage
-refuses that loadout instead.
+**2. Held on the grid.** Cause: the events run on `TrackManager.TimeSinceRaceStart` (`Time.time`, capped at a third of a second a
+frame), so each long frame (teleport, tile builds, refit) puts that machine's clock behind the host's.
+- New room clock in `EventLink`: `Clock() = Time.realtimeSinceStartupAsDouble + offset`. On the arbiter, and alone, offset 0.
+- Sync, in `EventRoom` so eventsim covers it: `Msg.Ping = 8` (to the arbiter: the sender's clock t0) and `Msg.Pong = 23` (back:
+  t0 and the arbiter's clock T). On a Pong: `rtt = now - t0`, candidate `offset = T + rtt / 2 - realtime`; keep the candidate with
+  the lowest rtt of the last 8. Ping each second for the first 10 s after a `Watch` change, then every 5 s.
+- Until the first Pong, Create, Join and Start are held and the panel says "Linking to the host...".
+- `EventRace.Clock()` returns the room clock. The car's own timing (`startedAt`, `lapStartedAt`, `greenUntil`, the off-course
+  timer) moves from `Time.time` to the same real-time clock, so a hitch no longer shortens a lap either. Paused time still counts,
+  as in a room nobody's pause stops the race.
+- `tools/eventsim`: each machine gets a clock offset (up to +-30 s) and random stalls; check each player's green comes within one
+  round trip of the arbiter's, and that times and cut-offs agree.
+- Not in this PR: `Sky` and `Storms` keep `TimeSinceRaceStart` (cosmetic drift only).
 
-### 5. A player who wrecked and respawned gone from the others' leaderboard (Multiplayer mod; we can work round it)
+**6. Lobby notices unreliable until a lobby has been raced once.** Fix all three gaps found in the code, whatever PR A's logs say:
+- Messages before the world is built: `EventLink` keeps messages that arrive while `Room` is null (up to 64) and `EventRace.Setup`
+  replays them once the room exists. A host still building then answers a client's Hello when it is done.
+- Hello never repeated: `Msg.SnapshotEnd = 24` closes every snapshot (even of no lobbies); a machine sends Hello every 2 s until it
+  receives one.
+- `Watch` resetting on a flicker: reset only when the new host id is non-zero and has held for 1 s (or sooner if the PR A logs
+  show the cause).
+- A notice that cannot be lost: a lobby opened by someone else also goes to `Notify` (shown in our strip for 4 s, not through the
+  game's text queue), and that course's start box is drawn in the finish colour while it has a lobby waiting.
+- `tools/eventsim`: players whose world is built 0 to 20 s late (messages before then held as above); check each machine ends with
+  the arbiter's lobbies and saw each Created.
 
-Cause: the game's `LapManager` registers cars on its leaderboard only once, while it is empty at the race's start, and drops
-destroyed ones (`PruneDestroyedCars`). A wrecked stand-in is destroyed; the Multiplayer mod's `RaceSync.OnRespawned` builds a fresh
-one, which nothing registers. It is the same on every map with respawn on, and the Open World forces respawn on.
-
-Fix: in the Open World, once a second, register any living stand-in (`EnemyController`) missing from `LapManager.leaderboard`
-(`RegisterCar` by reflection), with its player's name (the Multiplayer mod renames entries itself each frame). Report it to the
-Multiplayer mod's author too, so it is fixed for every map.
-
-### 6. The events' lobby notices reach the other player only after a lobby has been raced and left once (ours; cause not found yet)
-
-What the player means: when one player opens an event lobby, the others are told ("NAME OPENED A LOBBY AT THE ...", from
-`EventRace.Changed`) and can join it from the course's panel. That works unreliably until a lobby has been started and backed out of
-once. (An earlier draft of this section read "invite" as a Steam invite and blamed the Multiplayer mod; that was a misreading of the
-report, not a finding.)
-
-How a lobby reaches the others: the creator's request goes to the arbiter (the room's host), which records the lobby and sends it to
-everyone (`EventRoom.Send`, over `ctx.Net`, carried by the Multiplayer mod as `ModData`); each machine's `EventRoom.Receive` stores it
-and `Changed` shows the line. A machine whose world is built asks the arbiter for every lobby (`Hello`, answered with a silent
-`Snapshot`). Read from the code, three ways it can fail, none confirmed:
-
-- **Messages before the world is built are dropped.** `EventLink.Received` passes a message to `Room`, which is null until
-  `EventRace.Setup` runs. The world takes a different time to build on each machine, so a `Hello` that reaches a host still building is
-  lost and never asked again, and a lobby sent to a player still building is never seen by them. Their lobby list stays short until
-  some later message about that lobby arrives, which a race starting and ending sends: it matches "after we launched and backed out".
-- **The line is lost.** `News` goes through the game's `TextController.EnqueueRandomText`, whose queue takes a new line only when it
-  holds one or none (the reason `Say` clears it first); a line behind other call-outs is dropped, and none is shown while on a grid.
-- **A look at the room that changes.** `EventLink.Watch` resets the lobbies whenever the host or local id it reads from HalfGripTools
-  changes; if those flicker as the race goes from loading to racing, a client forgets the lobbies it had.
-
-Plan: first log it (every lobby message sent, received, dropped for want of a `Room`, every `Watch` reset, every `Hello` and
-`Snapshot`) and ask the player for both machines' `LogOutput.log` from a session where it fails. Fixes to make whatever the log says,
-since each is a real gap: `Hello` repeated until the arbiter's snapshot comes back; the arbiter sends a fresh snapshot to a player
-whose `Hello` arrives late; a new lobby's notice shown in our own on-screen strip (and the course's start box marked) rather than only
-through the game's lossy text queue. `tools/eventsim` gets players whose world is built late (messages before it dropped) and checks
-every machine still ends with the arbiter's lobbies.
-
-### 7. Cars killing each other teleporting to the same key place (ours)
-
-Cause: `Streamer.TeleportNext` puts the car on the place's spot with no look at who is there; two players cycling through the list
-land in one another.
-
-Fix: the teleport checks the spot with `GameMode.CarNear` and, if taken, steps along the road (the place's direction, then back,
-about two car lengths at a time, a few tries); and for two seconds after a teleport the car takes no collision damage (the way the
-respawn's slots are kept clear). Check: two players cycling the teleport together never wreck.
-
-### Order of work
-
-1. 0.26.4 (after 0.26.3 is merged): 1, 7, 4's guard and logging, 5's re-registering. Small, no change to the world or to `EventRoom`.
-2. 0.27.0: 2, the room clock (`EventLink`, `EventRace`, `tools/eventsim`). Every player in a room needs it (a protocol change).
-3. 6: the logging goes into 0.26.4; the fixes with the room clock in 0.27.0 (both touch `EventLink` and `eventsim`).
-4. Upstream: 5 reported to the Multiplayer mod's author.
-
-Each runs `tools/check.sh` and `tools/eventsim`; the world is unchanged, so `preview` and `meshcheck` only confirm that.
+Checks: `tools/check.sh`, `tools/eventsim` over 20 seeds.
