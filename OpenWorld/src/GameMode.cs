@@ -90,6 +90,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static void ToSpawn(Streamer streamer)
 		{
+			WatchHealth();
 			// In an event: back on the course at its last gate instead.
 			if (EventRace.Respawn(streamer))
 			{
@@ -169,12 +170,110 @@ namespace HalfGripOpenWorld
 			return false;
 		}
 
+		/// <summary>How long after a spawn or respawn the health is watched for the game's 1% fallback (<see cref="WatchHealth"/>).</summary>
+		private const float HealthWatch = 3f;
+
+		/// <summary>Game time until which <see cref="Update"/> watches the health; below zero, not watching.</summary>
+		private static float healthWatchUntil = -1f;
+
+		/// <summary>
+		/// Watches the health for <see cref="HealthWatch"/> seconds: a car that spawns before its stats are in (<see cref="CarLink"/>'s
+		/// <c>Start</c> sees <c>MaxHp</c> at 0) is given 1% of its base health, 1 point, and keeps it when the stats arrive, so it is
+		/// wrecked by the first knock. Called on a spawn (<see cref="SpawnHealth"/>) and on every respawn.
+		/// </summary>
+		internal static void WatchHealth()
+		{
+			healthWatchUntil = Time.time + HealthWatch;
+		}
+
+		/// <summary>
+		/// If the health is still the game's 1% fallback (exactly, so no damage has been taken since) while the stats now give a real
+		/// pool, fills it. Returns true if it did. <paramref name="why"/> is for the log.
+		/// </summary>
+		internal static bool FixFallbackHealth(CarLink link, string why)
+		{
+			if (link == null || link.hp <= 0f)
+			{
+				return false;
+			}
+			float max = link.MaxHp;
+			if (max <= 1f || link.hp >= max || !Mathf.Approximately(link.hp, 0.01f * link.maxHp))
+			{
+				return false;
+			}
+			Mod.Log.LogWarning("Health was the game's 1% fallback (" + link.hp.ToString("0.##") + " of " + max.ToString("0") + ") " + why + ": filled");
+			link.hp = max;
+			return true;
+		}
+
+		/// <summary>Seconds between the looks for other players' cars missing from the leaderboard (<see cref="RegisterRespawned"/>).</summary>
+		private const float LeaderboardEvery = 1f;
+
+		private float leaderboardAt;
+
+		/// <summary>
+		/// The game puts cars on its leaderboard only while the board is empty, at the race's start, and drops a car when it dies. In a
+		/// room a player who respawns comes back as a new stand-in car, so they would be missing from the board for the rest of the race:
+		/// every alive stand-in with no entry is put on it.
+		/// </summary>
+		private void RegisterRespawned()
+		{
+			if (!MultiplayerLink.InRoom || Time.time < leaderboardAt)
+			{
+				return;
+			}
+			leaderboardAt = Time.time + LeaderboardEvery;
+			LapManager lap = tm.lapManager;
+			if (lap == null || lap.leaderboard == null || lap.leaderboard.Count == 0)
+			{
+				// Empty: the game registers everybody itself on its next frame.
+				return;
+			}
+			List<EnemyController> others = Traverse.Create(tm).Field("enemies").GetValue<List<EnemyController>>();
+			if (others == null)
+			{
+				return;
+			}
+			foreach (EnemyController car in others)
+			{
+				if (car == null || !car.alive || !car.gameObject.activeInHierarchy || lap.leaderboard.ContainsKey(car.gameObject))
+				{
+					continue;
+				}
+				try
+				{
+					lap.RegisterCar(car.gameObject);
+					Mod.Log.LogInfo("Leaderboard: " + car.gameObject.name + " (back after a respawn) put on it");
+				}
+				catch (System.Exception e)
+				{
+					Mod.Log.LogWarning("Leaderboard: " + car.gameObject.name + " could not be put on it: " + e.Message);
+				}
+			}
+		}
+
 		private void Update()
 		{
 			CarLink link = tm != null ? tm.playerCarlink : null;
 			if (link == null || GameManager.raceOver)
 			{
 				return;
+			}
+			if (healthWatchUntil >= 0f)
+			{
+				if (Time.time > healthWatchUntil || FixFallbackHealth(link, "after a spawn"))
+				{
+					healthWatchUntil = -1f;
+				}
+			}
+			try
+			{
+				RegisterRespawned();
+			}
+			catch (System.Exception e)
+			{
+				leaderboardAt = Time.time + 10f;
+				Mod.Log.LogWarning("Leaderboard: the look for respawned cars failed: " + e.Message);
 			}
 			if (link.hp <= 0f)
 			{
@@ -225,6 +324,45 @@ namespace HalfGripOpenWorld
 		private static bool Prefix()
 		{
 			return !WorldScene.Loaded || MultiplayerLink.InRoom;
+		}
+	}
+
+	/// <summary>
+	/// Logs the player car's health and loadout as it spawns in the world, and starts <see cref="GameMode.WatchHealth"/>: a player once
+	/// spawned with 1 health (the game's fallback when the stats are not in yet).
+	/// </summary>
+	[HarmonyPatch(typeof(CarLink), "Start")]
+	internal static class SpawnHealth
+	{
+		private static void Postfix(CarLink __instance)
+		{
+			if (!WorldScene.Loaded || __instance == null)
+			{
+				return;
+			}
+			try
+			{
+				string loadout = "";
+				foreach (UpgradeComponent upgrade in PlayerLoadout.Equipped)
+				{
+					loadout += (loadout.Length > 0 ? ", " : "") + (upgrade != null ? upgrade.name : "?");
+				}
+				string line = "Car spawned: health " + __instance.hp.ToString("0.##") + " of " + __instance.MaxHp.ToString("0.##") + " (base " + __instance.maxHp.ToString("0") + "), loadout: "
+					+ (PlayerLoadout.Known ? (loadout.Length > 0 ? loadout : "empty") : "not known");
+				if (__instance.MaxHp <= 1f)
+				{
+					Mod.Log.LogWarning(line + "; the stats are not in yet, the health is watched");
+				}
+				else
+				{
+					Mod.Log.LogInfo(line);
+				}
+				GameMode.WatchHealth();
+			}
+			catch (System.Exception e)
+			{
+				Mod.Log.LogWarning("Car spawned: could not log it: " + e.Message);
+			}
 		}
 	}
 }

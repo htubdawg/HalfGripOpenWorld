@@ -1497,6 +1497,11 @@ Causes are read from the code, not seen in game; ask for `LogOutput.log` from bo
 
 ### PR A: 0.26.4 (after 0.26.3 merges). No change to the world or to the events' messages
 
+Done on `claude/focused-hopper-wp7jnh` (stacked on 0.26.3): `Streamer.TeleportNext` tries the offsets and holds god mode 2 s (let go
+after an open garage closes); `SpawnHealth` (postfix on `CarLink.Start`) logs and starts `GameMode.WatchHealth`, also started by every
+`ToSpawn`; `GameMode.FixFallbackHealth` fills a health exactly at `0.01 * maxHp` while `MaxHp > 1` (the watch, the garage opening, the
+grid); the garage holds a share of `MaxHp`; `GameMode.RegisterRespawned` once a second in a room. Test 39 in `docs/TESTING.md`.
+
 **7. Teleporting onto another car.** `Streamer.TeleportNext`: before `Place`, test the spot with `GameMode.CarNear`; if taken, try
 points along the road at +30, -30, +60, -60 units, then 15 to the side; take the first free one. Hold `CarLink.godMode` for 2 s
 after a teleport (released only if the teleport set it, as `Garage.Open` does). Log the offset used.

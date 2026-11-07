@@ -496,6 +496,7 @@ namespace HalfGripOpenWorld
 				streamer.BuildAround(s.X, s.Z, 1);
 				streamer.Place(s.X, s.Z, Quaternion.LookRotation(new Vector3((float)s.Dx, 0f, (float)s.Dz), Vector3.up));
 			}
+			GameMode.FixFallbackHealth(tm.playerCarlink, "on the grid");
 			placedFrame = Time.frameCount;
 			havePrev = false;
 			heldX = s.X;

@@ -266,3 +266,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    (crossroads in them meet level, no lip or flicker), the ring road bending round, crescents and closes past it, Westhaven's
    seafront along the top of the beach with houses on its landward side only; streets meet the roads they end on square, with
    flared mouths as before, and footpaths and alleys between streets have no step where two meet end to end.
+39. Two players (0.26.4). A waits at the spawn; B teleports (F7) round to `Spawn`: B lands beside or along the road from A, never on
+   top of A (the log says `another car there so 30 along...`), and a knock in the first 2 s does no damage. Both spawn and respawn
+   with full health: the log's `Car spawned: health 100 of 100` (any warning `the stats are not in yet` or `Health was the game's 1%
+   fallback ... filled` is worth sending). B wrecks and respawns: on A's leaderboard B is back within a second (`Leaderboard: ... put
+   on it` in A's log). Send `LogOutput.log` from both machines.
