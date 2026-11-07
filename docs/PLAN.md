@@ -1485,3 +1485,7 @@ picture there still shows the stub lying under the other lanes' paving: worth dr
 
 `claude/adoring-euler-ywmpz8` (0.23.10, no ash; PR #35 closed) is dead: its fix reached `main` in 0.24.0. The older branches are
 all merged. **Not compiled with `tools/check.sh`** (building HalfGripTools was refused in this session too). **Not tested in game.**
+
+## Icon (0.26.2)
+
+`OpenWorld/icon.png` and `"icon"` in `mod.json` (PR #41) give the mod manager a picture. No code change; the world is unchanged.
