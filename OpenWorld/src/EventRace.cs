@@ -17,8 +17,10 @@ namespace HalfGripOpenWorld
 	/// after the teleport (<see cref="Settling"/>: every tile round the slot built, and its frames as short as usual again), it syncs
 	/// its clock with the arbiter's (<see cref="EventRoom.Sync"/>) and is ready; when every entrant is, the arbiter deals green, and the game's start
 	/// lights (moved over the line) count down to it on the arbiter's clock (<see cref="EventRoom.Now"/>: real time, set to the
-	/// arbiter's), which is the same moment on every machine. The car's own clock, its green and laps run on real time, so a long frame
-	/// (tiles building, a refit) never holds one machine back.
+	/// arbiter's), which is the same moment on every machine. From green the car's own clock, its laps and the off-course timer run on its
+	/// own game time (<see cref="Own"/>): a long frame stops the car as it stops the game's time, and a slow motion, which the Multiplayer
+	/// mod (1.1.0 on) shares across the room, slows both alike, so neither counts against the run. Until 0.27.1 they ran on real time,
+	/// and someone else's slow motion lengthened every racer's time.
 	/// Then each entrant's clock runs from their own green through the checkpoint gates in order to the finish; each gate passed goes to
 	/// the arbiter, which sends the standings back, so the board shows the place among the entrants. The next two gates stand across
 	/// the road, lit. A missed gate is called out and the clock runs on (that run sets no best time). A wreck puts the car back at the
@@ -177,6 +179,15 @@ namespace HalfGripOpenWorld
 		{
 			EventRace e = Instance;
 			return e != null && e.room != null ? e.room.Now(EventLink.Clock()) : EventLink.Clock();
+		}
+
+		/// <summary>
+		/// This car's own game time, for its run from green (its clock, laps, the off-course timer and the board's flashes): it stands
+		/// still in a long frame, as the car does, and runs slow in a slow motion, as the car does.
+		/// </summary>
+		private static double Own()
+		{
+			return Time.timeAsDouble;
 		}
 
 		/// <summary>True once the room's host has been heard (always alone or as the host): until then Create, Join and Start wait.</summary>
@@ -494,7 +505,7 @@ namespace HalfGripOpenWorld
 				{
 					Follow(mine, mine.In(link.Local), carLink, x, z, now);
 				}
-				if (greenUntil >= 0.0 && now > greenUntil)
+				if (greenUntil >= 0.0 && Own() > greenUntil)
 				{
 					greenUntil = -1.0;
 					Lights(false, false, false);
@@ -663,11 +674,12 @@ namespace HalfGripOpenWorld
 			{
 				held = null;
 				Lights(false, false, true);
-				greenUntil = now + GreenSeconds;
+				greenUntil = Own() + GreenSeconds;
 				Say("GO!", 1f);
 				state = State.Running;
-				// From green (a late frame's lateness taken off, up to a second): every entrant's clock starts at the same moment.
-				startedAt = now + Math.Max(-1.0, toGo);
+				// From green, on this car's own game time (a late frame's lateness taken off, up to a second): every entrant's clock starts
+				// at the same moment, and a slow motion or a long frame stops the clock as it stops the car.
+				startedAt = Own() + Math.Max(-1.0, toGo);
 				lapStartedAt = startedAt;
 				lap = 1;
 				missed = 0;
@@ -829,7 +841,8 @@ namespace HalfGripOpenWorld
 		/// <summary>The clock running: gates crossed in order (each sent to the arbiter), a missed one called out, the race given up off the course.</summary>
 		private void Timing(double x, double z, double now)
 		{
-			float clock = (float)(now - startedAt);
+			double own = Own();
+			float clock = (float)(own - startedAt);
 			if (havePrev && placedFrame != Time.frameCount && placedFrame != Time.frameCount - 1)
 			{
 				double dx = x - prevX, dz = z - prevZ;
@@ -842,7 +855,7 @@ namespace HalfGripOpenWorld
 				{
 					if (Courses.Crossed(course.Gates[j], prevX, prevZ, x, z))
 					{
-						Passed(j, clock, now);
+						Passed(j, clock, own);
 						break;
 					}
 				}
@@ -852,17 +865,17 @@ namespace HalfGripOpenWorld
 				}
 			}
 			// Off the course: checked twice a second (the whole centre line is looked at).
-			if (now >= offCheckAt)
+			if (own >= offCheckAt)
 			{
-				offCheckAt = now + 0.5;
+				offCheckAt = own + 0.5;
 				if (course.Distance2(x, z) > OffCourse * OffCourse)
 				{
 					if (offSince < 0.0)
 					{
-						offSince = now;
+						offSince = own;
 						Say("BACK TO THE COURSE", 2f);
 					}
-					else if (now - offSince > OffCourseSeconds)
+					else if (own - offSince > OffCourseSeconds)
 					{
 						GiveUp(now);
 					}
@@ -886,7 +899,8 @@ namespace HalfGripOpenWorld
 			LeaveLobby();
 		}
 
-		private void Passed(int j, float clock, double now)
+		/// <summary>Gate <paramref name="j"/> passed, <paramref name="clock"/> from green, at <paramref name="own"/> on this car's own game time.</summary>
+		private void Passed(int j, float clock, double own)
 		{
 			Courses.Gate g = course.Gates[j];
 			if (j > next)
@@ -904,15 +918,15 @@ namespace HalfGripOpenWorld
 			}
 			if (g.LapEnd > 0)
 			{
-				lastLap = (float)(now - lapStartedAt);
-				lapStartedAt = now;
+				lastLap = (float)(own - lapStartedAt);
+				lapStartedAt = own;
 				lap = g.LapEnd + 1;
-				lastLapShown = now;
+				lastLapShown = own;
 				Say(lap == course.Laps ? "LAST LAP" : "LAP " + lap, 1f);
 			}
 			else
 			{
-				Flash("CP " + next + "  " + Clock(clock), now);
+				Flash("CP " + next + "  " + Clock(clock), own);
 			}
 		}
 
@@ -1311,10 +1325,10 @@ namespace HalfGripOpenWorld
 			return n + suffix;
 		}
 
-		private void Flash(string text, double now)
+		private void Flash(string text, double own)
 		{
 			flash = text;
-			flashAt = now;
+			flashAt = own;
 		}
 
 		/// <summary>The best time's colour, as the game's own timing panel shows a best lap.</summary>
@@ -1365,14 +1379,15 @@ namespace HalfGripOpenWorld
 					}
 					case State.Running:
 					{
-						float clock = (float)(now - startedAt);
-						string third = lastLapShown >= 0.0 && now - lastLapShown < 4.0 ? "Lap " + Clock(lastLap)
-							: flash != null && now - flashAt < 3.0 ? flash
+						double own = Own();
+						float clock = (float)(own - startedAt);
+						string third = lastLapShown >= 0.0 && own - lastLapShown < 4.0 ? "Lap " + Clock(lastLap)
+							: flash != null && own - flashAt < 3.0 ? flash
 							: "CP " + next + "/" + course.Gates.Count + (missed > 0 ? " " + Red + "-" + missed + "</color>" : "");
 						string fourth = mine.CutoffAt >= 0.0 ? Red + "Cut-off " + Left(mine.CutoffAt - now) + "</color>"
 							: alone ? BestLine(course) : "Limit " + Left(mine.EndsAt - now);
 						string head = alone ? course.Name : course.Name + "  P" + EventRoom.Position(mine, link.Local) + "/" + n;
-						text = head + "\n" + (now < greenUntil ? Green + Clock(clock) + "</color>" : Clock(clock)) + "\n" + third + "\n" + fourth;
+						text = head + "\n" + (own < greenUntil ? Green + Clock(clock) + "</color>" : Clock(clock)) + "\n" + third + "\n" + fourth;
 						lapLine = Laps(course, next);
 						break;
 					}

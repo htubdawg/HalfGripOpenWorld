@@ -269,8 +269,9 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 39. Two players (0.26.4). A waits at the spawn; B teleports (F7) round to `Spawn`: B lands beside or along the road from A, never on
    top of A (the log says `another car there so 30 along...`), and a knock in the first 2 s does no damage. Both spawn and respawn
    with full health: the log's `Car spawned: health 100 of 100` (any warning `the stats are not in yet` or `Health was the game's 1%
-   fallback ... filled` is worth sending). B wrecks and respawns: on A's leaderboard B is back within a second (`Leaderboard: ... put
-   on it` in A's log). Send `LogOutput.log` from both machines.
+   fallback ... filled` is worth sending). B wrecks and respawns: on A's leaderboard B is back at once, with the laps B had (the
+   Multiplayer mod does this from 1.1.0; from 0.27.1 Open World no longer does it itself, and warns in the log if the Multiplayer mod
+   is older). Send `LogOutput.log` from both machines.
 40. Events in a room with two or more players (0.27.0; everyone needs 0.27.0). Lobby notices: A creates a lobby at a course; on B's
    screen a panel at the top left lists it (course, A, 1/12) at once, and that course's start box turns white. B joins it: the line
    reads 2/12 on both screens. The panel's `<` button, pressed with the hand, slides it into the left edge leaving a tab with the
@@ -283,3 +284,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    green dealt at the ..., 2 of 2 entrant(s) synced on the grid; this machine's clock ... from the host's`, and with `VerboseLog`
    on, B's has `the arbiter has settled on the grid` and `synced with the arbiter: its clock ... give or take ... ms`. Send `LogOutput.log`
    from both machines with `VerboseLog` on.
+41. Slow motion in an event (0.27.1; Multiplayer 1.1.0 or newer, with the Slow-Mo item fitted on C). A and B race a course; C, roaming
+   elsewhere, pulls the slow-motion lever partway through: every car slows to half speed for a few seconds. A's and B's clocks on the
+   board slow with their cars (they do not run on at full speed), so a run with C's slow motion in it gives about the same time as
+   one without, driven the same way. The countdown's green still comes at the same moment on both screens.

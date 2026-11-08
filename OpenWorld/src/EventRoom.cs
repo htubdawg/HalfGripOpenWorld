@@ -28,7 +28,8 @@ namespace HalfGripOpenWorld
 	/// its ping going and the answer coming. Each answer bounds the offset; the bounds of every answer are put together and the middle
 	/// taken, which a long frame on either side only ever widens, never moves. When every entrant is ready (or <see cref="GridMost"/> after the
 	/// Start, so one machine that never answers holds nobody), the arbiter deals green <see cref="CountLead"/> on, and the countdown
-	/// runs to it on every machine. From green each entrant times their own run on their own clock, so nothing drifts in a race.
+	/// runs to it on every machine. From green each entrant times their own run on their own game time, so nothing drifts in a race
+	/// and a slow motion, which slows every car in the room, counts against nobody.
 	/// Until 0.26 the events ran on <c>TrackManager.TimeSinceRaceStart</c>, game time, which a long frame (a teleport, tiles building,
 	/// a refit) holds back by up to two thirds of it: one player was held on the grid after everyone else had gone.
 	///
