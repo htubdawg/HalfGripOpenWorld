@@ -1600,7 +1600,8 @@ once a second, a machine more than 0.5 s off set to it, nearer eased by 50 ms a 
   against every racer. The cut-off and the time limit stay on the room's clock.
 - **`GameMode.RegisterRespawned` removed**: Multiplayer 1.1.0 does it, keeping the laps. `MultiplayerLink` warns when the Multiplayer
   mod is older than 1.1.0 (no `Multiplayer.ClockSync`).
-- Not done: the Inverter (now allowed, rewinding every car in the room) in an event: a car rewound back over a gate it passed. To
-  look at after test 41.
+- The Inverter (now allowed, rewinding every car in the room) needs nothing in an event: gates count only forward and in order from
+  the next one, the replay moves the car a step at a time (never the 150-unit jump that is taken as a teleport), the run's game time
+  goes on through it, and `GameCaches` already moves the rewinder's recorded frames on an origin shift.
 - Checks: `tools/check.sh` (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools was not allowed in this
   session), `tools/eventsim` 20 seeds (machines time their runs on their own game time, which their stalls hold back).
