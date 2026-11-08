@@ -206,52 +206,6 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
-		/// <summary>Seconds between the looks for other players' cars missing from the leaderboard (<see cref="RegisterRespawned"/>).</summary>
-		private const float LeaderboardEvery = 1f;
-
-		private float leaderboardAt;
-
-		/// <summary>
-		/// The game puts cars on its leaderboard only while the board is empty, at the race's start, and drops a car when it dies. In a
-		/// room a player who respawns comes back as a new stand-in car, so they would be missing from the board for the rest of the race:
-		/// every alive stand-in with no entry is put on it.
-		/// </summary>
-		private void RegisterRespawned()
-		{
-			if (!MultiplayerLink.InRoom || Time.time < leaderboardAt)
-			{
-				return;
-			}
-			leaderboardAt = Time.time + LeaderboardEvery;
-			LapManager lap = tm.lapManager;
-			if (lap == null || lap.leaderboard == null || lap.leaderboard.Count == 0)
-			{
-				// Empty: the game registers everybody itself on its next frame.
-				return;
-			}
-			List<EnemyController> others = Traverse.Create(tm).Field("enemies").GetValue<List<EnemyController>>();
-			if (others == null)
-			{
-				return;
-			}
-			foreach (EnemyController car in others)
-			{
-				if (car == null || !car.alive || !car.gameObject.activeInHierarchy || lap.leaderboard.ContainsKey(car.gameObject))
-				{
-					continue;
-				}
-				try
-				{
-					lap.RegisterCar(car.gameObject);
-					Mod.Log.LogInfo("Leaderboard: " + car.gameObject.name + " (back after a respawn) put on it");
-				}
-				catch (System.Exception e)
-				{
-					Mod.Log.LogWarning("Leaderboard: " + car.gameObject.name + " could not be put on it: " + e.Message);
-				}
-			}
-		}
-
 		private void Update()
 		{
 			CarLink link = tm != null ? tm.playerCarlink : null;
@@ -265,15 +219,6 @@ namespace HalfGripOpenWorld
 				{
 					healthWatchUntil = -1f;
 				}
-			}
-			try
-			{
-				RegisterRespawned();
-			}
-			catch (System.Exception e)
-			{
-				leaderboardAt = Time.time + 10f;
-				Mod.Log.LogWarning("Leaderboard: the look for respawned cars failed: " + e.Message);
 			}
 			if (link.hp <= 0f)
 			{

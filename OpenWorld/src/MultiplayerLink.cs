@@ -175,6 +175,11 @@ namespace HalfGripOpenWorld
 				ctx.Harmony.Patch(readVec, postfix: new HarmonyMethod(typeof(MultiplayerLink), nameof(ReadVec)));
 				Origin.Shifted += ShiftRemoteCars;
 				Mod.Log.LogInfo("Multiplayer mod found: positions go over the network in world coordinates.");
+				// 1.1.0 (the first with ClockSync) puts a respawned player back on the scoreboard, which from 0.26.4 to 0.27.0 this mod did.
+				if (AccessTools.TypeByName("Multiplayer.ClockSync") == null)
+				{
+					Mod.Log.LogWarning("This Multiplayer mod is older than 1.1.0: a player who respawns in a race may be missing from the leaderboard. Update the Multiplayer mod.");
+				}
 			}
 			catch (Exception e)
 			{

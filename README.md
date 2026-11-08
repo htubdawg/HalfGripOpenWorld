@@ -34,7 +34,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.27.0**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.27.1**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -55,7 +55,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.27.0` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.27.1` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -63,7 +63,8 @@ If something does not work, `BepInEx\LogOutput.log` in the game folder should ha
 - **Solo:** set `TestMode = true` in `BepInEx\config\halfgrip.openworld.cfg` and start a run. Every race is then in the Open World.
   The Open World is never dealt on a normal run map, because a free-roam race has no finish line and would end the run.
 - **Multiplayer:** with the [Multiplayer mod](https://github.com/4l3x4nd3r0/HalfGripMods), the host picks **OpenWorld** in the room's
-  map list. Everyone needs this mod at the same version. The host ends the race from the pause menu.
+  map list. Everyone needs this mod at the same version. The host ends the race from the pause menu. Use Multiplayer 1.1.0 or
+  newer: it puts a player who respawns back on the leaderboard (older versions leave them off it, and the log warns).
 - You start on the road into Kingsbridge, the main town, just outside it and facing its middle.
 - **Reset** (hold R) puts the car back on its wheels, not back at the spawn: on the nearest road if there is one within about 75 m
   (in the right-hand lane, facing the way you were going); further out, on the nearest clear, flat, dry spot round the car, clear of
@@ -142,6 +143,9 @@ one has a chequered disc on the map.
   wait: it goes on the green. The events keep their own clock, real time, so a long frame on one machine (a teleport, tiles
   building, a refit) never holds that player on the grid after the others have gone. A machine that never answers holds the grid
   15 s at most (0.27.0; everyone in a room needs 0.27.0 or newer for the events).
+- Your clock runs on your own game time from green, so a long frame on your machine stops it as it stops your car, and a slow motion
+  (the Multiplayer mod shares one across the room from 1.1.0) slows it as it slows every car: someone pulling a slow-motion lever
+  elsewhere does not add to anybody's time (0.27.1; until then it did).
 - The clock runs from your own green through the checkpoints: an orange gate across the road, lit only while you race (the next one
   and the one after; the finish line's is white). The board shows the time, your place among the entrants, the checkpoints passed and
   the time left (your best, alone); the lap counter beside it the lap (on the circuit) or the checkpoint. A missed gate is called

@@ -1584,3 +1584,23 @@ game's text queue, which drops lines when busy.
 - `tools/eventsim`: players whose world is built 0 to 20 s late; every machine ends with the arbiter's lobbies.
 
 Checks for both: `tools/check.sh`, `tools/eventsim` (20 seeds); `preview` and `meshcheck` only confirm the world is unchanged.
+
+## 0.27.1: runs timed on game time, after Multiplayer 1.1.0 (the owner's ask after 0.27.0)
+
+Multiplayer 1.1.0 (`HalfGripMods` 58267c1) keeps every machine's `TimeSinceRaceStart` on the host's (`ClockSync`: the host's clock
+once a second, a machine more than 0.5 s off set to it, nearer eased by 50 ms a second), shares slow motion across the room
+(`SharedTime`: a lever pull slows every player to half speed) and the Inverter, and registers respawned players on the scoreboard.
+
+- **Green stays on 0.27.0's own synced clock.** Moving the events onto the race clock was tried (eventsim with a copy of `ClockSync`):
+  greens 80 to 200 ms from the host's with only the teleport's long frames, and up to 1.3 s with a hitch on any machine during the
+  countdown (the race clock is game time; a hitch puts it off until the next correction, and under 0.5 s that takes up to 10 s).
+  0.27.0's sync (real time, bounds from pings) keeps them within 60 ms in the same stalls.
+- **Each run is timed on the car's own game time from green** (`EventRace.Own`, `Time.timeAsDouble`): its clock, laps, the
+  off-course timer and the board's flashes. Real time counted a shared slow motion (and a long frame, when the car stands still)
+  against every racer. The cut-off and the time limit stay on the room's clock.
+- **`GameMode.RegisterRespawned` removed**: Multiplayer 1.1.0 does it, keeping the laps. `MultiplayerLink` warns when the Multiplayer
+  mod is older than 1.1.0 (no `Multiplayer.ClockSync`).
+- Not done: the Inverter (now allowed, rewinding every car in the room) in an event: a car rewound back over a gate it passed. To
+  look at after test 41.
+- Checks: `tools/check.sh` (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools was not allowed in this
+  session), `tools/eventsim` 20 seeds (machines time their runs on their own game time, which their stalls hold back).

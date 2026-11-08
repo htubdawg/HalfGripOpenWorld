@@ -76,6 +76,9 @@ internal static class Program
 	/// </summary>
 	private const double ClockMost = (MaxDelay - 0.05) / 2.0 + 0.045;
 
+	/// <summary>The most the game's time moves in one frame (Unity's <c>Time.maximumDeltaTime</c>): a longer frame holds it back.</summary>
+	private const double MaxFrame = 1.0 / 3.0;
+
 	/// <summary>Steps in a row with no stall after a car is put on the grid before it syncs, as the game's <c>EventRace.QuietFrames</c>.</summary>
 	private const int QuietSteps = 10;
 
@@ -132,6 +135,15 @@ internal static class Program
 			while (Now < until - 1e-9)
 			{
 				Now = Math.Min(until, Now + 0.02);
+				foreach (Machine m in Machines.Values)
+				{
+					if (m.Present && !m.Stalled)
+					{
+						// The game's own time: by the step, or by at most MaxFrame for a long frame ending now (it stands still in one).
+						m.Own += Math.Min(Now - m.LastStep, MaxFrame);
+						m.LastStep = Now;
+					}
+				}
 				foreach (Machine m in Machines.Values.ToList())
 				{
 					if (m.Present && !m.Built && Now >= m.BuildAt && !m.Stalled)
@@ -189,6 +201,7 @@ internal static class Program
 			// Real time since each game started: never negative, and up to 30 s either way of the others'.
 			Machine m = new Machine(this, id, 100.0 + (Rng.NextDouble() * 2.0 - 1.0) * 30.0);
 			m.BuildAt = Now + late;
+			m.LastStep = Now;
 			Machines[id] = m;
 			if (Host == 0UL)
 			{
@@ -233,6 +246,9 @@ internal static class Program
 		public readonly List<(Why why, ulong who)> Heard = new List<(Why, ulong)>();
 		/// <summary>This machine's clock minus true time.</summary>
 		public readonly double Skew;
+		/// <summary>This machine's game time (<c>Time.time</c>): what a car's run is timed on from its green, and its last frame in true time.</summary>
+		public double Own;
+		public double LastStep;
 		/// <summary>True time its long frame ends (it takes nothing and does nothing till then).</summary>
 		public double StalledUntil = -1.0;
 		public bool Built;
@@ -1070,8 +1086,9 @@ internal static class Program
 	/// The two-player report after 0.26.2: one player was held on the grid after the others had gone, because the race clock was game
 	/// time and their long frames held it back. Six machines, clocks up to 30 s apart, each stalling now and then for up to 1.5 s
 	/// (tiles building, a refit) and for up to 3 s when its car is put on the grid (the teleport), race three times. Each syncs its
-	/// clock once on the grid, after the teleport: every machine's green is the arbiter's to within half a round trip, every gate time
-	/// read from a machine's clock is what the arbiter's clock says to within the same, and the lobbies agree.
+	/// clock once on the grid, after the teleport: every machine's green is the arbiter's to within half a round trip. From green each
+	/// times its run on its own game time (as EventRace does since 0.27.1: a long frame stops the car and the game's time alike, and a
+	/// shared slow motion slows both), the arbiter has every finish time as it was sent, and the lobbies agree.
 	/// </summary>
 	private static void Stalls(Room room)
 	{
@@ -1085,7 +1102,9 @@ internal static class Program
 		Machine a = all[0];
 		Dictionary<(ulong, int), double> greens = new Dictionary<(ulong, int), double>();
 		Dictionary<ulong, int> nextGate = new Dictionary<ulong, int>();
-		double worstGreen = 0.0, worstTime = 0.0;
+		Dictionary<ulong, double> ownGreen = new Dictionary<ulong, double>();
+		Dictionary<ulong, float> sent = new Dictionary<ulong, float>();
+		double worstGreen = 0.0;
 		int gates = Courses[0].Gates;
 		double longestGrid = 0.0, startToGreen = 0.0;
 		room.ToGrid = m =>
@@ -1118,10 +1137,7 @@ internal static class Program
 				// The moment this machine's clock says green (whether or not its frame is long then: that is not the clock's doing).
 				greens[(m.Local, l.Race)] = room.Now;
 				nextGate[m.Local] = 0;
-			}
-			if (!greens.TryGetValue((a.Local, truth.Race), out double green))
-			{
-				return;
+				ownGreen[m.Local] = m.Own;
 			}
 			foreach (Machine m in all)
 			{
@@ -1130,14 +1146,14 @@ internal static class Program
 				{
 					continue;
 				}
-				// Everybody drives each gate 10 s apart from the arbiter's green: the time each machine reads is its clock's.
-				if (room.Now >= green + 10.0 * (g + 1))
+				// Everybody drives each gate 10 s of their own game time apart from their green (a long frame stops the car as it stops the
+				// game's time) and times it on that time.
+				double own = m.Own - ownGreen[m.Local];
+				if (own >= 10.0 * (g + 1))
 				{
-					float time = (float)(m.Now - l.StartAt);
-					double truly = room.Now - green;
-					worstTime = Math.Max(worstTime, Math.Abs(time - truly));
-					Check(Math.Abs(time - truly) <= ClockMost, "player " + m.Local + " timed gate " + g + " at " + time.ToString("0.000") + " s, the arbiter's clock says " + truly.ToString("0.000"));
+					float time = (float)own;
 					m.Gate(g, time);
+					sent[m.Local] = time;
 					nextGate[m.Local] = g + 1;
 				}
 			}
@@ -1159,7 +1175,8 @@ internal static class Program
 			double started = room.Now;
 			a.Start();
 			Green(room, a.Mine.Id);
-			room.Run(10.0 * gates + 3.0);
+			// Long enough for the slowest: stalls hold back each machine's game time, and its car with it.
+			room.Run(10.0 * gates + 20.0);
 			Agree(room, "after race " + (r + 1));
 			Lobby l = a.Mine;
 			Check(l.State == LobbyState.Results && l.Entrants.All(e => e.Run == Run.Finished), "race " + (r + 1) + ": everybody finished");
@@ -1172,6 +1189,11 @@ internal static class Program
 				worstGreen = Math.Max(worstGreen, Math.Abs(g - arbiterGreen));
 				Check(Math.Abs(g - arbiterGreen) <= ClockMost, "player " + m.Local + "'s green is " + (g - arbiterGreen).ToString("0.000") + " s from the arbiter's in race " + (r + 1));
 			}
+			foreach (Machine m in all)
+			{
+				Entrant e = l.In(m.Local);
+				Check(e != null && sent.TryGetValue(m.Local, out float t) && e.Time == t, "player " + m.Local + "'s finish time on the arbiter as it was sent in race " + (r + 1));
+			}
 			room.Run(EventRoom.ResultsSeconds + 1.0);
 		}
 		room.Watch = null;
@@ -1183,7 +1205,7 @@ internal static class Program
 		room.Run(1.0);
 		room.Stalls = false;
 		Agree(room, "after the stalls");
-		Console.WriteLine("        greens within " + (worstGreen * 1000.0).ToString("0") + " ms of the arbiter's, gate times within " + (worstTime * 1000.0).ToString("0") + " ms, teleports up to " + longestGrid.ToString("0.0") + " s, green at most " + startToGreen.ToString("0.0") + " s after the Start");
+		Console.WriteLine("        greens within " + (worstGreen * 1000.0).ToString("0") + " ms of the arbiter's, teleports up to " + longestGrid.ToString("0.0") + " s, green at most " + startToGreen.ToString("0.0") + " s after the Start");
 	}
 
 	/// <summary>
