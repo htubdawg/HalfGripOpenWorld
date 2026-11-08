@@ -1489,3 +1489,98 @@ all merged. **Not compiled with `tools/check.sh`** (building HalfGripTools was r
 ## Icon (0.26.2)
 
 `OpenWorld/icon.png` and `"icon"` in `mod.json` (PR #41) give the mod manager a picture. No code change; the world is unchanged.
+
+## Next: a player's report from two-player testing (after 0.26.2; agreed with the owner)
+
+Point 3 (helicopter body keeps items) is done on `claude/vigilant-fermat-7n5z01` (0.26.3). Point 1 (the cursor) is dropped for now.
+Causes are read from the code, not seen in game; ask for `LogOutput.log` from both machines if 2, 4 or 6 come back.
+
+### PR A: 0.26.4 (after 0.26.3 merges). No change to the world or to the events' messages
+
+Done on `claude/focused-hopper-wp7jnh` (stacked on 0.26.3): `Streamer.TeleportNext` tries the offsets and holds god mode 2 s (let go
+after an open garage closes); `SpawnHealth` (postfix on `CarLink.Start`) logs and starts `GameMode.WatchHealth`, also started by every
+`ToSpawn`; `GameMode.FixFallbackHealth` fills a health exactly at `0.01 * maxHp` while `MaxHp > 1` (the watch, the garage opening, the
+grid); the garage holds a share of `MaxHp`; `GameMode.RegisterRespawned` once a second in a room. Test 39 in `docs/TESTING.md`.
+
+**7. Teleporting onto another car.** `Streamer.TeleportNext`: before `Place`, test the spot with `GameMode.CarNear`; if taken, try
+points along the road at +30, -30, +60, -60 units, then 15 to the side; take the first free one. Hold `CarLink.godMode` for 2 s
+after a teleport (released only if the teleport set it, as `Garage.Open` does). Log the offset used.
+
+**4. Spawning with 1 health.** The game sets `hp = 0.01 * maxHp` (1) when `MaxHp <= 0` as the car spawns; our garage clamps the held
+health down by `MaxHp` every frame and never back up.
+- Postfix on `CarLink.Start` (world only): log `hp`, `MaxHp` and the loadout; warn when `MaxHp <= 1`.
+- `Garage` holds health as a fraction of `MaxHp` while open (set only while `MaxHp > 1`).
+- For 3 s after a spawn or respawn, and in `EventRace.ToGrid`: health still at the 1% fallback with `MaxHp > 1` and no damage taken
+  is set to `MaxHp`, and logged.
+
+**5. A respawned player missing from the leaderboard.** The game registers cars on `LapManager.leaderboard` only while it is empty,
+at the race's start; a respawned stand-in is a new car. In `GameMode.Update`, once a second in a room: each alive `EnemyController`
+in `TrackManager.enemies` with no leaderboard entry gets `lapManager.RegisterCar(go)` (public), logged.
+
+### One PR for all of it (the owner's change of plan after PR A)
+
+The owner asked for the work to go up as one big PR instead of a chain of small ones: 0.26.3 (htubdawg/HalfGripOpenWorld#43), the
+plan, 0.26.4 (htubdawg/HalfGripOpenWorld#44) and PR B below, with the clock synced once on the grid, are all on
+`claude/keen-noether-7bzq41` in one PR (htubdawg/HalfGripOpenWorld#46), released as 0.27.0. #43, #44 and #45 are closed in favour
+of it.
+
+### PR B: 0.27.0. The events' messages change (`EventRoom.Version` 1 -> 2; everyone in a room needs 0.27.0)
+
+First done on `claude/keen-rubin-pmwc0d` (#45): compiled (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools
+itself was not allowed in that session, so run `tools/check.sh` before merging), `tools/eventsim` passes on 20 seeds, not yet tested
+in game (test 40). Differs from the notes below:
+
+- **The clock, synced once a race on the grid** (the owner's change after the first version of this PR, `EventRoom.Version` 3).
+  The first version stamped the arbiter's clock on every message it sent, sent it every 4 s besides, and kept the best offset of
+  the last 60 s. The offset only matters for green, so now it is taken where it is needed:
+  - The Start puts every entrant on the grid with no green (`StartAt` not dealt).
+  - Each machine waits until it has settled after the teleport, not for a fixed time (`EventRace.Settling`): every tile in reach
+    built with nothing in flight (`Streamer.Settled`) and 10 frames in a row short against its own usual frame time (1.5 times it
+    plus 5 ms; the usual followed off the grid, so a slow machine is not held for frames it never has), 8 s at most. If the
+    arbiter races too it was teleported at the same moment, so the machine then waits for the arbiter's Ready (it is ready as soon
+    as it settles), 6 s at most, and only then pings it every 0.2 s (`EventRoom.Sync`). The arbiter is often in its own teleport's long frames then, so a single answer's time
+    is no good; each `Pong` says when the arbiter could have got the ping (from its tick before last to when it read it), the
+    asker knows it was between sending and the answer, and the bounds of all the answers together hold the offset: a long frame
+    on either side only widens them. It stops at 5 answers once the offset is known to 100 ms either way, or at 5 s, then sends
+    `Ready`. In eventsim the first version (a fixed 5 pings, the shortest round trip's middle) left clocks 1.4 s off when every
+    ping fell in the host's teleport.
+  - The arbiter deals green 4 s after the last entrant is ready (`Why.Counting`), or 15 s after the Start whoever is ready.
+    Gates before green are ignored, and the time limit counts from green.
+  - From green each entrant times on their own clock, so nothing drifts in a race; no clock messages at all outside a grid.
+  - Worst in eventsim over 20 seeds, with stalls of up to 1.5 s and teleports of up to 3 s: greens 80 ms from the arbiter's, gate
+    times 70 ms; green at most 14.3 s after the Start there (about 5.5 s with no stalls).
+  - `MayHit` and `MayUse` read green on the clock this machine synced on its last grid (they are not called in the game yet).
+- **The snapshot's end carries every lobby's id**: a lobby the machine holds that is not in it is taken away (a `Gone` lost while the
+  world was built would otherwise leave it for good). Messages held before the world is built: the newest 64, dropped if held more
+  than 30 s (they were for a world long gone).
+- Create, Join and Start before the arbiter has been heard are turned down on the machine (`Refusal.Linking`, "Linking to the
+  host..."); the panel's buttons read "Linking..." and the strip's Start is greyed until then.
+- A lobby message from anybody to the arbiter is ignored (only the arbiter sends lobbies; an old host's message during a change).
+- Box colour: the start box white (the finish colour) while a lobby waits there. The panel's button is `<` (minimise) and the tab
+  reads the count and `>`. The panel is hidden on the grid and in a race, as the strip is.
+
+**2. One player held on the grid.** The events run on `TrackManager.TimeSinceRaceStart` (`Time.time`, at most a third of a second
+a frame), started on the host's go; every long frame (teleport, tile builds, refit) puts that machine behind the host.
+- The events' clock becomes real time (`Time.realtimeSinceStartupAsDouble`) plus an offset to the arbiter's clock.
+- The arbiter puts its clock in every message it sends (lobbies, snapshot, refusals). Each machine takes `offset = arbiter's clock
+  - its own` on receipt, keeping the largest seen in the last 10 s (the least delayed message). The arbiter's offset is 0.
+- Until the first arbiter message, Create, Join and Start wait ("Linking to the host..." on the panel).
+- The car's own timing (`startedAt`, `lapStartedAt`, `greenUntil`, the off-course timer) moves off `Time.time` onto the same clock.
+- `tools/eventsim`: machines with clocks off by up to +-30 s that stall at random; check every green is within one delay of the
+  arbiter's, and times and cut-offs agree.
+
+**6. Lobby notices unreliable.** Messages that arrive before a machine's world is built are dropped (`Room` null); a `Hello` lost
+that way is never repeated; `EventLink.Watch` resets the lobbies on any change of host or local id; the notice goes through the
+game's text queue, which drops lines when busy.
+- `EventLink` keeps messages that arrive while `Room` is null (up to 64); `EventRace.Setup` replays them.
+- A snapshot ends with `Msg.SnapshotEnd`; a machine sends `Hello` every 2 s until it has one.
+- `Watch` resets only when a new non-zero host has held for 1 s.
+- Log each lobby message sent, received or held, each Hello, snapshot and reset.
+- **Open lobbies panel**, top left of the screen (the board is top right): one line per waiting lobby (course, host, players and
+  slots), added when it opens, removed when it starts or closes. A minimise button, pressed with the hand like the strip's, slides it
+  into the screen's edge leaving a tab with the number of open lobbies; the tab, pressed, brings it back. A new lobby while
+  minimised updates the count only. Minimised is remembered for the session. Each course with a waiting lobby has its start box
+  drawn in the finish colour. Replaces the "OPENED A LOBBY" line in the text queue.
+- `tools/eventsim`: players whose world is built 0 to 20 s late; every machine ends with the arbiter's lobbies.
+
+Checks for both: `tools/check.sh`, `tools/eventsim` (20 seeds); `preview` and `meshcheck` only confirm the world is unchanged.

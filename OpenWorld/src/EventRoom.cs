@@ -16,20 +16,72 @@ namespace HalfGripOpenWorld
 	/// each change. Every machine keeps the copy it was sent, and reads its lobbies, its standings and the rules from it. A player who
 	/// joins the room is sent every lobby; one who leaves is taken out of every lobby by the arbiter (a DNF in a race).
 	///
-	/// Times are the race clock (<c>TrackManager.TimeSinceRaceStart</c>, which the Multiplayer mod starts on the host's go for
-	/// everybody), so the start time the arbiter deals is the same moment on every machine, give or take the room's latency. Each
-	/// entrant times their own run from their own green, so that latency never counts against anybody.
+	/// Times are the arbiter's clock: every machine passes in its own clock (real time since its game started, which a long frame never
+	/// holds back), and the room adds the offset to the arbiter's (<see cref="Now"/>). The offset matters for one thing only, that green
+	/// is the same moment on every machine, so it is taken once a race, where it is needed: the Start puts every entrant on the grid
+	/// with no green yet; once a car is on its slot and its machine has settled (the game says when: its tiles built, its frames short
+	/// again), it waits for the arbiter to have settled too if the arbiter races (its Ready, up to <see cref="ArbiterWaitMost"/>), then
+	/// asks the arbiter for its clock (<see cref="Sync"/>, a ping every <see cref="PingEvery"/>) until it knows it to
+	/// <see cref="SyncGood"/> (or <see cref="SyncMost"/> has gone) and tells the arbiter it is ready. The arbiter may still be in its
+	/// own long frames, and a ping read at the end of one waited there an unknown time; so each answer says when
+	/// the arbiter could have got the ping, from its frame before last to now, and the asker knows it was sent and answered between
+	/// its ping going and the answer coming. Each answer bounds the offset; the bounds of every answer are put together and the middle
+	/// taken, which a long frame on either side only ever widens, never moves. When every entrant is ready (or <see cref="GridMost"/> after the
+	/// Start, so one machine that never answers holds nobody), the arbiter deals green <see cref="CountLead"/> on, and the countdown
+	/// runs to it on every machine. From green each entrant times their own run on their own clock, so nothing drifts in a race.
+	/// Until 0.26 the events ran on <c>TrackManager.TimeSinceRaceStart</c>, game time, which a long frame (a teleport, tiles building,
+	/// a refit) holds back by up to two thirds of it: one player was held on the grid after everyone else had gone.
 	///
-	/// Every message starts with <see cref="Version"/>, then its <see cref="Msg"/>. A message of another version, or one that does not
-	/// read, is dropped (everybody in a room has the same mods, the Multiplayer mod checks, so that is only ever a fault).
+	/// A machine asks the arbiter for every lobby (<see cref="Hello"/>) when its world is built and every <see cref="HelloEvery"/>
+	/// seconds until a snapshot's end comes back (<see cref="Msg.SnapshotEnd"/>), which also takes away any lobby it holds that the
+	/// arbiter no longer has, so a lost message never leaves it with the wrong lobbies. Until it has heard the arbiter at all
+	/// (<see cref="Linked"/>) it cannot create, join or start.
+	///
+	/// Every message starts with <see cref="Version"/>, then its <see cref="Msg"/>. A message of
+	/// another version, or one that does not read, is dropped (everybody in a room has the same mods, the Multiplayer mod checks, so
+	/// that is only ever a fault).
 	/// </summary>
 	internal sealed class EventRoom
 	{
 		/// <summary>The messages' layout. Raise it with any change to what they carry.</summary>
-		internal const byte Version = 1;
+		internal const byte Version = 3;
 
-		/// <summary>From the Start to green, on the race clock: time for every entrant's car to be put on its slot and settle.</summary>
-		internal const double StartLead = 5.0;
+		/// <summary>
+		/// A sync takes at least this many answers. Several, because each answer's bounds are as wide as its round trip (and any long
+		/// frame in it): the one with the quickest way there and the one with the quickest way back set the bounds between them.
+		/// </summary>
+		internal const int SyncPings = 5;
+
+		/// <summary>
+		/// A sync goes on until the offset is known to this either way: the arbiter is often in its own teleport's long frames when the
+		/// others ping it, and every answer read at the end of one is as wide as the frame, so it pings on until its frames are short.
+		/// </summary>
+		internal const double SyncGood = 0.1;
+
+		/// <summary>Seconds between a sync's pings, so one long frame (on either machine) does not catch them all.</summary>
+		internal const double PingEvery = 0.2;
+
+		/// <summary>A sync goes on this long at most, then takes the middle of what it has (or the offset it had, with no answer).</summary>
+		internal const double SyncMost = 5.0;
+
+		/// <summary>
+		/// When the arbiter races too it was put on the grid at the same moment, and pinged in its teleport's long frames every answer
+		/// is as wide as the frame: so a sync waits for the arbiter to be ready (it is once it has settled) before it pings, this long
+		/// at most.
+		/// </summary>
+		internal const double ArbiterWaitMost = 6.0;
+
+		/// <summary>
+		/// From the Start, the arbiter waits this long at most for every entrant to be on the grid and synced, then deals green anyway:
+		/// a machine whose message was lost, or that is still building its tiles, holds nobody for longer.
+		/// </summary>
+		internal const double GridMost = 15.0;
+
+		/// <summary>From every entrant ready to green: the countdown's three lights, and time for the lobby to reach every machine.</summary>
+		internal const double CountLead = 4.0;
+
+		/// <summary>A machine with no snapshot yet asks again this often.</summary>
+		internal const double HelloEvery = 2.0;
 
 		/// <summary>After the first entrant finishes, the others have this long; those still running then are out (DNF).</summary>
 		internal const double Cutoff = 45.0;
@@ -48,17 +100,25 @@ namespace HalfGripOpenWorld
 			Retire = 6,
 			/// <summary>This player's world is built: send them every lobby (one that loads after the host's missed them).</summary>
 			Hello = 7,
+			/// <summary>On the grid: the arbiter's clock, please (this machine's clock when it asked goes with it, and comes back).</summary>
+			Ping = 8,
+			/// <summary>On the grid and synced: green may be dealt.</summary>
+			Ready = 9,
 			// From the arbiter.
 			Lobby = 20,
 			Gone = 21,
 			Refused = 22,
+			/// <summary>The end of a snapshot, with every lobby's id: a lobby not in it is gone.</summary>
+			SnapshotEnd = 23,
+			/// <summary>The answer to a <see cref="Ping"/>: the asker's clock it carried, and when on the arbiter's it could have come (from, to).</summary>
+			Pong = 24,
 		}
 
 		internal enum LobbyState : byte
 		{
 			/// <summary>Entrants gather; the Host may start when the course is free.</summary>
 			Waiting = 0,
-			/// <summary>The race: the grid and the countdown until <see cref="Lobby.StartAt"/>, then racing.</summary>
+			/// <summary>The race: the grid (until every entrant is ready and green is dealt), the countdown until <see cref="Lobby.StartAt"/>, then racing.</summary>
 			Racing = 1,
 			/// <summary>The race is over and its results stand until <see cref="Lobby.ResultsUntil"/>; the course is still taken.</summary>
 			Results = 2,
@@ -90,6 +150,10 @@ namespace HalfGripOpenWorld
 			Ended = 8,
 			/// <summary>The results are done: the course is free and the lobby waits again.</summary>
 			Freed = 9,
+			/// <summary>An entrant is on the grid and synced.</summary>
+			Ready = 10,
+			/// <summary>Green is dealt: every entrant is ready (or <see cref="GridMost"/> ran out), the countdown runs.</summary>
+			Counting = 11,
 		}
 
 		internal enum Refusal : byte
@@ -103,6 +167,8 @@ namespace HalfGripOpenWorld
 			CourseTaken = 5,
 			NotWaiting = 6,
 			NoCourse = 7,
+			/// <summary>On this machine: the arbiter has not been heard yet, so its lobbies are not here to choose from.</summary>
+			Linking = 8,
 		}
 
 		/// <summary>
@@ -152,7 +218,12 @@ namespace HalfGripOpenWorld
 			public int Missed;
 			/// <summary>Left the lobby while its race or results were on: kept for the results, then taken out.</summary>
 			public bool Out;
+			/// <summary>On the grid and synced in this race (<see cref="Msg.Ready"/>).</summary>
+			public bool Ready;
 		}
+
+		/// <summary>A lobby's green and time limit before they are dealt.</summary>
+		internal const double NotDealt = double.NegativeInfinity;
 
 		internal sealed class Lobby
 		{
@@ -165,13 +236,17 @@ namespace HalfGripOpenWorld
 			public LobbyState State;
 			/// <summary>Counts the lobby's races, so a gate passed in an earlier one is never counted in the next.</summary>
 			public int Race;
-			/// <summary>Green, on the race clock.</summary>
-			public double StartAt;
-			/// <summary>The time limit, on the race clock.</summary>
-			public double EndsAt;
+			/// <summary>Green, on the race clock; <see cref="NotDealt"/> on the grid until every entrant is ready (<see cref="Why.Counting"/>).</summary>
+			public double StartAt = NotDealt;
+			/// <summary>The time limit, on the race clock; <see cref="NotDealt"/> until green is dealt.</summary>
+			public double EndsAt = NotDealt;
+			/// <summary>True once green is dealt (<see cref="StartAt"/> and <see cref="EndsAt"/> are times).</summary>
+			public bool Dealt => StartAt > NotDealt;
 			/// <summary>The cut-off after the first finisher, on the race clock (negative before anybody has finished).</summary>
 			public double CutoffAt = -1.0;
 			public double ResultsUntil;
+			/// <summary>The arbiter's alone (not sent): green is dealt by then whoever is ready.</summary>
+			public double GridUntil;
 			/// <summary>In join order.</summary>
 			public readonly List<Entrant> Entrants = new List<Entrant>();
 
@@ -210,6 +285,8 @@ namespace HalfGripOpenWorld
 			ulong Local { get; }
 			/// <summary>True on the machine that holds the lobbies: the room's host, or this machine alone outside a room.</summary>
 			bool Arbiter { get; }
+			/// <summary>The arbiter's player id (this player's alone).</summary>
+			ulong ArbiterId { get; }
 			void ToArbiter(byte[] data);
 			/// <summary>To every other player (the arbiter has already applied it to its own copy).</summary>
 			void ToAll(byte[] data);
@@ -221,12 +298,36 @@ namespace HalfGripOpenWorld
 		private readonly SortedDictionary<int, Lobby> lobbies = new SortedDictionary<int, Lobby>();
 		private int nextId;
 
+		/// <summary>The arbiter's clock minus this machine's (0 on the arbiter), from the last sync.</summary>
+		private double offset;
+		private bool linked;
+		private bool snapshot;
+		private double helloAt = double.NegativeInfinity;
+
+		// A sync on the grid (this machine, not the arbiter): the race it is for, its pings, and the bounds on the offset so far.
+		private bool syncing;
+		private int syncRace;
+		private double syncFrom;
+		/// <summary>When the pings began (after waiting for the arbiter); negative before.</summary>
+		private double pingFrom;
+		private double pingAt;
+		private int pings;
+		private int pongs;
+		private double low;
+		private double high;
+
+		/// <summary>The arbiter's clock at its last two ticks: a message it reads now came after the one before last (see <see cref="Pong"/>).</summary>
+		private double tickAt = double.NegativeInfinity;
+		private double tickBefore = double.NegativeInfinity;
+
 		/// <summary>A lobby was sent (created, changed, or in a snapshot): why, and who it was about (0 for nobody).</summary>
 		internal event Action<Lobby, Why, ulong> Changed;
 		/// <summary>A lobby was taken away (its last entrant left).</summary>
 		internal event Action<int> Removed;
 		/// <summary>This player's request was turned down.</summary>
 		internal event Action<Refusal> Refused;
+		/// <summary>What the room did with the network, for the log (snapshots, Hellos, a lobby taken away by a snapshot).</summary>
+		internal event Action<string> Note;
 
 		internal EventRoom(ILink link, CourseInfo[] courses)
 		{
@@ -278,60 +379,188 @@ namespace HalfGripOpenWorld
 		{
 			lobbies.Clear();
 			nextId = 0;
+			offset = 0.0;
+			linked = false;
+			snapshot = false;
+			helloAt = double.NegativeInfinity;
+			syncing = false;
+		}
+
+		// ---- the clock -----------------------------------------------------------------------------------------------
+
+		/// <summary>The arbiter's clock now, from this machine's: what every lobby's times are on.</summary>
+		internal double Now(double clock)
+		{
+			return link.Arbiter ? clock : clock + offset;
+		}
+
+		/// <summary>The arbiter's clock minus this machine's, as the last sync found it (0 on the arbiter, and before any sync).</summary>
+		internal double Offset => link.Arbiter ? 0.0 : offset;
+
+		/// <summary>True once the arbiter has been heard (always on the arbiter): its lobbies are here, so requests can be made.</summary>
+		internal bool Linked => link.Arbiter || linked;
+
+		/// <summary>True while this machine is syncing its clock on the grid.</summary>
+		internal bool Syncing => syncing;
+
+		/// <summary>True once a whole snapshot has come (always on the arbiter): this machine holds every lobby.</summary>
+		internal bool Synced => link.Arbiter || snapshot;
+
+		/// <summary>
+		/// This car is on its grid slot and the teleport's long frames are over: its machine takes the arbiter's clock now (pings, the
+		/// shortest round trip's offset), then tells the arbiter it is ready (<see cref="Tick"/> does both). On the arbiter (and alone)
+		/// there is nothing to take: ready at once. Called by the game once a race, after the car is put on the grid.
+		/// </summary>
+		internal void Sync(double clock)
+		{
+			Lobby l = Mine;
+			if (l == null || l.State != LobbyState.Racing)
+			{
+				return;
+			}
+			if (link.Arbiter)
+			{
+				Request(new Writer(Msg.Ready).I32(l.Race).Done(), clock);
+				return;
+			}
+			syncing = true;
+			syncRace = l.Race;
+			syncFrom = clock;
+			pingFrom = -1.0;
+			pingAt = double.NegativeInfinity;
+			pings = 0;
+			pongs = 0;
+			low = double.NegativeInfinity;
+			high = double.PositiveInfinity;
+			Note?.Invoke("syncing the clock with the arbiter on the grid");
+		}
+
+		/// <summary>
+		/// Each frame while syncing: the next ping when due; once enough answers bound the offset to <see cref="SyncGood"/> (or
+		/// <see cref="SyncMost"/> has run out), the offset and Ready.
+		/// </summary>
+		private void Syncs(double clock)
+		{
+			if (pingFrom < 0.0)
+			{
+				// The arbiter in this race and not settled yet: its answers would be as wide as its teleport's frames.
+				Lobby l = Mine;
+				Entrant arbiter = l != null && l.Race == syncRace ? l.In(link.ArbiterId) : null;
+				bool waiting = arbiter != null && arbiter.Run == Run.Running && !arbiter.Ready && !l.Dealt;
+				if (waiting && clock - syncFrom < ArbiterWaitMost)
+				{
+					return;
+				}
+				pingFrom = clock;
+				Note?.Invoke(waiting ? "the arbiter has not settled on the grid in " + ArbiterWaitMost + " s: pinging it anyway"
+					: arbiter != null ? "the arbiter has settled on the grid (" + (clock - syncFrom).ToString("0.00") + " s): pinging it" : "pinging the arbiter");
+			}
+			bool good = pongs >= SyncPings && high - low <= 2.0 * SyncGood;
+			if (!good && clock - pingFrom < SyncMost)
+			{
+				if (clock - pingAt >= PingEvery)
+				{
+					pingAt = clock;
+					pings++;
+					link.ToArbiter(new Writer(Msg.Ping).F64(clock).Done());
+				}
+				return;
+			}
+			syncing = false;
+			if (pongs > 0 && low <= high)
+			{
+				offset = (low + high) * 0.5;
+				Note?.Invoke("synced with the arbiter: its clock " + offset.ToString("+0.000;-0.000") + " s from this machine's, give or take " + ((high - low) * 500.0).ToString("0") + " ms (" + pongs + " answers to " + pings + " pings, " + (clock - pingFrom).ToString("0.00") + " s)");
+			}
+			else
+			{
+				Note?.Invoke("no answer from the arbiter to the sync: its clock taken as " + offset.ToString("+0.000;-0.000") + " s from this machine's");
+			}
+			link.ToArbiter(new Writer(Msg.Ready).I32(syncRace).Done());
+		}
+
+		/// <summary>
+		/// The arbiter answered a ping sent at <paramref name="sent"/> (this machine's clock), here at <paramref name="clock"/>: it got
+		/// the ping somewhere from <paramref name="from"/> to <paramref name="to"/> on its clock (its frame before last to when it read
+		/// it). That moment on this machine's clock was after the ping went and before the answer came, so the arbiter's clock minus this
+		/// one's is at least <c>from - clock</c> and at most <c>to - sent</c>. The bounds of every answer together hold the offset.
+		/// </summary>
+		private void Pong(double sent, double from, double to, double clock)
+		{
+			if (!syncing || sent < syncFrom || clock < sent || double.IsNaN(sent) || double.IsNaN(from) || double.IsNaN(to) || double.IsInfinity(from) || double.IsInfinity(to) || from > to)
+			{
+				return;
+			}
+			pongs++;
+			low = Math.Max(low, from - clock);
+			high = Math.Min(high, to - sent);
 		}
 
 		// ---- requests ------------------------------------------------------------------------------------------------
 
 		/// <summary>Creates a lobby at the course (leaving any other), its Host this player, with the weapons they allow.</summary>
-		internal void Create(int course, bool guns, bool melee, double now)
+		internal void Create(int course, bool guns, bool melee, double clock)
 		{
-			Request(new Writer(Msg.Create).U8(course).U8((guns ? 1 : 0) | (melee ? 2 : 0)).Done(), now);
+			Request(new Writer(Msg.Create).U8(course).U8((guns ? 1 : 0) | (melee ? 2 : 0)).Done(), clock);
 		}
 
 		/// <summary>Joins a lobby (leaving any other).</summary>
-		internal void Join(int lobby, double now)
+		internal void Join(int lobby, double clock)
 		{
-			Request(new Writer(Msg.Join).I32(lobby).Done(), now);
+			Request(new Writer(Msg.Join).I32(lobby).Done(), clock);
 		}
 
 		/// <summary>Leaves this player's lobby: at once while it waits; in its race, a DNF.</summary>
-		internal void Leave(double now)
+		internal void Leave(double clock)
 		{
-			Request(new Writer(Msg.Leave).Done(), now);
+			Request(new Writer(Msg.Leave).Done(), clock);
 		}
 
 		/// <summary>The Host starts the lobby's race, when the course is free.</summary>
-		internal void Start(double now)
+		internal void Start(double clock)
 		{
-			Request(new Writer(Msg.Start).Done(), now);
+			Request(new Writer(Msg.Start).Done(), clock);
 		}
 
 		/// <summary>
 		/// The local player passed gate <paramref name="gate"/> (0 on; the last is the finish) of the race, at <paramref name="time"/>
 		/// on their own clock from green, having missed <paramref name="missed"/> gates so far.
 		/// </summary>
-		internal void Passed(int race, int gate, float time, int missed, double now)
+		internal void Passed(int race, int gate, float time, int missed, double clock)
 		{
-			Request(new Writer(Msg.Gate).I32(race).U16(gate).F32(time).U16(missed).Done(), now);
+			Request(new Writer(Msg.Gate).I32(race).U16(gate).F32(time).U16(missed).Done(), clock);
 		}
 
 		/// <summary>The local player gave the race up (off the course too long, or a teleport): a DNF, still in the lobby.</summary>
-		internal void Retire(int race, double now)
+		internal void Retire(int race, double clock)
 		{
-			Request(new Writer(Msg.Retire).I32(race).Done(), now);
+			Request(new Writer(Msg.Retire).I32(race).Done(), clock);
 		}
 
-		/// <summary>This machine's world is built (or the room changed): the arbiter sends every lobby.</summary>
-		internal void Hello(double now)
+		/// <summary>This machine's world is built (or the room changed): the arbiter sends every lobby. Repeated by <see cref="Tick"/> until it has.</summary>
+		internal void Hello(double clock)
 		{
-			Request(new Writer(Msg.Hello).Done(), now);
+			helloAt = clock;
+			if (!link.Arbiter)
+			{
+				Note?.Invoke("asked the arbiter for every lobby");
+			}
+			Request(new Writer(Msg.Hello).Done(), clock);
 		}
 
-		private void Request(byte[] data, double now)
+		/// <summary>
+		/// To the arbiter (the arbiter's own, at once). A request other than Hello before the arbiter has been heard is turned down here:
+		/// its lobbies are not here to choose from, and a link that has never answered would only lose it.
+		/// </summary>
+		private void Request(byte[] data, double clock)
 		{
 			if (link.Arbiter)
 			{
-				Handle(link.Local, data, now);
+				Handle(link.Local, data, clock);
+			}
+			else if (!linked && data[1] != (byte)Msg.Hello)
+			{
+				Refused?.Invoke(Refusal.Linking);
 			}
 			else
 			{
@@ -341,8 +570,8 @@ namespace HalfGripOpenWorld
 
 		// ---- the room ------------------------------------------------------------------------------------------------
 
-		/// <summary>A message from another player (or the arbiter).</summary>
-		internal void Receive(ulong from, byte[] data, double now)
+		/// <summary>A message from another player (or the arbiter), come at <paramref name="clock"/> on this machine's clock.</summary>
+		internal void Receive(ulong from, byte[] data, double clock)
 		{
 			if (data == null || data.Length < 2 || data[0] != Version)
 			{
@@ -352,12 +581,18 @@ namespace HalfGripOpenWorld
 			{
 				if (link.Arbiter)
 				{
-					Handle(from, data, now);
+					Handle(from, data, clock);
 				}
+				return;
+			}
+			if (link.Arbiter)
+			{
+				// Lobbies come only from the arbiter: this is one (the room's host changing, an old host's message still on its way).
 				return;
 			}
 			try
 			{
+				// Read whole before anything is taken from it, so a message that does not read changes nothing.
 				Reader r = new Reader(data);
 				switch (r.Type)
 				{
@@ -365,18 +600,54 @@ namespace HalfGripOpenWorld
 						Why why = (Why)r.U8();
 						ulong who = r.U64();
 						Lobby l = ReadLobby(r);
+						linked = true;
 						lobbies[l.Id] = l;
 						Changed?.Invoke(l, why, who);
 						break;
 					case Msg.Gone:
 						int id = r.I32();
+						linked = true;
 						if (lobbies.Remove(id))
 						{
 							Removed?.Invoke(id);
 						}
 						break;
 					case Msg.Refused:
-						Refused?.Invoke((Refusal)r.U8());
+						Refusal refusal = (Refusal)r.U8();
+						linked = true;
+						Refused?.Invoke(refusal);
+						break;
+					case Msg.SnapshotEnd:
+						int n = r.U16();
+						HashSet<int> ids = new HashSet<int>();
+						for (int i = 0; i < n; i++)
+						{
+							ids.Add(r.I32());
+						}
+						if (!linked)
+						{
+							Note?.Invoke("linked to the arbiter");
+						}
+						linked = true;
+						foreach (int gone in new List<int>(lobbies.Keys))
+						{
+							if (!ids.Contains(gone))
+							{
+								lobbies.Remove(gone);
+								Note?.Invoke("lobby " + gone + " is no longer the arbiter's: taken away");
+								Removed?.Invoke(gone);
+							}
+						}
+						if (!snapshot)
+						{
+							Note?.Invoke("every lobby is here (" + n + ")");
+						}
+						snapshot = true;
+						break;
+					case Msg.Pong:
+						double sent = r.F64(), gotFrom = r.F64(), gotBy = r.F64();
+						linked = true;
+						Pong(sent, gotFrom, gotBy, clock);
 						break;
 				}
 			}
@@ -387,7 +658,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The arbiter: a player joined the room, so they are sent every lobby.</summary>
-		internal void PlayerJoined(ulong id)
+		internal void PlayerJoined(ulong id, double clock)
 		{
 			if (!link.Arbiter || id == link.Local)
 			{
@@ -396,16 +667,21 @@ namespace HalfGripOpenWorld
 			Snapshot(id);
 		}
 
+		/// <summary>Every lobby to one player, then the snapshot's end with every lobby's id.</summary>
 		private void Snapshot(ulong id)
 		{
+			Writer end = new Writer(Msg.SnapshotEnd).U16(lobbies.Count);
 			foreach (Lobby l in lobbies.Values)
 			{
 				link.ToOne(id, LobbyMessage(l, Why.Snapshot, 0UL));
+				end.I32(l.Id);
 			}
+			link.ToOne(id, end.Done());
+			Note?.Invoke("sent every lobby (" + lobbies.Count + ") to player " + id);
 		}
 
 		/// <summary>The arbiter: a player left the room, so they leave every lobby (a DNF in a race).</summary>
-		internal void PlayerLeft(ulong id, double now)
+		internal void PlayerLeft(ulong id, double clock)
 		{
 			if (!link.Arbiter)
 			{
@@ -414,21 +690,36 @@ namespace HalfGripOpenWorld
 			Lobby l = LobbyOf(id);
 			if (l != null)
 			{
-				Leaving(l, id, now);
+				Leaving(l, id, clock);
 			}
 		}
 
-		/// <summary>The arbiter, each frame: the cut-off and the time limit, and the results' end.</summary>
-		internal void Tick(double now)
+		/// <summary>
+		/// Each frame, on this machine's clock. The arbiter: green once the grid is ready, the cut-off and the time limit, the results'
+		/// end. Any other machine: Hello again until a snapshot has come, and a sync on the grid.
+		/// </summary>
+		internal void Tick(double clock)
 		{
 			if (!link.Arbiter)
 			{
+				if (!snapshot && clock - helloAt >= HelloEvery)
+				{
+					Hello(clock);
+				}
+				if (syncing)
+				{
+					Syncs(clock);
+				}
 				return;
 			}
+			double now = clock;
+			tickBefore = tickAt;
+			tickAt = now;
 			foreach (Lobby l in new List<Lobby>(lobbies.Values))
 			{
 				if (l.State == LobbyState.Racing)
 				{
+					Deal(l, now);
 					Ending(l, now);
 				}
 				else if (l.State == LobbyState.Results && now >= l.ResultsUntil)
@@ -482,6 +773,18 @@ namespace HalfGripOpenWorld
 						{
 							Snapshot(from);
 						}
+						break;
+					case Msg.Ping:
+						// Answered at once with when the ping could have come: after the tick before last (a message read now came after the
+						// last frame's read, which was after that tick, however long the frames were) and by now. Not before two ticks:
+						// there is no bound yet, and the asker pings again.
+						if (from != link.Local && tickBefore > double.NegativeInfinity && tickBefore <= now)
+						{
+							link.ToOne(from, new Writer(Msg.Pong).F64(r.F64()).F64(tickBefore).F64(now).Done());
+						}
+						break;
+					case Msg.Ready:
+						Ready(from, r.I32(), now);
 						break;
 				}
 			}
@@ -590,6 +893,7 @@ namespace HalfGripOpenWorld
 			Send(l, Why.Left, id);
 			if (l.State == LobbyState.Racing)
 			{
+				Deal(l, now);
 				Ending(l, now);
 			}
 		}
@@ -619,8 +923,10 @@ namespace HalfGripOpenWorld
 			}
 			l.Race++;
 			l.State = LobbyState.Racing;
-			l.StartAt = now + StartLead;
-			l.EndsAt = l.StartAt + courses[l.Course].TimeLimit;
+			// No green yet: it is dealt when every entrant is on the grid and synced (Deal).
+			l.StartAt = NotDealt;
+			l.EndsAt = NotDealt;
+			l.GridUntil = now + GridMost;
 			l.CutoffAt = -1.0;
 			l.ResultsUntil = 0.0;
 			// Grid slots in join order.
@@ -632,8 +938,47 @@ namespace HalfGripOpenWorld
 				e.Passed = 0;
 				e.Time = 0f;
 				e.Missed = 0;
+				e.Ready = false;
 			}
 			Send(l, Why.Started, from);
+		}
+
+		/// <summary>An entrant is on the grid and synced: once every one is, green is dealt.</summary>
+		private void Ready(ulong from, int race, double now)
+		{
+			Lobby l = LobbyOf(from);
+			Entrant e = l != null ? l.In(from) : null;
+			if (e == null || l.State != LobbyState.Racing || l.Race != race || e.Run != Run.Running || e.Ready || l.Dealt)
+			{
+				return;
+			}
+			e.Ready = true;
+			Send(l, Why.Ready, from);
+			Deal(l, now);
+		}
+
+		/// <summary>
+		/// Green, when the grid is ready: every entrant still running is synced, or <see cref="GridMost"/> has run out since the Start.
+		/// <see cref="CountLead"/> on, so the lobby reaches every machine before its countdown's first light.
+		/// </summary>
+		private void Deal(Lobby l, double now)
+		{
+			if (l.State != LobbyState.Racing || l.Dealt)
+			{
+				return;
+			}
+			bool ready = true;
+			foreach (Entrant e in l.Entrants)
+			{
+				ready &= e.Out || e.Run != Run.Running || e.Ready;
+			}
+			if (!ready && now < l.GridUntil)
+			{
+				return;
+			}
+			l.StartAt = now + CountLead;
+			l.EndsAt = l.StartAt + courses[l.Course].TimeLimit;
+			Send(l, Why.Counting, 0UL);
 		}
 
 		private void Gate(ulong from, int race, int gate, float time, int missed, double now)
@@ -641,7 +986,7 @@ namespace HalfGripOpenWorld
 			Lobby l = LobbyOf(from);
 			Entrant e = l != null ? l.In(from) : null;
 			int gates = l != null ? courses[l.Course].Gates : 0;
-			if (e == null || l.State != LobbyState.Racing || l.Race != race || e.Run != Run.Running || gate < e.Passed || gate >= gates || float.IsNaN(time) || time < 0f)
+			if (e == null || l.State != LobbyState.Racing || !l.Dealt || l.Race != race || e.Run != Run.Running || gate < e.Passed || gate >= gates || float.IsNaN(time) || time < 0f)
 			{
 				return;
 			}
@@ -685,7 +1030,7 @@ namespace HalfGripOpenWorld
 			{
 				running |= e.Run == Run.Running;
 			}
-			if (running && !(l.CutoffAt >= 0.0 && now >= l.CutoffAt) && now < l.EndsAt)
+			if (running && !(l.CutoffAt >= 0.0 && now >= l.CutoffAt) && (!l.Dealt || now < l.EndsAt))
 			{
 				return;
 			}
@@ -800,7 +1145,7 @@ namespace HalfGripOpenWorld
 		private static bool Racing(Lobby l, ulong id, double now)
 		{
 			Entrant e = l != null ? l.In(id) : null;
-			return e != null && l.State == LobbyState.Racing && now >= l.StartAt && e.Run == Run.Running;
+			return e != null && l.State == LobbyState.Racing && l.Dealt && now >= l.StartAt && e.Run == Run.Running;
 		}
 
 		private static bool Allows(Lobby l, HitKind kind)
@@ -817,13 +1162,14 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Whether this player may use a weapon of this kind now: anybody outside a lobby may; in a lobby, only while running in its
+		/// Whether this player may use a weapon of this kind now (green read on the clock this machine synced on its last grid: a machine
+		/// that has never been on one reads it on its own): anybody outside a lobby may; in a lobby, only while running in its
 		/// race past green and only what its Host allowed (a player waiting in a lobby can hurt nobody, so firing is no use).
 		/// </summary>
-		internal bool MayUse(ulong id, HitKind kind, double now)
+		internal bool MayUse(ulong id, HitKind kind, double clock)
 		{
 			Lobby l = LobbyOf(id);
-			return l == null || (Racing(l, id, now) && Allows(l, kind));
+			return l == null || (Racing(l, id, Now(clock)) && Allows(l, kind));
 		}
 
 		/// <summary>
@@ -831,13 +1177,14 @@ namespace HalfGripOpenWorld
 		/// lobby or its race and anybody outside it never hurt each other, crashes included. Two entrants of the same race hurt each
 		/// other only while both are running in it past green, by what its Host allowed; crashes always count there.
 		/// </summary>
-		internal bool MayHit(ulong attacker, ulong victim, HitKind kind, double now)
+		internal bool MayHit(ulong attacker, ulong victim, HitKind kind, double clock)
 		{
 			Lobby a = LobbyOf(attacker), v = LobbyOf(victim);
 			if (a == null && v == null)
 			{
 				return true;
 			}
+			double now = Now(clock);
 			return a == v && Racing(a, attacker, now) && Racing(a, victim, now) && Allows(a, kind);
 		}
 
@@ -850,7 +1197,7 @@ namespace HalfGripOpenWorld
 			w.F64(l.StartAt).F64(l.EndsAt).F64(l.CutoffAt).F64(l.ResultsUntil).U8(l.Entrants.Count);
 			foreach (Entrant e in l.Entrants)
 			{
-				w.U64(e.Id).U8((int)e.Run).U8(e.Slot).U16(e.Passed).F32(e.Time).U16(e.Missed).U8(e.Out ? 1 : 0);
+				w.U64(e.Id).U8((int)e.Run).U8(e.Slot).U16(e.Passed).F32(e.Time).U16(e.Missed).U8((e.Out ? 1 : 0) | (e.Ready ? 2 : 0));
 			}
 			return w.Done();
 		}
@@ -870,7 +1217,11 @@ namespace HalfGripOpenWorld
 			int n = r.U8();
 			for (int i = 0; i < n; i++)
 			{
-				l.Entrants.Add(new Entrant { Id = r.U64(), Run = (Run)r.U8(), Slot = r.U8(), Passed = r.U16(), Time = r.F32(), Missed = r.U16(), Out = r.U8() != 0 });
+				Entrant e = new Entrant { Id = r.U64(), Run = (Run)r.U8(), Slot = r.U8(), Passed = r.U16(), Time = r.F32(), Missed = r.U16() };
+				int flags = r.U8();
+				e.Out = (flags & 1) != 0;
+				e.Ready = (flags & 2) != 0;
+				l.Entrants.Add(e);
 			}
 			return l;
 		}
@@ -879,6 +1230,53 @@ namespace HalfGripOpenWorld
 		internal static string Fingerprint(Lobby l)
 		{
 			return Convert.ToBase64String(LobbyMessage(l, Why.Snapshot, 0UL));
+		}
+
+		/// <summary>A message in a few words, for the log: its kind, and the lobby it is about if any.</summary>
+		internal static string Describe(byte[] data)
+		{
+			if (data == null || data.Length < 2)
+			{
+				return "an empty message";
+			}
+			if (data[0] != Version)
+			{
+				return "a message of version " + data[0];
+			}
+			try
+			{
+				Reader r = new Reader(data);
+				switch (r.Type)
+				{
+					case Msg.Lobby:
+						Why why = (Why)r.U8();
+						r.U64();
+						Lobby l = ReadLobby(r);
+						return "lobby " + l.Id + " (" + why + ", " + l.State + ", " + l.Count + " in)";
+					case Msg.Gone:
+						return "lobby " + r.I32() + " gone";
+					case Msg.Refused:
+						return "refused (" + (Refusal)r.U8() + ")";
+					case Msg.SnapshotEnd:
+						return "snapshot end (" + r.U16() + " lobbies)";
+					case Msg.Join:
+						return "join " + r.I32();
+					case Msg.Ready:
+						return "ready in race " + r.I32();
+					default:
+						return r.Type.ToString();
+				}
+			}
+			catch (Exception)
+			{
+				return "a message that does not read";
+			}
+		}
+
+		/// <summary>True for a sync's ping or pong, which come in bursts and are summed up in one line when the sync is done.</summary>
+		internal static bool IsSync(byte[] data)
+		{
+			return data != null && data.Length >= 2 && (data[1] == (byte)Msg.Ping || data[1] == (byte)Msg.Pong);
 		}
 
 		private sealed class Writer

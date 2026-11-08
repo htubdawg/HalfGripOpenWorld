@@ -6,11 +6,16 @@ using static HalfGripOpenWorld.EventRoom;
 
 // Drives the events in a room (EventRoom.cs) without the game: several pretend machines, each with its own EventRoom, over a pretend
 // network that delays every message (50 to 250 ms, in order from each sender to each receiver, as Steam's reliable messages are).
+// Every machine's own clock is off from the others' by up to 30 s either way (each game started at its own time).
 //   dotnet run -c Release --project tools/eventsim -- [seed]
 // Runs joins, leaves, the Host leaving, two creates at once, two Starts at once on one course, races to the finish, the cut-off after
 // the first finisher, the time limit, a player leaving the room mid-race, a late joiner's snapshot, a full lobby, joining a race that
-// is on, a lobby of one outside a room, the weapon rules, and stale and bad messages. After every step it checks that every machine's
-// lobbies are the arbiter's, byte for byte. Exits 1 if a check fails.
+// is on, a lobby of one outside a room, the weapon rules, stale and bad messages, machines that stall (long frames) through a race,
+// and players whose world is built up to 20 s after they join the room. Each machine does what the game does at a Start: its car is
+// put on the grid (a teleport, a long frame in the stalls), it settles (steps in a row with no stall), then it syncs its clock
+// (EventRoom.Sync), waiting for the arbiter to settle first when it races too. After every step it
+// checks that every machine's lobbies are the arbiter's, byte for byte, and that a machine that has synced has the arbiter's clock to
+// within half a round trip. Exits 1 if a check fails.
 internal static class Program
 {
 	private static int failures;
@@ -34,6 +39,8 @@ internal static class Program
 		Scenario("the weapon rules", seed, Rules);
 		Scenario("stale and bad messages", seed, Stale);
 		Scenario("many players at random", seed, Random);
+		Scenario("stalls and clocks off", seed, Stalls);
+		Scenario("worlds built late", seed, LateWorlds);
 		Console.WriteLine(checks + " checks, " + failures + " failed: " + (failures == 0 ? "ok" : "FAIL"));
 		return failures == 0 ? 0 : 1;
 	}
@@ -60,14 +67,34 @@ internal static class Program
 		public byte[] Data;
 	}
 
+	/// <summary>The most a message is delayed (in order, a later one never overtakes an earlier one, so this holds).</summary>
+	private const double MaxDelay = 0.25;
+
+	/// <summary>
+	/// The most a synced clock may be off: half the difference between a ping's two legs (each 50 to 250 ms), and a step of the sim
+	/// each way (a message is read, and a machine ticks, only every 20 ms).
+	/// </summary>
+	private const double ClockMost = (MaxDelay - 0.05) / 2.0 + 0.045;
+
+	/// <summary>Steps in a row with no stall after a car is put on the grid before it syncs, as the game's <c>EventRace.QuietFrames</c>.</summary>
+	private const int QuietSteps = 10;
+
+	/// <summary>The most messages a machine holds before its world is built (as <c>EventLink</c>); older ones are lost.</summary>
+	private const int HoldMost = 64;
+
 	private sealed class Room
 	{
+		/// <summary>True time (no machine reads it: each has its own clock).</summary>
 		public double Now;
 		public ulong Host;
 		public readonly Dictionary<ulong, Machine> Machines = new Dictionary<ulong, Machine>();
 		public readonly List<Packet> Queue = new List<Packet>();
 		public readonly Dictionary<(ulong, ulong), double> Last = new Dictionary<(ulong, ulong), double>();
 		public readonly System.Random Rng;
+		/// <summary>Machines stall in this scenario: the clocks are checked against the stalls' own rule, not every step's.</summary>
+		public bool Stalls;
+		/// <summary>A machine's car is put on the grid (a scenario may stall it for the teleport).</summary>
+		public Action<Machine> ToGrid;
 		private long order;
 		public int Sent;
 
@@ -83,7 +110,7 @@ internal static class Program
 				return;
 			}
 			// In order from each sender to each receiver: never before the last one sent that way.
-			double at = Now + 0.05 + Rng.NextDouble() * 0.2;
+			double at = Now + 0.05 + Rng.NextDouble() * (MaxDelay - 0.05);
 			if (Last.TryGetValue((from, to), out double last))
 			{
 				at = Math.Max(at, last);
@@ -95,15 +122,33 @@ internal static class Program
 
 		public Machine Arbiter => Machines.TryGetValue(Host, out Machine m) && m.Present ? m : null;
 
-		/// <summary>Runs the clock on, in steps of 20 ms: messages due are delivered, the arbiter ticks.</summary>
+		/// <summary>Called each step after the machines have ticked (a scenario watching for greens).</summary>
+		public Action Watch;
+
+		/// <summary>Runs the clock on, in steps of 20 ms: worlds due are built, messages due are delivered, every machine ticks.</summary>
 		public void Run(double seconds)
 		{
 			double until = Now + seconds;
 			while (Now < until - 1e-9)
 			{
 				Now = Math.Min(until, Now + 0.02);
+				foreach (Machine m in Machines.Values.ToList())
+				{
+					if (m.Present && !m.Built && Now >= m.BuildAt && !m.Stalled)
+					{
+						m.Build();
+					}
+				}
 				Deliver();
-				Arbiter?.Events.Tick(Now);
+				foreach (Machine m in Machines.Values.ToList())
+				{
+					if (m.Present && m.Built && !m.Stalled)
+					{
+						m.Grid();
+						m.Events.Tick(m.Clock);
+					}
+				}
+				Watch?.Invoke();
 			}
 		}
 
@@ -117,28 +162,53 @@ internal static class Program
 			}
 		}
 
+		/// <summary>
+		/// Messages due go to their machines: a stalled machine takes nothing until its long frame is over (then all that came, read at
+		/// its clock then); one whose world is not built yet holds them (as <c>EventLink</c> does) and reads them when it is.
+		/// </summary>
 		private void Deliver()
 		{
 			List<Packet> due = Queue.Where(p => p.At <= Now).OrderBy(p => p.At).ThenBy(p => p.Order).ToList();
 			foreach (Packet p in due)
 			{
-				Queue.Remove(p);
-				if (Machines.TryGetValue(p.To, out Machine m) && m.Present && Machines.TryGetValue(p.From, out Machine f) && f.Present)
+				if (Machines.TryGetValue(p.To, out Machine m) && m.Present && m.Stalled)
 				{
-					m.Events.Receive(p.From, p.Data, Now);
+					continue;
+				}
+				Queue.Remove(p);
+				if (m != null && m.Present && Machines.TryGetValue(p.From, out Machine f) && f.Present)
+				{
+					m.Take(p.From, p.Data);
 				}
 			}
 		}
 
-		public Machine Add(ulong id)
+		/// <summary>A player joins the room; their world is built <paramref name="late"/> seconds on (at once by default).</summary>
+		public Machine Add(ulong id, double late = 0.0)
 		{
-			Machine m = new Machine(this, id);
+			// Real time since each game started: never negative, and up to 30 s either way of the others'.
+			Machine m = new Machine(this, id, 100.0 + (Rng.NextDouble() * 2.0 - 1.0) * 30.0);
+			m.BuildAt = Now + late;
 			Machines[id] = m;
 			if (Host == 0UL)
 			{
 				Host = id;
 			}
-			Arbiter?.Events.PlayerJoined(id);
+			if (late <= 0.0)
+			{
+				m.Build();
+			}
+			// The arbiter hears of the join only if its own world is built (its EventLink has no room to tell before that).
+			Machine arbiter = Arbiter;
+			if (arbiter != null && arbiter.Built)
+			{
+				arbiter.Events.PlayerJoined(id, arbiter.Clock);
+			}
+			// Settled, so a scenario's player has heard the arbiter (in the game a player is in the room a while before driving to a box).
+			if (late <= 0.0)
+			{
+				Settle();
+			}
 			return m;
 		}
 
@@ -149,7 +219,8 @@ internal static class Program
 			m.Present = false;
 			m.Events.Reset();
 			Queue.RemoveAll(p => p.To == id || p.From == id);
-			Arbiter?.Events.PlayerLeft(id, Now);
+			Machine arbiter = Arbiter;
+			arbiter?.Events.PlayerLeft(id, arbiter.Clock);
 		}
 	}
 
@@ -160,18 +231,39 @@ internal static class Program
 		public bool Present = true;
 		public readonly List<Refusal> Refusals = new List<Refusal>();
 		public readonly List<(Why why, ulong who)> Heard = new List<(Why, ulong)>();
+		/// <summary>This machine's clock minus true time.</summary>
+		public readonly double Skew;
+		/// <summary>True time its long frame ends (it takes nothing and does nothing till then).</summary>
+		public double StalledUntil = -1.0;
+		public bool Built;
+		public double BuildAt;
+		public int Lost;
+		/// <summary>True once this machine has asked for a sync (its clock is checked from then on).</summary>
+		public bool SyncedOnce;
+		/// <summary>The race whose grid this car was put on, steps in a row with no stall since, and whether it has synced.</summary>
+		private (int, int) gridFor = (-1, -1);
+		private int quiet;
+		private double lastGrid;
+		private bool synced;
+		private readonly List<(ulong from, byte[] data)> held = new List<(ulong, byte[])>();
 
-		public Machine(Room room, ulong id)
+		public Machine(Room room, ulong id, double skew)
 		{
 			this.room = room;
 			Local = id;
+			Skew = skew;
 			Events = new EventRoom(this, Courses);
 			Events.Refused += r => Refusals.Add(r);
 			Events.Changed += (l, why, who) => Heard.Add((why, who));
+			if (Environment.GetEnvironmentVariable("EVENTSIM_DEBUG") != null)
+			{
+				Events.Note += n => Console.WriteLine("        [" + room.Now.ToString("0.00") + " player " + id + "] " + n + (Arbiter ? "" : "  (true offset " + (room.Arbiter != null ? (room.Arbiter.Skew - Skew).ToString("+0.000;-0.000") : "?") + ")"));
+			}
 		}
 
 		public ulong Local { get; }
 		public bool Arbiter => room.Host == Local;
+		public ulong ArbiterId => room.Host;
 
 		public void ToArbiter(byte[] data)
 		{
@@ -194,14 +286,80 @@ internal static class Program
 			room.Post(Local, to, data);
 		}
 
-		public double Now => room.Now;
+		/// <summary>This machine's own clock (real time since its game started).</summary>
+		public double Clock => room.Now + Skew;
+		/// <summary>The arbiter's clock as this machine has it: what the lobbies' times are on.</summary>
+		public double Now => Events.Now(Clock);
+		public bool Stalled => room.Now < StalledUntil;
 		public Lobby Mine => Events.Mine;
-		public void Create(int course, bool guns = true, bool melee = true) => Events.Create(course, guns, melee, Now);
-		public void Join(int lobby) => Events.Join(lobby, Now);
-		public void Leave() => Events.Leave(Now);
-		public void Start() => Events.Start(Now);
-		public void Gate(int gate, float time, int missed = 0) => Events.Passed(Mine.Race, gate, time, missed, Now);
-		public void Retire() => Events.Retire(Mine.Race, Now);
+		public void Create(int course, bool guns = true, bool melee = true) => Events.Create(course, guns, melee, Clock);
+		public void Join(int lobby) => Events.Join(lobby, Clock);
+		public void Leave() => Events.Leave(Clock);
+		public void Start() => Events.Start(Clock);
+		public void Gate(int gate, float time, int missed = 0) => Events.Passed(Mine.Race, gate, time, missed, Clock);
+		public void Retire() => Events.Retire(Mine.Race, Clock);
+
+		/// <summary>
+		/// As <c>EventRace</c>: a new race of this machine's lobby with it running puts its car on the grid; once it has settled
+		/// (<see cref="QuietSteps"/> steps in a row with no stall, a stall being a gap since the last step), the clock is synced.
+		/// </summary>
+		public void Grid()
+		{
+			Lobby l = Mine;
+			Entrant e = l?.In(Local);
+			if (l == null || l.State != LobbyState.Racing || e == null || e.Run != Run.Running)
+			{
+				return;
+			}
+			if (gridFor != (l.Id, l.Race))
+			{
+				gridFor = (l.Id, l.Race);
+				quiet = 0;
+				synced = false;
+				lastGrid = room.Now;
+				room.ToGrid?.Invoke(this);
+				return;
+			}
+			quiet = room.Now - lastGrid < 0.03 ? quiet + 1 : 0;
+			lastGrid = room.Now;
+			if (!synced && quiet >= QuietSteps)
+			{
+				synced = true;
+				SyncedOnce = true;
+				Events.Sync(Clock);
+			}
+		}
+
+		/// <summary>A message for this machine: read now, or held until its world is built.</summary>
+		public void Take(ulong from, byte[] data)
+		{
+			if (Built)
+			{
+				Events.Receive(from, data, Clock);
+			}
+			else
+			{
+				// The newest kept, as EventLink does.
+				if (held.Count >= HoldMost)
+				{
+					held.RemoveAt(0);
+					Lost++;
+				}
+				held.Add((from, data));
+			}
+		}
+
+		/// <summary>The world is built: what was held is read in order, then the arbiter is asked for every lobby (as EventRace.Setup).</summary>
+		public void Build()
+		{
+			Built = true;
+			foreach ((ulong from, byte[] data) in held)
+			{
+				Events.Receive(from, data, Clock);
+			}
+			held.Clear();
+			Events.Hello(Clock);
+		}
 	}
 
 	// ---- checking ----------------------------------------------------------------------------------------------------
@@ -250,11 +408,48 @@ internal static class Program
 		}
 		string Of(Machine m) => string.Join("|", m.Events.Lobbies.Select(l => l.Id + ":" + Fingerprint(l)));
 		string truth = Of(arbiter);
-		foreach (Machine m in room.Machines.Values.Where(x => x.Present && x != arbiter))
+		foreach (Machine m in room.Machines.Values.Where(x => x.Present && x != arbiter && x.Built))
 		{
 			Check(Of(m) == truth, "player " + m.Local + "'s lobbies differ from the arbiter's " + when);
+			Check(m.Events.Linked && m.Events.Synced, "player " + m.Local + " has not heard the arbiter " + when);
+			if (!room.Stalls && m.SyncedOnce && !m.Events.Syncing)
+			{
+				ClockCheck(room, m, when);
+			}
 		}
 	}
+
+	/// <summary>
+	/// The machine's clock is the arbiter's to within half a round trip: the offset its last sync took is the middle of its shortest
+	/// ping, off by half the difference of the ping's two legs.
+	/// </summary>
+	private static void ClockCheck(Room room, Machine m, string when)
+	{
+		Machine arbiter = room.Arbiter;
+		double error = m.Events.Offset - (arbiter.Skew - m.Skew);
+		Check(Math.Abs(error) <= ClockMost, "player " + m.Local + "'s clock is " + error.ToString("0.000") + " s off the arbiter's " + when);
+	}
+
+	/// <summary>
+	/// Runs the room until the lobby's grid is ready, green dealt and reached on the arbiter's clock (or <see cref="EventRoom.GridMost"/>
+	/// and the countdown have run out), then a step on.
+	/// </summary>
+	private static void Green(Room room, int lobby)
+	{
+		double until = room.Now + EventRoom.GridMost + EventRoom.CountLead + 1.0;
+		while (room.Now < until)
+		{
+			Lobby l = room.Arbiter.Events.Find(lobby);
+			if (l == null || l.State != LobbyState.Racing || (l.Dealt && room.Arbiter.Clock >= l.StartAt))
+			{
+				break;
+			}
+			room.Run(0.02);
+		}
+		room.Run(0.3);
+	}
+
+	private static void Green(Room room) => Green(room, Only(room).Id);
 
 	private static Lobby Only(Room room)
 	{
@@ -306,7 +501,8 @@ internal static class Program
 		Agree(room, "after the new Host's Start");
 		Check(Only(room).State == LobbyState.Racing, "the new Host can start");
 		// The Host leaving mid-race: the next still in takes over; the leaver stays in the results as a DNF.
-		room.Run(EventRoom.StartLead + 1.0);
+		Green(room);
+		room.Run(1.0);
 		c.Leave();
 		Agree(room, "after the Host left mid-race");
 		Lobby l = Only(room);
@@ -374,7 +570,7 @@ internal static class Program
 	{
 		int gates = Courses[lobby.Course].Gates;
 		List<Machine> runners = lobby.Entrants.Where(e => !e.Out && e.Run == Run.Running).Select(e => room.Machines[e.Id]).ToList();
-		room.Run(Math.Max(0.0, lobby.StartAt - room.Now) + 0.1);
+		Green(room, lobby.Id);
 		for (int g = 0; g < gates; g++)
 		{
 			for (int i = 0; i < runners.Count; i++)
@@ -395,14 +591,30 @@ internal static class Program
 		Agree(room, "B in");
 		c.Join(a.Mine.Id);
 		Agree(room, "C in");
-		double asked = room.Now;
 		a.Start();
-		Agree(room, "the Start");
+		room.Run(0.3);
 		Lobby l = Only(room);
-		Check(l.Race == 1 && l.StartAt - asked >= EventRoom.StartLead && l.StartAt - asked < EventRoom.StartLead + 0.5, "green " + EventRoom.StartLead + " s after the Start reached the arbiter: " + (l.StartAt - asked).ToString("0.00"));
+		Check(l.Race == 1 && l.State == LobbyState.Racing && !l.Dealt, "on the grid, no green dealt before the entrants have synced");
 		Check(string.Join(",", l.Entrants.Select(e => e.Slot)) == "0,1,2", "slots dealt in join order");
+		double readyAt = -1.0;
+		room.Watch = () =>
+		{
+			if (readyAt < 0.0 && Only(room).Entrants.All(e => e.Ready))
+			{
+				readyAt = room.Arbiter.Clock;
+			}
+		};
+		for (int k = 0; k < 1000 && !Only(room).Dealt; k++)
+		{
+			room.Run(0.02);
+		}
+		room.Watch = null;
+		Agree(room, "the grid synced");
+		l = Only(room);
+		Check(l.Entrants.All(e => e.Ready), "every entrant synced and ready on the grid");
+		Check(readyAt >= 0.0 && l.StartAt >= readyAt + EventRoom.CountLead - 1e-6 && l.StartAt < readyAt + EventRoom.CountLead + 0.05, "green " + EventRoom.CountLead + " s after the last entrant was ready: " + (l.StartAt - readyAt).ToString("0.00"));
 		Check(b.Mine.StartAt == l.StartAt && c.Mine.EndsAt == l.StartAt + Courses[2].TimeLimit, "every machine has the start time and time limit");
-		room.Run(EventRoom.StartLead);
+		Green(room);
 		// C leads after two gates, then B passes; standings on every machine.
 		int gates = Courses[2].Gates;
 		c.Gate(0, 9f);
@@ -451,7 +663,7 @@ internal static class Program
 		Agree(room, "all in");
 		a.Start();
 		Agree(room, "the Start");
-		room.Run(EventRoom.StartLead);
+		Green(room);
 		for (int g = 0; g < Courses[0].Gates; g++)
 		{
 			a.Gate(g, 20f * (g + 1));
@@ -460,7 +672,7 @@ internal static class Program
 		c.Retire();
 		Agree(room, "A finished, B running, C retired");
 		Lobby l = Only(room);
-		Check(l.State == LobbyState.Racing && l.CutoffAt > 0 && Math.Abs(l.CutoffAt - room.Now - EventRoom.Cutoff) < 1.0, "the cut-off is set " + EventRoom.Cutoff + " s after the first finish");
+		Check(l.State == LobbyState.Racing && l.CutoffAt > 0 && Math.Abs(l.CutoffAt - a.Clock - EventRoom.Cutoff) < 1.0, "the cut-off is set " + EventRoom.Cutoff + " s after the first finish");
 		Check(l.Entrants.First(e => e.Id == 3).Run == Run.Dnf && c.Mine != null, "C retired is a DNF and still in the lobby");
 		room.Run(EventRoom.Cutoff - 2.0);
 		Agree(room, "just before the cut-off");
@@ -481,8 +693,9 @@ internal static class Program
 		Agree(room, "B in");
 		a.Start();
 		Agree(room, "the Start");
+		Green(room);
 		double limit = Only(room).EndsAt;
-		room.Run(limit - room.Now - 1.0);
+		room.Run(limit - a.Clock - 1.0);
 		a.Gate(0, 100f);
 		Agree(room, "a second before the limit");
 		Check(Only(room).State == LobbyState.Racing, "racing until the limit");
@@ -503,7 +716,8 @@ internal static class Program
 		Agree(room, "all in");
 		a.Start();
 		Agree(room, "the Start");
-		room.Run(EventRoom.StartLead + 2.0);
+		Green(room);
+		room.Run(2.0);
 		b.Gate(0, 12f);
 		room.Run(0.1);
 		// C drops out of the room with a gate on its way; B's gate is still counted.
@@ -545,7 +759,8 @@ internal static class Program
 		Agree(room, "B in");
 		a.Start();
 		Agree(room, "the Start");
-		room.Run(EventRoom.StartLead + 2.0);
+		Green(room);
+		room.Run(2.0);
 		a.Leave();
 		Agree(room, "after the Host left the race");
 		Lobby l = Only(room);
@@ -557,7 +772,8 @@ internal static class Program
 		// The last one out mid-race: the lobby closes at once and the course is free.
 		b.Start();
 		Agree(room, "B's second race");
-		room.Run(EventRoom.StartLead + 2.0);
+		Green(room);
+		room.Run(2.0);
 		b.Leave();
 		Agree(room, "after the last one left mid-race");
 		Check(!room.Arbiter.Events.Lobbies.Any() && !b.Events.Lobbies.Any() && room.Arbiter.Events.Taking(0) == null, "the empty lobby closed at once, the course free");
@@ -565,7 +781,8 @@ internal static class Program
 		a.Create(1);
 		a.Start();
 		Agree(room, "A's solo run");
-		room.Run(EventRoom.StartLead + 1.0);
+		Green(room, a.Mine.Id);
+		room.Run(1.0);
 		a.Leave();
 		Check(!a.Events.Lobbies.Any(), "a lobby of one closes when its one entrant leaves the race");
 	}
@@ -578,6 +795,8 @@ internal static class Program
 		Agree(room, "two lobbies");
 		b.Start();
 		Agree(room, "B racing");
+		// Past green, so what C hears after joining is the snapshot alone (on the grid it would hear B's Ready and green: news).
+		Green(room, b.Mine.Id);
 		Machine c = room.Add(3);
 		Agree(room, "after C joined the room");
 		Check(c.Events.Lobbies.Count() == 2, "C was sent both lobbies");
@@ -588,10 +807,10 @@ internal static class Program
 		room.Settle();
 		d.Events.Reset();
 		Check(!d.Events.Lobbies.Any(), "D's copy is empty before its Hello");
-		d.Events.Hello(room.Now);
+		d.Events.Hello(d.Clock);
 		Agree(room, "after D's Hello");
 		Check(d.Events.Lobbies.Count() == 2, "D was sent both lobbies on its Hello");
-		a.Events.Hello(room.Now);
+		a.Events.Hello(a.Clock);
 		Agree(room, "after the arbiter's own Hello");
 	}
 
@@ -639,7 +858,8 @@ internal static class Program
 		Check(a.Mine != null && a.Mine.Host == 1, "the lobby is there at once (no network)");
 		a.Start();
 		Check(a.Mine.State == LobbyState.Racing, "racing at once");
-		room.Run(EventRoom.StartLead);
+		Green(room);
+		Check(a.Mine.Dealt && a.Mine.Entrants[0].Ready, "alone, ready at once once settled: green dealt with no network");
 		for (int g = 0; g < Courses[3].Gates; g++)
 		{
 			a.Gate(g, 30f * (g + 1));
@@ -655,7 +875,7 @@ internal static class Program
 	private static void Rules(Room room)
 	{
 		Machine a = room.Add(1), b = room.Add(2), c = room.Add(3), d = room.Add(4), e = room.Add(5);
-		Check(a.Events.MayHit(1, 2, HitKind.Gun, room.Now) && a.Events.MayUse(1, HitKind.Gun, room.Now), "roaming players hit each other as before");
+		Check(a.Events.MayHit(1, 2, HitKind.Gun, a.Clock) && a.Events.MayUse(1, HitKind.Gun, a.Clock), "roaming players hit each other as before");
 		a.Create(0, false, true);
 		Agree(room, "A's lobby: melee only");
 		b.Join(a.Mine.Id);
@@ -667,7 +887,7 @@ internal static class Program
 		foreach (Machine m in new[] { a, e })
 		{
 			EventRoom r = m.Events;
-			double now = room.Now;
+			double now = m.Clock;
 			Check(!r.MayHit(1, 2, HitKind.Melee, now), "no hits in a lobby before its race");
 			Check(!r.MayUse(1, HitKind.Melee, now), "no weapons in a lobby before its race");
 			Check(!r.MayHit(5, 1, HitKind.Crash, now) && !r.MayHit(1, 5, HitKind.Gun, now), "an entrant and a roamer never hurt each other, crashes included");
@@ -676,14 +896,17 @@ internal static class Program
 		}
 		a.Start();
 		c.Start();
+		room.Run(0.5);
+		Check(!a.Events.MayHit(1, 2, HitKind.Melee, a.Clock), "no hits on the grid before green");
 		Agree(room, "both racing");
-		Check(!a.Events.MayHit(1, 2, HitKind.Melee, room.Now), "no hits on the grid before green");
-		room.Run(EventRoom.StartLead + 0.5);
+		Green(room, a.Mine.Id);
+		Green(room, c.Mine.Id);
 		Agree(room, "past green");
-		foreach (Machine m in new[] { a, b, e })
+		// Asked on the entrants' machines, whose clocks were synced on the grid (a bystander's never was, so its green is its own clock's).
+		foreach (Machine m in new[] { a, b, c, d })
 		{
 			EventRoom r = m.Events;
-			double now = room.Now;
+			double now = m.Clock;
 			Check(r.MayHit(1, 2, HitKind.Melee, now) && r.MayHit(2, 1, HitKind.Crash, now), "melee and crashes count in A's race");
 			Check(!r.MayHit(1, 2, HitKind.Gun, now) && !r.MayHit(1, 2, HitKind.Explosion, now) && !r.MayHit(1, 2, HitKind.Tire, now), "guns, explosions and tire shots do not in A's race");
 			Check(r.MayHit(3, 4, HitKind.Gun, now) && !r.MayHit(3, 4, HitKind.Melee, now), "guns only in C's race");
@@ -696,7 +919,7 @@ internal static class Program
 			b.Gate(g, 10f * (g + 1));
 		}
 		Agree(room, "B finished");
-		Check(!a.Events.MayHit(1, 2, HitKind.Crash, room.Now) && !a.Events.MayUse(2, HitKind.Melee, room.Now), "a finisher neither hurts nor is hurt");
+		Check(!a.Events.MayHit(1, 2, HitKind.Crash, a.Clock) && !a.Events.MayUse(2, HitKind.Melee, a.Clock), "a finisher neither hurts nor is hurt");
 	}
 
 	private static void Stale(Room room)
@@ -708,29 +931,48 @@ internal static class Program
 		Agree(room, "B in");
 		a.Start();
 		Agree(room, "the Start");
-		room.Run(EventRoom.StartLead);
+		Green(room);
 		int race = a.Mine.Race;
 		// A gate from an earlier race, gates going backwards, past the finish, a NaN time, then a bad version and junk.
-		a.Events.Passed(race - 1, 0, 10f, 0, room.Now);
-		a.Events.Passed(race, 3, 10f, 0, room.Now);
-		a.Events.Passed(race, 1, 11f, 0, room.Now);
-		a.Events.Passed(race, 99, 12f, 0, room.Now);
-		b.Events.Passed(race, 0, float.NaN, 0, room.Now);
+		a.Events.Passed(race - 1, 0, 10f, 0, a.Clock);
+		a.Events.Passed(race, 3, 10f, 0, a.Clock);
+		a.Events.Passed(race, 1, 11f, 0, a.Clock);
+		a.Events.Passed(race, 99, 12f, 0, a.Clock);
+		b.Events.Passed(race, 0, float.NaN, 0, b.Clock);
 		Agree(room, "after stale gates");
 		Lobby l = Only(room);
 		Check(l.Entrants.First(e => e.Id == 1).Passed == 4 && l.Entrants.First(e => e.Id == 2).Passed == 0, "only gate 3 counted for A, nothing for B: " + l.Entrants[0].Passed + ", " + l.Entrants[1].Passed);
 		string before = Fingerprint(room.Arbiter.Events.Find(l.Id));
-		room.Arbiter.Events.Receive(2, new byte[] { 99, (byte)Msg.Leave }, room.Now);
-		room.Arbiter.Events.Receive(2, new byte[] { EventRoom.Version, (byte)Msg.Join }, room.Now);
-		room.Arbiter.Events.Receive(2, new byte[] { EventRoom.Version }, room.Now);
-		room.Arbiter.Events.Receive(2, null, room.Now);
-		b.Events.Receive(1, new byte[] { EventRoom.Version, (byte)Msg.Lobby, 1, 2 }, room.Now);
+		room.Arbiter.Events.Receive(2, new byte[] { 99, (byte)Msg.Leave }, a.Clock);
+		room.Arbiter.Events.Receive(2, new byte[] { EventRoom.Version, (byte)Msg.Join }, a.Clock);
+		room.Arbiter.Events.Receive(2, new byte[] { EventRoom.Version }, a.Clock);
+		room.Arbiter.Events.Receive(2, null, a.Clock);
+		double offset = b.Events.Offset;
+		b.Events.Receive(1, new byte[] { EventRoom.Version, (byte)Msg.Lobby, 1, 2 }, b.Clock);
+		// A pong out of a sync, then one with a NaN clock in a sync, then a pong that does not read.
+		byte[] pong = new byte[26];
+		pong[0] = EventRoom.Version;
+		pong[1] = (byte)Msg.Pong;
+		BitConverter.GetBytes(b.Clock - 0.1).CopyTo(pong, 2);
+		BitConverter.GetBytes(double.NaN).CopyTo(pong, 10);
+		BitConverter.GetBytes(double.NaN).CopyTo(pong, 18);
+		b.Events.Receive(1, pong, b.Clock);
+		b.Events.Sync(b.Clock);
+		BitConverter.GetBytes(b.Clock).CopyTo(pong, 2);
+		b.Events.Receive(1, pong, b.Clock + 0.05);
+		// And one whose bounds are the wrong way round.
+		BitConverter.GetBytes(1e6).CopyTo(pong, 10);
+		BitConverter.GetBytes(-1e6).CopyTo(pong, 18);
+		b.Events.Receive(1, pong, b.Clock + 0.05);
+		b.Events.Receive(1, new byte[] { EventRoom.Version, (byte)Msg.Pong, 1, 2, 3 }, b.Clock);
+		room.Run(EventRoom.SyncMost + 0.5);
+		Check(Math.Abs(b.Events.Offset - offset) <= 2.0 * ClockMost, "a broken message and a NaN clock left B's clock as it was (the sync's own pings took it again)");
 		Agree(room, "after bad messages");
 		Check(Fingerprint(room.Arbiter.Events.Find(l.Id)) == before, "bad messages changed nothing");
 		Check(b.Mine != null, "B's copy survived a broken lobby message");
 		// A retires, comes back later in the same race: no new gates.
 		a.Retire();
-		a.Events.Passed(race, 5, 50f, 0, room.Now);
+		a.Events.Passed(race, 5, 50f, 0, a.Clock);
 		Agree(room, "after a retire");
 		Check(Only(room).Entrants.First(e => e.Id == 1).Passed == 4, "a retired entrant's gates no longer count");
 	}
@@ -777,7 +1019,7 @@ internal static class Program
 			{
 				m.Start();
 			}
-			else if (pick < 85 && mine != null && mine.State == LobbyState.Racing && m.Now >= mine.StartAt)
+			else if (pick < 85 && mine != null && mine.State == LobbyState.Racing && mine.Dealt && m.Now >= mine.StartAt)
 			{
 				Entrant e = mine.In(m.Local);
 				if (e != null && e.Run == Run.Running)
@@ -802,7 +1044,8 @@ internal static class Program
 				{
 					Check(l.Count <= Courses[l.Course].MaxEntrants, "lobby " + l.Id + " over its course's grid");
 					Check(l.Count == 0 || l.In(l.Host) != null, "lobby " + l.Id + "'s Host is in it");
-					Check(l.State != LobbyState.Racing || room.Now <= l.EndsAt + 0.1, "lobby " + l.Id + " racing past its time limit");
+					Check(l.State != LobbyState.Racing || !l.Dealt || arbiter.Clock <= l.EndsAt + 0.1, "lobby " + l.Id + " racing past its time limit");
+					Check(l.State != LobbyState.Racing || l.Dealt || arbiter.Clock <= l.GridUntil + 0.1, "lobby " + l.Id + " held on the grid past " + EventRoom.GridMost + " s");
 				}
 				for (int k = 0; k < Courses.Length; k++)
 				{
@@ -821,5 +1064,172 @@ internal static class Program
 		Agree(room, "at the end");
 		int races = room.Arbiter.Events.Lobbies.Sum(l => l.Race);
 		Console.WriteLine("        " + room.Arbiter.Events.Lobbies.Count() + " lobbies left, " + races + " races in them");
+	}
+
+	/// <summary>
+	/// The two-player report after 0.26.2: one player was held on the grid after the others had gone, because the race clock was game
+	/// time and their long frames held it back. Six machines, clocks up to 30 s apart, each stalling now and then for up to 1.5 s
+	/// (tiles building, a refit) and for up to 3 s when its car is put on the grid (the teleport), race three times. Each syncs its
+	/// clock once on the grid, after the teleport: every machine's green is the arbiter's to within half a round trip, every gate time
+	/// read from a machine's clock is what the arbiter's clock says to within the same, and the lobbies agree.
+	/// </summary>
+	private static void Stalls(Room room)
+	{
+		room.Stalls = true;
+		List<Machine> all = new List<Machine>();
+		for (ulong i = 1; i <= 6; i++)
+		{
+			all.Add(room.Add(i));
+		}
+		System.Random rng = new System.Random(room.Rng.Next());
+		Machine a = all[0];
+		Dictionary<(ulong, int), double> greens = new Dictionary<(ulong, int), double>();
+		Dictionary<ulong, int> nextGate = new Dictionary<ulong, int>();
+		double worstGreen = 0.0, worstTime = 0.0;
+		int gates = Courses[0].Gates;
+		double longestGrid = 0.0, startToGreen = 0.0;
+		room.ToGrid = m =>
+		{
+			double teleport = 0.3 + rng.NextDouble() * 2.7;
+			m.StalledUntil = room.Now + teleport;
+			longestGrid = Math.Max(longestGrid, teleport);
+		};
+		room.Watch = () =>
+		{
+			foreach (Machine m in all)
+			{
+				if (!m.Stalled && rng.NextDouble() < 0.004)
+				{
+					m.StalledUntil = room.Now + 0.1 + rng.NextDouble() * 1.4;
+				}
+			}
+			Lobby truth = a.Mine;
+			if (truth == null || truth.State != LobbyState.Racing)
+			{
+				return;
+			}
+			foreach (Machine m in all)
+			{
+				Lobby l = m.Mine;
+				if (l == null || l.State != LobbyState.Racing || l.Race != truth.Race || !l.Dealt || m.Now < l.StartAt || greens.ContainsKey((m.Local, l.Race)))
+				{
+					continue;
+				}
+				// The moment this machine's clock says green (whether or not its frame is long then: that is not the clock's doing).
+				greens[(m.Local, l.Race)] = room.Now;
+				nextGate[m.Local] = 0;
+			}
+			if (!greens.TryGetValue((a.Local, truth.Race), out double green))
+			{
+				return;
+			}
+			foreach (Machine m in all)
+			{
+				Lobby l = m.Mine;
+				if (m.Stalled || l == null || !nextGate.TryGetValue(m.Local, out int g) || g >= gates || l.In(m.Local)?.Run != Run.Running)
+				{
+					continue;
+				}
+				// Everybody drives each gate 10 s apart from the arbiter's green: the time each machine reads is its clock's.
+				if (room.Now >= green + 10.0 * (g + 1))
+				{
+					float time = (float)(m.Now - l.StartAt);
+					double truly = room.Now - green;
+					worstTime = Math.Max(worstTime, Math.Abs(time - truly));
+					Check(Math.Abs(time - truly) <= ClockMost, "player " + m.Local + " timed gate " + g + " at " + time.ToString("0.000") + " s, the arbiter's clock says " + truly.ToString("0.000"));
+					m.Gate(g, time);
+					nextGate[m.Local] = g + 1;
+				}
+			}
+		};
+		for (int r = 0; r < 3; r++)
+		{
+			if (a.Mine == null)
+			{
+				a.Create(0);
+				Agree(room, "A's lobby");
+			}
+			foreach (Machine m in all.Skip(1).Where(x => x.Mine == null))
+			{
+				m.Join(a.Mine.Id);
+				room.Run(0.1);
+			}
+			Agree(room, "everybody in");
+			room.Run(rng.NextDouble() * 20.0);
+			double started = room.Now;
+			a.Start();
+			Green(room, a.Mine.Id);
+			room.Run(10.0 * gates + 3.0);
+			Agree(room, "after race " + (r + 1));
+			Lobby l = a.Mine;
+			Check(l.State == LobbyState.Results && l.Entrants.All(e => e.Run == Run.Finished), "race " + (r + 1) + ": everybody finished");
+			double arbiterGreen = greens[(a.Local, l.Race)];
+			startToGreen = Math.Max(startToGreen, arbiterGreen - started);
+			Check(arbiterGreen - started <= EventRoom.GridMost + EventRoom.CountLead + 0.1, "race " + (r + 1) + ": green " + (arbiterGreen - started).ToString("0.0") + " s after the Start");
+			foreach (Machine m in all.Skip(1))
+			{
+				Check(greens.TryGetValue((m.Local, l.Race), out double g), "player " + m.Local + " saw green in race " + (r + 1));
+				worstGreen = Math.Max(worstGreen, Math.Abs(g - arbiterGreen));
+				Check(Math.Abs(g - arbiterGreen) <= ClockMost, "player " + m.Local + "'s green is " + (g - arbiterGreen).ToString("0.000") + " s from the arbiter's in race " + (r + 1));
+			}
+			room.Run(EventRoom.ResultsSeconds + 1.0);
+		}
+		room.Watch = null;
+		foreach (Machine m in all)
+		{
+			m.StalledUntil = -1.0;
+		}
+		room.ToGrid = null;
+		room.Run(1.0);
+		room.Stalls = false;
+		Agree(room, "after the stalls");
+		Console.WriteLine("        greens within " + (worstGreen * 1000.0).ToString("0") + " ms of the arbiter's, gate times within " + (worstTime * 1000.0).ToString("0") + " ms, teleports up to " + longestGrid.ToString("0.0") + " s, green at most " + startToGreen.ToString("0.0") + " s after the Start");
+	}
+
+	/// <summary>
+	/// The report's point 6: lobby notices unreliable. Players join the room and their worlds are built up to 20 s later, while lobbies
+	/// open, race and close; what came before the world was held (up to 64, the rest lost), and the Hellos go on until a snapshot comes.
+	/// Every machine ends with exactly the arbiter's lobbies.
+	/// </summary>
+	private static void LateWorlds(Room room)
+	{
+		System.Random rng = new System.Random(room.Rng.Next());
+		Machine a = room.Add(1), b = room.Add(2);
+		List<Machine> late = new List<Machine>();
+		a.Create(0);
+		b.Create(3);
+		Agree(room, "two lobbies");
+		for (ulong i = 3; i <= 10; i++)
+		{
+			late.Add(room.Add(i, rng.NextDouble() * 20.0));
+			room.Run(0.5);
+		}
+		Check(late.Any(m => !m.Built), "some worlds are still being built");
+		Check(late.Where(m => !m.Built).All(m => !m.Events.Linked), "no world, no link to the arbiter");
+		// While they build: lobbies open, race and close; every machine's notices are held.
+		b.Start();
+		a.Leave();
+		room.Run(1.0);
+		a.Create(2, false, true);
+		for (int k = 0; k < 40; k++)
+		{
+			a.Leave();
+			a.Create(k % 4);
+			room.Run(0.05);
+		}
+		room.Run(25.0);
+		Check(late.All(m => m.Built), "every world built");
+		Agree(room, "after every world was built");
+		Check(late.All(m => m.Events.Lobbies.Count() == a.Events.Lobbies.Count()), "every machine has the arbiter's " + a.Events.Lobbies.Count() + " lobbies");
+		Console.WriteLine("        " + late.Sum(m => m.Lost) + " messages lost before worlds were built, made up by the snapshots");
+		// One of them joins a lobby straight away: it has heard the arbiter.
+		late[0].Join(a.Mine.Id);
+		Agree(room, "a late player joins");
+		Check(late[0].Mine != null && late[0].Mine.Id == a.Mine.Id, "the late player is in A's lobby");
+		// A machine that has not heard the arbiter is turned down here, at once.
+		Machine fresh = room.Add(20, 30.0);
+		fresh.Built = true;
+		fresh.Create(1);
+		Check(fresh.Refusals.Contains(Refusal.Linking) && fresh.Mine == null, "a create before the arbiter is heard is turned down");
 	}
 }

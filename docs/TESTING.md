@@ -266,3 +266,20 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    (crossroads in them meet level, no lip or flicker), the ring road bending round, crescents and closes past it, Westhaven's
    seafront along the top of the beach with houses on its landward side only; streets meet the roads they end on square, with
    flared mouths as before, and footpaths and alleys between streets have no step where two meet end to end.
+39. Two players (0.26.4). A waits at the spawn; B teleports (F7) round to `Spawn`: B lands beside or along the road from A, never on
+   top of A (the log says `another car there so 30 along...`), and a knock in the first 2 s does no damage. Both spawn and respawn
+   with full health: the log's `Car spawned: health 100 of 100` (any warning `the stats are not in yet` or `Health was the game's 1%
+   fallback ... filled` is worth sending). B wrecks and respawns: on A's leaderboard B is back within a second (`Leaderboard: ... put
+   on it` in A's log). Send `LogOutput.log` from both machines.
+40. Events in a room with two or more players (0.27.0; everyone needs 0.27.0). Lobby notices: A creates a lobby at a course; on B's
+   screen a panel at the top left lists it (course, A, 1/12) at once, and that course's start box turns white. B joins it: the line
+   reads 2/12 on both screens. The panel's `<` button, pressed with the hand, slides it into the left edge leaving a tab with the
+   count; A creates or leaves while it is minimised and only the count changes; the tab brings it back. B quits to the menu and
+   loads the Open World again while A's lobby waits: B's panel lists it within a few seconds of the world being built (the log's
+   `Events: every lobby is here`). The grid: B teleports (F7) a few times and opens a garage just before A presses Start; both cars
+   are put on the grid, the board reads `Grid 0/2`, then `Grid 1/2`, for a second or two with no lights, then the lights count down
+   and go green on both screens at the same moment (record both if you can), and both clocks read about the same at each
+   checkpoint. Each log has `Event: settled on the grid ... s after the teleport (tiles in, 10 frames under ... ms)` and `Event:
+   green dealt at the ..., 2 of 2 entrant(s) synced on the grid; this machine's clock ... from the host's`, and with `VerboseLog`
+   on, B's has `the arbiter has settled on the grid` and `synced with the arbiter: its clock ... give or take ... ms`. Send `LogOutput.log`
+   from both machines with `VerboseLog` on.
