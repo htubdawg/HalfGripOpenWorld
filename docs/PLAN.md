@@ -1520,12 +1520,13 @@ in `TrackManager.enemies` with no leaderboard entry gets `lapManager.RegisterCar
 ### One PR for all of it (the owner's change of plan after PR A)
 
 The owner asked for the work to go up as one big PR instead of a chain of small ones: 0.26.3 (htubdawg/HalfGripOpenWorld#43), the
-plan, 0.26.4 (htubdawg/HalfGripOpenWorld#44) and PR B below are all on `claude/keen-rubin-pmwc0d`, released as 0.27.0. The two
-earlier PRs are superseded by it.
+plan, 0.26.4 (htubdawg/HalfGripOpenWorld#44) and PR B below, with the clock synced once on the grid, are all on
+`claude/keen-noether-7bzq41` in one PR (htubdawg/HalfGripOpenWorld#46), released as 0.27.0. #43, #44 and #45 are closed in favour
+of it.
 
 ### PR B: 0.27.0. The events' messages change (`EventRoom.Version` 1 -> 2; everyone in a room needs 0.27.0)
 
-Done on `claude/keen-rubin-pmwc0d`: compiled (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools
+First done on `claude/keen-rubin-pmwc0d` (#45): compiled (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools
 itself was not allowed in that session, so run `tools/check.sh` before merging), `tools/eventsim` passes on 20 seeds, not yet tested
 in game (test 40). Differs from the notes below:
 
