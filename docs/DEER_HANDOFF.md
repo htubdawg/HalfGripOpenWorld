@@ -1,8 +1,8 @@
 # Deer: handoff
 
 For the agent picking up the white-tailed deer. Read `CLAUDE.md`, then the deer section at the end of `docs/PLAN.md` (the agreed
-design), then this. The owner made **`deer-test-branch`** the deer branch. Step 2 was pushed to `claude/stoic-cray-z90jm0` (the
-session's branch) on top of it; the owner moves it over. The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave it.
+design), then this. Work on the branch **`deer-test-branch`** (the owner made it the deer branch: commit and push there, do not
+start another). The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave it, the owner deletes it.
 
 ## Where things stand
 
