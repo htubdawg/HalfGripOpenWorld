@@ -1,0 +1,86 @@
+# Deer: handoff
+
+For the agent picking up the white-tailed deer. Read `CLAUDE.md`, then the deer section at the end of `docs/PLAN.md` (the agreed
+design), then this. Work on the branch **`deer-test-branch`** (the owner made it the deer branch: commit and push there, do not
+start another). The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave it, the owner deletes it.
+
+## Where things stand
+
+- **Researched** real deer behaviour (summed up in `docs/PLAN.md`). The owner's own observation matches it: a group hangs about the
+  roadside and one or two dart across at a time, seldom the whole group at once.
+- **Designed** (in `docs/PLAN.md`): behaviour, the water and drop rules, multiplayer, hits, checks, order of work.
+- **Model done** (`tools/deer/`, see its README): a doe, 1,600 triangles, 26 bones, flat colour regions, poses. The owner was very
+  pleased with it ("outrageously good"); do not reshape it without asking.
+- **Mesh frozen**: `tools/deer/deer.json` is the build the UV templates in `tools/deer/texture/` fit. The owner may paint a texture
+  on them with an image model (`texture/GPT_PROMPT.md`). Any change to the mesh moves the UVs and breaks that texture, so don't
+  rebuild it with `deer.py` unless the owner agrees, and then run `uv.py` and `build_viewer.py` after.
+- **Viewer**: `tools/deer/viewer/index.html` (one file, opens from disk); also published as a private artifact for the owner.
+- **Nothing in the mod yet.** No C# has been written for deer, `mod.json` is unchanged (0.27.1).
+
+## Decisions the owner made (do not reopen)
+
+1. **No debug key** to stand a deer in front of the car. Go straight to the deer logic. A teleport to just short of a crossing place,
+   to test darts, can be added later.
+2. **Where deer live is drawn fresh each race, like the weather**, not fixed with the map: from `Weather.Seed` (the room's seed in a
+   room, a random one alone, drawn in `Weather.Pick`), salted for the deer. The map only limits where a deer can be.
+3. **Reactions to a car are decided by the group's owner**, the player nearest it (the host hands groups out, with hysteresis); hits
+   are checked by each machine for its own car and sent to everybody; the host settles a deer claimed twice. Other players must see
+   deer hit by someone else's car.
+4. **Deer never go into water deeper than their belly** (about 2 units), nor off drops (bridge edges, cuttings, steep banks).
+5. Order of work: model (done), then calm deer (placed, grazing, wandering, the odd slow crossing, drawn; no reaction to cars), then
+   reactions, ownership and hits.
+
+Still open (ask, or take the plan's defaults and say so): how many deer; whether a hit damages the car; whether deer can be shot.
+Defaults until told otherwise: a few groups per square km near quiet roads, no damage, not shootable.
+
+## Next step: calm deer (step 2 of the plan)
+
+1. **Get the mesh into the mod.** The mod ships only source (`OpenWorld/src/*.cs`, compiled at game start), so write a small
+   generator in `tools/deer/` (e.g. `export_cs.py`) that writes `OpenWorld/src/DeerModel.cs` from `deer.json`: positions, normals,
+   region per vertex (colours chosen in code, so summer/winter/fawn palettes are a swap), UVs, triangles, bone indices and weights,
+   the bones (name, parent, offset; bind rotations are all zero) and the poses. Mark it generated. Keep it C# 10 / netstandard2.1.
+   Scale: the model is in metres; multiply by 3.3 for game units (shoulder about 3.1 units, length about 6).
+   Axes: model faces +Z, Y up, left = +X (Unity is left-handed: check the mirror when converting). Poses are absolute local
+   rotations given as three angles, applied as the matrix Rx·Ry·Rz (`rot()` in `deer.py`). Unity's `Quaternion.Euler(x, y, z)` is
+   Ry·Rx·Rz, a different order, so build each pose's rotation from the three axis rotations in the model's order.
+2. **Placement from the race's seed**, under the same determinism rules as `Storms` (only `Rng`, integer hashing, `DetMath`, no
+   `System.Random`/`UnityEngine.Random`/`Math.Sin`): candidate places on edges of woods and fields (`LandUse`) near quiet roads
+   (`Network`: lanes and back roads), dropped where the water is deep or the ground drops; then the seed picks groups, homes,
+   feeding spots and crossing places. Use only the generator's pure functions, never the loaded tiles' meshes, because a group must
+   be in the same place on a machine that has not loaded its tile.
+3. **Water depth** = `Rivers.DrawnWater(x, z)` + `Network.Lift` - ground (as `Foliage.Wet`, `OpenWorld/src/Foliage.cs`); allow a
+   margin of a unit or two, since the drawn ground can sit that far off the pure height at a channel's edge. Heights: `WorldGen.Height`
+   is a scene height (includes `Network.Lift`); road `Y`, river `W` and place `Y` are from sea level. Mixing them sank every
+   building once.
+4. **Calm behaviour** as a pure function of (race seed, group, race clock `TrackManager.TimeSinceRaceStart`): grazing, walking
+   between spots, the odd crossing (first deer, then followers a second or more apart, one sometimes turning back). Head bobbing
+   and the gait from the poses (walk: `walk1` and its left/right mirror; gallop: `gather` and `extend`; see the viewer's code).
+5. **Drawing**: a `SkinnedMeshRenderer` per deer near the car (a few dozen at most), posed in code; nothing or something cheap far
+   off. Deer keep world positions, so move them on `Origin.Shifted` (only x and z shift).
+6. **Checks**: `meshcheck` (homes, walks and crossings never in deep water or over a drop; crossing places on the roads they cross),
+   `preview` (deer homes and crossing places on the map), `tools/check.sh` before every push. Bump `mod.json` and the README when
+   it ships.
+
+## Code to read first
+
+- `Storms.cs`: the model for something drawn per race from the seed and the clock with nothing sent.
+- `Weather.cs` (`Seed`, `Pick`): where the race's seed comes from.
+- `Foliage.cs`: the drawing of many things (`Graphics.RenderMeshInstanced`) and the water test.
+- `Origin.cs`, `GameCaches.cs`: the floating origin.
+- `EventLink.cs`, `EventRoom.cs`, `MultiplayerLink.cs`: messages over `ctx.Net`, the host as arbiter, positions in world
+  coordinates (for step 3).
+- `docs/PLAN.md` "Later: traffic": the same owner-per-object design worked out for traffic cars.
+
+## This session's environment, as found
+
+- Python for the model tools needs `pip install scipy matplotlib pillow` (numpy is there).
+- Journal sites (PubMed Central, Dryad, Mendeley) were blocked; the research came from abstracts and agency pages.
+- Running a local browser to look at the viewer was refused in this session; ask the owner before trying again.
+- Deleting a branch on GitHub did nothing from here.
+
+## Working with the owner
+
+- Show pictures and look at them yourself before saying something works; the owner tests in game and reports with screenshots and
+  `LogOutput.log`.
+- Plain words: say what a thing does for the player, not internal names ("calm deer from the seed" confused them).
+- Do only what was asked; offer the rest.

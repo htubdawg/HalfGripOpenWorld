@@ -1611,6 +1611,8 @@ once a second, a machine more than 0.5 s off set to it, nearer eased by 50 ms a 
 Herds of white-tailed deer that live along the edges of woods and fields, feed on the verges and dart across the roads one or two at
 a time: a road hazard, the same for every player in a room.
 
+Handoff notes for whoever builds it (state, the owner's decisions, the next step, code to read): `docs/DEER_HANDOFF.md`.
+
 ### What real deer do (researched before any work; the papers' abstracts and agency pages, the journals' hosts were blocked)
 
 - **Small groups.** The unit is a doe, her fawns and her yearling daughters; a Virginia study found groups of 1 to 28, a mean of 2.4.
