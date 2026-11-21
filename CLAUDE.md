@@ -38,6 +38,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Town.cs` | Lots: the towns' market places, the retail park and businesses on the main roads, laid out with the roads; the levelled ground under them |
 | `Parks.cs` | Parks (town blocks and a riverside, ponds dug in), their paths, trails round the lakes, benches; laid out after the road index |
 | `Circuit.cs`, `CircuitMesh.cs`, `Rally.cs`, `HillClimb.cs` | The race courses: the circuit, the rally stage, the hill climb (sited and laid out in `Places.Build`; the stage's and the climb's roads made first in `Network.Build`) |
+| `Herds.cs` | The deer: where they could live (`DeerSites`, fixed with the map: crossings on quiet roads where woods meet fields) and each race's groups from the race's seed, their spots, legs tested for water and drops, and what each deer does as a pure function of the race clock (`Herds.At`). No Unity types |
+| `Deer.cs` | The deer in the game: the skinned mesh in Unity's frame (`DeerMesh`), and each deer near the car posed in code from `Herds.At` |
+| `DeerModel.cs` | **Generated** by `tools/deer/export_cs.py` from `tools/deer/deer.json`: the deer's mesh, bones and poses. Never edit by hand |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
@@ -72,7 +75,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   only `Rng`, integer hashing, `+ - * /`, `Math.Floor`, `Math.Sqrt`, `Math.Abs`, `DetMath.Sin`/`Cos` and `Network.Atan2`, and break
   every tie (heaps, sorts) by index. Never `System.Random`, `UnityEngine.Random`,
   `Math.Sin`/`Cos`/`Exp`/`Pow`, or a config value. A change to it changes the world, so everyone in a room needs the same version (the Multiplayer mod enforces that).
-  `Storms` follows the same rules (from the room's seed and the race clock); `Sky` only draws what it says, so it may use floats.
+  `Storms` and `Herds` (the deer) follow the same rules (from the room's seed and the race clock); `Sky` and `Deer` only draw what
+  they say, so they may use floats.
 - **Origin.** Anything that keeps a world position outside a transform must be moved on `Origin.Shifted` (or listed in `GameCaches`).
   Positions sent over the network are world coordinates. Only x and z shift; heights never change.
 - Bump `version` in `mod.json` with each release and keep `README.md` in step.
@@ -109,7 +113,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
   (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
   house walls reading whole storeys and roofs with undersides (facades), drives' houses and mailboxes clear of the roads and water
-  (homes), few country lane dead ends and no through way hooking round (backroads);
+  (homes), few country lane dead ends and no through way hooking round (backroads), the deer's mesh and their spots, legs and
+  positions never in deep water, over a drop or on a road but at their crossing (deer);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,

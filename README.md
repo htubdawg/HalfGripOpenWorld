@@ -25,6 +25,11 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Road signs:** name signs into every town and village, and fingerposts at junctions with the miles to the nearest places by road.
 - **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
+- **Deer:** white-tailed deer in small groups (a doe and her young, a lone deer, a few bucks together, now and then a bigger herd)
+  where woods meet fields beside the country lanes: grazing on the verges and in the fields, walking between their spots in single
+  file, and now and then crossing the lane one at a time (one sometimes turns back halfway). Most are out at dawn and dusk, fewer at
+  midday. They are somewhere else every race, and in a room everyone has the same deer in the same places. For now they are only
+  seen: they take no notice of cars and a car passes through them (reactions and hits come next).
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
   painted into the sky, so on the clearest days you see across the whole world, the far mountains hazy on the horizon.
@@ -34,7 +39,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.27.1**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.28.0**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -55,7 +60,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.27.1` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.28.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -177,9 +182,10 @@ the same ground.
 | World | `FarView` | true | Draws the whole world at low detail past the loaded tiles, and lets you see as far as the weather allows. Off, the fog ends where the tiles end, as before 0.19.0. |
 | World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
+| World | `Deer` | true | Draws the deer (within about 150 m of the car, the nearest 40). Off, none are drawn; where they are does not change. |
 | World | `ShiftDistance` | 1000 | Game units (1000 is about 300 m) from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. If another car stands on the place, the car lands a little along the road or beside it, and nothing can hurt it for 2 seconds. |
-| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws. |
+| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws; and the deer: how many are drawn, the nearest group's crossing place (how far and which way) and how likely groups are to be out feeding at this hour. |
 | Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back), and the Weather fast key (F2) turns a 10x speed for it on and off: the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 

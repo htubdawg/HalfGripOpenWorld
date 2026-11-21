@@ -30,6 +30,7 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<bool> ShowFarView;
 		internal static ConfigEntry<float> FarReach;
 		internal static ConfigEntry<bool> FarSkyline;
+		internal static ConfigEntry<bool> ShowDeer;
 		internal static ConfigEntry<bool> Teleport;
 		internal static ModKey TeleportKey;
 		internal static ConfigEntry<bool> ShowCoords;
@@ -63,6 +64,7 @@ namespace HalfGripOpenWorld
 			ShowFarView = ctx.Config.Bind("World", "FarView", true, "Draw the whole world at low detail past the loaded tiles (mountains, coast, woods and towns to the horizon), and see as far as the weather lets you: far on a clear day, close in the rain. Off, the fog ends where the loaded tiles end, as before 0.19.0. Only changes your own view.");
 			FarReach = ctx.Config.Bind("World", "FarViewDistance", 14000f, new ConfigDescription("With FarView on, how far the low-detail world is drawn, in game units (the world is 32000 across). Past it, FarSkyline paints the land into the sky; with FarSkyline off, this is the furthest you can see on the clearest day. Less costs less frame time. Only changes your own view.", new AcceptableValueRange<float>(4000f, 20000f)));
 			FarSkyline = ctx.Config.Bind("World", "FarSkyline", true, "With FarView on, paint the land past FarViewDistance into the sky, so on a clear day you see across the whole world (mountains 9 km off as hazy shapes on the horizon) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. Only changes your own view.");
+			ShowDeer = ctx.Config.Bind("World", "Deer", true, "Draw the white-tailed deer: small groups on the edges of woods and fields by the country lanes, grazing on the verges and now and then crossing the road one at a time, most out at dawn and dusk. Where they are is drawn from the race's seed, so in a room everybody has them in the same places. For now they are only seen: they take no notice of cars and a car passes through them. Only changes your own view.");
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many game units (1000 is about 300 m) from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
 			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let the Teleport key (Settings > Controls, F7 unless rebound) jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
 			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset, the tile count and the sky (the time, the rain, cloud and wetness at the car, the grip, the nearest storm) in the top left corner.");
@@ -91,6 +93,15 @@ namespace HalfGripOpenWorld
 				catch (System.Exception e)
 				{
 					Log.LogError("The far view's world could not be built (the far view stays off): " + e);
+				}
+				try
+				{
+					// Where deer could live, from the layout, so the first race only draws its groups.
+					DeerSites.Ensure();
+				}
+				catch (System.Exception e)
+				{
+					Log.LogError("The deer's places could not be found (no deer): " + e);
 				}
 			});
 			ctx.OnSceneLoaded(scene =>

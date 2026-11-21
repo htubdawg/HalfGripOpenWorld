@@ -19,5 +19,8 @@ python3 preview.py out/p.png stand,graze,flag colour -90,30,150   # poses, colou
   opens straight from disk; `python3 build_viewer.py` rebuilds it from `viewer/template.html`, `deer.json` and the UV guide.
 - `preview_colour.png`, `preview_clay.png`: the current build (wireframe and the winter coat in the second).
 
-Metres, Y up, facing +Z, hooves on y = 0, the deer's left = +X; in the game, scaled by 3.3 to units. Next: write the mesh into
-`OpenWorld/src/DeerModel.cs` for the deer in the world (`docs/PLAN.md`).
+- `export_cs.py`: writes `OpenWorld/src/DeerModel.cs` (the mod ships only source) from `deer.json`, in the model's own frame;
+  `DeerMesh` in `OpenWorld/src/Deer.cs` turns it into Unity's (x mirrored, triangles' winding reversed, a pose's Y and Z turns
+  negated) and game units. Run it after any change to `deer.json`: `python3 export_cs.py`.
+
+Metres, Y up, facing +Z, hooves on y = 0, the deer's left = +X; in the game, scaled by 3.3 to units.

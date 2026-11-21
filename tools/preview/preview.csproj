@@ -29,5 +29,6 @@
     <Compile Include="../../OpenWorld/src/Signs.cs" />
     <Compile Include="../../OpenWorld/src/GarageSites.cs" />
     <Compile Include="../../OpenWorld/src/Courses.cs" />
+    <Compile Include="../../OpenWorld/src/Herds.cs" />
   </ItemGroup>
 </Project>

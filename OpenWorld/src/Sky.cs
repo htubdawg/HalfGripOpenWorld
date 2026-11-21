@@ -138,17 +138,26 @@ namespace HalfGripOpenWorld
 			paved = pavedMaterials;
 			unpaved = unpavedMaterials;
 			storms = new Storms(Weather.Seed);
-			// Most races start in the day; a quarter start at any hour.
+			startHour = (float)StartHourOf(Weather.Seed);
 			ulong h = Noise.Mix((ulong)(uint)Weather.Seed ^ 0x0E7A_7140UL);
-			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
-			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
-			startHour = (float)(u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v);
 			// Some days are clearer than others: the haziest see two thirds as far as the clearest.
 			double w = (double)(Noise.Mix(h ^ 0xC1EA2UL) >> 11) * (1.0 / 9007199254740992.0);
 			clearness = (float)(0.65 + 0.35 * w);
 			Mod.Log.LogInfo("Sky: the race starts at " + Clock(startHour) + ", a day lasts " + (DaySeconds / 60f).ToString("0") + " minutes; storms: a "
 				+ (storms.Raininess < 0.35 ? "dry" : storms.Raininess < 0.7 ? "showery" : "wet") + " day (" + storms.Raininess.ToString("0.00") + "), wind "
 				+ storms.WindSpeed.ToString("0.0") + " from " + Compass(-DetMath.Cos(storms.WindAngle), -DetMath.Sin(storms.WindAngle)) + ", snow above " + storms.SnowLine.ToString("0"));
+		}
+
+		/// <summary>
+		/// The hour a race from <paramref name="seed"/> starts at: most races in the day, a quarter at any hour. Plain arithmetic, so the
+		/// deer (<see cref="Herds"/>) work out the same hour on every machine.
+		/// </summary>
+		internal static double StartHourOf(int seed)
+		{
+			ulong h = Noise.Mix((ulong)(uint)seed ^ 0x0E7A_7140UL);
+			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
+			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
+			return u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v;
 		}
 
 		private void Start()
@@ -1075,7 +1084,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The compass point of the direction (dx east, dz north).</summary>
-		private static string Compass(double dx, double dz)
+		internal static string Compass(double dx, double dz)
 		{
 			string[] points = { "E", "NE", "N", "NW", "W", "SW", "S", "SE" };
 			double angle = Math.Atan2(dz, dx) / (2.0 * Math.PI) * 8.0;

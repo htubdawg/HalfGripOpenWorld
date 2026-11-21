@@ -59,6 +59,11 @@ using UnityEngine;
 //                clear of every road, lot, park and the water, at its drive's end
 //  27. backroads: the back roads joined up (Network.Links, Throughs, Drives): few lane dead ends out in the country (a farm at the
 //                end of a long lane boxed in by water or hills), and no through way hooking round on itself
+//  28. deer:    the deer's mesh (weights summing to one, no broken faces, bones and vertices in range); for three race seeds, every
+//                group's spots and the legs between them on the drawn ground, never in water above a deer's belly nor over a drop,
+//                every crossing place on the road it crosses, and every deer followed over half an hour of race time never deep in
+//                water nor on any road's paving away from its group's crossing place, standing on the ground as drawn; how far
+//                that is from the drawn ground (nowhere)
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -102,6 +107,7 @@ internal static class Program
 			("facades", Facades),
 			("homes", Homes),
 			("backroads", BackRoads),
+			("deer", DeerChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -2502,6 +2508,186 @@ internal static class Program
 		}
 		Console.WriteLine("homes:   " + farms + " farm drives, " + houses + " houses on drives; " + mailBad + " mailboxes left out (on a road or in water), " + houseBad + " houses not clear, " + far + " away from their drive's end");
 		return houses > 50 && mailBad * 50 <= Network.Homes.Count && houseBad == 0 && far == 0;
+	}
+
+	/// <summary>How deep the drawn water is over the drawn ground at (x, z) (negative: dry by that much).</summary>
+	private static double DeerDepth(double x, double z)
+	{
+		double w = Rivers.DrawnWater(x, z);
+		return double.IsNaN(w) ? -100.0 : w + Network.Lift - Mesh(x, z);
+	}
+
+	/// <summary>Whether (x, z) is on any road's paving (or a track's or path's ribbon), and which road's.</summary>
+	private static bool OnAnyPaving(double x, double z, out RoadKind kind)
+	{
+		for (kind = RoadKind.Trunk; kind <= RoadKind.Rally; kind++)
+		{
+			if (Network.Nearest(x, z, 60.0, kind, kind) < Network.HalfOf(kind))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static bool DeerChecks()
+	{
+		bool ok = true;
+		// The mesh.
+		int n = DeerModel.Region.Length, bones = DeerModel.BoneNames.Length, badWeights = 0, badFaces = 0, badIndex = 0, slivers = 0;
+		for (int i = 0; i < n; i++)
+		{
+			float sum = 0f;
+			for (int j = 0; j < 4; j++)
+			{
+				sum += DeerModel.BoneWeight[i * 4 + j];
+				badIndex += DeerModel.BoneIndex[i * 4 + j] >= bones ? 1 : 0;
+			}
+			badWeights += Math.Abs(sum - 1f) > 0.01f ? 1 : 0;
+		}
+		for (int t = 0; t < DeerModel.Triangles.Length; t += 3)
+		{
+			int a = DeerModel.Triangles[t], b = DeerModel.Triangles[t + 1], c = DeerModel.Triangles[t + 2];
+			if (a >= n || b >= n || c >= n || a == b || b == c || a == c)
+			{
+				badFaces++;
+				continue;
+			}
+			Vector3 pa = new Vector3(DeerModel.Positions[a * 3], DeerModel.Positions[a * 3 + 1], DeerModel.Positions[a * 3 + 2]);
+			Vector3 pb = new Vector3(DeerModel.Positions[b * 3], DeerModel.Positions[b * 3 + 1], DeerModel.Positions[b * 3 + 2]);
+			Vector3 pc = new Vector3(DeerModel.Positions[c * 3], DeerModel.Positions[c * 3 + 1], DeerModel.Positions[c * 3 + 2]);
+			Vector3 normal = Vector3.Cross(pb - pa, pc - pa);
+			Vector3 vn = new Vector3(DeerModel.Normals[a * 3] + DeerModel.Normals[b * 3] + DeerModel.Normals[c * 3], DeerModel.Normals[a * 3 + 1] + DeerModel.Normals[b * 3 + 1] + DeerModel.Normals[c * 3 + 1], DeerModel.Normals[a * 3 + 2] + DeerModel.Normals[b * 3 + 2] + DeerModel.Normals[c * 3 + 2]);
+			// A face wound against its vertices' normals (flipped): the decimation leaves a few slivers in the creases, a few square
+			// centimetres (under 20 cm², a fifth of a unit across in the game), which are let be; a bigger one is broken.
+			if (Vector3.Dot(normal, vn) <= 0f)
+			{
+				if (normal.magnitude * 0.5f < 0.002f)
+				{
+					slivers++;
+				}
+				else
+				{
+					badFaces++;
+				}
+			}
+		}
+		for (int b = 0; b < bones; b++)
+		{
+			badIndex += DeerModel.BoneParents[b] >= b ? 1 : 0;
+		}
+		Console.WriteLine("deer:    the mesh: " + n + " vertices, " + DeerModel.Triangles.Length / 3 + " triangles, " + bones + " bones; " + badWeights + " vertices whose weights do not sum to one, " + badFaces + " broken or flipped faces (and " + slivers + " flipped slivers under 20 cm²), " + badIndex + " indices out of range");
+		ok &= badWeights == 0 && badFaces == 0 && badIndex == 0 && slivers * 100 < DeerModel.Triangles.Length / 3;
+
+		DeerSites.Ensure();
+		int notOnRoad = 0;
+		foreach (DeerSites.Site site in DeerSites.All)
+		{
+			Network.Road road = Network.Roads[site.Road];
+			Lines.Project(road.X, road.Z, site.I, site.X, site.Z, out double _, out double d);
+			notOnRoad += d > 0.5 || road.Kind > RoadKind.Lane ? 1 : 0;
+		}
+		Console.WriteLine("         " + DeerSites.All.Count + " places a group could live, " + notOnRoad + " whose crossing is not on a lane or secondary road");
+		ok &= notOnRoad == 0 && DeerSites.All.Count > 200;
+
+		var legs = new List<(double x, double z)>();
+		for (int seed = 1; seed <= 3; seed++)
+		{
+			Herds herds = new Herds(seed, Sky0(seed), 2400.0);
+			int spotsBad = 0, legsBad = 0, deep = 0, paved = 0, samples = 0;
+			double worstDeep = -100.0, worstOff = 0.0, sumOff = 0.0;
+			foreach (Herds.Group g in herds.Groups)
+			{
+				foreach (Herds.Spot s in g.Spots)
+				{
+					if (DeerDepth(s.X, s.Z) > Herds.Belly - 0.5 || OnAnyPaving(s.X, s.Z, out RoadKind _))
+					{
+						spotsBad++;
+						Console.WriteLine("  seed " + seed + " group " + g.Index + ": a spot wet or on a road at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")");
+					}
+				}
+				for (int a = 0; a < g.Spots.Length; a++)
+				{
+					for (int b = a + 1; b < g.Spots.Length; b++)
+					{
+						if (!g.Links[a, b])
+						{
+							continue;
+						}
+						Herds.Legs(g, g.Spots[a], g.Spots[b], legs);
+						bool bad = false;
+						for (int k = 0; k + 1 < legs.Count && !bad; k++)
+						{
+							double dx = legs[k + 1].x - legs[k].x, dz = legs[k + 1].z - legs[k].z;
+							int steps = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dz * dz)));
+							double last = Mesh(legs[k].x, legs[k].z);
+							for (int q = 1; q <= steps && !bad; q++)
+							{
+								double x = legs[k].x + dx * q / steps, z = legs[k].z + dz * q / steps;
+								double h = Mesh(x, z);
+								// The drawn ground: no deeper than the belly, no step of more than a unit and a half over a unit (a drop).
+								if (DeerDepth(x, z) > Herds.Belly || Math.Abs(h - last) > 1.5 * Math.Sqrt(dx * dx + dz * dz) / steps)
+								{
+									bad = true;
+									Console.WriteLine("  seed " + seed + " group " + g.Index + ": a leg " + (DeerDepth(x, z) > Herds.Belly ? "deep in water" : "over a drop (" + (h - last).ToString("0.0") + ")") + " at (" + x.ToString("0") + ", " + z.ToString("0") + ")");
+								}
+								last = h;
+							}
+						}
+						legsBad += bad ? 1 : 0;
+					}
+				}
+				// Every deer over half an hour.
+				Herds.Move mv = default, spare = default;
+				for (int d = 0; d < g.Members.Length; d++)
+				{
+					for (double t = 0.0; t < 1800.0; t += 4.7)
+					{
+						herds.At(g, d, t, ref mv, ref spare, out DeerState s);
+						samples++;
+						double depth = DeerDepth(s.X, s.Z);
+						if (depth > worstDeep)
+						{
+							worstDeep = depth;
+						}
+						if (depth > Herds.Belly)
+						{
+							deep++;
+						}
+						double off = Math.Abs(Herds.Ground(s.X, s.Z) - Mesh(s.X, s.Z));
+						sumOff += off;
+						if (off > worstOff)
+						{
+							worstOff = off;
+						}
+						double cx = s.X - g.Site.X, cz = s.Z - g.Site.Z;
+						bool atCrossing = cx * cx + cz * cz < (g.Site.Half + 12.0) * (g.Site.Half + 12.0);
+						if (!atCrossing && OnAnyPaving(s.X, s.Z, out RoadKind kind))
+						{
+							if (paved == 0)
+							{
+								Console.WriteLine("  seed " + seed + " group " + g.Index + " deer " + d + ": on a " + kind + "'s paving away from its crossing at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + "), t " + t.ToString("0"));
+							}
+							paved++;
+						}
+					}
+				}
+			}
+			Console.WriteLine("         race seed " + seed + ": " + herds.Groups.Length + " groups, " + herds.DeerCount + " deer; " + spotsBad + " spots and " + legsBad + " legs wet, on a road or over a drop; "
+				+ samples + " deer positions: " + deep + " deep in water (deepest " + Math.Max(0.0, worstDeep).ToString("0.0") + "), " + paved + " on paving away from a crossing; the ground deer stand on off the drawn ground by "
+				+ (sumOff / Math.Max(1, samples)).ToString("0.00") + " on average, " + worstOff.ToString("0.00") + " at worst");
+			ok &= spotsBad == 0 && legsBad == 0 && deep == 0 && paved == 0 && worstOff < 1e-3 && herds.Groups.Length >= 100;
+		}
+		return ok;
+	}
+
+	/// <summary>The hour a race from <paramref name="seed"/> starts at, as <c>Sky.StartHourOf</c> (Sky is left out of this tool).</summary>
+	private static double Sky0(int seed)
+	{
+		ulong h = Noise.Mix((ulong)(uint)seed ^ 0x0E7A_7140UL);
+		double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
+		double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
+		return u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v;
 	}
 
 	/// <summary>Whether (x, z) is under a river's or lake's water.</summary>

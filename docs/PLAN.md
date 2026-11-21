@@ -1702,10 +1702,38 @@ and a browser viewer before it goes in; the owner sees it before the behaviour i
 
 ### Order of work
 
-1. The model, the pipeline and the debug key (the owner looks at it in the game).
+1. The model and the pipeline: done (the owner dropped the debug key).
 2. Calm deer (grazing, wandering, the odd slow crossing; no reaction to cars yet), placed from the race's seed, the water and
-   drop rules, drawn in the world; `meshcheck` checks.
+   drop rules, drawn in the world; `meshcheck` checks: **built for 0.28.0, waiting for the owner's test in game** (TESTING 42).
 3. Reactions, ownership and hits in a room; `deersim`.
+
+### Calm deer as built (0.28.0)
+
+- **Where they could live** (`DeerSites`, fixed with the map, built in the background at load): every 110 units along each lane
+  (and a quarter of the secondary roads' spots), a crossing place where the cover 18, 40 and 75 units out either side is woods (or
+  a hedge) on one side and open ground beside the road; no bridge or junction near, no other road within a few units of the verges,
+  no house within 90 or mailbox within 45, not in a town or village, and passable verge to verge. 743 in the world.
+- **Each race** (`Herds`, from `Weather.Seed` salted, on a worker at the race's start, about a fifth of a second): the sites shuffled
+  by the seed and taken greedily at least 750 apart, up to 160 groups (about 540 deer); per group a cover spot in the woods 35 to
+  80 back from the road and 3 or 4 feeding spots on the verges (9 to 15 off the paving) or in the field, each dry and fairly flat
+  for 9 round, clear of every road (the main roads by 6 more), lot, course and house; the legs between them tested every 1.25
+  units on the drawn ground (the tiles' 5-unit triangles, which deer also stand on): no water deeper than half a unit, no rise over
+  1.1 a step, clear of roads but at the crossing. Spots no leg reaches from the cover are dropped. Groups: 15% a lone deer, 57% a
+  family of 2 to 5, 18% 2 to 4 bucks (no antlers yet: the doe's model, a little bigger), 10% a herd of 6 to 9.
+- **The day**: slots of 90 s; each slot a group stays (55%) or moves to a linked spot, out feeding with a chance of 0.28 at midday
+  rising to 0.93 at dawn (6:30) and dusk (18:50), 0.53 at night, otherwise to cover. A move: the leader leaves up to 8 s into the
+  slot, each follower 1.3 to 3.8 s after the one before (closer for a big group), in single file along the line between the spots'
+  middles (the line the legs were tested on); across the road through its crossing's verge points, a third of the time at a trot,
+  and a third of the time one follower turns back halfway, waits 4 to 10 s at the verge and crosses last. At a spot each deer has
+  its place in a ring, takes a small step every 11 s, grazes, and lifts its head now and then (lone deer more).
+- **Drawn**: the 40 nearest within 500 units (about 150 m) as skinned meshes posed in code (stand, alert, graze; walk and trot
+  swinging between `walk1` and its mirror); the coat a 4-texel palette on the scene's lit shader, the winter coat when the race's
+  snow line is under 390. The `Deer` config hides them. The overlay (ShowCoords) points to the nearest group.
+- **Checked**: `meshcheck deer` (the mesh; three seeds: spots, legs and every deer over half an hour never in water above the belly,
+  over a drop or on paving but at the crossing; deer on the drawn ground exactly), `preview` (sites, groups and a map of one race's
+  groups, `<out>-deer.ppm`; the same deer from one seed twice).
+- **Left for step 3 or later**: reactions to cars, colliders and hits, ownership in a room; antlers and fawns' spots; lying down.
+  Deer walk through trees in the woods (the trees are per tile, not in the generator's functions).
 
 Open questions for the owner: how many deer (busy enough to matter, not a deer at every bend); whether a hit damages the car or only
 knocks it; whether deer can be shot.
