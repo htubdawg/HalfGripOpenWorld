@@ -1605,3 +1605,101 @@ once a second, a machine more than 0.5 s off set to it, nearer eased by 50 ms a 
   goes on through it, and `GameCaches` already moves the rewinder's recorded frames on an origin shift.
 - Checks: `tools/check.sh` (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools was not allowed in this
   session), `tools/eventsim` 20 seeds (machines time their runs on their own game time, which their stalls hold back).
+
+## Next: white-tailed deer (asked for by the owner after 0.27.1; agreed in outline)
+
+Herds of white-tailed deer that live along the edges of woods and fields, feed on the verges and dart across the roads one or two at
+a time: a road hazard, the same for every player in a room.
+
+### What real deer do (researched before any work; the papers' abstracts and agency pages, the journals' hosts were blocked)
+
+- **Small groups.** The unit is a doe, her fawns and her yearling daughters; a Virginia study found groups of 1 to 28, a mean of 2.4.
+  Bucks run in loose bachelor groups of 2 to 5 from late winter to early autumn, alone in the rut. Groups of 30 to 40 are several
+  families feeding together in late winter, which split again. The groups met on roads in the main vehicle study averaged two.
+- **They cross one at a time.** One goes, the others follow seconds later in single file ("if one crosses, watch for more"); one
+  that has crossed may turn back. A Georgia dataset records crossings as an initiator and its followers within five minutes. They
+  cross at the same places again and again, and most on quiet, wooded roads with little traffic, least on busy ones.
+- **They hang about the roadside.** Edges are where they live (more edge, smaller home ranges); beside I-64 in Virginia deer were seen
+  on the roadside as often as in the underpasses, walking and feeding, paying traffic little attention.
+- **Their reaction to a car is unpredictable.** At night, at 20 to 90 km/h, deer fled at a median 40% of the distance they first had
+  to the car, whatever its speed: a median 4.6 s before it would reach them, so the faster the car the later they go. Whether a deer
+  ran across in front of the car was linked to nothing measured (one secondary source: about 36% did). Deer standing in the road
+  fled sooner and crossed more often than deer on the verge. They freeze in headlights at times (strongest without bright lights).
+- **Alarm:** a foot stamp, a snort, a whistle, then away with the tail up as a white flag (bucks sometimes tuck it).
+- **Time:** about at dawn and dusk, collisions peaking around sunset; November (the rut) is the worst month.
+- **Size and pace:** shoulder about 1 m (3.3 units), body about 1.8 m (6 units: under half a car), does 40 to 90 kg, bucks to about
+  135 kg; home ranges about 1 to 1.5 km² for does (3,300 to 4,000 units across), bucks much more; 35 to 40 mph in bursts (50 to 60
+  units a second), 25 mph held; clears about 2.6 m up and 9 m along in a bound. They wade streams; they swim too, which is left out.
+
+### Behaviour
+
+- **Groups** from the seed: mostly family groups of 2 to 5, some lone deer and bachelor groups, now and then a bigger group in a field.
+  Each lives in a home area about 4,000 units across on the edges of woods and fields (land use), with feeding spots on the verges
+  and a few fixed crossing places on quiet roads (lanes and back roads, seldom main roads, never the trunk road's middle).
+- **Calm:** feeding, walking between spots, and now and then crossing a road at its crossing place: the first deer, then each
+  follower a second or more after, one sometimes turning back.
+- **A car coming:** alert (head up, stamp, snort), then at about 40% of the distance it noticed the car at, a choice by chance:
+  bolt across (more likely when standing in the road), bolt away, or freeze (more at night). Followers go after the first. Tail up.
+- **More deer at dusk and dawn** (the hour from `Sky`), fewer at midday.
+- **Water:** never into water deeper than about 2 units (the belly): depth is `Rivers.DrawnWater` + `Network.Lift` less the ground,
+  as `Foliage.Wet` does; shallower they wade, slower. Homes, feeding spots, crossing places, every leg of a walk and every escape
+  path are tested along their length (with a margin for the drawn ground, which can sit a unit or two off the pure height at a
+  channel's edge); a path that would go deeper turns along the bank. The same for drops: a bridge's edge, a cutting, a steep bank.
+
+### Multiplayer
+
+- **Calm deer are a pure function** of (room seed, group, race clock), under the world's determinism rules, as `Storms` is: every
+  machine draws the same deer in the same places with nothing sent, whether or not it has their tiles loaded (so only the generator's
+  functions, never the tiles' meshes).
+- **Reactions are decided by the group's owner:** the host hands each group to one player, normally the nearest within reach, with
+  hysteresis (clearly nearer, or the owner gone out of reach), as the traffic plan's owners. The owner decides from its own car's
+  exact position, starts the reaction at once and sends it: "group g, deer d: this path from race time t". Others play the path from
+  t (late, they join it part way). A reaction going on is finished as sent whoever owns the group after. An owner leaving the room:
+  the host takes its groups back or hands them on. With no player near, the group goes back to its seed. Alone, this machine owns all.
+- **Hits:** each machine tests only its own car against the deer (the paths are the same everywhere), so the hit is felt at once.
+  The hitter sends the hit to everybody (deer, race time, place, the car's velocity) and every machine plays the same knock and
+  leaves the carcass where it lands; the host settles two claims on one deer (one death kept). Another player's car reaching a deer
+  on this screen before the message plays a provisional knock, put right when it comes. A dead deer is gone until a time from the
+  seed, then the group is made up again. The rest of its group scatters (a reaction like any other).
+- **Late joiners** get the reactions going on and the deaths from the host, as the lobbies do. Positions in messages are world
+  coordinates; deer move with `Origin.Shifted`.
+- To find out: whether the Multiplayer mod shows another player's car damage (its messages as `MultiplayerLink` lists them carry
+  none: then a hit deer flies but their car looks whole); how the game damages a car and how heavy its cars are, so a hit feels
+  like 50 to 135 kg; whether `ctx.Net` is reliable and in order (a lost "deer down" needs a resend).
+
+### The model (first)
+
+Built the way the owner's Claudeinoid human was (`htubdawg/Claudeinoid`, `HANDOFF.md`), not in C# by hand: a Python pipeline in
+`tools/deer/` sculpts the deer as a signed distance field of primitives with bone weights and colour regions, meshes it (surface
+nets), decimates it to a game budget (about 1,200 to 1,800 triangles, more weight on the head, ears and legs), skins it (the top four
+bones), splits it by region so each triangle has one flat colour, and writes `OpenWorld/src/DeerModel.cs` (generated: positions,
+normals, colours, triangles, bone weights, bind poses and the poses), since the mod ships only source. Looked at in software renders
+and a browser viewer before it goes in; the owner sees it before the behaviour is built on it.
+
+- **Skeleton** (about 20 bones): hips, two spine bones, chest, two neck bones, head, ears, tail (two, for the flag), and each leg in
+  three bones and the hoof (the hind legs' hock bent the right way).
+- **Colours as regions, no texture** (the Claudeinoid look): reddish-brown summer coat or grey-brown winter coat, white belly, throat
+  patch, muzzle band, eye ring and tail underside, dark nose, eyes and hooves; a fawn with spots; a buck's antlers as rigid parts on
+  the head (they grow and drop with the season).
+- **Poses** (absolute bone rotations, blended in the game): stand, walk, trot, gallop (the bound), graze head down, alert head up,
+  stamp, tail flag, lie (the carcass).
+- **In the game:** a `Mesh` with bone weights built at load, a `SkinnedMeshRenderer` for each deer near the car, posed in code;
+  far deer cheaper or not drawn. A debug key (through `ctx.Keys`) puts a deer in front of the car to see it in the game before any
+  behaviour exists.
+
+### Checks
+
+- `meshcheck`: deer homes, walks, crossings and escapes never in deep water or over a drop, crossing places on the roads they cross,
+  homes on edges; the model's mesh (no flipped or broken faces, weights summing to one).
+- `tools/deersim` (like `eventsim`): owners handed over between pretend players, reactions and hits over a pretend network with
+  delays, every machine agreeing on which deer are dead and where.
+- `preview`: deer homes and crossing places drawn on the map.
+
+### Order of work
+
+1. The model, the pipeline and the debug key (the owner looks at it in the game).
+2. Calm deer from the seed, the water and drop rules, drawn in the world; `meshcheck` checks.
+3. Reactions, ownership and hits in a room; `deersim`.
+
+Open questions for the owner: how many deer (busy enough to matter, not a deer at every bend); whether a hit damages the car or only
+knocks it; whether deer can be shot.
