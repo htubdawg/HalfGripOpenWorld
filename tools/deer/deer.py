@@ -277,6 +277,7 @@ def export(mesh, path):
 		regions=REGIONS, palette=PALETTE, winter=WINTER,
 		pos=r(mesh['pos'], 4), nor=r(mesh['nor'], 3), reg=mesh['reg'].tolist(),
 		bi=mesh['bi'].ravel().tolist(), bw=r(mesh['bw'], 3), idx=mesh['idx'].ravel().tolist())
+	if 'uv' in mesh: data['uv'] = r(mesh['uv'], 5)
 	json.dump(data, open(path, 'w'), separators=(',', ':'))
 
 if __name__ == '__main__':
