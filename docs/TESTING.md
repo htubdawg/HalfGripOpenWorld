@@ -301,3 +301,22 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    at midday more are back in the woods. In a room, both players see the same deer in the same places doing the same thing at the
    same moment (compare screenshots at one spot). Turning `Deer` off in the config hides them. Send a screenshot or two close up and
    `LogOutput.log`, with the frame rate near a group if it drops.
+43. Hitting and shooting deer (0.29.0; deer still do not run from cars). Find a group as in 42.
+   - Drive into a deer slowly (under 10 on the speedometer): it dies and is pushed over but the car takes no damage; the log has
+     `Deer: hit at ... on the speedometer (the car at ...): 0.0 damage`. The first hit logs `Deer: the car's box for hitting deer is ...`
+     (or that a fallback box was used): send that line.
+   - At about 55: the health bar drops by about 9 (of 100), the screen shakes, there is a thump, the car loses a little speed, and the deer
+     is thrown ahead and up, tumbles, lands (bouncing once if hard), slides and lies on its side on the ground (not sunk, not floating, on
+     slopes too). Faster (80 or more) about 17 at most; a buck a little more. With god mode at a garage: no damage. A deer only ever
+     hit once; driving over the body does nothing.
+   - The deer is hit when the car touches it, not before or after: a deer just off the side mirror is missed, one grazing in the path
+     is hit, head-on and from the side, and at high speed it is not passed through. Say if hits feel early, late or missed.
+   - Shoot a deer (any gun, a shotgun too): the tracer stops at the deer, there is the gun's hit puff, and the deer falls over sideways
+     away from the shot and lies there. Log: `Deer: shot at ... m`. Deer can be shot out to about 150 m (only drawn ones). Shots past or
+     over a deer do not kill it.
+   - The rest of a hit deer's group carries on as before (scattering comes with reactions).
+   - In a room: A hits a deer and B, near it, sees the same deer thrown and lying in the same place (B's log: `Deer: group ... deer
+     ... hit by another player`); the same for a shot deer. B cannot then hit that deer again.
+   - `DeerAmount` alone: 0 gives no deer (log `Deer: 0 groups`), 2 more groups (about 215) than 1 (160), from the next race; in a room
+     the log says the standard amount is used. Say what amount feels right to drive through.
+   Send `LogOutput.log` and screenshots of a thrown deer lying and of a hit's damage.

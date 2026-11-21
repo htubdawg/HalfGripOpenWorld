@@ -277,4 +277,40 @@ namespace HalfGripOpenWorld
 			Garage.Forget();
 		}
 	}
+	/// <summary>
+	/// Deer can be shot: after each ray of the player's gun (a shotgun fires one per pellet), the deer it passed through before what it
+	/// struck, if any, is killed and the ray made to end at it (so the tracer stops there), with the gun's own hit puff and sound. The
+	/// deer have no colliders (<see cref="Deer.Shoot"/> tests the ray against their bodies in code). Only this player's guns fire these
+	/// rays (they aim from its camera), so a deer is only ever shot here by this player.
+	/// </summary>
+	[HarmonyPatch(typeof(Gun), "FireRay")]
+	internal static class DeerShotPatch
+	{
+		private static void Postfix(Gun __instance, Vector3 origin, Vector3 direction, ref Vector3 __result)
+		{
+			Deer deer = Deer.Active;
+			if (deer == null)
+			{
+				return;
+			}
+			try
+			{
+				float reach = (__result - origin).magnitude;
+				if (!deer.Shoot(origin, direction, reach, out Vector3 at))
+				{
+					return;
+				}
+				__result = at;
+				if (__instance.bulletHitEffect != null)
+				{
+					Object.Instantiate(__instance.bulletHitEffect, at - direction.normalized * 0.05f, Quaternion.LookRotation(-direction));
+				}
+				SoundController.PlayRandomSoundAtPosition(__instance.bulletCollisionSounds, at, 0.6f, 25f, 500f);
+			}
+			catch (System.Exception e)
+			{
+				Mod.Log.LogWarning("Deer: a shot could not be tested against the deer: " + e.Message);
+			}
+		}
+	}
 }

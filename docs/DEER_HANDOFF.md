@@ -33,8 +33,8 @@ start another). The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave i
 5. Order of work: model (done), then calm deer (placed, grazing, wandering, the odd slow crossing, drawn; no reaction to cars), then
    reactions, ownership and hits.
 
-Still open (ask, or take the plan's defaults and say so): how many deer; whether a hit damages the car; whether deer can be shot.
-Defaults until told otherwise: a few groups per square km near quiet roads, no damage, not shootable.
+6. **A hit damages the car, and deer can be shot** (the owner, after 0.28.0). **How many deer is unclear** and needs testing: the
+   `DeerAmount` setting (alone only) is for that; ask the owner what amount felt right after they test.
 
 ## Step 2, calm deer: done as below (kept for the record)
 
@@ -64,7 +64,14 @@ Defaults until told otherwise: a few groups per square km near quiet roads, no d
    `preview` (deer homes and crossing places on the map), `tools/check.sh` before every push. Bump `mod.json` and the README when
    it ships.
 
-## Next step: reactions, ownership and hits (step 3 of the plan)
+## Hits and shots: built for 0.29.0, waiting for the owner's test
+
+`docs/PLAN.md` "Hits and shots (0.29.0)": hits tested in code (the car's box against the deer's capsules; a postfix on
+`Gun.FireRay` for shots), damage from the game's crash numbers scaled to a deer, the bodies in `DeerKills.cs` (pure, fixed steps),
+kills sent to the room. In-game test: `docs/TESTING.md` 43. Untested in game: the car's box from its colliders (the log names it),
+the gravity the bodies fall at (the scene's), how the damage feels. Ask for that report and fix what it shows first.
+
+## Next step: reactions and ownership (the rest of step 3)
 
 The owner has seen the calm deer's textured look and handed step 3 on. Ask for their in-game report on calm deer (TESTING 42) if
 it has not come, and fix what it shows first. Then, per `docs/PLAN.md` "Multiplayer": a reaction overrides `Herds.At` for a

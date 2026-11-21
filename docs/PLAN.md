@@ -1705,7 +1705,8 @@ and a browser viewer before it goes in; the owner sees it before the behaviour i
 1. The model and the pipeline: done (the owner dropped the debug key).
 2. Calm deer (grazing, wandering, the odd slow crossing; no reaction to cars yet), placed from the race's seed, the water and
    drop rules, drawn in the world; `meshcheck` checks: **built for 0.28.0, waiting for the owner's test in game** (TESTING 42).
-3. Reactions, ownership and hits in a room; `deersim`.
+3. Reactions, ownership and hits in a room; `deersim`. Hits and shots (with damage) built first, for 0.29.0 (below); reactions and
+   ownership next.
 
 ### Calm deer as built (0.28.0)
 
@@ -1736,5 +1737,35 @@ and a browser viewer before it goes in; the owner sees it before the behaviour i
 - **Left for step 3 or later**: reactions to cars, colliders and hits, ownership in a room; antlers and fawns' spots; lying down.
   Deer walk through trees in the woods (the trees are per tile, not in the generator's functions).
 
-Open questions for the owner: how many deer (busy enough to matter, not a deer at every bend); whether a hit damages the car or only
-knocks it; whether deer can be shot.
+The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how many is unclear and needs testing (so a setting).
+
+### Hits and shots (0.29.0, asked for by the owner)
+
+- **No colliders**: tested in code each frame, so nothing changes in the physics scene and nothing can trip the car.
+  - **The car**: its box from its solid colliders (made once per car, in its body's frame; a 6.4 x 4.5 x 14 box if they give nothing
+    sensible) against each live deer drawn within 30 units, as seven capsules from its bones (trunk, neck, head, four legs), at the
+    car's pose now, last frame's and between (so a fast car at a low frame rate does not pass through).
+  - **A gun**: a Harmony postfix on `Gun.FireRay` (each ray; a shotgun's pellets each), which only this player's guns fire (they aim
+    from its camera): the ray against the deer drawn, the nearest it meets before what it struck is killed and the ray made to end
+    there (the tracer stops at it), with the gun's hit puff and sound. One shot kills.
+- **Damage**: the game's own crash numbers (`CarControllerNew.crashMinImpactSpeed`, `crashFullDamageSpeed`, `maxCrashDamage`) scaled to
+  a deer: `max x 0.4 x weight x (v² - vmin²) / vfull²`, never more than `max x 0.7 x weight`, with v the car's speed (all of it head
+  on, down to 45% glancing) and weight the deer's size cubed. A doe at 55 on the speedometer about 9 HP (a wall there 24), at most
+  about 17; through `CarLink.TakeCrashDamage` (so god mode and the race's end count), with the game's shake and car thump. The car loses
+  5% of its speed per doe (head on). Slower than 3 units a second a car passes through a deer.
+- **The body** (`DeerKills`, pure, on fixed 1/60 s steps from the kill so it is the same however long the frames): thrown along the
+  car's way at 1.05 to 1.15 of its speed, a little aside and up, tumbling about its length toward the side it was pushed; carried
+  over rising ground; down hard it bounces once, then slides to a stop and rolls onto its side (legs stretched, going limp). Shot it
+  falls over sideways about its hooves, away from the shot. It lies there for the rest of the race; the rest of its group carries on.
+- **In a room**: each machine tests only its own car and gun; a kill is sent to everybody (first byte 0xD3 on the Open World's one
+  handler, beside the events' messages): the deer, how, where the body starts and its velocity, spin and side (at float precision,
+  which the killer also uses). Every machine starts the same body at its own race time when it comes. A deer is killed once: a second
+  claim is dropped where it comes second (a near tie could leave two players' bodies in slightly different places; the host does not
+  settle it yet). A late joiner does not get earlier kills.
+- **How many**: the `DeerAmount` setting (alone only; 1 in a room, so everybody has the same deer) scales the groups: the most drawn
+  and their spacing. Above 1 the 743 places limit it: 2 gives about 215 groups, 4 about 245.
+- **Checked**: `meshcheck deer` (bodies of every deer of a race thrown at up to 150 on the speedometer, and shot, all at rest within
+  20 s lying on the drawn ground and never under it on the way, the same on frames of other lengths; messages read back; a second
+  kill dropped; the amounts). The dead poses were looked at in software renders (lying, tumbling, falling over); the trunk lies 0.02
+  units over the ground.
+- **Left for later**: reactions (the group scatters from a kill; fleeing a car), the host settling claims, kills for late joiners.

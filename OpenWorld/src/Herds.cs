@@ -305,7 +305,12 @@ namespace HalfGripOpenWorld
 		internal readonly double BuildMs;
 		private readonly ulong salt;
 
-		internal Herds(int raceSeed, double startHour, double daySeconds)
+		/// <summary>
+		/// The herds of the race with this seed. <paramref name="amount"/> scales how many groups there are (1 the standard; 2 twice as
+		/// many, their crossing places closer; at most what the sites allow): it is the player's own setting, so it is only ever other
+		/// than 1 alone, never in a room, where every machine must have the same deer.
+		/// </summary>
+		internal Herds(int raceSeed, double startHour, double daySeconds, double amount = 1.0)
 		{
 			var watch = System.Diagnostics.Stopwatch.StartNew();
 			Seed = raceSeed;
@@ -330,9 +335,12 @@ namespace HalfGripOpenWorld
 			}
 			List<Group> groups = new List<Group>();
 			int count = 0;
+			amount = Math.Max(0.0, Math.Min(4.0, amount));
+			int most = (int)Math.Floor(MostGroups * amount + 0.5);
+			double spacing = amount > 0.0 ? Spacing / Math.Sqrt(amount) : Spacing;
 			foreach (int k in order)
 			{
-				if (groups.Count >= MostGroups)
+				if (groups.Count >= most)
 				{
 					break;
 				}
@@ -341,7 +349,7 @@ namespace HalfGripOpenWorld
 				foreach (Group g in groups)
 				{
 					double dx = g.Site.X - site.X, dz = g.Site.Z - site.Z;
-					if (dx * dx + dz * dz < Spacing * Spacing)
+					if (dx * dx + dz * dz < spacing * spacing)
 					{
 						near = true;
 						break;

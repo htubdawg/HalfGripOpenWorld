@@ -129,10 +129,27 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// A deer killed on this machine, to everybody in the room (nothing alone). The deer's messages share the Open World's one
+		/// handler with the events', told apart by their first byte (<see cref="DeerKills.Tag"/>, never an <see cref="EventRoom.Version"/>).
+		/// </summary>
+		internal static void SendDeer(byte[] data)
+		{
+			if (InRoom && ctx != null)
+			{
+				ctx.Net.Send(data);
+			}
+		}
+
 		private static void Received(ulong from, byte[] data)
 		{
 			try
 			{
+				if (data != null && data.Length > 0 && data[0] == DeerKills.Tag)
+				{
+					DeerKills.Received(from, data);
+					return;
+				}
 				bool sync = EventRoom.IsSync(data);
 				if (Room == null)
 				{

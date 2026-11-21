@@ -190,7 +190,12 @@ namespace HalfGripOpenWorld
 	/// standing, looking up, walking, trotting). Where a deer is comes from the herds alone (the same on every machine); how its pose
 	/// blends from one thing to the next is only drawing, and is eased here.
 	///
-	/// Calm deer only: they do not react to cars yet and have no collider (step 2 of the plan in docs/PLAN.md).
+	/// They do not react to cars yet (step 3 of the plan in docs/PLAN.md), but they can be killed, tested in code with no colliders:
+	/// each frame this machine's car (its colliders' box) against the bodies of the deer drawn near it (<see cref="CarHits"/>), and each
+	/// of this player's gun shots against the deer it passes before what it struck (<see cref="Shoot"/>, from a patch on the gun's ray).
+	/// A car's hit damages the car as a crash does, scaled from the game's own crash numbers to a deer's weight, slows it a little and
+	/// throws the deer; a shot drops it where it stands. Each kill is sent to the room (<see cref="DeerKills"/>), so the body lies in the
+	/// same place on every screen.
 	/// </summary>
 	internal sealed class Deer : MonoBehaviour
 	{
@@ -212,7 +217,35 @@ namespace HalfGripOpenWorld
 		private bool failed;
 		private int layer;
 
-		private int stand, alert, graze, walk1, walk2;
+		private int stand, alert, graze, walk1, walk2, extend;
+
+		/// <summary>The deer drawn now, for the gun's patch (null with no world).</summary>
+		internal static Deer Active;
+
+		/// <summary>A deer's share of the damage a wall would do hit at the same speed, and the most one deer can do, as shares of the
+		/// car's most crash damage (a grown doe; a bigger deer more, as its weight).</summary>
+		private const float HitShare = 0.4f, HitMost = 0.7f;
+
+		/// <summary>A car slower than this (units a second, about 3 km/h) goes through a deer without hurting either.</summary>
+		private const float HitSlowest = 3f;
+
+		/// <summary>How much of the car's speed one grown doe takes off it.</summary>
+		private const float HitSlowing = 0.05f;
+
+		private DeerKills kills;
+		private int hitCount, shotCount;
+
+		// The car's box in its own frame (from its colliders, made once per car) and where it was last frame, in world coordinates.
+		private int boxCar;
+		private Vector3 boxMin, boxMax;
+		private bool havePrev;
+		private double prevX, prevZ;
+		private float prevY;
+		private Quaternion prevRot;
+
+		private const int Hips = 0, Chest = 2, Neck2 = 4, Head = 5, ShoulderL = 10, FetlockL = 13, ThighL = 14, HfetlockL = 17, ShoulderR = 18, FetlockR = 21, ThighR = 22, HfetlockR = 25;
+
+		private readonly List<(Vector3 a, Vector3 b, float r, int n)> shapes = new List<(Vector3, Vector3, float, int)>();
 
 		private sealed class View
 		{
@@ -229,6 +262,10 @@ namespace HalfGripOpenWorld
 			public bool Fresh;
 			public int Key;
 			public bool Seen;
+			/// <summary>Drawn as a body (dead), and its group and deer, for the hit tests.</summary>
+			public bool Dead;
+			public int G, M;
+			public double WorldX, WorldZ, StateYaw;
 		}
 
 		private readonly Dictionary<int, View> live = new Dictionary<int, View>();
@@ -248,7 +285,11 @@ namespace HalfGripOpenWorld
 			}
 			int seed = Weather.Seed;
 			double hour = Sky.StartHourOf(seed);
-			building = System.Threading.Tasks.Task.Run(() => new Herds(seed, hour, Sky.DaySeconds));
+			// The player's amount only alone: in a room everybody must have the same deer.
+			double amount = EventLink.InRoom ? 1.0 : Mod.DeerAmount.Value;
+			building = System.Threading.Tasks.Task.Run(() => new Herds(seed, hour, Sky.DaySeconds, amount));
+			kills = new DeerKills(seed);
+			Active = this;
 			try
 			{
 				stand = DeerMesh.Pose("stand");
@@ -256,6 +297,7 @@ namespace HalfGripOpenWorld
 				graze = DeerMesh.Pose("graze");
 				walk1 = DeerMesh.Pose("walk1");
 				walk2 = DeerMesh.Pose("walk2");
+				extend = DeerMesh.Pose("extend");
 				// Winter coat on a cold day (the race's snow line low), the summer coat otherwise: the painted coat is a summer one, so on
 				// a cold day it is tinted toward the winter coat's grey-brown.
 				bool winter = new Storms(seed).SnowLine < 390.0;
@@ -309,8 +351,10 @@ namespace HalfGripOpenWorld
 				}
 				herds = building.Result;
 				building = null;
-				Mod.Log.LogInfo("Deer: " + herds.Groups.Length + " groups, " + herds.DeerCount + " deer drawn from the race's seed (" + DeerSites.All.Count + " places they could live), " + herds.BuildMs.ToString("0") + " ms");
+				Mod.Log.LogInfo("Deer: " + herds.Groups.Length + " groups, " + herds.DeerCount + " deer drawn from the race's seed (" + DeerSites.All.Count + " places they could live), " + herds.BuildMs.ToString("0") + " ms"
+					+ (Math.Abs(Mod.DeerAmount.Value - 1f) > 0.001f ? (EventLink.InRoom ? " (the standard amount: DeerAmount is only used alone)" : " (DeerAmount " + Mod.DeerAmount.Value.ToString("0.##") + ")") : ""));
 			}
+			ReadKills();
 			if (!Mod.ShowDeer.Value)
 			{
 				Clear();
@@ -339,20 +383,33 @@ namespace HalfGripOpenWorld
 			double t = tm.TimeSinceRaceStart;
 			Origin.World(car.transform.position, out double cx, out double cz);
 
-			// The nearest deer within reach: the groups near enough first (a group's deer keep within a few hundred units of its spots).
+			// The nearest deer within reach: the groups near enough first (a group's deer keep within a few hundred units of its spots, and a
+			// body thrown by a fast car lands up to a few hundred more down the road).
 			near.Clear();
 			for (int g = 0; g < herds.Groups.Length; g++)
 			{
 				Herds.Group group = herds.Groups[g];
 				double dx = group.Site.X - cx, dz = group.Site.Z - cz;
-				if (dx * dx + dz * dz > (Reach + 300.0) * (Reach + 300.0))
+				if (dx * dx + dz * dz > (Reach + 650.0) * (Reach + 650.0))
 				{
 					continue;
 				}
 				for (int m = 0; m < group.Members.Length; m++)
 				{
-					herds.At(group, m, t, ref move, ref scratch, out DeerState s);
-					double ex = s.X - cx, ez = s.Z - cz;
+					double sx, sz;
+					if (kills.Dead.TryGetValue(DeerKills.Key(g, m), out DeerKills.Body body))
+					{
+						DeerKills.Pose bp = body.At(t, Herds.Ground, Gravity);
+						sx = bp.X;
+						sz = bp.Z;
+					}
+					else
+					{
+						herds.At(group, m, t, ref move, ref scratch, out DeerState s);
+						sx = s.X;
+						sz = s.Z;
+					}
+					double ex = sx - cx, ez = sz - cz;
 					double d2 = ex * ex + ez * ez;
 					if (d2 < Reach * Reach)
 					{
@@ -377,10 +434,24 @@ namespace HalfGripOpenWorld
 					live[key] = v;
 				}
 				v.Seen = true;
+				v.G = g;
+				v.M = m;
 				Herds.Group group = herds.Groups[g];
-				herds.At(group, m, t, ref move, ref scratch, out DeerState s);
-				Draw(v, group.Members[m], s, dt);
+				if (kills.Dead.TryGetValue(key, out DeerKills.Body body))
+				{
+					DrawBody(v, group.Members[m], body.At(t, Herds.Ground, Gravity), dt);
+				}
+				else
+				{
+					herds.At(group, m, t, ref move, ref scratch, out DeerState s);
+					v.Dead = false;
+					v.WorldX = s.X;
+					v.WorldZ = s.Z;
+					v.StateYaw = s.Yaw;
+					Draw(v, group.Members[m], s, dt);
+				}
 			}
+			CarHits(car, t);
 			gone.Clear();
 			foreach (KeyValuePair<int, View> kv in live)
 			{
@@ -411,7 +482,7 @@ namespace HalfGripOpenWorld
 				float nearest = near.Count > 0 ? near[0].d : -1f;
 				Status = "deer: " + drawn + " drawn" + (nearest >= 0f ? ", nearest " + (nearest / 3.3f).ToString("0") + " m" : "") + "; the nearest group's crossing "
 					+ (Math.Sqrt(best) / 3.3).ToString("0") + " m " + Sky.Compass(bx, bz) + " (" + herds.Groups.Length + " groups, " + herds.DeerCount + " deer this race; out feeding: "
-					+ (Herds.Activity(herds.Hour(t)) * 100.0).ToString("0") + "%)";
+					+ (Herds.Activity(herds.Hour(t)) * 100.0).ToString("0") + "%; killed: " + kills.Count + ", " + hitCount + " by this car, " + shotCount + " shot here)";
 			}
 		}
 
@@ -505,12 +576,405 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>Gravity for the thrown bodies: the scene's (units a second, a second).</summary>
+		private static double Gravity
+		{
+			get
+			{
+				float g = -Physics.gravity.y;
+				return g > 1f ? g : 9.81;
+			}
+		}
+
+		/// <summary>The kills other players sent, taken as they come (each deer once; another race's dropped).</summary>
+		private void ReadKills()
+		{
+			List<(ulong from, DeerKills.Kill kill)> list = DeerKills.Take();
+			if (list == null || tm == null)
+			{
+				return;
+			}
+			double t = tm.TimeSinceRaceStart;
+			foreach ((ulong from, DeerKills.Kill kill) in list)
+			{
+				if (kill.Group >= herds.Groups.Length || kill.Member >= herds.Groups[kill.Group].Members.Length)
+				{
+					continue;
+				}
+				if (kills.Add(kill, t))
+				{
+					Mod.Info("Deer: group " + kill.Group + " deer " + kill.Member + " " + (kill.How == DeerKills.How.Shot ? "shot" : "hit") + " by another player");
+				}
+			}
+		}
+
+		/// <summary>A kill found here: kept as it will be read on the other machines (sent at float precision) and sent to them.</summary>
+		private void Kill(DeerKills.Kill kill, double t)
+		{
+			byte[] data = DeerKills.Encode(kill);
+			if (DeerKills.Decode(data, out DeerKills.Kill sent) && kills.Add(sent, t))
+			{
+				EventLink.SendDeer(data);
+			}
+		}
+
+		/// <summary>A dead deer: its body where <see cref="DeerKills.Body"/> says, rolled onto its side, legs stretched in the air and going limp.</summary>
+		private void DrawBody(View v, Herds.Member member, DeerKills.Pose p, float dt)
+		{
+			int bones = DeerMesh.Offsets.Length;
+			Quaternion[] fly = DeerMesh.Poses[extend], lie = DeerMesh.Poses[stand];
+			float limp = (float)p.Limp * 0.6f;
+			for (int i = 0; i < bones; i++)
+			{
+				target[i] = Quaternion.Slerp(fly[i], lie[i], limp);
+			}
+			if (v.Fresh)
+			{
+				Array.Copy(target, v.Shown, bones);
+				v.Blend = 1f;
+			}
+			else if (!v.Dead)
+			{
+				Array.Copy(v.Shown, v.From, bones);
+				v.Blend = 0f;
+			}
+			v.Dead = true;
+			v.Blend = Mathf.Min(1f, v.Blend + dt / 0.15f);
+			for (int i = 0; i < bones; i++)
+			{
+				v.Shown[i] = v.Blend >= 1f ? target[i] : Quaternion.Slerp(v.From[i], target[i], v.Blend);
+				v.Bones[i].localRotation = v.Shown[i];
+			}
+			v.Bones[0].localPosition = DeerMesh.Offsets[0];
+
+			// The body turns about its centre: the root (at the hooves) is put so the centre is where the body is.
+			float size = (float)member.Scale;
+			float yaw = 90f - (float)(p.Yaw * (180.0 / Math.PI));
+			Quaternion rot = Quaternion.Euler(0f, yaw, 0f) * Quaternion.AngleAxis(-(float)(p.Roll * (180.0 / Math.PI)), Vector3.forward);
+			Vector3 centre = Origin.ToLocal(new Vector3((float)p.X, (float)p.Y, (float)p.Z));
+			Vector3 at = centre - rot * new Vector3(0f, (float)DeerKills.CentreHeight * size, 0f);
+			v.Root.SetPositionAndRotation(at, rot);
+			v.Root.localScale = new Vector3(size, size, size);
+			v.Yaw = yaw;
+			v.Fresh = false;
+			if (!v.Go.activeSelf)
+			{
+				v.Go.SetActive(true);
+			}
+		}
+
+		/// <summary>
+		/// A drawn deer's body as capsules in the scene (from its bones, so a grazing deer's head is low): the trunk, the neck, the head
+		/// and the four legs; each with the points it is tested at along it.
+		/// </summary>
+		private void Shapes(View v)
+		{
+			shapes.Clear();
+			Transform[] b = v.Bones;
+			float s = v.Root.localScale.x;
+			shapes.Add((b[Hips].TransformPoint(new Vector3(0f, -0.5f, -0.25f)), b[Chest].TransformPoint(new Vector3(0f, -0.6f, 0.25f)), 0.62f * s, 7));
+			shapes.Add((b[Chest].TransformPoint(new Vector3(0f, 0.1f, 0.45f)), b[Head].TransformPoint(Vector3.zero), 0.3f * s, 4));
+			Vector3 head = b[Head].TransformPoint(new Vector3(0f, 0.05f, 0.45f));
+			shapes.Add((head, head, 0.33f * s, 1));
+			shapes.Add((b[ShoulderL].position, b[FetlockL].position, 0.17f * s, 4));
+			shapes.Add((b[ShoulderR].position, b[FetlockR].position, 0.17f * s, 4));
+			shapes.Add((b[ThighL].position, b[HfetlockL].position, 0.17f * s, 4));
+			shapes.Add((b[ThighR].position, b[HfetlockR].position, 0.17f * s, 4));
+		}
+
+		/// <summary>The car's box in the frame of its body (its rigidbody's transform), from its solid colliders; made once per car.</summary>
+		private void CarBox(CarControllerNew car)
+		{
+			int id = car.GetInstanceID();
+			if (id == boxCar)
+			{
+				return;
+			}
+			boxCar = id;
+			Transform frame = car.rb != null ? car.rb.transform : car.transform;
+			bool any = false;
+			Vector3 lo = Vector3.zero, hi = Vector3.zero;
+			Vector3[] corners = new Vector3[8];
+			foreach (Collider c in car.GetComponentsInChildren<Collider>(false))
+			{
+				if (c == null || c.isTrigger || c is WheelCollider)
+				{
+					continue;
+				}
+				Bounds local;
+				switch (c)
+				{
+					case BoxCollider box:
+						local = new Bounds(box.center, box.size);
+						break;
+					case MeshCollider mesh when mesh.sharedMesh != null:
+						local = mesh.sharedMesh.bounds;
+						break;
+					case SphereCollider sphere:
+						local = new Bounds(sphere.center, Vector3.one * sphere.radius * 2f);
+						break;
+					case CapsuleCollider capsule:
+						local = new Bounds(capsule.center, Vector3.one * Mathf.Max(capsule.radius * 2f, capsule.height));
+						break;
+					default:
+						continue;
+				}
+				for (int k = 0; k < 8; k++)
+				{
+					Vector3 corner = local.center + Vector3.Scale(local.extents, new Vector3((k & 1) == 0 ? -1f : 1f, (k & 2) == 0 ? -1f : 1f, (k & 4) == 0 ? -1f : 1f));
+					corners[k] = frame.InverseTransformPoint(c.transform.TransformPoint(corner));
+				}
+				// Something far from the body (a long trigger-like part, a gun held out) is not the car's body.
+				Vector3 mid = (corners[0] + corners[7]) * 0.5f;
+				if (mid.magnitude > 12f)
+				{
+					continue;
+				}
+				for (int k = 0; k < 8; k++)
+				{
+					lo = any ? Vector3.Min(lo, corners[k]) : corners[k];
+					hi = any ? Vector3.Max(hi, corners[k]) : corners[k];
+					any = true;
+				}
+			}
+			Vector3 size = hi - lo;
+			if (!any || size.x < 2f || size.x > 16f || size.z < 5f || size.z > 30f || size.y < 1f || size.y > 14f)
+			{
+				// A car is about 14 long and 6 wide.
+				lo = new Vector3(-3.2f, 0f, -7f);
+				hi = new Vector3(3.2f, 4.5f, 7f);
+				Mod.Info("Deer: the car's colliders gave no sensible box (" + (any ? size.ToString("0.0") : "none") + "): a box 6.4 x 4.5 x 14 is used for hitting deer");
+			}
+			else
+			{
+				Mod.Info("Deer: the car's box for hitting deer is " + size.ToString("0.0") + " from " + lo.ToString("0.0"));
+			}
+			boxMin = lo;
+			boxMax = hi;
+		}
+
+		/// <summary>
+		/// This machine's car against the live deer drawn near it, at its pose now, last frame's and between (so a fast car does not
+		/// pass through one between frames). A deer touched by a car going faster than <see cref="HitSlowest"/> is killed and thrown, and
+		/// the car is damaged, shaken and slowed.
+		/// </summary>
+		private void CarHits(CarControllerNew car, double t)
+		{
+			Rigidbody rb = car.rb;
+			if (rb == null)
+			{
+				return;
+			}
+			CarBox(car);
+			Transform frame = rb.transform;
+			Origin.World(frame.position, out double wx, out double wz);
+			float wy = frame.position.y;
+			Quaternion rot = frame.rotation;
+			if (!havePrev)
+			{
+				prevX = wx;
+				prevZ = wz;
+				prevY = wy;
+				prevRot = rot;
+				havePrev = true;
+			}
+			Vector3 vel = rb.linearVelocity;
+			float speed = vel.magnitude;
+			if (speed >= HitSlowest)
+			{
+				// The poses tested: last frame's (moved into this scene's frame), between, and now.
+				Vector3 prevPos = Origin.ToLocal(new Vector3((float)prevX, prevY, (float)prevZ));
+				Vector3 nowPos = frame.position;
+				float jump = (nowPos - prevPos).magnitude;
+				int steps = jump > 40f ? 0 : Mathf.Clamp(Mathf.CeilToInt(jump / 1.5f), 0, 8);
+				foreach (View v in live.Values)
+				{
+					if (v.Dead || !v.Seen || v.Fresh || (v.Root.position - nowPos).sqrMagnitude > 30f * 30f)
+					{
+						continue;
+					}
+					Shapes(v);
+					if (!Touches(prevPos, prevRot, nowPos, rot, steps, out Vector3 contact))
+					{
+						continue;
+					}
+					Hit(car, v, contact, vel, t);
+				}
+			}
+			prevX = wx;
+			prevZ = wz;
+			prevY = wy;
+			prevRot = rot;
+		}
+
+		/// <summary>Whether any of <see cref="shapes"/> is in the car's box at any of the poses tested; where, if so.</summary>
+		private bool Touches(Vector3 prevPos, Quaternion prevRot, Vector3 nowPos, Quaternion nowRot, int steps, out Vector3 contact)
+		{
+			for (int k = steps; k >= 0; k--)
+			{
+				float f = steps == 0 ? 1f : (float)k / steps;
+				Vector3 pos = Vector3.Lerp(prevPos, nowPos, f);
+				Quaternion inv = Quaternion.Inverse(Quaternion.Slerp(prevRot, nowRot, f));
+				foreach ((Vector3 a, Vector3 b, float r, int n) in shapes)
+				{
+					for (int i = 0; i < n; i++)
+					{
+						Vector3 w = n == 1 ? a : Vector3.Lerp(a, b, (float)i / (n - 1));
+						Vector3 p = inv * (w - pos);
+						if (p.x > boxMin.x - r && p.x < boxMax.x + r && p.y > boxMin.y - r && p.y < boxMax.y + r && p.z > boxMin.z - r && p.z < boxMax.z + r)
+						{
+							contact = w;
+							return true;
+						}
+					}
+				}
+			}
+			contact = default;
+			return false;
+		}
+
+		/// <summary>A car's hit on a deer: the damage, the shake, the sound, the car slowed, and the deer killed and thrown.</summary>
+		private void Hit(CarControllerNew car, View v, Vector3 contact, Vector3 vel, double t)
+		{
+			Herds.Member member = herds.Groups[v.G].Members[v.M];
+			float size = (float)member.Scale;
+			float weight = size * size * size;
+			float speed = vel.magnitude;
+			Vector3 dir = vel / speed;
+			Vector3 toDeer = contact - car.rb.worldCenterOfMass;
+			toDeer.y = 0f;
+			toDeer = toDeer.sqrMagnitude > 0.01f ? toDeer.normalized : new Vector3(dir.x, 0f, dir.z).normalized;
+			// Head on, the whole speed; a glancing blow (the deer at the car's side), less.
+			float along = Mathf.Clamp(0.45f + 0.55f * Vector3.Dot(dir, toDeer), 0.2f, 1f);
+			float impact = speed * along;
+
+			// The damage: the game's own crash, scaled to a deer (a wall at the speed the game deals its full crash damage would do
+			// maxCrashDamage; a doe does HitShare of that, and never more than HitMost of it).
+			float slowest = car.crashMinImpactSpeed / SpeedDashboard.SpeedToDisplay, full = car.crashFullDamageSpeed / SpeedDashboard.SpeedToDisplay;
+			float most = car.maxCrashDamage;
+			float damage = most * HitShare * weight * (impact * impact - slowest * slowest) / Mathf.Max(1f, full * full);
+			damage = Mathf.Min(damage, most * HitMost * weight, most);
+			CarLink link = car.carLink;
+			if (damage >= 1f && link != null)
+			{
+				link.TakeCrashDamage(damage, shake: true, DamageKind.Crash);
+				if (Shaker.instance != null && link.crashShakeDamage > 0f)
+				{
+					Shaker.instance.KickSpring(Mathf.Clamp01(damage / link.crashShakeDamage));
+				}
+			}
+			else
+			{
+				damage = 0f;
+			}
+			try
+			{
+				SoundController.PlayRandomSoundAtPosition(car.carCollisionSounds, contact, 0.4f, 25f, 500f, 0.2f);
+			}
+			catch (Exception)
+			{
+				// No sound is no harm.
+			}
+			// The car loses a little of its way to the deer's weight.
+			car.rb.AddForceAtPosition(-vel * (HitSlowing * weight * along * car.rb.mass), contact, ForceMode.Impulse);
+
+			// The deer thrown on along the car's way, a little aside and up, tumbling toward the side it was pushed.
+			Vector3 side = toDeer - dir * Vector3.Dot(toDeer, dir);
+			Vector3 thrown = vel * (1.05f + 0.1f * along) + side * (0.2f * speed) + Vector3.up * Mathf.Min(18f, 2.5f + 0.18f * impact);
+			double yaw = v.StateYaw;
+			double rightX = Math.Sin(yaw), rightZ = -Math.Cos(yaw);
+			double push = thrown.x * rightX + thrown.z * rightZ;
+			double u = Herds.Unit((ulong)(uint)kills.Seed, (ulong)v.G, (ulong)v.M, 0xD1E), u2 = Herds.Unit((ulong)(uint)kills.Seed, (ulong)v.G, (ulong)v.M, 0xD1F);
+			double ground = Herds.Ground(v.WorldX, v.WorldZ);
+			Kill(new DeerKills.Kill
+			{
+				Seed = kills.Seed, Group = v.G, Member = v.M, How = DeerKills.How.Car,
+				X = v.WorldX, Z = v.WorldZ, Y = ground + DeerKills.CentreHeight * size,
+				Vx = thrown.x, Vy = thrown.y, Vz = thrown.z, Yaw = yaw, Scale = size,
+				Spin = (push >= 0.0 ? 1.0 : -1.0) * (3.0 + 5.0 * u) * Math.Min(1.0, impact / 20.0 + 0.3), Turn = (u2 - 0.5) * 3.0,
+				Side = push >= 0.0 ? 1 : -1,
+			}, t);
+			hitCount++;
+			Mod.Info("Deer: hit at " + (impact * SpeedDashboard.SpeedToDisplay).ToString("0") + " on the speedometer (the car at " + (speed * SpeedDashboard.SpeedToDisplay).ToString("0") + "): "
+				+ damage.ToString("0.0") + " damage" + (CarLink.godMode ? " (god mode: none taken)" : ""));
+		}
+
+		/// <summary>
+		/// A shot from this player's gun (the gun's ray, from the patch on it): the nearest live deer drawn that the ray passes through
+		/// before <paramref name="reach"/> (what the gun's ray struck, or its range) is killed, falling away from the shot; true, and
+		/// where the bullet met it, if one was.
+		/// </summary>
+		internal bool Shoot(Vector3 origin, Vector3 direction, float reach, out Vector3 at)
+		{
+			at = default;
+			if (herds == null || tm == null || direction.sqrMagnitude < 1e-6f)
+			{
+				return false;
+			}
+			Vector3 d = direction.normalized;
+			View best = null;
+			float bestT = reach;
+			foreach (View v in live.Values)
+			{
+				if (v.Dead || !v.Seen || v.Fresh)
+				{
+					continue;
+				}
+				Vector3 c = v.Root.position - origin;
+				float along = Vector3.Dot(c, d);
+				if (along < -10f || along > bestT + 10f || (c - d * along).sqrMagnitude > 64f)
+				{
+					continue;
+				}
+				Shapes(v);
+				foreach ((Vector3 a, Vector3 b, float r, int n) in shapes)
+				{
+					int samples = n == 1 ? 1 : n * 2 - 1;
+					for (int i = 0; i < samples; i++)
+					{
+						Vector3 w = samples == 1 ? a : Vector3.Lerp(a, b, (float)i / (samples - 1));
+						Vector3 q = w - origin;
+						float tq = Vector3.Dot(q, d);
+						float miss2 = (q - d * tq).sqrMagnitude;
+						if (tq <= 0f || miss2 > r * r)
+						{
+							continue;
+						}
+						float enter = tq - Mathf.Sqrt(r * r - miss2);
+						if (enter < bestT)
+						{
+							bestT = Mathf.Max(0f, enter);
+							best = v;
+						}
+					}
+				}
+			}
+			if (best == null)
+			{
+				return false;
+			}
+			at = origin + d * bestT;
+			double yaw = best.StateYaw;
+			double rightX = Math.Sin(yaw), rightZ = -Math.Cos(yaw);
+			int side = d.x * rightX + d.z * rightZ >= 0.0 ? 1 : -1;
+			Kill(new DeerKills.Kill
+			{
+				Seed = kills.Seed, Group = best.G, Member = best.M, How = DeerKills.How.Shot,
+				X = best.WorldX, Z = best.WorldZ, Y = Herds.Ground(best.WorldX, best.WorldZ),
+				Yaw = yaw, Scale = herds.Groups[best.G].Members[best.M].Scale, Side = side,
+			}, tm.TimeSinceRaceStart);
+			shotCount++;
+			Mod.Info("Deer: shot at " + (bestT / 3.3f).ToString("0") + " m");
+			return true;
+		}
+
 		/// <summary>A deer's objects: from the spares, or made (a root with the bones under it and the skinned mesh on it).</summary>
 		private View Take(int key)
 		{
 			View v = spare.Count > 0 ? spare.Pop() : Make();
 			v.Key = key;
 			v.Fresh = true;
+			v.Dead = false;
 			return v;
 		}
 
@@ -561,6 +1025,10 @@ namespace HalfGripOpenWorld
 		private void OnDestroy()
 		{
 			Status = null;
+			if (Active == this)
+			{
+				Active = null;
+			}
 		}
 	}
 }

@@ -63,7 +63,10 @@ using UnityEngine;
 //                group's spots and the legs between them on the drawn ground, never in water above a deer's belly nor over a drop,
 //                every crossing place on the road it crosses, and every deer followed over half an hour of race time never deep in
 //                water nor on any road's paving away from its group's crossing place, standing on the ground as drawn; how far
-//                that is from the drawn ground (nowhere)
+//                that is from the drawn ground (nowhere); dead deer (DeerKills): bodies thrown by a car at every deer of one race,
+//                at speeds up to 150 on the speedometer, and shot ones, all coming to rest within the time allowed lying on the
+//                drawn ground (never under it while moving), the same on a second run with frames of other lengths; the kill
+//                messages read back as sent, and a second kill of one deer dropped; how many groups the DeerAmount setting gives
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -2678,6 +2681,115 @@ internal static class Program
 				+ (sumOff / Math.Max(1, samples)).ToString("0.00") + " on average, " + worstOff.ToString("0.00") + " at worst");
 			ok &= spotsBad == 0 && legsBad == 0 && deep == 0 && paved == 0 && worstOff < 1e-3 && herds.Groups.Length >= 100;
 		}
+		ok &= DeadDeerChecks();
+		return ok;
+	}
+
+	/// <summary>
+	/// Dead deer: every deer of one race thrown by a car from where it stands at half an hour (at a speed and a way from its index, up to
+	/// 150 on the speedometer, some fast enough to bounce) and shot; each must come to rest within <see cref="DeerKills.Longest"/> lying
+	/// on the drawn ground, never under it on the way, and land in the same place when its frames are of other lengths. Also the kill
+	/// messages, a second kill of a deer, and the DeerAmount setting's groups.
+	/// </summary>
+	private static bool DeadDeerChecks()
+	{
+		bool ok = true;
+		const double gravity = 9.81 * 3.3;
+		Herds herds = new Herds(1, Sky0(1), 2400.0);
+		var mv = new Herds.Move();
+		var spare = new Herds.Move();
+		int bodies = 0, under = 0, restless = 0, offGround = 0, differ = 0;
+		double worstUnder = 0.0, worstOff = 0.0, worstDiffer = 0.0, longest = 0.0;
+		foreach (Herds.Group g in herds.Groups)
+		{
+			for (int d = 0; d < g.Members.Length; d++)
+			{
+				herds.At(g, d, 1800.0, ref mv, ref spare, out DeerState s);
+				double size = g.Members[d].Scale;
+				double u = Herds.Unit(7UL, (ulong)g.Index, (ulong)d, 1UL), w = Herds.Unit(7UL, (ulong)g.Index, (ulong)d, 2UL);
+				double speed = 5.0 + 78.0 * u, a = w * 2.0 * Math.PI;
+				for (int how = 0; how < 2; how++)
+				{
+					var kill = new DeerKills.Kill
+					{
+						Seed = 1, Group = g.Index, Member = d, How = how == 0 ? DeerKills.How.Car : DeerKills.How.Shot,
+						X = s.X, Z = s.Z, Y = how == 0 ? Herds.Ground(s.X, s.Z) + DeerKills.CentreHeight * size : Herds.Ground(s.X, s.Z),
+						Vx = how == 0 ? Math.Cos(a) * speed * 1.1 : 0.0, Vz = how == 0 ? Math.Sin(a) * speed * 1.1 : 0.0, Vy = how == 0 ? Math.Min(18.0, 2.5 + 0.18 * speed) : 0.0,
+						Yaw = s.Yaw, Scale = size, Spin = (u - 0.5) * 14.0, Turn = (w - 0.5) * 3.0, Side = u < 0.5 ? -1 : 1,
+					};
+					// Read back as it would be on another machine.
+					if (!DeerKills.Decode(DeerKills.Encode(kill), out DeerKills.Kill sent))
+					{
+						Console.WriteLine("  a kill message did not read back");
+						ok = false;
+						continue;
+					}
+					var body = new DeerKills.Body(sent, 100.0);
+					var other = new DeerKills.Body(sent, 100.0);
+					double t = 100.0;
+					DeerKills.Pose p = default;
+					while (!body.Still && t < 100.0 + DeerKills.Longest + 1.0)
+					{
+						t += 1.0 / 60.0;
+						p = body.At(t, Herds.Ground, gravity);
+						double below = Herds.Ground(p.X, p.Z) + DeerKills.Lift * size - p.Y;
+						if (how == 0 && below > 0.05)
+						{
+							under++;
+							worstUnder = Math.Max(worstUnder, below);
+						}
+					}
+					longest = Math.Max(longest, t - 100.0);
+					p = body.At(t + 1.0, Herds.Ground, gravity);
+					restless += body.Still ? 0 : 1;
+					double off = Math.Abs(p.Y - (Herds.Ground(p.X, p.Z) + DeerKills.Lift * size));
+					double lying = Math.Abs(Math.Abs(p.Roll) % (2.0 * Math.PI) - Math.PI / 2.0);
+					if (off > 0.01 || Math.Min(lying, Math.Abs(lying - Math.PI)) > 0.01)
+					{
+						offGround++;
+						worstOff = Math.Max(worstOff, off);
+					}
+					// The same body on frames of other lengths (a slow machine's): it must lie in the same place.
+					for (double tt = 100.0; tt < t + 1.0; tt += 0.05 + 0.1 * Herds.Unit(3UL, (ulong)g.Index, (ulong)d, (ulong)(tt * 100.0)))
+					{
+						other.At(tt, Herds.Ground, gravity);
+					}
+					DeerKills.Pose q = other.At(t + 1.0, Herds.Ground, gravity);
+					double gap = Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Z - q.Z) * (p.Z - q.Z) + (p.Y - q.Y) * (p.Y - q.Y));
+					if (gap > 1e-6)
+					{
+						differ++;
+						worstDiffer = Math.Max(worstDiffer, gap);
+					}
+					bodies++;
+				}
+			}
+		}
+		Console.WriteLine("         dead deer: " + bodies + " bodies thrown or shot; " + under + " moments under the ground (worst " + worstUnder.ToString("0.00") + "), " + restless + " never at rest (longest "
+			+ longest.ToString("0.0") + " s), " + offGround + " not lying on the ground at rest (worst " + worstOff.ToString("0.00") + "), " + differ + " in another place on other frames (worst " + worstDiffer.ToString("0.000") + ")");
+		ok &= under == 0 && restless == 0 && offGround == 0 && differ == 0 && bodies > 100;
+
+		// A second kill of a deer is dropped, as is another race's.
+		var kills = new DeerKills(5);
+		var k1 = new DeerKills.Kill { Seed = 5, Group = 3, Member = 1, Scale = 1.0 };
+		bool first = kills.Add(k1, 10.0), again = kills.Add(k1, 11.0), elsewhere = kills.Add(new DeerKills.Kill { Seed = 6, Group = 4, Member = 0, Scale = 1.0 }, 12.0);
+		Console.WriteLine("         kills: the first taken " + first + ", the same deer again " + again + ", another race's " + elsewhere);
+		ok &= first && !again && !elsewhere && kills.Count == 1;
+
+		// The DeerAmount setting (alone only).
+		string amounts = "";
+		int last = -1;
+		bool rising = true;
+		foreach (double amount in new[] { 0.0, 0.5, 1.0, 2.0, 4.0 })
+		{
+			Herds h = new Herds(1, Sky0(1), 2400.0, amount);
+			amounts += (amounts.Length > 0 ? ", " : "") + amount.ToString("0.#") + ": " + h.Groups.Length + " groups (" + h.DeerCount + " deer)";
+			rising &= h.Groups.Length > last || (amount > 0.0 && h.Groups.Length == last && last > 300);
+			ok &= amount > 0.0 || h.Groups.Length == 0;
+			last = h.Groups.Length;
+		}
+		Console.WriteLine("         DeerAmount " + amounts);
+		ok &= rising;
 		return ok;
 	}
 
