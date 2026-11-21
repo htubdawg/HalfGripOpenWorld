@@ -292,7 +292,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    group's crossing place, how far and which way (N is up on the map); drive there on the lanes. The log has `Deer: ... groups, ...
    deer drawn from the race's seed (... places they could live), ... ms` a second or two after the race loads. At a group: deer
    standing on the ground (hooves on it, not floating or sunk, on slopes too), the right way up and facing the way they walk,
-   brown with a white belly, throat and tail underside (a greyer coat on a cold race). They graze head down, lift their heads to
+   in the painted coat (fur, the face's eyes and white muzzle band, white throat, belly and tail underside, dark hooves; a little
+   greyer on a cold race), not flat colours (the log warns if `textures\deer.png` could not be read). They graze head down, lift their heads to
    look about, take a step now and then, and every minute or two the group walks to another spot in single file; a group whose spots
    are either side of the lane crosses it one deer at a time, a second or more apart (now and then at a trot, now and then one
    turns back halfway and crosses last). Never in a river or lake, never down a steep bank, never on a road except crossing at their

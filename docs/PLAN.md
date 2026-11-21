@@ -1727,8 +1727,9 @@ and a browser viewer before it goes in; the owner sees it before the behaviour i
   and a third of the time one follower turns back halfway, waits 4 to 10 s at the verge and crosses last. At a spot each deer has
   its place in a ring, takes a small step every 11 s, grazes, and lifts its head now and then (lone deer more).
 - **Drawn**: the 40 nearest within 500 units (about 150 m) as skinned meshes posed in code (stand, alert, graze; walk and trot
-  swinging between `walk1` and its mirror); the coat a 4-texel palette on the scene's lit shader, the winter coat when the race's
-  snow line is under 390. The `Deer` config hides them. The overlay (ShowCoords) points to the nearest group.
+  swinging between `walk1` and its mirror); the coat the owner's painted texture (`OpenWorld/textures/deer.png`, from an image model on
+  the UV templates) on the scene's lit shader, tinted greyer when the race's snow line is under 390 (a cold day); if the file cannot
+  be read, the flat colour regions (a 4-texel palette) instead. The `Deer` config hides them. The overlay (ShowCoords) points to the nearest group.
 - **Checked**: `meshcheck deer` (the mesh; three seeds: spots, legs and every deer over half an hour never in water above the belly,
   over a drop or on paving but at the crossing; deer on the drawn ground exactly), `preview` (sites, groups and a map of one race's
   groups, `<out>-deer.ppm`; the same deer from one seed twice).

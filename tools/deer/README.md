@@ -17,6 +17,8 @@ python3 preview.py out/p.png stand,graze,flag colour -90,30,150   # poses, colou
   `deer.json`, the frozen build the templates fit. Any change to the mesh means new templates and a new texture.
 - `viewer/index.html`: the deer in 3D (poses, walk and gallop, coats, wireframe; drop a painted texture on it to try it). One file,
   opens straight from disk; `python3 build_viewer.py` rebuilds it from `viewer/template.html`, `deer.json` and the UV guide.
+- `OpenWorld/textures/deer.png`: the painted coat the game uses (the owner's, from an image model on the templates; 1024 square,
+  PNG since Unity cannot read WebP). `preview_textured.png`: it on the mesh, rendered from the UVs.
 - `preview_colour.png`, `preview_clay.png`: the current build (wireframe and the winter coat in the second).
 
 - `export_cs.py`: writes `OpenWorld/src/DeerModel.cs` (the mod ships only source) from `deer.json`, in the model's own frame;

@@ -7,8 +7,9 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// The deer's mesh in Unity's frame and game units, made once from <see cref="DeerModel"/>: the model's x mirrored (it is
-	/// right-handed, Unity left-handed) with the triangles' winding reversed, scaled from metres by 3.3, each vertex's colour region as a
-	/// texel of a small palette texture (the scene's lit shader takes no vertex colours), skinned to the 26 bones.
+	/// right-handed, Unity left-handed) with the triangles' winding reversed, scaled from metres by 3.3, skinned to the 26 bones. Its
+	/// coat is the painted texture (<c>textures\deer.png</c> in the mod's folder, on the model's UVs); if that cannot be read, each
+	/// vertex's colour region as a texel of a small palette texture instead (the scene's lit shader takes no vertex colours).
 	/// </summary>
 	internal static class DeerMesh
 	{
@@ -26,6 +27,65 @@ namespace HalfGripOpenWorld
 		internal static int Pose(string name)
 		{
 			return Array.IndexOf(DeerModel.PoseNames, name);
+		}
+
+		/// <summary>The mesh, its UVs on the painted texture (<paramref name="painted"/>) or on the palette's texels.</summary>
+		internal static Mesh Get(bool painted)
+		{
+			Mesh m = Get();
+			if (painted != onPainting)
+			{
+				m.uv = Uvs(painted);
+				onPainting = painted;
+			}
+			return m;
+		}
+
+		private static bool onPainting;
+
+		private static Vector2[] Uvs(bool painted)
+		{
+			int n = DeerModel.Region.Length, regions = DeerModel.Regions.Length;
+			Vector2[] uv = new Vector2[n];
+			for (int i = 0; i < n; i++)
+			{
+				// The model's UVs run from the texture's bottom left, as Unity's do.
+				uv[i] = painted ? new Vector2(DeerModel.Uvs[i * 2], DeerModel.Uvs[i * 2 + 1]) : new Vector2((DeerModel.Region[i] + 0.5f) / regions, 0.5f);
+			}
+			return uv;
+		}
+
+		/// <summary>
+		/// The painted coat from the mod's folder (a new texture each race: the race's material frees it with the world), or null if it
+		/// is missing or cannot be read.
+		/// </summary>
+		internal static Texture2D Painted()
+		{
+			try
+			{
+				string path = System.IO.Path.Combine(Mod.Ctx.Folder, "textures", "deer.png");
+				if (!System.IO.File.Exists(path))
+				{
+					Mod.Log.LogWarning("The deer's coat " + path + " is missing: the deer are drawn in flat colours");
+					return null;
+				}
+				Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true) { name = "OpenWorld Deer Coat", hideFlags = HideFlags.HideAndDontSave };
+				if (!ImageConversion.LoadImage(tex, System.IO.File.ReadAllBytes(path), true))
+				{
+					UnityEngine.Object.Destroy(tex);
+					Mod.Log.LogWarning("The deer's coat " + path + " could not be read: the deer are drawn in flat colours");
+					return null;
+				}
+				tex.filterMode = FilterMode.Trilinear;
+				tex.anisoLevel = 4;
+				tex.wrapMode = TextureWrapMode.Clamp;
+				return tex;
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("The deer's coat could not be loaded (flat colours instead): " + e.Message);
+				return null;
+			}
 		}
 
 		internal static Mesh Get()
@@ -101,6 +161,7 @@ namespace HalfGripOpenWorld
 			m.vertices = v;
 			m.normals = nor;
 			m.uv = uv;
+			onPainting = false;
 			m.boneWeights = w;
 			m.bindposes = bindposes;
 			m.triangles = tris;
@@ -145,6 +206,7 @@ namespace HalfGripOpenWorld
 
 		private TrackManager tm;
 		private Material material;
+		private Mesh mesh;
 		private System.Threading.Tasks.Task<Herds> building;
 		private Herds herds;
 		private bool failed;
@@ -189,16 +251,19 @@ namespace HalfGripOpenWorld
 			building = System.Threading.Tasks.Task.Run(() => new Herds(seed, hour, Sky.DaySeconds));
 			try
 			{
-				DeerMesh.Get();
 				stand = DeerMesh.Pose("stand");
 				alert = DeerMesh.Pose("alert");
 				graze = DeerMesh.Pose("graze");
 				walk1 = DeerMesh.Pose("walk1");
 				walk2 = DeerMesh.Pose("walk2");
-				// Winter coat on a cold day (the race's snow line low), the summer coat otherwise.
+				// Winter coat on a cold day (the race's snow line low), the summer coat otherwise: the painted coat is a summer one, so on
+				// a cold day it is tinted toward the winter coat's grey-brown.
 				bool winter = new Storms(seed).SnowLine < 390.0;
 				material = new Material(lit) { name = "OpenWorld Deer", hideFlags = HideFlags.HideAndDontSave };
-				Texture2D coat = DeerMesh.Palette(winter);
+				Texture2D painted = DeerMesh.Painted();
+				Texture2D coat = painted ?? DeerMesh.Palette(winter);
+				mesh = DeerMesh.Get(painted != null);
+				Color tint = painted != null && winter ? new Color(0.84f, 0.88f, 0.93f) : Color.white;
 				if (material.HasProperty("_BaseMap"))
 				{
 					material.SetTexture("_BaseMap", coat);
@@ -209,7 +274,7 @@ namespace HalfGripOpenWorld
 				}
 				if (material.HasProperty("_BaseColor"))
 				{
-					material.SetColor("_BaseColor", Color.white);
+					material.SetColor("_BaseColor", tint);
 				}
 				if (material.HasProperty("_Smoothness"))
 				{
@@ -480,7 +545,7 @@ namespace HalfGripOpenWorld
 				t[b] = bone.transform;
 			}
 			SkinnedMeshRenderer r = go.AddComponent<SkinnedMeshRenderer>();
-			r.sharedMesh = DeerMesh.Get();
+			r.sharedMesh = mesh;
 			r.bones = t;
 			r.rootBone = t[0];
 			r.sharedMaterial = material;
