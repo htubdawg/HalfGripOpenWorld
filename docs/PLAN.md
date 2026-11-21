@@ -1633,9 +1633,12 @@ a time: a road hazard, the same for every player in a room.
 
 ### Behaviour
 
-- **Groups** from the seed: mostly family groups of 2 to 5, some lone deer and bachelor groups, now and then a bigger group in a field.
-  Each lives in a home area about 4,000 units across on the edges of woods and fields (land use), with feeding spots on the verges
-  and a few fixed crossing places on quiet roads (lanes and back roads, seldom main roads, never the trunk road's middle).
+- **Groups are drawn fresh each race, like the weather** (the owner's call): from the race's seed (`Weather.Seed`: the room's seed
+  in a room, a random one alone, salted for the deer), not the world's fixed seed, so the herds are somewhere else every race and
+  the same for everyone in a room. The map only says where a deer could be; the race's seed picks which of those places get herds.
+  Mostly family groups of 2 to 5, some lone deer and bachelor groups, now and then a bigger group in a field. Each lives in a home
+  area about 4,000 units across on the edges of woods and fields (land use), with feeding spots on the verges and a few crossing
+  places on quiet roads (lanes and back roads, seldom main roads, never the trunk road's middle), all drawn for the race.
 - **Calm:** feeding, walking between spots, and now and then crossing a road at its crossing place: the first deer, then each
   follower a second or more after, one sometimes turning back.
 - **A car coming:** alert (head up, stamp, snort), then at about 40% of the distance it noticed the car at, a choice by chance:
@@ -1648,14 +1651,14 @@ a time: a road hazard, the same for every player in a room.
 
 ### Multiplayer
 
-- **Calm deer are a pure function** of (room seed, group, race clock), under the world's determinism rules, as `Storms` is: every
+- **Calm deer are a pure function** of (the race's seed, group, race clock), under the world's determinism rules, as `Storms` is: every
   machine draws the same deer in the same places with nothing sent, whether or not it has their tiles loaded (so only the generator's
   functions, never the tiles' meshes).
 - **Reactions are decided by the group's owner:** the host hands each group to one player, normally the nearest within reach, with
   hysteresis (clearly nearer, or the owner gone out of reach), as the traffic plan's owners. The owner decides from its own car's
   exact position, starts the reaction at once and sends it: "group g, deer d: this path from race time t". Others play the path from
   t (late, they join it part way). A reaction going on is finished as sent whoever owns the group after. An owner leaving the room:
-  the host takes its groups back or hands them on. With no player near, the group goes back to its seed. Alone, this machine owns all.
+  the host takes its groups back or hands them on. With no player near, the group goes back to what the race's seed says. Alone, this machine owns all.
 - **Hits:** each machine tests only its own car against the deer (the paths are the same everywhere), so the hit is felt at once.
   The hitter sends the hit to everybody (deer, race time, place, the car's velocity) and every machine plays the same knock and
   leaves the carcass where it lands; the host settles two claims on one deer (one death kept). Another player's car reaching a deer
@@ -1698,7 +1701,8 @@ and a browser viewer before it goes in; the owner sees it before the behaviour i
 ### Order of work
 
 1. The model, the pipeline and the debug key (the owner looks at it in the game).
-2. Calm deer from the seed, the water and drop rules, drawn in the world; `meshcheck` checks.
+2. Calm deer (grazing, wandering, the odd slow crossing; no reaction to cars yet), placed from the race's seed, the water and
+   drop rules, drawn in the world; `meshcheck` checks.
 3. Reactions, ownership and hits in a room; `deersim`.
 
 Open questions for the owner: how many deer (busy enough to matter, not a deer at every bend); whether a hit damages the car or only
