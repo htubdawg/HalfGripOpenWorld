@@ -1348,7 +1348,7 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
 1. **Timetables, no game code** (`Traffic.cs`, pure, under the determinism rules like `Storms` and `Herds`). Each car's route over
    the road network from the race's seed (the junction graph `Signs` builds, opened up for routing), and its position at any race
    time a pure function of (seed, car, clock): speeds by road class and bends, a safe gap to the car in front, a minor road giving
-   way at a junction, worked out lane by lane so queues come out the same on every machine. Driving on the left. Checks in
+   way at a junction, worked out lane by lane so queues come out the same on every machine. Driving on the right (the owner pictures Pennsylvania). Checks in
    `meshcheck` (no two cars overlap, cars stay in their lane and keep to their roads' speeds, what one car's position costs) and a
    picture and a short animation from `preview` for the owner.
 2. **Timetabled cars drawn in the game, no physics.** The game's car models moved along their timetables near the car, from a pool,
@@ -1371,17 +1371,25 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
 Superseded in the research below: "copied" (the game's gear and throttle logic is written afresh from the idea, not pasted) and
 "`RemoteCar`'s smoothing as the model" (decision 1); "No solo traffic first" is open again (question 1).
 
-**Open for the owner** (asked 2026-11-22; answers go here):
-1. Solo first? The old call was "rooms only, built once", made while the room channel did not exist. Stages 1 to 3 work solo.
-2. How dense, and on which roads (e.g. busy on the trunk and main roads, some on secondary roads and streets, the odd car on
-   lanes, none on drives, tracks or the courses)? Probably a setting like `DeerAmount` until tested.
-3. Can traffic be shot and wrecked? Keeping the game's `EnemyController` on a traffic car (switched off, its guns off) lets the
-   game's weapons and damage work on it with nothing added.
-4. Junctions: a minor road giving way enough, or traffic lights in the towns later?
-5. Do deer react to traffic cars? A timetabled car's position is known at any time, so every machine can work it out alike.
-6. Which cars: the game's enemy cars with their skins, mixed at random? Headlights at night (the stand-ins of other players have
-   none today)?
-7. Driving on the left (the country is English), as assumed so far?
+**The owner's answers (2026-11-22):**
+1. **Rooms are the main path.** The owner tests with the Multiplayer mod, alone in a room; solo without it is "just in case" (the game
+   may get a sandbox mode one day). Alone in a room this machine is the host and drives every car, so one code path serves both.
+2. **Realistic, from studies, as the world generation is:** traffic volumes by road class, trips by purpose and hour, cars that pull
+   into parking lots and driveways and are parked there, on a daily schedule that follows the world's hour. So stage 1's timetables
+   come from trips between real places (homes on the drives and in the towns, the lots, shops, workshops, filling stations, farms),
+   not random routes. Research first (US and Pennsylvania figures: PennDOT traffic counts by road class, the National Household
+   Travel Survey's trips by purpose and hour, trip generation rates), as `docs/PLAN.md` did for the land.
+3. **Traffic can be shot and wrecked.**
+4. Junctions as in Pennsylvania: stop signs on the minor road, all-way stops where equal roads meet, traffic lights in the town on
+   the main roads where the studies say they belong. Decided from the research, not asked again.
+5. **Deer react to traffic cars, much less often than to players' cars.**
+6. **The game's enemy cars, skins at random. Headlights at night** on traffic and on other players' stand-ins. The enemy prefab
+   carries a headlight (`Headlights` > `Spot Light`, a spot of range 150, under `HeadLightsController`, in the 0.419 main menu
+   dump), but `Sky` gathers headlights only once at the race's start, so stand-ins spawned later stay dark (as the owner saw):
+   gather them as they appear. The renderer lights only so many lights per object (about 8 in URP's forward path, to be checked in
+   the game's pipeline settings), so real spot lights go to the nearest few cars and the rest get glowing lamps and a painted pool of
+   light on the road.
+7. **Driving on the right** (Pennsylvania).
 
 ### Traffic: investigated after 0.17.0 (research; the plan above replaces it where they differ)
 
