@@ -1395,7 +1395,7 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
 
 ### Traffic: what the studies say, and the trip model (researched 2026-11-22)
 
-Sources (read in full; keep for later sessions):
+Sources (the tables used are cited below):
 - FHWA, *Summary of Travel Trends: 2017 NHTS* (https://www.fhwa.dot.gov/policyinformation/documents/2017_nhts_summary_travel_trends.pdf)
 - FHWA, *Summary of Travel Trends: 2022 NHTS* (https://rosap.ntl.bts.gov/view/dot/73764/dot_73764_DS1.pdf)
 - PennDOT, *2023 Pennsylvania Traffic Data* (https://gis.penndot.pa.gov/BPR_PDF_FILES/Documents/Traffic/Traffic_Information/Annual_Report/2023/2023_Traffic_Information_Report.pdf)
@@ -1425,7 +1425,7 @@ collectors 400 to 8,800 (about 1,800); urban minor arterials and collectors 400 
 (too many); the trip rate gives them: a house makes about 9.4 vehicle trips a day (ITE land use 210, single-family detached), so a
 lane serving 20 houses carries about 190 vehicles a day.
 
-**Our world.** 2 towns, 16 villages, 120 farms and hamlets, about 2,600 houses, about 280 drives: about 2,600 households and 4,900
+**Our world.** 2 towns, 16 villages, 120 farms and hamlets, about 2,600 houses (from the 0.31 checks; shops and lots not separated out yet), about 280 drives: roughly 2,600 households and 4,900
 cars, most of them parked at any time. The world's day lasts 40 minutes (`Sky.DaySeconds`, 100 seconds an hour): 36 times faster
 than real, while a car drives in real time.
 
