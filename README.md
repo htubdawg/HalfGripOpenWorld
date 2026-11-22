@@ -26,7 +26,7 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
 - **Deer:** white-tailed deer in small groups (a doe and her young, a lone deer, a few bucks together, now and then a bigger herd)
-  where woods meet fields. Bucks carry one classic set of antlers (eight points: a brow tine and two long tines up from each beam);
+  where woods meet fields. Bucks carry one classic set of antlers (eight points: a brow tine and two long tines up from each beam, painted);
   rarely, about three families a race, a doe has this year's fawn with her, about 0.6 of her size. They live beside the country lanes: grazing on the verges and in the fields, walking between their spots in single
   file, and now and then crossing the lane one at a time (one sometimes turns back halfway). Most are out at dawn and dusk, fewer at
   midday. They are somewhere else every race, and in a room everyone has the same deer in the same places. Hitting one damages

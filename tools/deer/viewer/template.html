@@ -177,7 +177,15 @@ input[type="range"] { width: 110px; accent-color: var(--accent); }
 	}
 	ageo.setAttribute('color', new THREE.Float32BufferAttribute(acol, 3));
 	ageo.setIndex(A.idx);
-	const antlers = new THREE.SkinnedMesh(ageo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+	// with the painted texture (textures/antlers.png) when the build has one, as the game does; the gradient otherwise
+	const amat = new THREE.MeshLambertMaterial({ vertexColors: true });
+	if ('__ANTLERS__'.startsWith('data:')) {
+		ageo.setAttribute('uv', new THREE.Float32BufferAttribute(A.uv, 2));
+		amat.vertexColors = false;
+		amat.map = new THREE.TextureLoader().load('__ANTLERS__', t => { t.encoding = THREE.sRGBEncoding; t.flipY = true; t.needsUpdate = true; amat.needsUpdate = true; });
+		amat.map.encoding = THREE.sRGBEncoding;
+	}
+	const antlers = new THREE.SkinnedMesh(ageo, amat);
 	antlers.bind(mesh.skeleton); antlers.visible = false; holder.add(antlers);
 	// a fawn is the doe drawn small (the game's sizes: a buck 1 to 1.12 of a doe, a fawn 0.56 to 0.66)
 	const SIZE = { doe: 1, buck: 1.06, fawn: 0.61 };

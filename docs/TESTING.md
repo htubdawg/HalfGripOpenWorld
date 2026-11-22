@@ -342,8 +342,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 45. Bucks and fawns (0.31.0; in a room everyone needs 0.31.0). The log's `Deer: ... groups, ... deer (... bucks, ... fawns) drawn
    from the race's seed` counts them (about 95 bucks and 3 fawns a race at the standard amount).
    - Bucks (in the groups of two to four bucks, and some lone deer) carry antlers: one set, eight points, pale at the tips and dark
-     at the base (the gradient; with `textures\antlers.png` in the mod's folder, that painted texture instead, the log saying
-     nothing; without it, with `VerboseLog` on, `The antlers' texture ... is not there`), the beams sweeping out over the ears and forward. They stay on the head in every pose: grazing (the antlers low in
+     at the base, the painted texture (`textures\antlers.png`: grain along the tines, a rough burr; without the file, a plain
+     gradient, and with `VerboseLog` on the log says `The antlers' texture ... is not there`), the beams sweeping out over the ears and forward. They stay on the head in every pose: grazing (the antlers low in
      front of the forelegs, not through them or the ground), alert, walking, galloping, lying dead. They are not cut off at the edge
      of the screen when the deer's body is off it (the drawn box is bigger now), and they do not flicker.
    - Fawns are rare: now and then a family has a small deer at its tail, about 0.6 of the doe's size (no spots: the doe's coat).

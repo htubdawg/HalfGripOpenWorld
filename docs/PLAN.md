@@ -1891,7 +1891,8 @@ and fawn with the painted coat (`preview_herd.png`, `preview_buck.png`); the vie
 
 The antlers' painted texture: on the owner's request, a UV layout (each piece an upright strip, the seam on the inner side, both
 antlers on the same strips) and templates in `tools/deer/texture/antlers_uv_*.png` for the owner to have an image model paint; the
-game uses `OpenWorld/textures/antlers.png` if it is there, the gradient otherwise.
+game uses `OpenWorld/textures/antlers.png` if it is there, the gradient otherwise. The owner's painted texture is in (grain along
+the tines, a rough burr, pale tips); the renders and the viewer use it too.
 
 Not done (offer, do not build unasked): fawns' spots or a fawn's proportions (a bigger head on a fawn: one bone's scale); antlers by
 season or age; the antlers as a target for shots (`Deer.Shapes` leaves them out: a shot through the antlers misses); a buck's

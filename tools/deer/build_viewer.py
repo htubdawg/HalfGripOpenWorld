@@ -9,7 +9,9 @@ guide = 'data:image/png;base64,' + base64.b64encode(open(os.path.join(here, 'tex
 coat = 'data:image/png;base64,' + base64.b64encode(open(os.path.join(here, '..', '..', 'OpenWorld', 'textures', 'deer.png'), 'rb').read()).decode()
 # the buck's antlers ride in the same object as the doe's mesh
 data = data.rstrip()[:-1] + ',"antlers":' + open(os.path.join(here, 'antlers.json')).read() + '}'
-page = t.replace('__DATA__', data).replace('__GUIDE__', guide).replace('__COAT__', coat)
+ap = os.path.join(here, '..', '..', 'OpenWorld', 'textures', 'antlers.png')
+antlers = 'data:image/png;base64,' + base64.b64encode(open(ap, 'rb').read()).decode() if os.path.exists(ap) else ''
+page = t.replace('__ANTLERS__', antlers).replace('__DATA__', data).replace('__GUIDE__', guide).replace('__COAT__', coat)
 head = '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
 i = page.index('<div class="app">')
 out = head + page[:i] + '</head>\n<body>\n' + page[i:] + '\n</body>\n</html>\n'

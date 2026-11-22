@@ -13,6 +13,9 @@ from antlers import load_doe
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 COAT = np.asarray(Image.open(os.path.join(HERE, '..', '..', 'OpenWorld', 'textures', 'deer.png')).convert('RGB'), float) / 255
+# The antlers' painted texture, as the game uses it when it is there (else their gradient).
+_ap = os.path.join(HERE, '..', '..', 'OpenWorld', 'textures', 'antlers.png')
+ANTLER_TEX = np.asarray(Image.open(_ap).convert('RGB'), float) / 255 if os.path.exists(_ap) else None
 # The antlers' gradient from the burr (v 0) to the tips (v 1): the same stops as DeerMesh.AntlerTexture in the game.
 ANTLER = [(0.00, 0x3b2e22), (0.06, 0x5a4632), (0.35, 0x86704f), (0.75, 0xb5a284), (1.00, 0xe6dcc6)]
 
@@ -27,7 +30,7 @@ def antler_colour(v):
 def load_antlers():
 	J = json.load(open(os.path.join(HERE, 'antlers.json')))
 	P = np.array(J['pos']).reshape(-1, 3); n = len(P)
-	return dict(pos=P, nor=np.array(J['nor']).reshape(-1, 3), idx=np.array(J['idx']).reshape(-1, 3), v=np.array(J['v']),
+	return dict(pos=P, nor=np.array(J['nor']).reshape(-1, 3), idx=np.array(J['idx']).reshape(-1, 3), v=np.array(J['v']), uv=np.array(J['uv']).reshape(-1, 2),
 				bi=np.tile([D.BI[J['bone']], 0, 0, 0], (n, 1)), bw=np.tile([1.0, 0, 0, 0], (n, 1)))
 
 def draw(img, zb, m, pose, kind, ox, yaw, pitch, scale, cy, root=None, size=1.0, light=(0.35, 0.55, 0.75)):
@@ -41,6 +44,10 @@ def draw(img, zb, m, pose, kind, ox, yaw, pitch, scale, cy, root=None, size=1.0,
 	L = np.array(light, float); L /= np.linalg.norm(L)
 	lam = 0.45 + 0.65 * np.clip(N @ L, 0, 1)
 	sx = V[:, 0] * scale + ox; sy = H_ / 2 - (V[:, 1] - cy) * scale
+	if kind == 'antler' and ANTLER_TEX is not None:
+		kind, tex = 'coat', ANTLER_TEX
+	else:
+		tex = COAT
 	acol = antler_colour(m['v']) if kind == 'antler' else None
 	for t in m['idx']:
 		p = np.c_[sx[t], sy[t]]; z = V[t, 2]
@@ -63,8 +70,8 @@ def draw(img, zb, m, pose, kind, ox, yaw, pitch, scale, cy, root=None, size=1.0,
 			col = w0[..., None] * acol[t[0]] + w1[..., None] * acol[t[1]] + w2[..., None] * acol[t[2]]
 		else:
 			uv = w0[..., None] * m['uv'][t[0]] + w1[..., None] * m['uv'][t[1]] + w2[..., None] * m['uv'][t[2]]
-			Hc, Wc = COAT.shape[:2]
-			col = COAT[np.clip(((1 - uv[..., 1]) * Hc).astype(int), 0, Hc - 1), np.clip((uv[..., 0] * Wc).astype(int), 0, Wc - 1)]
+			Hc, Wc = tex.shape[:2]
+			col = tex[np.clip(((1 - uv[..., 1]) * Hc).astype(int), 0, Hc - 1), np.clip((uv[..., 0] * Wc).astype(int), 0, Wc - 1)]
 		col = col * sh[..., None]
 		sub[upd] = zz[upd]; img[y0:y1 + 1, x0:x1 + 1][upd] = col[upd]
 
