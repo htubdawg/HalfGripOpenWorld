@@ -7,32 +7,49 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 ## Start here
 
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
-2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo (the tools need
-   `-p:GameDir=/home/user/HalfGripRefs/game`).
-3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm]`. It builds the map, then
-   race N's day of traffic twice, checks it and exits 0 (see "`TrafficDay.cs`: as built" for what it reports). About 15 s.
-4. Stage 2 is under way (see "Stage 2: as built"): the cars are drawn in the game but **not yet tried there**. Ask the owner for test 48
-   (`docs/TESTING.md`) and their `LogOutput.log`; fix what they report before going on.
+2. Check out `traffic-test-branch` (last commit `e24ea9f`) and clone `htubdawg/HalfGripRefs` next to the repo (the tools need
+   `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for `tools/check.sh`.
+3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span
+   hour]]`. It builds the map, then race N's day twice, checks the day and the parking and exits 0. About 20 s. 16 seeds (1 to 15,
+   20261122) pass at `e24ea9f`.
+4. **Wait for the owner's second try of stage 2** (test 48 in `docs/TESTING.md`, their screenshots and `LogOutput.log`) and fix what
+   they report before going on to stage 3. What changed since their first try is under "The owner's first report" below.
+
+**Where to look first in their next log:**
+- `Tile ... could not be worked out: Collection was modified`: there should be none now (fixed in `Buildings`, see below). If there
+  are, another static list is shared by the tile workers.
+- `Traffic: ... cars, ... trips ..., built in ... ms` (about 1.9 s on the owner's machine, on a worker, no hitch seen), `The traffic's
+  cars could not be made`, `The traffic stopped`.
+- With `VerboseLog`: `Traffic: look N: ... meshes, ... painted, ... lamps, ... wheels, box ..., wheels' bottom ..., radius ...`. The
+  first try gave look 0: 8 meshes, 1 painted, 4 wheels, box (5.3, 3.9, 14.2), bottom -0.13, radius 0.88; look 1: 9 meshes, 2 painted,
+  4 wheels, box (5.2, 3.7, 13.0). The lamps count is new: 0 would mean the lamps were not found and parked cars still glow.
+
+**What the owner has said so far about stage 2** (first try, one race in a room alone): parked cars' lights were on; far too many
+cars parked on the town's roads; a car phased through a parked car where the road had cars on both sides. Nothing yet about the
+paint, the cars' height on the road, the wheels, frame time or hitting one: ask if the next report does not say.
 
 Open with the owner:
-- **Test 48**: the traffic drawn in the game (stage 2). Look in the log for `Traffic: ... cars, ... trips`, `The traffic's cars could
-  not be made` and `The traffic stopped`; with `VerboseLog`, `Traffic: look N: ...` gives each body's meshes, painted parts, wheels,
-  box, wheels' bottom and radius (if the cars float or sink, that bottom is what to look at; if they are the wrong colour, the
-  paint's channels, see "Stage 2: as built").
-- **Test 47** (`docs/TESTING.md`): the highway's wrap, Westhaven's road out and Millbrook's road north in the game. The owner looked at
-  the work and said it looks good, but no in-game report has come back yet. Read their `LogOutput.log` for
-  `The highway wrapped round` lines when it comes.
+- **Test 48** (second try): see above.
+- **The cars "round the back":** about 750 of the parked cars at any hour are not drawn (kerb parking was cut to answer "way too many
+  cars on the roads"). They pop up on the road when they set off. Ask whether that is noticed; the fix would be somewhere drawn
+  behind the houses (back lanes or yards: a world change) or fading them in.
+- **Test 47**: the highway's wrap, Westhaven's road out and Millbrook's road north in the game. No report yet; the first stage-2 log
+  has no `The highway wrapped round` line (the owner did not drive into a tunnel).
 - **The eight cut-off town streets**: a layout fix for later (see below). Ask before doing it: it changes the world.
-- **The day of traffic** (`TrafficDay.cs`, below): the pictures, and the choices made that the design did not settle (trips beyond
-  the map go by the road north only; through traffic circles the trunk; stays counted from leaving home; see "Decided while building").
+- **The day of traffic** (`TrafficDay.cs`, below): the choices the design did not settle (trips beyond the map go by the road north
+  only; through traffic circles the trunk; stays counted from leaving home; see "Decided while building").
+
+**Next after test 48 is good:** stage 3 (the plan): a real car near the player (our own driver on the game's car physics, within about
+300 units), back on its timetable out of reach, late by what held it up; wrecks retired. The owner measures what 20 to 30 physics
+cars cost.
 
 ## Where things stand
 
-Stage 1 (timetables, no game code): the traffic's map and each race's day of trips (`TrafficDay.cs`) are done and checked; the owner
-has the pictures to look at. Stage 2 (cars drawn in the game): written and compiled, the parking checked in trafficview, not yet tried
-in the game (see "Stage 2: as built"). Nothing is
-released and `mod.json` is unchanged. The branch also carries two world changes (the road fix and the wrap), so everyone in a room
-needs the build that has them. Bump the version and the README when the owner releases it.
+Stage 1 (timetables, no game code): the traffic's map and each race's day of trips (`TrafficDay.cs`) are done and checked. Stage 2 (cars
+drawn in the game): built, tried once by the owner, three things fixed from that try (lamps, kerb parking, pulling in and out) and a
+tile bug from stage 1; waiting for the second try. Nothing is released and `mod.json` is unchanged (0.31.1). The branch also carries
+two world changes (the road fix and the wrap), so everyone in a room needs the build that has them. Bump the version and the README
+when the owner releases it.
 
 **Done and pushed:**
 - The plan, the owner's answers and the studies' figures are all in `docs/PLAN.md`.
@@ -345,6 +362,15 @@ seed 7, the main town's middle at 12:30; `docs/traffic-retail.png`: the retail p
   1 min 45 s. A loop over many seeds outlasts a foreground command's 2 minutes: run it in the background and write each seed's report
   to a file in the scratchpad.
 - `convert` (ImageMagick) turns the PPM pictures into PNG.
+- trafficview's parking checks, the "through a parked car" one most of all, take most of a run now (about 20 s a seed). For 16 seeds run
+  the built `tools/trafficview/bin/Release/net8.0/trafficview.dll` in a background loop (`dotnet <dll> --seed N > file`), one file a
+  seed, and don't rebuild trafficview while the loop runs (it would swap the dll between seeds).
+- The game's car for the traffic: `TrackManager.enemyCarPrefab` ('EnemyPrefab' in the Tokyo dump). Its structure is in the main menu
+  dump (`scenedumps/0.419/MainMenu`, search `CarSkinController`): root scale 1.5, `Pivot/BodyModel` and `Pivot/BodyModel2` (the two
+  `carModels`), `Wheels/Meshes/Wheel_LF..RB` (mesh on a child), `Headlights/Spot Light`, lamps `BecuriFata`/`HeadlightsCar2` (material
+  `bFata`) and `BecuriSpate`/`TailLightsCar2` (`becuri`). Paint: `CarSkinController.EquipSkin` sets `_AccentColor`, `_EntireColor`,
+  `_TertiaryColor` on the GMTK "Car Body Channel Paint" shader.
+- Game scripts that react to the `Enemy` layer: `AreaBlast`, `ExplosiveBarrel`, `PlayerResetLogic` (all null-safe for our boxes).
 - The game's decompile (0.419) was put in the scratchpad with `ilspycmd`; the Tokyo scene dump is in HalfGripRefs
   (`scenedumps/0.419/Tokyo`): the `Player` root holds `CarInterior` (INTERIOR layer), `PlayerModel` (the car) and the cameras.
 

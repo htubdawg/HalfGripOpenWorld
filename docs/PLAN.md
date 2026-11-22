@@ -1419,10 +1419,10 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
   within 3.5 points of TPG 9 or a Saturday, the trunk about 5,400 a day). Pictures: `docs/traffic.png`, `docs/traffic-frames.png`.
   Decided while building, for the owner to confirm (see the handoff): trips beyond the map go by the road north only (the trunk's ends
   lead back in); through traffic is 10 cars circling the trunk through the wrap; a stay is counted from leaving home.
-- Next: stage 2, the timetabled cars drawn in the game.
+- Stage 2, the timetabled cars drawn in the game: built, see below. Next after it: stage 3.
 
 **Stage 2 progress (2026-11-22; see `docs/TRAFFIC_HANDOFF.md`, "Stage 2: as built"):**
-- **Drawn in the game, not yet tried there** (`TrafficCars.cs`): the race's day built on a worker at the start; the nearest 72 cars
+- **Drawn in the game, tried once by the owner (fixes below; waiting for the second try)** (`TrafficCars.cs`): the race's day built on a worker at the start; the nearest 72 cars
   (moving within about 270 m, parked within about 140 m, moving ones counted nearer) drawn from a pool. The bodies are copies of the
   game's enemy car's models as meshes only (no physics, AI, guns or effects), painted from everyday colours (white, black, greys and
   silver most), the same colour for the same car every race; wheels turn; each car stood on the ground under its wheels by raycasts
