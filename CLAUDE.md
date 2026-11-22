@@ -43,7 +43,6 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Reactions.cs` | Part of `Herds`: the deer's reactions (alert, flee away, across or after freezing) played from a reaction alone, along the tested legs; the calm day going on from the refuge. No Unity types |
 | `DeerRoom.cs` | The deer in a room: each group's reactions in order and the kills, claimed by the machine that saw them and settled by the room's host (first claim wins), Hello for late joiners; the deer's messages. No Unity types (`tools/deersim` drives it) |
 | `DeerKills.cs` | The deer killed in a race: each body's flight, landing and slide (or fall when shot) on fixed steps, from the kill (its message read and written here, sent by `DeerRoom`). No Unity types |
-| `DeerSound.cs` | The deer strike's heavy sound made in code (thump, crunch, ringing bonnet, rattle), played under the game's own crash clips. No Unity types |
 | `DeerModel.cs` | **Generated** by `tools/deer/export_cs.py` from `tools/deer/deer.json`: the deer's mesh, bones and poses. Never edit by hand |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |

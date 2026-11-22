@@ -1100,50 +1100,19 @@ namespace HalfGripOpenWorld
 				+ damage.ToString("0.0") + " damage" + (CarLink.godMode ? " (god mode: none taken)" : ""));
 		}
 
-		/// <summary>The strike's own sound (made in code, <see cref="DeerSound"/>) and the game's metal hits, found once a session.</summary>
-		private static AudioClip[] strikes, metal;
-
 		/// <summary>
-		/// The sound of a strike, in the cockpit (2D, through the game's own mixer, so its volume settings count): the sound made for it
-		/// (a deep thump, a crunch, the bonnet ringing) under the game's heaviest wall crash, a car-on-car crunch and a metal hit, all
-		/// pitched down for weight; louder the harder the hit.
+		/// The sound of a strike, in the cockpit (2D, through the game's own mixer, so its volume settings count): the game's own
+		/// collision sounds, a wall crash and a car-on-car crunch together, a touch lower for the weight; louder the harder the hit.
 		/// </summary>
 		private static void Strike(CarControllerNew car, float impact, float weight)
 		{
 			try
 			{
-				if (strikes == null)
-				{
-					strikes = new AudioClip[DeerSound.Variants];
-					for (int i = 0; i < strikes.Length; i++)
-					{
-						float[] samples = DeerSound.Strike(i);
-						AudioClip clip = AudioClip.Create("OpenWorld Deer Strike " + (i + 1), samples.Length, 1, DeerSound.Rate, false);
-						clip.SetData(samples, 0);
-						clip.hideFlags = HideFlags.HideAndDontSave;
-						strikes[i] = clip;
-					}
-					var found = new List<AudioClip>();
-					foreach (AudioClip clip in Resources.FindObjectsOfTypeAll<AudioClip>())
-					{
-						if (clip != null && clip.name.StartsWith("HitMetal", StringComparison.Ordinal))
-						{
-							found.Add(clip);
-						}
-					}
-					metal = found.ToArray();
-					Mod.Info("Deer: the strike's sound made (" + strikes.Length + " variants), " + metal.Length + " of the game's metal hits found");
-				}
-				float loud = Mathf.Clamp01(0.5f + impact / 45f) * Mathf.Clamp(weight, 0.6f, 1.3f);
-				float pitch = UnityEngine.Random.Range(0.92f, 1.06f) / Mathf.Sqrt(Mathf.Clamp(weight, 0.5f, 1.6f));
+				float loud = Mathf.Clamp01(0.55f + impact / 45f) * Mathf.Clamp(weight, 0.7f, 1.2f);
+				float pitch = UnityEngine.Random.Range(0.9f, 1.0f);
 				GameObject at = car.gameObject;
-				SoundController.PlayRandomSoundWithPitch2D(strikes, at, Mathf.Min(1f, loud * 1.1f), pitch);
-				SoundController.PlayRandomSoundWithPitch2D(car.wallCollisionSounds, at, Mathf.Min(1f, loud * 0.9f), pitch * 0.82f);
-				SoundController.PlayRandomSoundWithPitch2D(car.carCollisionSounds, at, Mathf.Min(1f, loud * 0.7f), pitch * 0.88f);
-				if (metal.Length > 0)
-				{
-					SoundController.PlayRandomSoundWithPitch2D(metal, at, Mathf.Min(1f, loud * 0.8f), pitch * 0.75f);
-				}
+				SoundController.PlayRandomSoundWithPitch2D(car.wallCollisionSounds, at, Mathf.Min(1f, loud), pitch);
+				SoundController.PlayRandomSoundWithPitch2D(car.carCollisionSounds, at, Mathf.Min(1f, loud * 0.8f), pitch);
 			}
 			catch (Exception e)
 			{

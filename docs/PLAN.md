@@ -1807,6 +1807,8 @@ The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how
   contact. The sound: the game's heaviest wall crash, a car-on-car crunch and a `HitMetal` clip (found by name in memory), pitched
   down for weight, over a strike made in code (`DeerSound`: a thump sweeping 105 to 42 Hz, a crunch of noise, a bonnet ringing at
   five clashing pitches, a rattle; three variants, 0.9 s, softly clipped), all 2D through the game's mixer, louder the harder.
+  **0.30.2**: the owner found the made sound unrealistic ("like a pinball machine"): it and the `HitMetal` clip are gone; a strike
+  plays the game's own wall crash and car crunch together (pitch 0.9 to 1), louder the harder. Do not synthesize sounds again.
   The body: thrown up at most 9 units a second (was 18; 1.5 + 0.09 x impact), less aside, tumbling slower; a bounce only when it comes
   down faster than 9 (was 5), keeping 18% of its fall (was 35%) and 45% of its way along (was 55%).
 - **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
