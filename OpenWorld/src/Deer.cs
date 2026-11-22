@@ -38,7 +38,7 @@ namespace HalfGripOpenWorld
 			{
 				Vector2[] uv = Uvs(painted);
 				m.uv = uv;
-				buck.uv = BuckUvs(uv);
+				buck.uv = BuckUvs(uv, antlersPainted);
 				onPainting = painted;
 			}
 			return m;
@@ -49,25 +49,35 @@ namespace HalfGripOpenWorld
 		/// second submesh, drawn with their own material (<see cref="AntlerTexture"/>). The same bones and bind poses, so a deer's
 		/// objects take either mesh.
 		/// </summary>
-		internal static Mesh Buck()
+		internal static Mesh Buck(bool paintedAntlers)
 		{
 			Get();
+			if (paintedAntlers != antlersPainted)
+			{
+				antlersPainted = paintedAntlers;
+				buck.uv = BuckUvs(mesh.uv, paintedAntlers);
+			}
 			return buck;
 		}
+
+		private static bool antlersPainted;
 
 		private static Mesh buck;
 
 		private static bool onPainting;
 
-		/// <summary>The doe's UVs followed by the antlers' (u across the gradient's middle, v from the burr to the tips).</summary>
-		private static Vector2[] BuckUvs(Vector2[] doe)
+		/// <summary>
+		/// The doe's UVs followed by the antlers': on their painted texture (<paramref name="painted"/>), or u across the gradient's
+		/// middle and v from the burr to the tips.
+		/// </summary>
+		private static Vector2[] BuckUvs(Vector2[] doe, bool painted)
 		{
 			int n = doe.Length, a = DeerModel.AntlerShade.Length;
 			Vector2[] uv = new Vector2[n + a];
 			Array.Copy(doe, uv, n);
 			for (int i = 0; i < a; i++)
 			{
-				uv[n + i] = new Vector2(0.5f, DeerModel.AntlerShade[i]);
+				uv[n + i] = painted ? new Vector2(DeerModel.AntlerUvs[i * 2], DeerModel.AntlerUvs[i * 2 + 1]) : new Vector2(0.5f, DeerModel.AntlerShade[i]);
 			}
 			return uv;
 		}
@@ -119,19 +129,40 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static Texture2D Painted()
 		{
+			return Load("deer.png", "The deer's coat", "the deer are drawn in flat colours", true);
+		}
+
+		/// <summary>
+		/// The antlers' painted texture (<c>textures\antlers.png</c>, on <see cref="DeerModel.AntlerUvs"/>), or null while there is none
+		/// (they are then coloured with <see cref="AntlerTexture"/>'s gradient).
+		/// </summary>
+		internal static Texture2D PaintedAntlers()
+		{
+			return Load("antlers.png", "The antlers' texture", "they are coloured with a gradient", false);
+		}
+
+		private static Texture2D Load(string file, string what, string instead, bool warnMissing)
+		{
 			try
 			{
-				string path = System.IO.Path.Combine(Mod.Ctx.Folder, "textures", "deer.png");
+				string path = System.IO.Path.Combine(Mod.Ctx.Folder, "textures", file);
 				if (!System.IO.File.Exists(path))
 				{
-					Mod.Log.LogWarning("The deer's coat " + path + " is missing: the deer are drawn in flat colours");
+					if (warnMissing)
+					{
+						Mod.Log.LogWarning(what + " " + path + " is missing: " + instead);
+					}
+					else
+					{
+						Mod.Info(what + " " + path + " is not there: " + instead);
+					}
 					return null;
 				}
-				Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true) { name = "OpenWorld Deer Coat", hideFlags = HideFlags.HideAndDontSave };
+				Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true) { name = "OpenWorld " + file, hideFlags = HideFlags.HideAndDontSave };
 				if (!ImageConversion.LoadImage(tex, System.IO.File.ReadAllBytes(path), true))
 				{
 					UnityEngine.Object.Destroy(tex);
-					Mod.Log.LogWarning("The deer's coat " + path + " could not be read: the deer are drawn in flat colours");
+					Mod.Log.LogWarning(what + " " + path + " could not be read: " + instead);
 					return null;
 				}
 				tex.filterMode = FilterMode.Trilinear;
@@ -141,7 +172,7 @@ namespace HalfGripOpenWorld
 			}
 			catch (Exception e)
 			{
-				Mod.Log.LogWarning("The deer's coat could not be loaded (flat colours instead): " + e.Message);
+				Mod.Log.LogWarning(what + " could not be loaded (" + instead + "): " + e.Message);
 				return null;
 			}
 		}
@@ -250,7 +281,7 @@ namespace HalfGripOpenWorld
 			Mesh bm = new Mesh { name = "OpenWorld Buck", hideFlags = HideFlags.HideAndDontSave };
 			bm.vertices = bv;
 			bm.normals = bn;
-			bm.uv = BuckUvs(uv);
+			bm.uv = BuckUvs(uv, antlersPainted);
 			bm.boneWeights = bw;
 			bm.bindposes = bindposes;
 			bm.subMeshCount = 2;
@@ -445,7 +476,8 @@ namespace HalfGripOpenWorld
 				Texture2D painted = DeerMesh.Painted();
 				Texture2D coat = painted ?? DeerMesh.Palette(winter);
 				mesh = DeerMesh.Get(painted != null);
-				buckMesh = DeerMesh.Buck();
+				Texture2D paintedAntlers = DeerMesh.PaintedAntlers();
+				buckMesh = DeerMesh.Buck(paintedAntlers != null);
 				Color tint = painted != null && winter ? new Color(0.84f, 0.88f, 0.93f) : Color.white;
 				if (material.HasProperty("_BaseMap"))
 				{
@@ -463,9 +495,10 @@ namespace HalfGripOpenWorld
 				{
 					material.SetFloat("_Smoothness", 0.15f);
 				}
-				// The buck's antlers: their own material, a gradient from the burr to the tips, a little glossier than the coat.
+				// The buck's antlers: their own material, the painted texture if there is one (else a gradient from the burr to the
+				// tips), a little glossier than the coat.
 				antlerMaterial = new Material(lit) { name = "OpenWorld Antlers", hideFlags = HideFlags.HideAndDontSave };
-				Texture2D antlers = DeerMesh.AntlerTexture();
+				Texture2D antlers = paintedAntlers ?? DeerMesh.AntlerTexture();
 				if (antlerMaterial.HasProperty("_BaseMap"))
 				{
 					antlerMaterial.SetTexture("_BaseMap", antlers);

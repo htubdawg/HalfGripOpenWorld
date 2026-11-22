@@ -1889,6 +1889,10 @@ bucks and fawns; `meshcheck deer` checks the antlers' faces, that they are on th
 only a family's last deer, never a buck, sizes; every other deer's size in its old range); `render_herd.py` renders the doe, buck
 and fawn with the painted coat (`preview_herd.png`, `preview_buck.png`); the viewer has doe, buck and fawn and the painted coat.
 
+The antlers' painted texture: on the owner's request, a UV layout (each piece an upright strip, the seam on the inner side, both
+antlers on the same strips) and templates in `tools/deer/texture/antlers_uv_*.png` for the owner to have an image model paint; the
+game uses `OpenWorld/textures/antlers.png` if it is there, the gradient otherwise.
+
 Not done (offer, do not build unasked): fawns' spots or a fawn's proportions (a bigger head on a fawn: one bone's scale); antlers by
 season or age; the antlers as a target for shots (`Deer.Shapes` leaves them out: a shot through the antlers misses); a buck's
 tucked tail; fawns keeping close to the doe when they run; a buck's heavier neck (a new sculpt, a new painted coat).

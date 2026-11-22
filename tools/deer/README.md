@@ -22,8 +22,11 @@ python3 preview.py out/p.png stand,graze,flag colour -90,30,150   # poses, colou
 - `preview_colour.png`, `preview_clay.png`: the current build (wireframe and the winter coat in the second).
 
 - `antlers.py`: the buck's antlers (one classic eight-point set, rigid on the head bone; the buck is the doe's mesh with them
-  added), written to `antlers.json`, and checked clear of the ears, neck and body in every pose. `v` runs from the burr to the
-  tips; the game colours them with a gradient along it (`DeerMesh.AntlerTexture`). A fawn is the doe drawn small (no model).
+  added), written to `antlers.json`, and checked clear of the ears, neck and body in every pose; also writes the antlers' texture
+  templates `texture/antlers_uv_guide.png` (paint over this) and `texture/antlers_uv_template.png` (labels, wireframe): each piece
+  an upright strip, base at the bottom, tip at the top, wrapping round left to right (the seam on the inner side); both antlers
+  share the strips. The painted result goes in `OpenWorld/textures/antlers.png` (1024 square, PNG); until it is there the game
+  colours them with a gradient from the burr to the tips (`DeerMesh.AntlerTexture`). A fawn is the doe drawn small (no model).
 - `render_herd.py`: renders as the game draws them, the painted coat and the antlers' gradient: `python3 render_herd.py out.png group`
   (a buck, a doe, a fawn, a grazing buck: `preview_herd.png`) or poses by yaws (`preview_buck.png`).
 - `export_cs.py`: writes `OpenWorld/src/DeerModel.cs` (the mod ships only source) from `deer.json` (and the antlers from `antlers.json`), in the model's own frame;
