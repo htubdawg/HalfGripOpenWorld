@@ -359,3 +359,15 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      Brookfield and Northcote roads meet, Farm 92's lane at about (9896, 13158), Millbrook's street and Farm 17's lane at about
      (-6847, 3797).
    - Say where a junction still looks badly joined (`ShowCoords` and a screenshot), and send `LogOutput.log`.
+47. The highway wraps round, and Westhaven joined up (not released yet; on `traffic-test-branch`; in a room everyone needs the same
+   build: the roads changed a little).
+   - Drive west along the trunk road to the end of the world: the tunnel mouth is open now, a dark tunnel with a floor, walls and a
+     roof. Drive in at speed: a moment after the dark closes round you, you come out of the east edge's tunnel at the same speed, in
+     the same lane, still heading west, the ground already there (no fall, no bump, no long freeze). The log says `The highway
+     wrapped round: from the west edge's tunnel to the east's, ...`. Do it the other way too, and at full speed, and in the chase
+     camera (no sweep across the map, no streak of tyre marks). The road north's tunnel is still shut.
+   - Stop in a tunnel short of the dark and reverse out: nothing happens. Go in slowly: the same jump at walking pace.
+   - In a room, with another player watching from near the far end's tunnel: they see you come out of it (not slide across the map).
+   - Westhaven (teleport to it): its main road now runs north out of the town to a T-junction on the trunk road (before, it stopped in
+     the fields). Millbrook's main road north now reaches the road from Northcote, about (-2885, 5832) with `ShowCoords`.
+   - Send `LogOutput.log` and say how the jump feels.

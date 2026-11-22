@@ -12,7 +12,7 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Roads:** a dual-carriageway trunk road along the coast, main roads between neighbouring places, a mountain pass, town streets,
   country lanes joined up into a web with hardly a dead end (through woods, over streams on covered timber bridges), farms and
   roadside houses on gravel drives with a mailbox at the road, farm tracks and footpaths, with bridges, verges, sidewalks and
-  tunnels at the world's edge.
+  tunnels at the world's edge. The trunk road wraps round: drive into its tunnel at one edge and you come out of the other's.
 - **Buildings:** houses along every street, high-street shops, a market place with its cross, stalls and shops round it in each
   town, glass towers in the town centre, village churches, farms, a retail
   park, and filling stations and workshops along the main roads. Houses in brick, stock brick, stone, whitewash and coloured

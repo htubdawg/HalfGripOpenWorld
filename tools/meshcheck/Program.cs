@@ -70,6 +70,10 @@ using UnityEngine;
 //                messages read back as sent, and the host's kill put in place of another; how many groups the DeerAmount setting
 //                gives; reactions: every group of a race alerted and fleeing each way at three times of day, never into deep water,
 //                onto paving away from its crossing or jumping (through the run, the watch and back to its calm day), the same twice
+//  29. wrap:    the highway wraps round (Wrap): the trunk's two tunnels found, facing opposite ways, as wide as each other; the move
+//                there and back adding up to nothing; every lane's point past one glue plane landing on the other tunnel's floor in
+//                the same lane, going in; the ground under each open tunnel's floor and the road level into its mouth; the highway
+//                event's ends clear of both tunnels
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -115,6 +119,7 @@ internal static class Program
 			("clear", ClearOfRoads),
 			("backroads", BackRoads),
 			("deer", DeerChecks),
+			("wrap", WrapChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -3353,6 +3358,80 @@ internal static class Program
 		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round; "
 			+ mainDead + " main road dead ends");
 		return dead <= 10 && hooks == 0 && mainDead == 0;
+	}
+
+	/// <summary>The highway's wrap round (see the list at the top, 29).</summary>
+	private static bool WrapChecks()
+	{
+		if (Wrap.A < 0)
+		{
+			Console.WriteLine("wrap:    no pair of tunnels found  FAIL");
+			return false;
+		}
+		Network.Portal a = Network.Portals[Wrap.A], b = Network.Portals[Wrap.B];
+		int bad = 0;
+		bool trunk = Network.Roads[a.Road].Kind == RoadKind.Trunk;
+		bool facing = a.DirX == -b.DirX && a.DirZ == -b.DirZ && a.Half == b.Half;
+		Wrap.Move(Wrap.A, out double ax, out double az, out double ay);
+		Wrap.Move(Wrap.B, out double bx, out double bz, out double by);
+		double roundTrip = Math.Abs(ax + bx) + Math.Abs(az + bz) + Math.Abs(ay + by);
+		// Every lane's middle, both ways, a little past the glue plane: on the other side the same lane, a little short of it.
+		int lanes = 0;
+		foreach (int from in new[] { Wrap.A, Wrap.B })
+		{
+			Network.Portal p = Network.Portals[from];
+			Wrap.Move(from, out double dx, out double dz, out double _);
+			foreach (double across in new[] { -Courses.HighwayOuter, -Courses.HighwayInner, Courses.HighwayInner, Courses.HighwayOuter })
+			{
+				double k = 1.5;
+				double x = p.X + p.DirX * (Wrap.Depth + k) - p.DirZ * across, z = p.Z + p.DirZ * (Wrap.Depth + k) + p.DirX * across;
+				if (!Wrap.Past(from, x, z))
+				{
+					bad++;
+					Console.WriteLine("  wrap: lane " + across.ToString("0.0") + " past the plane at portal " + from + " not seen as past");
+				}
+				Wrap.Into(Wrap.Other(from), x + dx, z + dz, out double along, out double across2);
+				if (Math.Abs(along - (Wrap.Depth - k)) > 1e-6 || Math.Abs(across2 + across) > 1e-6 || Math.Abs(across2) > p.Half)
+				{
+					bad++;
+					Console.WriteLine("  wrap: lane " + across.ToString("0.0") + " from portal " + from + " lands " + along.ToString("0.00") + " in, " + across2.ToString("0.00") + " across");
+				}
+				lanes++;
+			}
+		}
+		// The ground under each open tunnel's floor (the floor's top is the road's height at the mouth), and the road into it level.
+		int ground = 0, samples = 0;
+		double worst = double.NegativeInfinity, step = 0.0;
+		foreach (int i in new[] { Wrap.A, Wrap.B })
+		{
+			Network.Portal p = Network.Portals[i];
+			double top = p.Y + Network.Lift, width = p.Half * 2.0 + 8.0 + 4.0;
+			for (double along = 0.0; along <= Wrap.Length; along += 2.0)
+			{
+				for (double across = -width / 2.0; across <= width / 2.0 + 1e-9; across += 2.0)
+				{
+					double x = p.X + p.DirX * along - p.DirZ * across, z = p.Z + p.DirZ * along + p.DirX * across;
+					double over = Mesh(x, z) - top;
+					samples++;
+					worst = Math.Max(worst, over);
+					if (over > -0.05)
+					{
+						ground++;
+					}
+				}
+			}
+			Network.Road road = Network.Roads[p.Road];
+			int end = road.X[0] == p.X && road.Z[0] == p.Z ? 0 : road.Count - 1, back = end == 0 ? 10 : road.Count - 11;
+			step = Math.Max(step, Math.Abs(road.Y[back] - road.Y[end]));
+		}
+		// The highway event's start and finish clear of the tunnels.
+		double clear = Math.Min(Courses.HighwayStart, Courses.HighwayFinish) - Courses.HighwayBoxBack;
+		bool ok = trunk && facing && roundTrip < 1e-6 && bad == 0 && ground == 0 && step < 0.01 && clear > Wrap.Length + 50.0;
+		Console.WriteLine("wrap:    portals " + Wrap.A + " and " + Wrap.B + " (" + (trunk ? "the trunk's" : "NOT the trunk's") + ", " + (facing ? "facing opposite ways, as wide" : "NOT facing opposite ways or not as wide")
+			+ "); there and back " + roundTrip.ToString("0.000000") + "; " + bad + " of " + lanes + " lanes not landing in their lane; " + ground + " of " + samples
+			+ " floor points with the ground through them (highest " + worst.ToString("0.00") + "); road into the mouths level within " + step.ToString("0.000")
+			+ "; the event's nearest spot " + clear.ToString("0") + " from a mouth" + (ok ? "  ok" : "  FAIL"));
+		return ok;
 	}
 
 	/// <summary>Whether (x, z) is within the paving of a road other than <paramref name="self"/>.</summary>

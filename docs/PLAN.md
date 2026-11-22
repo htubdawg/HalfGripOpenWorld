@@ -1405,6 +1405,15 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
   are joined to nothing but footpaths: a street laid with both ends free (a grid's first long street, a seafront) that no cross
   street came to join. No car could reach them, so traffic leaves their houses out (`Traffic.Parts`); trafficview lists them. The fix
   belongs in `TownPlan` (join such a street to the nearest road, or not lay it), with a meshcheck check.
+- **The highway wraps round (agreed with the owner 2026-11-22):** the trunk's two tunnels are open, and a car driving into one comes
+  out of the other at the same speed, in the same lane, facing the same way (the tunnels face opposite ways, so there is no turn).
+  `Wrap.cs` (pure) pairs them and gives the move; `Streamer` loads the far end's ground once the car is within 700 units of a tunnel
+  and does the jump as an origin shift that leaves the car, its cockpit and cameras in place, so nothing sweeps across the map;
+  `WorldScene` builds the open tunnels (floor at the road's height, walls, roof, a back wall seen but not solid). The road north's
+  tunnel stays shut. Read from the Multiplayer mod's source: a stand-in more than 10 units from a new state snaps to it, so others
+  see the car come out of the far tunnel. meshcheck's wrap check. For traffic: through trips carry on across the wrap (a car into
+  one tunnel comes out of the other at the same moment); local trips to "the road out" end by driving into the tunnel and are gone
+  (never parked at the mouth), and routes never take the wrap as a short cut.
 - Next: each race's day of trips (`TrafficDay.cs`), as the handoff sets out.
 
 ### Traffic: what the studies say, and the trip model (researched 2026-11-22)

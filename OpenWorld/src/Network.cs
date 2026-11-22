@@ -246,6 +246,8 @@ namespace HalfGripOpenWorld
 			public double DirX;
 			public double DirZ;
 			public double Half;
+			/// <summary>The road that leaves here (its index in <see cref="Roads"/>): the trunk leaves at both ends, and <see cref="Wrap"/> joins them.</summary>
+			public int Road;
 		}
 
 		internal static readonly List<Portal> Portals = new List<Portal>();
@@ -288,6 +290,7 @@ namespace HalfGripOpenWorld
 				{
 					System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 					Build();
+					Wrap.Find();
 					BuildMs = watch.Elapsed.TotalMilliseconds;
 					built = true;
 				}
@@ -821,7 +824,7 @@ namespace HalfGripOpenWorld
 			Roads[at] = longer;
 			segments.Replace(at, original, longer);
 			int tip = atStart ? 0 : n - 1;
-			Portals.Add(new Portal { X = longer.X[tip], Z = longer.Z[tip], Y = longer.Y[tip], DirX = dx, DirZ = dz, Half = longer.Half });
+			Portals.Add(new Portal { X = longer.X[tip], Z = longer.Z[tip], Y = longer.Y[tip], DirX = dx, DirZ = dz, Half = longer.Half, Road = at });
 			return longer;
 		}
 

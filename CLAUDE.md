@@ -24,7 +24,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Mod.cs` | Config, scene-load hook |
 | `MapEntry.cs` | Adds the OpenWorld map to `RunConfig.maps` as a copy of TokyoNeon with its own track index (30) |
 | `Patches.cs` | Harmony: track index, TestMode and weather draw, kept out of run map draws, no laps, no solo AI, reset in place, fell-under-ground |
-| `WorldScene.cs` | Builds the world in the Tokyo scene: hides Tokyo's arena and city, grid on the trunk road, tunnel mouths, token track loop |
+| `WorldScene.cs` | Builds the world in the Tokyo scene: hides Tokyo's arena and city, grid on the trunk road, tunnel mouths (the trunk's open, see `Wrap`), token track loop |
 | `WorldAssets.cs` | Frees the materials and textures made for a race when the world goes (they are HideAndDontSave, so nothing else would) |
 | `WorldGen.cs`, `Noise.cs`, `Rng.cs`, `Heap.cs` | The land's height function (layers) and the deterministic randomness and ordering under it |
 | `Rivers.cs` | Drainage (priority flood), rivers and lakes, and their cut into the land |
@@ -65,12 +65,13 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `StormField.cs` | The storms round the car on a coarse grid for the painted sky (`Storms.Fill` fills it on a worker). No Unity types |
 | `SkyPaint.cs` | The sky painted in code into a panoramic texture: the gradient, the sun's glow and disc, the moon, the stars turning, drifting cloud, the land past the far view lit and fogged; where the sun and moon are at an hour. No Unity types (`tools/skyview` draws it) |
 | `Skyline.cs`, `SkylineBuild.cs` | The land past the far view's drawn edge as the painted sky shows it: per sky texel round the horizon, the land a ray meets, its distance, colour and slope (the data; and its build, rays marched over `FarGrid` on a worker). No Unity types (`tools/farview` checks it) |
-| `Streamer.cs` | Tile streaming, the per-frame origin check, debug teleport and overlay; each tile's map picture |
+| `Streamer.cs` | Tile streaming, the per-frame origin check, the highway's wrap (the far end's ground loaded ahead, the jump), debug teleport and overlay; each tile's map picture |
 | `WeatherView.cs` | **Public API** for other mods (Slap Pack reads it by reflection): rain, snow, wind, cloud, wetness and the hour at the car, set by `Sky`. See README |
 | `MapView.cs` | **Public API** for other mods (MiniMap reads it by reflection): loaded tiles' map pictures and the origin. See README |
 | `FarGrid.cs` | The far view's low-detail world: heights every 50 (the tiles' vertices; water lifted, woods' canopy), a picture every 25, the skirts' depths along tile edges. Pure, built after the layout |
 | `FarView.cs` | The far view: chunk meshes past the loaded tiles (holes where tiles are, skirts), the sea to the horizon, the cameras' reach |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
+| `Wrap.cs` | The highway wraps round: the trunk's two tunnels joined (a car into one comes out of the other); pure, `Streamer` does the jump as an origin shift that keeps the car and its cameras in place, `WorldScene` builds the open tunnels |
 | `GameCaches.cs` | World positions the game keeps in fields, moved on each shift |
 | `MultiplayerLink.cs` | Positions over the network in world coordinates; stand-in cars moved on each shift |
 
@@ -119,7 +120,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
   house walls reading whole storeys and roofs with undersides (facades), drives' houses and mailboxes clear of the roads and water
   (homes), houses, towers and churches off the roads, sidewalks and tracks (clear), few country lane dead ends, no through way hooking round and no main road dead end (backroads), the deer's mesh and their spots, legs and
-  positions never in deep water, over a drop or on a road but at their crossing, the buck's antlers clear of the body and the ground in every pose, fawns few and only in families, dead deer's bodies coming to rest on the ground, fleeing deer never in deep water, on another road or jumping (deer);
+  positions never in deep water, over a drop or on a road but at their crossing, the buck's antlers clear of the body and the ground in every pose, fawns few and only in families, dead deer's bodies coming to rest on the ground, fleeing deer never in deep water, on another road or jumping (deer), the highway's wrap: the trunk's tunnels paired, every lane landing in its lane, the tunnel floors clear of the ground (wrap);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,

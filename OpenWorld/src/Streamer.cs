@@ -499,6 +499,14 @@ namespace HalfGripOpenWorld
 			}
 			try
 			{
+				WrapRound();
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogError("The highway's wrap failed: " + e);
+			}
+			try
+			{
 				Origin.Follow(player.transform.position, Mod.ShiftDistance.Value, TileSize);
 			}
 			catch (Exception e)
@@ -536,13 +544,17 @@ namespace HalfGripOpenWorld
 			int radius = Mod.TileRadius.Value;
 			foliage?.Follow(cx, cz);
 
+			// Near a tunnel the highway wraps through, the ground round the other end's mouth is wanted too (see Wrap).
+			bool far = WrapTarget(x, z, out int fx, out int fz);
+			float farKeep = (WrapRadius + 1.5f) * (WrapRadius + 1.5f);
+
 			// Far tiles go (with some slack, so a car driving along a tile edge does not make and drop the same row over and over).
 			float keep = (radius + 1.5f) * (radius + 1.5f);
 			List<long> drop = null;
 			foreach (KeyValuePair<long, GameObject> pair in tiles)
 			{
 				Unkey(pair.Key, out int tx, out int tz);
-				if ((tx - cx) * (tx - cx) + (tz - cz) * (tz - cz) > keep)
+				if ((tx - cx) * (tx - cx) + (tz - cz) * (tz - cz) > keep && !(far && (tx - fx) * (tx - fx) + (tz - fz) * (tz - fz) <= farKeep))
 				{
 					(drop ??= new List<long>()).Add(pair.Key);
 				}
@@ -579,7 +591,9 @@ namespace HalfGripOpenWorld
 					Mod.Log.LogWarning("Tile " + h.Tx + "," + h.Tz + " could not be worked out: " + h.Error);
 					continue;
 				}
-				if ((h.Tx - cx) * (h.Tx - cx) + (h.Tz - cz) * (h.Tz - cz) <= keep && !tiles.ContainsKey(Key(h.Tx, h.Tz)))
+				bool near = (h.Tx - cx) * (h.Tx - cx) + (h.Tz - cz) * (h.Tz - cz) <= keep
+					|| (far && (h.Tx - fx) * (h.Tx - fx) + (h.Tz - fz) * (h.Tz - fz) <= farKeep);
+				if (near && !tiles.ContainsKey(Key(h.Tx, h.Tz)))
 				{
 					Make(h);
 				}
@@ -607,6 +621,23 @@ namespace HalfGripOpenWorld
 				}
 			}
 			wanted.Sort((a, b) => Distance(a, cx, cz).CompareTo(Distance(b, cx, cz)));
+			if (far)
+			{
+				// After the car's own, nearest the other mouth first.
+				int first = wanted.Count;
+				for (int dz = -WrapRadius; dz <= WrapRadius; dz++)
+				{
+					for (int dx = -WrapRadius; dx <= WrapRadius; dx++)
+					{
+						long key = Key(fx + dx, fz + dz);
+						if (dx * dx + dz * dz <= (WrapRadius + 0.5f) * (WrapRadius + 0.5f) && InWorld(fx + dx, fz + dz) && !tiles.ContainsKey(key) && !working.Contains(key) && !wanted.Contains(key))
+						{
+							wanted.Add(key);
+						}
+					}
+				}
+				wanted.Sort(first, wanted.Count - first, Comparer<long>.Create((a, b) => Distance(a, fx, fz).CompareTo(Distance(b, fx, fz))));
+			}
 			for (int i = 0; i < wanted.Count && working.Count < Workers; i++)
 			{
 				long key = wanted[i];
@@ -1107,6 +1138,88 @@ namespace HalfGripOpenWorld
 				}
 			}
 			go.AddComponent<TileMesh>().Mesh = mesh;
+		}
+
+		/// <summary>How many tiles round the other end's mouth are loaded ahead of a wrap (2: 500 units, past the fog in the tunnel's dark).</summary>
+		private const int WrapRadius = 2;
+
+		/// <summary>
+		/// True when world (x, z) is within <see cref="Wrap.Preload"/> of one of the highway's open tunnels: then the tile round the
+		/// other end's mouth (a little into the world from it), whose ground is loaded too so the car lands on it.
+		/// </summary>
+		private static bool WrapTarget(double x, double z, out int tx, out int tz)
+		{
+			tx = tz = 0;
+			for (int i = 0; i < Network.Portals.Count; i++)
+			{
+				if (!Wrap.Open(i))
+				{
+					continue;
+				}
+				Wrap.Into(i, x, z, out double along, out double across);
+				if (along > -Wrap.Preload && along < Wrap.Length + 50.0 && Math.Abs(across) < Wrap.Preload)
+				{
+					Network.Portal q = Network.Portals[Wrap.Other(i)];
+					tx = TileOf(q.X - q.DirX * 150.0);
+					tz = TileOf(q.Z - q.DirZ * 150.0);
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// The highway's wrap (<see cref="Wrap"/>): a car past the glue plane in one of the trunk's tunnels, going out, is put in the
+		/// other. Done as an origin shift that leaves the car, its cockpit and the cameras following it where they are in the scene, so
+		/// the world swaps round them and nothing is seen sweeping across the map; the leftover (less than half a tile across, and the
+		/// difference in the two roads' heights) moves the car and its cameras. Its speed and heading carry on as they were: the two
+		/// tunnels face opposite ways, so going west at one end is going west at the other.
+		/// </summary>
+		private void WrapRound()
+		{
+			if (Wrap.A < 0)
+			{
+				return;
+			}
+			Origin.World(player.transform.position, out double x, out double z);
+			Vector3 velocity = player.rb != null ? player.rb.linearVelocity : Vector3.zero;
+			for (int i = 0; i < Network.Portals.Count; i++)
+			{
+				Network.Portal p = Network.Portals[i];
+				if (!Wrap.Open(i) || !Wrap.Past(i, x, z) || velocity.x * p.DirX + velocity.z * p.DirZ <= 0.0)
+				{
+					continue;
+				}
+				Wrap.Move(i, out double dx, out double dz, out double dy);
+				// Ground under the other end now, if the preload has not finished it.
+				BuildAround(x + dx, z + dz, 1);
+				Transform car = player.transform.root;
+				HashSet<Transform> keep = new HashSet<Transform> { car };
+				foreach (Camera camera in FindObjectsByType<Camera>(FindObjectsSortMode.None))
+				{
+					Transform top = camera.transform.root;
+					if ((camera.name == "Main Camera" || camera.name == "OutsideCamera" || camera.name == "RearViewCamera") && top != transform.root)
+					{
+						keep.Add(top);
+					}
+				}
+				float sx = Mathf.Round((float)(dx / TileSize)) * TileSize, sz = Mathf.Round((float)(dz / TileSize)) * TileSize;
+				Origin.Shift(sx, sz, keep);
+				Origin.MoveKept(keep, new Vector3((float)(dx - sx), (float)dy, (float)(dz - sz)));
+				if (player.rb != null)
+				{
+					player.rb.position = player.transform.position;
+				}
+				// Tyre marks would draw a streak from where the car was.
+				foreach (TrailRenderer trail in car.GetComponentsInChildren<TrailRenderer>())
+				{
+					trail.Clear();
+				}
+				Origin.World(player.transform.position, out double nx, out double nz);
+				Mod.Log.LogInfo("The highway wrapped round: from the " + (p.DirX < 0 ? "west" : "east") + " edge's tunnel to the " + (p.DirX < 0 ? "east" : "west")
+					+ "'s, world (" + x.ToString("0") + ", " + z.ToString("0") + ") to (" + nx.ToString("0") + ", " + nz.ToString("0") + "), at " + (velocity.magnitude / 3.3f * 3.6f).ToString("0") + " km/h");
+				return;
+			}
 		}
 
 		/// <summary>The key place the teleport went to last (-1: none yet, so the first press goes to the first).</summary>

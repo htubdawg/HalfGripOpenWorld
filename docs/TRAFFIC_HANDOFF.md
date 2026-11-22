@@ -44,6 +44,9 @@ released; `mod.json` is unchanged.
     tuning the day (the clamp may be right: a worker without a car does not drive).
 - `tools/check.sh` passes against a stub HalfGripTools.dll (see below).
 
+- **The highway wraps round** (asked for by the owner): `Wrap.cs`, the jump in `Streamer`, open tunnels in `WorldScene`, meshcheck's
+  `wrap` check, test 47 in `docs/TESTING.md`. Not yet tried in the game.
+
 **Left for later (in the plan):** the eight cut-off town streets (three in Kingsbridge, five in Westhaven) are a `TownPlan` fault: a
 street laid with both ends free that no cross street came to join, reached only by footpaths. Fixing it is a world change; trafficview
 lists them by position and road index.
@@ -131,6 +134,12 @@ along the car's own path within 200 units, found from per-lane sorted lists rebu
 - **Waiting:** an ungranted car stops at the box's edge, treated as a leader at rest.
 - **Release:** a grant ends when the car is box + 14 past the node.
 - **Deadlock guard:** a car waiting over 45 s is forced through. Count these; there should be none.
+
+**The edges.** A leg to or from an `Edge` destination (a road out) does not park: going out it drives on into the tunnel past
+`Wrap.Depth` and is gone; coming in it appears there and drives out. Through trips between the trunk's two ends carry on across the
+wrap, so a car followed into one tunnel is still ahead of you out of the other: from the west mouth to the east one the move is
+`Wrap.Move`, and its clock carries on. Through trips may enter or leave by the road north too (its tunnel is shut to players, not to
+traffic's timetable). Local routes never use the wrap.
 
 **Parking.**
 - A leg starts at its anchor once the lane is clear: nothing within 40 ahead or behind, and nothing arriving within 3 s; force it after
