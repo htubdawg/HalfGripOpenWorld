@@ -4,10 +4,26 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 "Traffic: what the studies say, and the trip model", and the older research under them), then this. Work on **`traffic-test-branch`**
 (made from `deer-test-branch`; commit and push there; the owner merges).
 
+## Start here
+
+1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
+2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo (the tools need
+   `-p:GameDir=/home/user/HalfGripRefs/game`).
+3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=...`. It should end with `Routes: 2184 of 2184 found ... ok` and
+   exit 0 (see "Where things stand" for the full report).
+4. Write `TrafficDay.cs` as designed below, with its checks in trafficview first. Then the owner gets a map picture and frames.
+
+Open with the owner:
+- **Test 47** (`docs/TESTING.md`): the highway's wrap, Westhaven's road out and Millbrook's road north in the game. The owner looked at
+  the work and said it looks good, but no in-game report has come back yet. Read their `LogOutput.log` for
+  `The highway wrapped round` lines when it comes.
+- **The eight cut-off town streets**: a layout fix for later (see below). Ask before doing it: it changes the world.
+
 ## Where things stand
 
-Stage 1 (timetables, no game code): the traffic's map is done; each race's day of trips (`TrafficDay.cs`) is next. Nothing is
-released; `mod.json` is unchanged.
+Stage 1 (timetables, no game code): the traffic's map is done, and each race's day of trips (`TrafficDay.cs`) is next. Nothing is
+released and `mod.json` is unchanged. The branch also carries two world changes (the road fix and the wrap), so everyone in a room
+needs the build that has them. Bump the version and the README when the owner releases it.
 
 **Done and pushed:**
 - The plan, the owner's answers and the studies' figures are all in `docs/PLAN.md`.
@@ -17,8 +33,8 @@ released; `mod.json` is unchanged.
   towers and churches; 274 drive houses).
 - `Heap.Clear()` added.
 - `OpenWorld/src/Traffic.cs` (pure): the traffic's map, fixed with the world.
-  - The driving graph: drives included, tracks, paths and courses out; no junction where two roads cross more than 4 units apart in
-    height (a bridge over a road).
+  - The driving graph: drives included; tracks, paths and courses left out. No junction where two roads cross more than 4 units apart
+    in height (a bridge over a road).
   - Its connected parts (`Parts`, `Part`, `MainPart`, `OnMain`): households and places on a part cut off from the main one are left
     out (`CutOff`), so every trip has a route.
   - Speed limits: Pennsylvania's, lower in towns.
@@ -27,29 +43,48 @@ released; `mod.json` is unchanged.
   - Destinations with spaces and per-purpose draw: offices in the towers, retail, shops, high-street shops, workshops, filling
     stations, markets, churches, courses' yards, the roads leaving the map.
   - `Route` (Dijkstra between two anchors, partial edges at both ends).
-- **A layout fix (changes the world):** `Network.SnapJoin`. A routed road's end looked for the road whose cell it reached within 140
-  units only; the trunk's smoothed line runs up to about 270 off its cells, so Westhaven's only road out (its link to the trunk)
-  stopped in the fields and the whole town (376 households, 16 places) was cut off. The main road from Millbrook to the north edge
-  and four farm lanes ended short the same way. Now an end that finds nothing looks out to 320. meshcheck's `backroads` fails on any
-  main road dead end (it found these two before the fix). All of meshcheck passes before and after; a few later roads move.
+- **A layout fix (changes the world):** `Network.SnapJoin`.
+  - A routed road's end looked for the road whose cell it reached within 140 units only. The trunk's smoothed line runs up to about 270
+    off its cells, so Westhaven's only road out (its link to the trunk) stopped in the fields and the whole town (376 households,
+    16 places) was cut off. The main road from Millbrook to the north edge and four farm lanes ended short the same way.
+  - Now an end that finds nothing looks out to 320.
+  - meshcheck's `backroads` fails on any main road dead end (it found these two before the fix). All of meshcheck passes before and
+    after; a few later roads move.
+  - Millbrook's road now meets the road from Northcote at a slant after a tight bend: it works, but isn't pretty (jview shows 25
+    pixels of ground and 7 overlapping there).
+- **The highway wraps round (changes the world; asked for by the owner):** a car that drives into the trunk's tunnel at one edge comes
+  out of the other's at the same speed, in the same lane, facing the same way.
+  - `Wrap.cs` (pure) pairs the two tunnels (`Network.Portal.Road`; they face opposite ways, so the move has no turn), glues them at a
+    plane `Depth` (14) inside each, and gives the move (`Move`).
+  - `Streamer.WrapTarget` loads the ground round the far mouth (2 tiles) once the car is within `Wrap.Preload` (700) of a tunnel.
+  - `Streamer.WrapRound` (in `LateUpdate`, before the origin follow) does the jump as an origin shift that keeps the root holding
+    the car, the cockpit and all three cameras (`Player` in the Tokyo dump) in place (`Origin.Shift` with a keep set). The leftover
+    under a tile, plus the difference in the two roads' heights, is moved with `Origin.MoveKept`. Tyre trails are cleared.
+  - `WorldScene` builds the two open tunnels: a dark floor at the road's height, walls, a roof, and a back wall at `Wrap.Length` (24)
+    that is seen but not solid, so a fast car can't hit it before the once-a-frame check sees it past the plane. The road north's
+    tunnel stays shut.
+  - Read from the Multiplayer mod's source (`RemoteCar.FixedUpdate`): a stand-in more than 10 units from a new state snaps to it, so
+    others see the car come out of the far tunnel.
+  - meshcheck's `wrap` check: the tunnels paired, every lane landing in its lane, the floors clear of the ground (the edge's ground
+    rises through a deeper floor), the highway event clear of both tunnels.
+  - **Not yet tried in the game.**
 - `tools/trafficview`: builds the map and reports it; exits 1 on a failed check; `--near <road>` lists what comes near a road (for
   finding why one is cut off). Last run:
-  - 1,261 junctions, 1,451 stretches of road, 1,907 households with 3,604 cars, 273 destinations, built in about 540 ms (the layout
-    7.5 s first).
+  - 1,261 junctions, 1,451 stretches of road, 1,907 households with 3,604 cars, 273 destinations, built in about 540 ms (after the
+    layout's 7.5 s).
   - The graph in 9 parts: the main one 569,228 units of road; 8 cut-off town streets (2,761 units) whose 110 households are left out.
-  - 3 roads leave the map (the trunk at both ends, the road north), 3 edge destinations: right (the old note suspecting
-    `Network.Portals` was wrong; there are only 3).
-  - Routes: 2,184 of 2,184 found, 0 broken, 0.06 ms each.
-  - 1.10 workers a household, lower than the survey's 1.33 because `WorkersOf` clamps workers to cars. Not changed yet: decide when
-    tuning the day (the clamp may be right: a worker without a car does not drive).
-- `tools/check.sh` passes against a stub HalfGripTools.dll (see below).
+  - 3 roads leave the map (the trunk at both ends, the road north), so 3 edge destinations. That is right: the old note suspecting
+    `Network.Portals` was wrong.
+  - Routes: 2,184 of 2,184 found, 0 broken, 0.05 ms each.
+  - 1.10 workers a household, lower than the survey's 1.33 because `WorkersOf` clamps workers to cars. Not changed: decide when tuning
+    the day (the clamp may be right, since a worker without a car does not drive).
+  - Not checked yet: that the map builds the same twice (add it with the day's checksum, building in a fresh process or after a
+    reset).
+- `tools/check.sh` passes against a stub HalfGripTools.dll (below), and all of meshcheck passes.
 
-- **The highway wraps round** (asked for by the owner): `Wrap.cs`, the jump in `Streamer`, open tunnels in `WorldScene`, meshcheck's
-  `wrap` check, test 47 in `docs/TESTING.md`. Not yet tried in the game.
-
-**Left for later (in the plan):** the eight cut-off town streets (three in Kingsbridge, five in Westhaven) are a `TownPlan` fault: a
-street laid with both ends free that no cross street came to join, reached only by footpaths. Fixing it is a world change; trafficview
-lists them by position and road index.
+**Left for later (in the plan):** the eight cut-off town streets (three in Kingsbridge, five in Westhaven) are a `TownPlan` fault. Each
+is a street laid with both ends free that no cross street came to join, reached only by footpaths. Fixing it (join such a street to
+the nearest road, or don't lay it) is a world change with a meshcheck check to add. trafficview lists them by position and road index.
 
 ## What comes next: `TrafficDay.cs` (pure, per race; designed, not written)
 
@@ -162,6 +197,8 @@ the line point plus the right normal of travel times `Traffic.LaneOffset`. A car
 - The hourly share against TPG 9.
 - Cars moving at the 5 pm peak (about 400 expected) and at 3 am (about 25).
 - Lots' peaks against their spaces.
+- The edges: no car ever parked or stopped at a tunnel mouth; a through car into one trunk tunnel out of the other at the same moment
+  (its position across the wrap continuous by `Wrap.Move`); no local route using the wrap.
 - Time to build the day (aim under 2 s, on a worker in the game).
 
 Then a map picture (roads coloured by volume) and frames at 03:00, 08:00, 12:00 and 17:00 for the owner, looked at first. That
@@ -179,8 +216,26 @@ finishes stage 1; stages 2 to 4 are in the plan.
   `docs/DEER_HANDOFF.md` describes. It needs: `HalfGripMod` (abstract `Load`, virtual `Unload`), `ModContext` (`Log`, `Config`,
   `Harmony`, `Keys`, `Net`, `Folder`, `PatchAll`, `OnSceneLoaded`, `OnUnload`), `ModKey` (`Down`, `Held`), `Keys.Add(KeyCode, string,
   Controls.Section, Func<bool>)`, `ctx.Net` (`Send(data)`, `Send(data, to)`, `SendToHost`, `OnReceive(Action<ulong, byte[]>)`), the static
-  `Net` (`Available`, `InRoom`, `IsHost`, `LocalId`, `HostId`, `Players`, `PlayerJoined`, `PlayerLeft`) and `NetPlayer` (`Id`, `Name`).
-- The layout takes about 7 s to build in trafficview.
+  `Net` (`Available`, `InRoom`, `IsHost`, `LocalId`, `HostId`, `Players`, `PlayerJoined`, `PlayerLeft`) and `NetPlayer` (`Id`, `Name`). The one used
+  last (build it as netstandard2.1, assembly name `HalfGripTools`, against the game's Managed DLLs, `BepInEx.dll` and `0Harmony.dll`,
+  leaving out `mscorlib`, `netstandard` and `System*`):
+
+  ```csharp
+  using System; using System.Collections.Generic; using BepInEx.Configuration; using BepInEx.Logging; using UnityEngine; using UnityEngine.SceneManagement;
+  namespace HalfGripTools
+  {
+  	public abstract class HalfGripMod { public abstract void Load(ModContext ctx); public virtual void Unload() { } }
+  	public class ModKey { public bool Down => false; public bool Held => false; }
+  	public class KeyRegistry { public ModKey Add(KeyCode key, string label, Controls.Section section, Func<bool> shown) => null; }
+  	public class NetPlayer { public ulong Id; public string Name; }
+  	public class ModNet { public bool Send(byte[] d) => false; public bool Send(byte[] d, ulong to) => false; public bool SendToHost(byte[] d) => false; public void OnReceive(Action<ulong, byte[]> a) { } }
+  	public static class Net { public static bool Available, InRoom, IsHost; public static ulong LocalId, HostId; public static IReadOnlyList<NetPlayer> Players => new List<NetPlayer>(); public static event Action<NetPlayer> PlayerJoined, PlayerLeft; }
+  	public class ModContext { public ManualLogSource Log; public ConfigFile Config; public HarmonyLib.Harmony Harmony; public KeyRegistry Keys; public ModNet Net; public string Folder = ""; public void PatchAll() { } public void OnSceneLoaded(Action<Scene> a) { } public void OnUnload(Action a) { } }
+  }
+  ```
+- The layout takes about 7.5 s to build in trafficview; the whole meshcheck about 1 min 45 s.
+- The game's decompile (0.419) was put in the scratchpad with `ilspycmd`; the Tokyo scene dump is in HalfGripRefs
+  (`scenedumps/0.419/Tokyo`): the `Player` root holds `CarInterior` (INTERIOR layer), `PlayerModel` (the car) and the cameras.
 
 ## Working with the owner
 

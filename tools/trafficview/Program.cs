@@ -4,7 +4,8 @@ using System.Diagnostics;
 using HalfGripOpenWorld;
 
 // Builds the traffic's map (Traffic.cs: the driving graph, the households and their cars, the places that draw trips) without the game
-// and reports what it holds; checks that it builds the same twice and that routes join up. More checks and pictures come with each
+// and reports what it holds; checks that every household and place is on the main road network and that routes join up (not yet that
+// it builds the same twice: Traffic builds once a process). More checks and pictures come with each
 // race's day of trips (see docs/TRAFFIC_HANDOFF.md). Exits 1 if a check fails.
 //   dotnet run -c Release --project tools/trafficview [--near <road>]
 // --near lists the roads that come within 30 of a road (gap, heights, driven or not) and the graph's edges along it: for finding why a
