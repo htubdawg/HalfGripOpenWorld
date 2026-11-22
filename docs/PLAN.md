@@ -1347,8 +1347,8 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
 
 1. **Timetables, no game code** (`Traffic.cs`, pure, under the determinism rules like `Storms` and `Herds`). Each car's route over
    the road network from the race's seed (the junction graph `Signs` builds, opened up for routing), and its position at any race
-   time a pure function of (seed, car, clock): speeds by road class and bends, a safe gap to the car in front, a minor road giving
-   way at a junction, worked out lane by lane so queues come out the same on every machine. Driving on the right (the owner pictures Pennsylvania). Checks in
+   time a pure function of (seed, car, clock): speeds by road class and bends, a safe gap to the car in front, uncontrolled junctions
+   (first to arrive goes first, yield to the right, never block one), worked out lane by lane so queues come out the same on every machine. Driving on the right (the owner pictures Pennsylvania). Checks in
    `meshcheck` (no two cars overlap, cars stay in their lane and keep to their roads' speeds, what one car's position costs) and a
    picture and a short animation from `preview` for the owner.
 2. **Timetabled cars drawn in the game, no physics.** The game's car models moved along their timetables near the car, from a pool,
@@ -1380,8 +1380,10 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
    not random routes. Research first (US and Pennsylvania figures: PennDOT traffic counts by road class, the National Household
    Travel Survey's trips by purpose and hour, trip generation rates), as `docs/PLAN.md` did for the land.
 3. **Traffic can be shot and wrecked.**
-4. Junctions as in Pennsylvania: stop signs on the minor road, all-way stops where equal roads meet, traffic lights in the town on
-   the main roads where the studies say they belong. Decided from the research, not asked again.
+4. **Every junction is uncontrolled** (the world has no stop signs or traffic lights yet): the first car to arrive goes first, a car
+   yields to one arriving from its right at the same time, and no car enters a junction it cannot clear (no blocking it). In the
+   timetables this is pure: arrival times come from the timetable, ties go to the car on the right, then to the lower car number.
+   Signs or lights would be a change to the world first, then to these rules.
 5. **Deer react to traffic cars, much less often than to players' cars.**
 6. **The game's enemy cars, skins at random. Headlights at night** on traffic and on other players' stand-ins. The enemy prefab
    carries a headlight (`Headlights` > `Spot Light`, a spot of range 150, under `HeadLightsController`, in the 0.419 main menu
