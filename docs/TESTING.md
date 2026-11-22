@@ -313,7 +313,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      hit once; driving over the body does nothing.
    - The deer is hit when the car touches it, not before or after: a deer just off the side mirror is missed, one grazing in the path
      is hit, head-on and from the side, and at high speed it is not passed through. Say if hits feel early, late or missed.
-   - Shoot a deer (any gun, a shotgun too): the tracer stops at the deer, there is the gun's hit puff, and the deer falls over sideways
+   - Shoot a deer (any gun, a shotgun too): the tracer stops at the deer, there is the gun's hit puff in red (0.30.3; was yellow sparks), and the deer falls over sideways
      away from the shot and lies there. Log: `Deer: shot at ... m`. Deer can be shot out to about 150 m (only drawn ones). Shots past or
      over a deer do not kill it.
    - The rest of a hit or shot deer's group bolts (0.30.0).
@@ -325,8 +325,10 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 44. Deer reacting (0.30.0). Find a group as in 42 (`ShowCoords`: the overlay's `deer:` line also counts the groups near reacting).
    - Drive toward a group along its lane at a steady speed: a few seconds out (further the faster) they stop grazing and watch the car,
      heads up; nearer (about 40% of that) they bolt, the nearest deer first and the others a moment after each other, at a gallop with
-     their white tails up: most into the woods or the far field on their side; sometimes (more if one was standing in the road) over
-     the road in front of the car, one after another, so watch for the next; now and then (more at night) they freeze, staring, for
+     their white tails up: into the woods or the far field on their side; or, about half the time (more if one was standing in the
+     road; 0.30.3), over the road at their crossing, timed so the first deer is in the road about 1.4 s before the car would get
+     there and the rest follow as it arrives: a hazard (brake hard or swerve); log `... flees Across ... (the car ... s from the
+     crossing, the first deer on the road in ... s)`; now and then (more at night) they freeze, staring, for
      a few seconds before running. The log: `Deer: group ... flees Away|Across|Freeze from the car at ... m (noticed at ... m)`.
    - Fled deer stand watching where they got to with their tails up, then settle and graze; a minute or two later they go about their
      day from there (no jump back to where they were).

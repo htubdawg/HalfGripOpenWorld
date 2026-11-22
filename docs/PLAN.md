@@ -1811,5 +1811,15 @@ The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how
   plays the game's own wall crash and car crunch together (pitch 0.9 to 1), louder the harder. Do not synthesize sounds again.
   The body: thrown up at most 9 units a second (was 18; 1.5 + 0.09 x impact), less aside, tumbling slower; a bounce only when it comes
   down faster than 9 (was 5), keeping 18% of its fall (was 35%) and 45% of its way along (was 55%).
+- **0.30.3 (the owner's first drive with reacting deer: "none of them reacted fast enough to actually be a road hazard, most of
+  them just ran away from the road"; and the shot's yellow sparks to be red)**: a dart over the road is no longer started at 40% of
+  the notice distance but timed on the car's machine: `Herds.CrossAfter` plays the dart it would claim (nothing kept) and finds when
+  its first deer would be on the paving at the crossing; the flee goes when the car, at its speed toward the crossing, would get
+  there `Deer.DartAhead` (1.4 s) after that, or at once if the car is within 1 s or 14 units. Darts are chosen half the time (was
+  30%), 70% when the nearest deer stands in the road (was 55%); freezes and shots as before. Away and freeze keep the 40% rule.
+  meshcheck `deer`: every timed dart's first deer is on the road when worked out (157 of 157 on seed 1; 0.3 to 7 s, half within
+  2.5 s). The shot's hit puff (the gun's own `BulletCollisionEffect`) is turned blood red on a deer: its particles' start, lifetime,
+  speed and trail colours, lights and materials' tints (property blocks) keep their brightness and alpha; the puff on walls is the
+  game's.
 - **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
   walk through trees in the woods; antlers, fawns' spots, lying down.

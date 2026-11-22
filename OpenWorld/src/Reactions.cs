@@ -102,8 +102,8 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Which way a group flees, by chance from its reaction's number: freezing more at night (headlights), darting over the road more
-		/// when the deer nearest the car stands in it (as real deer do), and never over it for a group with spots on one side only or
+		/// Which way a group flees, by chance from its reaction's number: freezing more at night (headlights), darting over the road half
+		/// the time, more when the deer nearest the car stands in it (as real deer do, and to be a hazard on the road), and never over it for a group with spots on one side only or
 		/// startled by a shot.
 		/// </summary>
 		internal static FleeWay ChooseWay(Group g, int seq, bool onRoad, double hour, bool shot)
@@ -111,8 +111,51 @@ namespace HalfGripOpenWorld
 			double u = Unit(g.Salt, 0xC0DEUL, (ulong)seq, 0UL);
 			bool night = hour < 6.0 || hour > 20.0;
 			double freeze = night ? 0.25 : 0.08;
-			double across = shot || !g.Crosses ? 0.0 : onRoad ? 0.55 : 0.3;
+			double across = shot || !g.Crosses ? 0.0 : onRoad ? 0.7 : 0.5;
 			return u < freeze ? FleeWay.Freeze : u < freeze + across ? FleeWay.Across : FleeWay.Away;
+		}
+
+		/// <summary>
+		/// How long after a flee over the road would start (<paramref name="r"/>, its way <see cref="FleeWay.Across"/>) the first deer
+		/// would be on the paving at the crossing, from the run it would play (nothing is kept); -1 if none would be. The car's machine
+		/// times a dart by it, so the deer reach the road a moment before the car does.
+		/// </summary>
+		internal double CrossAfter(Group g, Reaction r, ref Move mv, ref Move spare)
+		{
+			if (!g.Crosses)
+			{
+				return -1.0;
+			}
+			Reacted rr = Play(g, r, g.Reactions.Count, ref mv, ref spare);
+			double reach = g.Site.Half + 3.0, best = double.MaxValue;
+			for (int d = 0; d < g.Members.Length; d++)
+			{
+				double[] px = rr.PX[d], pz = rr.PZ[d], ps = rr.PS[d];
+				if (px == null)
+				{
+					continue;
+				}
+				for (int i = 0; i + 1 < px.Length; i++)
+				{
+					// The nearest the leg comes to the crossing's centre; on the paving if within its half width.
+					double ax = px[i] - g.Site.X, az = pz[i] - g.Site.Z;
+					double bx = px[i + 1] - px[i], bz = pz[i + 1] - pz[i];
+					double len2 = bx * bx + bz * bz;
+					double u = len2 > 1e-9 ? Math.Max(0.0, Math.Min(1.0, -(ax * bx + az * bz) / len2)) : 0.0;
+					double qx = ax + bx * u, qz = az + bz * u;
+					if (qx * qx + qz * qz > reach * reach)
+					{
+						continue;
+					}
+					// Where along the leg it first comes within reach.
+					double c = ax * ax + az * az - reach * reach, b = ax * bx + az * bz;
+					double enter = c <= 0.0 || len2 <= 1e-9 ? 0.0 : Math.Max(0.0, (-b - Math.Sqrt(Math.Max(0.0, b * b - len2 * c))) / len2);
+					double at = rr.Go[d] + TimeFor(ps[i] + (ps[i + 1] - ps[i]) * enter) - r.T0;
+					best = Math.Min(best, at);
+					break;
+				}
+			}
+			return best == double.MaxValue ? -1.0 : best;
 		}
 
 		/// <summary>

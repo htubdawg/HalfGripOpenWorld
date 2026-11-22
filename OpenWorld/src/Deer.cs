@@ -229,6 +229,14 @@ namespace HalfGripOpenWorld
 		/// <summary>Per group: how far off this machine's car was when the group noticed it (the flee comes at 40% of that).</summary>
 		private readonly Dictionary<int, float> noticed = new Dictionary<int, float>();
 
+		/// <summary>Per group: how long after a dart over the road starts its first deer would be on the paving (-1 never), and the
+		/// group's reaction count it was worked out at (it is played again only when that changes).</summary>
+		private readonly Dictionary<int, (int count, double after)> crossAfter = new Dictionary<int, (int, double)>();
+
+		/// <summary>A dart over the road is timed so the first deer is on the paving this long before the car would reach the crossing:
+		/// too near to stop from speed, so the driver must brake hard or swerve, and the followers come as the car gets there.</summary>
+		private const double DartAhead = 1.4;
+
 		/// <summary>Per group: when a shot here last sent it off (a shotgun's pellets are one shot).</summary>
 		private readonly Dictionary<int, double> shotAt = new Dictionary<int, double>();
 
@@ -698,7 +706,8 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// The groups near this machine's car notice it and flee from it: noticed when it is <see cref="NoticeSeconds"/> away at its speed
 		/// toward them (heads up, an alert claimed), fled at 40% of the distance it was noticed at, or when it is very near or under 1.6 s
-		/// off. Which way by chance (<see cref="Herds.ChooseWay"/>). A group galloping off, or with a claim of this machine's waiting, is
+		/// off; a group darting over the road instead goes when the car would reach the crossing <see cref="DartAhead"/> after its first
+		/// deer is on the paving. Which way by chance (<see cref="Herds.ChooseWay"/>). A group galloping off, or with a claim of this machine's waiting, is
 		/// left alone.
 		/// </summary>
 		private void React(CarControllerNew car, double t, double cx, double cz)
@@ -712,6 +721,7 @@ namespace HalfGripOpenWorld
 				if (sx * sx + sz * sz > 450.0 * 450.0)
 				{
 					noticed.Remove(g);
+					crossAfter.Remove(g);
 					continue;
 				}
 				if (Herds.Alerted(group, t) || Herds.Running(group, t))
@@ -762,15 +772,41 @@ namespace HalfGripOpenWorld
 				if (dist > Math.Max(at, notice) * 1.4 + 40.0)
 				{
 					noticed.Remove(g); // gone by
+					crossAfter.Remove(g);
 					continue;
 				}
-				if (dist < 0.4 * at || dist < 14.0 || (closing > 2.0 && dist / closing < 1.6))
+				int count = room.Count(g);
+				FleeWay way = Herds.ChooseWay(group, count, Herds.OnRoad(group, nx, nz), herds.Hour(t), false);
+				bool flee = dist < 0.4 * at || dist < 14.0 || (closing > 2.0 && dist / closing < 1.6);
+				string why = "";
+				if (way == FleeWay.Across)
 				{
-					FleeWay way = Herds.ChooseWay(group, room.Count(g), Herds.OnRoad(group, nx, nz), herds.Hour(t), false);
+					// A dart over the road waits for the car, not its distance: it goes when the car, at its speed toward the crossing,
+					// would get there just after the first deer reaches the paving (so the deer are in the road in front of it).
+					flee = false;
+					double ex = group.Site.X - cx, ez = group.Site.Z - cz;
+					double ds = Math.Sqrt(ex * ex + ez * ez);
+					double toward = ds > 0.01 ? (vel.x * ex + vel.z * ez) / ds : 0.0;
+					if (toward > 6.0)
+					{
+						if (!crossAfter.TryGetValue(g, out (int count, double after) c) || c.count != count)
+						{
+							c = (count, herds.CrossAfter(group, new Reaction { Group = g, Kind = ReactKind.Flee, Way = way, T0 = t, FromX = cx, FromZ = cz }, ref move, ref scratch));
+							crossAfter[g] = c;
+						}
+						flee = c.after >= 0.0 && ds / toward <= c.after + DartAhead;
+						why = " (the car " + (ds / toward).ToString("0.0") + " s from the crossing, the first deer on the road in " + c.after.ToString("0.0") + " s)";
+					}
+					// Passing it, or driving off: they bolt as before, the car too near.
+					flee |= dist < 14.0 || (closing > 2.0 && dist / closing < 1.0);
+				}
+				if (flee)
+				{
 					if (room.Claim(new Reaction { Group = g, Kind = ReactKind.Flee, Way = way, T0 = t, FromX = cx, FromZ = cz }))
 					{
 						noticed.Remove(g);
-						Mod.Info("Deer: group " + g + " flees " + way + " from the car at " + (dist / 3.3).ToString("0") + " m (noticed at " + (at / 3.3f).ToString("0") + " m)");
+						crossAfter.Remove(g);
+						Mod.Info("Deer: group " + g + " flees " + way + " from the car at " + (dist / 3.3).ToString("0") + " m (noticed at " + (at / 3.3f).ToString("0") + " m)" + why);
 					}
 				}
 			}

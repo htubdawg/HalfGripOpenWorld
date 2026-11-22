@@ -30,10 +30,10 @@ generated from a fixed seed (the same for every player) the way real country com
   file, and now and then crossing the lane one at a time (one sometimes turns back halfway). Most are out at dawn and dusk, fewer at
   midday. They are somewhere else every race, and in a room everyone has the same deer in the same places. Hitting one damages
   the car like a crash, more the faster (at 55 on the speedometer, where a wall does its full 24, a doe does about 13; never more
-  than about 22) with a loud crash, jolts and slows it, and throws the deer over the bonnet and down the road, which lands and lies dead; a deer can be shot, and drops where it stands.
+  than about 22) with a loud crash, jolts and slows it, and throws the deer over the bonnet and down the road, which lands and lies dead; a deer can be shot, and drops where it stands with a red puff.
   They notice a car coming (heads up, watching it) and, closer, bolt with their tails up: away into cover, frozen in the headlights
-  for a moment first (more at night), or darting over the road in front of the car (more if they were standing in it), one after
-  another; a shot near them or one of them killed sends them off too. In a room everybody sees the same deer do the same thing, and
+  for a moment first (more at night), or, about half the time, darting over the road in front of the car (more if they were standing in it), timed so the first
+  is in the road a moment before the car gets to their crossing and the others follow as it arrives; a shot near them or one of them killed sends them off too. In a room everybody sees the same deer do the same thing, and
   a deer killed by anybody lies dead in the same place for everybody, also for a player who joins later.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
@@ -44,7 +44,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.30.2**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.30.3**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -65,7 +65,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.30.2` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.30.3` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it

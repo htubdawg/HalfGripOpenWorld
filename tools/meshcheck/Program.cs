@@ -2700,7 +2700,8 @@ internal static class Program
 		Herds herds = new Herds(1, Sky0(1), 2400.0);
 		var mv = new Herds.Move();
 		var spare = new Herds.Move();
-		int plays = 0, deep = 0, paved = 0, jumps = 0, samples = 0, across = 0, notCalm = 0;
+		int plays = 0, deep = 0, paved = 0, jumps = 0, samples = 0, across = 0, notCalm = 0, dartNever = 0, dartWrong = 0;
+		var darts = new List<double>();
 		double worstJump = 0.0, longest = 0.0;
 		const double step = 0.2;
 		foreach (Herds.Group g in herds.Groups)
@@ -2716,8 +2717,42 @@ internal static class Program
 				flee.Kind = ReactKind.Flee;
 				flee.Way = way;
 				flee.T0 = t0 + 2.0;
+				// A dart is timed by when its first deer would be on the paving: it must be there then (the car's machine waits for it).
+				double dartAfter = -1.0;
+				if (way == FleeWay.Across && g.Crosses)
+				{
+					herds.SetReactions(g, new[] { alert });
+					dartAfter = herds.CrossAfter(g, flee, ref mv, ref spare);
+				}
 				herds.SetReactions(g, new[] { alert, flee });
 				Reacted rr = g.Reactions[1];
+				if (way == FleeWay.Across && g.Crosses)
+				{
+					bool there = false;
+					double reach = g.Site.Half + 3.5;
+					for (int d = 0; dartAfter >= 0.0 && d < g.Members.Length; d++)
+					{
+						herds.Live(g, d, flee.T0 + dartAfter + 0.05, ref mv, ref spare, out DeerState s);
+						double cx = s.X - g.Site.X, cz = s.Z - g.Site.Z;
+						there |= cx * cx + cz * cz < reach * reach;
+					}
+					if (dartAfter < 0.0)
+					{
+						dartNever++;
+					}
+					else if (!there)
+					{
+						if (dartWrong < 3)
+						{
+							Console.WriteLine("  group " + g.Index + ": a dart's first deer should be on the road " + dartAfter.ToString("0.0") + " s after it starts, and is not");
+						}
+						dartWrong++;
+					}
+					else
+					{
+						darts.Add(dartAfter);
+					}
+				}
 				plays++;
 				longest = Math.Max(longest, rr.Done - flee.T0);
 				int dstSide = g.Spots[rr.Dst].Side;
@@ -2785,7 +2820,10 @@ internal static class Program
 		}
 		Console.WriteLine("         reactions: " + plays + " flees played (" + samples + " deer positions; the longest run " + longest.ToString("0.0") + " s); " + deep + " deep in water, " + paved
 			+ " on paving away from a crossing, " + jumps + " jumps (worst " + worstJump.ToString("0.0") + "), " + notCalm + " not calm from the refuge after; " + across + " groups darted across");
-		ok &= deep == 0 && paved == 0 && jumps == 0 && notCalm == 0 && across > 20;
+		darts.Sort();
+		Console.WriteLine("         darts timed: " + darts.Count + " first deer on the road when worked out (" + (darts.Count > 0 ? "in " + darts[0].ToString("0.0") + " to " + darts[darts.Count - 1].ToString("0.0")
+			+ " s, half within " + darts[darts.Count / 2].ToString("0.0") + " s" : "none") + "), " + dartWrong + " not there then, " + dartNever + " never on it");
+		ok &= deep == 0 && paved == 0 && jumps == 0 && notCalm == 0 && across > 20 && dartWrong == 0 && darts.Count > 20 && dartNever * 10 <= darts.Count;
 		return ok;
 	}
 

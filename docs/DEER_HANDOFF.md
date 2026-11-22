@@ -4,7 +4,7 @@ For the agent picking up the white-tailed deer. Read `CLAUDE.md`, then the deer 
 white-tailed deer" to "Reactions (0.30.0)"), then this. Work on the branch **`deer-test-branch`** (the owner's deer branch: commit
 and push there, do not start another; the owner merges). The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave it.
 
-## Where things stand (0.30.2, pushed; nothing since 0.28.0 has been run in the game yet)
+## Where things stand (0.30.3, pushed; the owner drove with 0.30.2 for ten minutes)
 
 | Version | What | In-game test | Owner's word |
 |---|---|---|---|
@@ -13,6 +13,7 @@ and push there, do not start another; the owner merges). The old `claude/keen-be
 | 0.30.0 | Reactions (notice, alert, flee away / across / freeze; shots and kills spook); the host settles reactions and kills; late joiners' Hello | 44 | as above |
 | 0.30.1 | Harder strike (about 13 HP at 55 on the speedometer, at most about 22; more shake, 8% speed, nose jolt); bodies thrown lower, bounce less | 43 | asked for it |
 | 0.30.2 | Strike sound: the game's own wall crash and car crunch only | 43 | asked for it (the synthesized sound was "like a pinball machine") |
+| 0.30.3 | Darts over the road timed to the car (first deer on the road 1.4 s before it gets there), chosen half the time; the shot's puff red | 43, 44 | asked for it: in 0.30.2 "none reacted fast enough to be a road hazard, most ran away from the road"; the sparks yellow |
 
 **First thing to do:** ask the owner for their in-game report (TESTING 42 to 44, `LogOutput.log`, screenshots) and fix what it shows
 before anything new. Things only the game can show, each logged:
