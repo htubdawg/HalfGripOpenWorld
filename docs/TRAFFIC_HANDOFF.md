@@ -81,9 +81,12 @@ needs the build that has them. Bump the version and the README when the owner re
   - Routes: 2,184 of 2,184 found, 0 broken, 0.05 ms each.
   - 1.10 workers a household, lower than the survey's 1.33 because `WorkersOf` clamps workers to cars. Not changed: decide when tuning
     the day (the clamp may be right, since a worker without a car does not drive).
-  - Not checked yet: that the map builds the same twice (add it with the day's checksum, building in a fresh process or after a
-    reset).
-- `tools/check.sh` passes against a stub HalfGripTools.dll (below), and all of meshcheck passes.
+  - Not checked yet: that the map itself builds the same in two processes (the day's checksum is checked twice in one process, over
+    one build of the map). Run trafficview twice and compare the checksum line to check it by hand.
+- **`OpenWorld/src/TrafficDay.cs` (pure): each race's day of trips**, checked in trafficview (`--seed`, `--picture`;
+  `tools/trafficview/Pictures.cs` draws). See "`TrafficDay.cs`: as built" below. Commit `ab22a3a`.
+- `tools/check.sh` passes against a stub HalfGripTools.dll (below). meshcheck builds with `TrafficDay.cs` in it; its last full run
+  (all passing) was before `TrafficDay.cs`, which nothing meshcheck checks calls.
 
 **Left for later (in the plan):** the eight cut-off town streets (three in Kingsbridge, five in Westhaven) are a `TownPlan` fault. Each
 is a street laid with both ends free that no cross street came to join, reached only by footpaths. Fixing it (join such a street to
@@ -96,7 +99,8 @@ the nearest road, or don't lay it) is a world change with a meshcheck check to a
 to the day's (0 at 03:00, `Traffic.DaySeconds` long, repeating). The seed is `Weather.Seed`, the start hour `Sky.StartHourOf(seed)`, as
 for `Herds`. It is not called from the game yet.
 
-What it does, as the design above had it (only the differences are spelt out):
+What it does, as the plan designed it (the full design is in this file as of commit 8374760, `git show 8374760:docs/TRAFFIC_HANDOFF.md`;
+only the differences are spelt out here):
 - **The day:** a weekend day with probability 2/7.
 - **Tours:** the survey's rates per household (work per worker); a leaving hour from the purpose's table (tuned, see below), a stay,
   a place by gravity on straight-line distance, weight / (1 + (d / 3000)²) (3000, not 6000: with 6000 trips across the whole map were
@@ -163,6 +167,33 @@ driving, the worst leg's progress, cars on the road each hour of the run.
 **Not done yet:** the relevant checks in meshcheck (the plan says meshcheck; trafficview is where they run now); what one car's
 place costs (`At` scans a car's legs: fine for a few hundred cars, measure in stage 2); the deer reacting to traffic.
 
+**Known weaknesses** (none fails a check; worth knowing before stage 2):
+- **The Kingsbridge link** (the main road through the main town, a chain of junctions 16 to 220 apart) is where the queues are: most
+  of the day's stopped time is on it and the streets joining it. It flows now, but it is the first place to look if a change brings
+  back gridlock (trafficview prints the worst junctions and stretches).
+- **Parked cars of one household share one spot** (`At` gives the home anchor's X, Z for each); stage 2 must spread them (by car
+  index along the kerb or the drive). Several places' cars likewise park at one spot.
+- **Drives have no lane offset** (`Traffic.LaneOffset` 0), so two cars meeting on a drive overlap when drawn; rare.
+- **Legs that run past the day's end** (late ways home) are driven in the run's tail, after 03:00, without the next morning's traffic
+  around them; `At` shows them in the morning (it checks w and w + 2400).
+- **The circling cars jump at 03:00** (above).
+- **A few high-street shops** park one or two cars over their two spaces at the peak.
+- **Diagnostics left in `TrafficDay`** (`Stuck`, `WaitAt`, `StoppedOn`, `ActiveBy`, `StartsBy`, `ProfileSeconds`, `OverlapNotes`,
+  `ConflictNotes`, the refusal counts): cheap, and they found every bug this session; trim them if they get in the way.
+- `Traffic.WorkersOf` still clamps workers to cars (1.10 a household against the survey's 1.33); left as it is.
+
+**For stage 2 (using the day in the game):**
+- Every machine builds the same day from the room's seed, so drawing timetabled cars needs no messages. Build it on a worker at the
+  race's start (about 1.4 s; it allocates the recordings, about a million floats).
+- Sim time: `TrafficDay.SimTime(Sky's start hour, race time)`. Then `At(car, w)` for the cars near the player: `State` (Parked, Driving,
+  Away), the point, heading (`Hx`, `Hz`), `Speed`, and `InTunnel` (hide or darken those: they are inside a tunnel's mouth).
+- `X`, `Z` are world coordinates (subtract the origin to place them); `Y` is from sea level: add `Network.Lift` for the scene (mixing
+  the two sank every building once). The point is the road's line plus the lane offset, not the drawn surface: sample the ground or
+  the road mesh's height if they differ.
+- `At` walks a car's legs: fine for the few dozen near the player; for a pool, index cars by where they are (each leg's path is a list
+  of edges) rather than calling `At` for all 3,000 every frame. Measure it.
+- A car on a leg past the far end of a loaded tile is fine to skip; parked cars are most of the cars at any time.
+
 **Next (stage 2, the plan):** timetabled cars drawn in the game from a pool near the car, moved on an origin shift, no physics; build
 the day on a worker at the race's start; headlights.
 
@@ -195,7 +226,21 @@ the day on a worker at the race's start; headlights.
   	public class ModContext { public ManualLogSource Log; public ConfigFile Config; public HarmonyLib.Harmony Harmony; public KeyRegistry Keys; public ModNet Net; public string Folder = ""; public void PatchAll() { } public void OnSceneLoaded(Action<Scene> a) { } public void OnUnload(Action a) { } }
   }
   ```
-- The layout takes about 7.5 s to build in trafficview; the whole meshcheck about 1 min 45 s.
+- The stub's project (build with `dotnet build -c Release -o out`, then pass `out/HalfGripTools.dll` to `tools/check.sh`):
+
+  ```xml
+  <Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><AssemblyName>HalfGripTools</AssemblyName><NoWarn>CS0067</NoWarn></PropertyGroup>
+    <ItemGroup>
+      <Reference Include="<game>/HalfGrip_Data/Managed/*.dll" Exclude="<game>/HalfGrip_Data/Managed/mscorlib.dll;<game>/HalfGrip_Data/Managed/netstandard.dll;<game>/HalfGrip_Data/Managed/System*.dll" />
+      <Reference Include="<game>/BepInEx/core/BepInEx.dll" /><Reference Include="<game>/BepInEx/core/0Harmony.dll" />
+    </ItemGroup>
+  </Project>
+  ```
+- The layout takes about 7.5 s to build in trafficview; a whole trafficview run with the day about 15 s; the whole meshcheck about
+  1 min 45 s. A loop over many seeds outlasts a foreground command's 2 minutes: run it in the background and write each seed's report
+  to a file in the scratchpad.
+- `convert` (ImageMagick) turns the PPM pictures into PNG.
 - The game's decompile (0.419) was put in the scratchpad with `ilspycmd`; the Tokyo scene dump is in HalfGripRefs
   (`scenedumps/0.419/Tokyo`): the `Player` root holds `CarInterior` (INTERIOR layer), `PlayerModel` (the car) and the cameras.
 
