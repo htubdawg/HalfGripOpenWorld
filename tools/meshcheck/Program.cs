@@ -2535,6 +2535,191 @@ internal static class Program
 		return false;
 	}
 
+	/// <summary>
+	/// The buck's antlers: their faces and indices, all on the head bone, and in every pose (posed in the model's frame as the
+	/// exporter writes them) clear of the ground and of every vertex of the body not carried by the head (ears, neck, back, legs).
+	/// </summary>
+	private static bool AntlerChecks()
+	{
+		int n = DeerModel.Region.Length, a = DeerModel.AntlerShade.Length, bones = DeerModel.BoneNames.Length, badFaces = 0;
+		bool shadeOk = true;
+		for (int i = 0; i < a; i++)
+		{
+			shadeOk &= DeerModel.AntlerShade[i] >= 0f && DeerModel.AntlerShade[i] <= 1f;
+		}
+		Vector3 AP(int i) => new Vector3(DeerModel.AntlerPositions[i * 3], DeerModel.AntlerPositions[i * 3 + 1], DeerModel.AntlerPositions[i * 3 + 2]);
+		Vector3 AN(int i) => new Vector3(DeerModel.AntlerNormals[i * 3], DeerModel.AntlerNormals[i * 3 + 1], DeerModel.AntlerNormals[i * 3 + 2]);
+		for (int t = 0; t < DeerModel.AntlerTriangles.Length; t += 3)
+		{
+			int i0 = DeerModel.AntlerTriangles[t], i1 = DeerModel.AntlerTriangles[t + 1], i2 = DeerModel.AntlerTriangles[t + 2];
+			if (i0 >= a || i1 >= a || i2 >= a || i0 == i1 || i1 == i2 || i0 == i2)
+			{
+				badFaces++;
+				continue;
+			}
+			Vector3 normal = Vector3.Cross(AP(i1) - AP(i0), AP(i2) - AP(i0));
+			badFaces += Vector3.Dot(normal, AN(i0) + AN(i1) + AN(i2)) <= 0f ? 1 : 0;
+		}
+		int head = Array.IndexOf(DeerModel.BoneNames, "head");
+		// Each pose: the bones' world rotations and places (Rx.Ry.Rz, absolute local rotations, bind rotations zero).
+		int poses = DeerModel.PoseNames.Length, worstPose = 0;
+		double lowest = double.MaxValue, nearest = double.MaxValue;
+		int nearestPose = 0;
+		for (int p = 0; p < poses; p++)
+		{
+			var rot = new double[bones][];
+			var at = new double[bones][];
+			for (int b = 0; b < bones; b++)
+			{
+				int o = (p * bones + b) * 3;
+				double[] local = Mul(Mul(Rot(0, DeerModel.Poses[o]), Rot(1, DeerModel.Poses[o + 1])), Rot(2, DeerModel.Poses[o + 2]));
+				double[] off = { DeerModel.BoneOffsets[b * 3], DeerModel.BoneOffsets[b * 3 + 1], DeerModel.BoneOffsets[b * 3 + 2] };
+				int par = DeerModel.BoneParents[b];
+				if (par < 0)
+				{
+					rot[b] = local;
+					at[b] = off;
+				}
+				else
+				{
+					rot[b] = Mul(rot[par], local);
+					double[] w = Apply(rot[par], off);
+					at[b] = new[] { at[par][0] + w[0], at[par][1] + w[1], at[par][2] + w[2] };
+				}
+			}
+			// The bind places, to take each vertex into its bones' frames.
+			var bind = new double[bones][];
+			for (int b = 0; b < bones; b++)
+			{
+				int par = DeerModel.BoneParents[b];
+				double[] off = { DeerModel.BoneOffsets[b * 3], DeerModel.BoneOffsets[b * 3 + 1], DeerModel.BoneOffsets[b * 3 + 2] };
+				bind[b] = par < 0 ? off : new[] { bind[par][0] + off[0], bind[par][1] + off[1], bind[par][2] + off[2] };
+			}
+			double[] Posed(int bone, double x, double y, double z)
+			{
+				double[] q = Apply(rot[bone], new[] { x - bind[bone][0], y - bind[bone][1], z - bind[bone][2] });
+				return new[] { q[0] + at[bone][0], q[1] + at[bone][1], q[2] + at[bone][2] };
+			}
+			var body = new List<double[]>();
+			for (int i = 0; i < n; i++)
+			{
+				double headWeight = 0.0;
+				double[] sum = new double[3];
+				for (int j = 0; j < 4; j++)
+				{
+					int b = DeerModel.BoneIndex[i * 4 + j];
+					double w = DeerModel.BoneWeight[i * 4 + j];
+					if (w <= 0.0)
+					{
+						continue;
+					}
+					headWeight += b == head ? w : 0.0;
+					double[] q = Posed(b, DeerModel.Positions[i * 3], DeerModel.Positions[i * 3 + 1], DeerModel.Positions[i * 3 + 2]);
+					sum[0] += w * q[0];
+					sum[1] += w * q[1];
+					sum[2] += w * q[2];
+				}
+				if (headWeight < 0.98)
+				{
+					body.Add(sum);
+				}
+			}
+			// The pedicles (where the antlers grow from the skull) are left out: within 7 cm of the beams' bases.
+			double px = Math.Abs(DeerModel.AntlerPositions[0]), py = DeerModel.AntlerPositions[1], pz = DeerModel.AntlerPositions[2];
+			for (int i = 0; i < a; i++)
+			{
+				double x = DeerModel.AntlerPositions[i * 3], y = DeerModel.AntlerPositions[i * 3 + 1], z = DeerModel.AntlerPositions[i * 3 + 2];
+				double[] q = Posed(DeerModel.AntlerBone, x, y, z);
+				if (q[1] < lowest)
+				{
+					lowest = q[1];
+					worstPose = p;
+				}
+				double dpx = Math.Abs(x) - px, dpy = y - py, dpz = z - pz;
+				if (dpx * dpx + dpy * dpy + dpz * dpz < 0.07 * 0.07)
+				{
+					continue;
+				}
+				foreach (double[] v in body)
+				{
+					double dx = v[0] - q[0], dy = v[1] - q[1], dz = v[2] - q[2];
+					double d2 = dx * dx + dy * dy + dz * dz;
+					if (d2 < nearest)
+					{
+						nearest = d2;
+						nearestPose = p;
+					}
+				}
+			}
+		}
+		nearest = Math.Sqrt(nearest);
+		bool ok = badFaces == 0 && shadeOk && DeerModel.AntlerBone == head && lowest > 0.03 && nearest > 0.003;
+		Console.WriteLine("         the buck's antlers: " + a + " vertices, " + DeerModel.AntlerTriangles.Length / 3 + " triangles, " + badFaces + " broken or flipped faces, on the " + DeerModel.BoneNames[DeerModel.AntlerBone]
+			+ " bone; their lowest point " + lowest.ToString("0.00") + " m above the hooves (" + DeerModel.PoseNames[worstPose] + "), at least " + (nearest * 100.0).ToString("0.0") + " cm from the body (" + DeerModel.PoseNames[nearestPose] + ")" + (ok ? "" : ": FAIL"));
+		return ok;
+	}
+
+	private static double[] Rot(int axis, double angle)
+	{
+		double c = Math.Cos(angle), s = Math.Sin(angle);
+		return axis == 0 ? new[] { 1, 0, 0, 0, c, -s, 0, s, c } : axis == 1 ? new[] { c, 0, s, 0, 1, 0, -s, 0, c } : new[] { c, -s, 0, s, c, 0, 0, 0, 1 };
+	}
+
+	private static double[] Mul(double[] m, double[] k)
+	{
+		double[] r = new double[9];
+		for (int i = 0; i < 3; i++)
+		{
+			for (int j = 0; j < 3; j++)
+			{
+				r[i * 3 + j] = m[i * 3] * k[j] + m[i * 3 + 1] * k[3 + j] + m[i * 3 + 2] * k[6 + j];
+			}
+		}
+		return r;
+	}
+
+	private static double[] Apply(double[] m, double[] v)
+	{
+		return new[] { m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2] };
+	}
+
+	/// <summary>
+	/// The fawns over 20 race seeds: few (about <see cref="Herds.FawnChance"/> of the families), only the last deer of a family, never a
+	/// buck, a fawn's size; and drawn from a hash of their own, so every deer that is not a fawn keeps the size the group's draws gave it
+	/// (the young 0.72 to 1, a family's doe 0.95 to 1.05, bucks 1 to 1.12).
+	/// </summary>
+	private static bool FawnChecks()
+	{
+		int fawns = 0, families = 0, wrong = 0, groups = 0;
+		for (int seed = 1; seed <= 20; seed++)
+		{
+			Herds herds = new Herds(seed, Sky0(seed), 2400.0);
+			foreach (Herds.Group g in herds.Groups)
+			{
+				groups++;
+				families += g.Kind == "family" ? 1 : 0;
+				for (int d = 0; d < g.Members.Length; d++)
+				{
+					Herds.Member m = g.Members[d];
+					if (m.Fawn)
+					{
+						fawns++;
+						wrong += g.Kind != "family" || d != g.Members.Length - 1 || m.Buck || m.Scale < Herds.FawnSmallest - 1e-9 || m.Scale > Herds.FawnLargest + 1e-9 ? 1 : 0;
+					}
+					else
+					{
+						wrong += m.Buck ? (m.Scale < 1.0 || m.Scale > 1.12 ? 1 : 0) : d == 0 ? (m.Scale < 0.72 || m.Scale > 1.05 ? 1 : 0) : (m.Scale < 0.72 || m.Scale > 1.0 ? 1 : 0);
+					}
+				}
+			}
+		}
+		double share = families > 0 ? (double)fawns / families : 0.0;
+		bool ok = wrong == 0 && fawns > 0 && Math.Abs(share - Herds.FawnChance) < 0.02;
+		Console.WriteLine("         fawns over 20 races: " + fawns + " in " + families + " families (" + (share * 100.0).ToString("0.0") + "%; " + (fawns / 20.0).ToString("0.0") + " a race in " + groups / 20 + " groups), "
+			+ wrong + " deer of the wrong kind or size" + (ok ? "" : ": FAIL"));
+		return ok;
+	}
+
 	private static bool DeerChecks()
 	{
 		bool ok = true;
@@ -2583,6 +2768,9 @@ internal static class Program
 		}
 		Console.WriteLine("deer:    the mesh: " + n + " vertices, " + DeerModel.Triangles.Length / 3 + " triangles, " + bones + " bones; " + badWeights + " vertices whose weights do not sum to one, " + badFaces + " broken or flipped faces (and " + slivers + " flipped slivers under 20 cm²), " + badIndex + " indices out of range");
 		ok &= badWeights == 0 && badFaces == 0 && badIndex == 0 && slivers * 100 < DeerModel.Triangles.Length / 3;
+
+		ok &= AntlerChecks();
+		ok &= FawnChecks();
 
 		DeerSites.Ensure();
 		int notOnRoad = 0;

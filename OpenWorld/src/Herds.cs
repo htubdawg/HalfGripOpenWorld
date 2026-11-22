@@ -272,6 +272,12 @@ namespace HalfGripOpenWorld
 			public bool Cover;
 		}
 
+		/// <summary>
+		/// The share of families with a fawn: few (the owner has never seen a spotted fawn try to cross a road), about 3 a race at the
+		/// standard amount. Their size against a grown doe's.
+		/// </summary>
+		internal const double FawnChance = 0.035, FawnSmallest = 0.56, FawnLargest = 0.66;
+
 		internal sealed class Member
 		{
 			/// <summary>Its size (1 a grown doe) and where it stands about a spot (an offset, turned for each spot).</summary>
@@ -279,6 +285,8 @@ namespace HalfGripOpenWorld
 			/// <summary>Its own phase in the grazing steps, and the gap it leaves behind the deer in front when the group moves.</summary>
 			public double Phase, Gap;
 			public bool Buck;
+			/// <summary>A spotted fawn's age, drawn as the doe's mesh small (<see cref="FawnChance"/>); never a buck.</summary>
+			public bool Fawn;
 		}
 
 		internal sealed class Group
@@ -712,6 +720,14 @@ namespace HalfGripOpenWorld
 				m.Phase = r.Range(0.0, SubSeconds);
 				m.Gap = r.Range(1.3, 3.8);
 				g.Members[d] = m;
+			}
+			// Now and then a family has this year's fawn with it, its last deer: a hash of its own, not a draw from r, so nothing else
+			// in the group (or any other group) moves. Its size from the young's drawn one (0.72 to 1), brought down to a fawn's.
+			if (g.Kind == "family" && Unit(groupSalt, 0xFA3EUL, 0, 0) < FawnChance)
+			{
+				Member f = g.Members[size - 1];
+				f.Fawn = true;
+				f.Scale = FawnSmallest + (f.Scale - 0.72) / 0.28 * (FawnLargest - FawnSmallest);
 			}
 			return g;
 		}

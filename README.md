@@ -26,10 +26,11 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
 - **Deer:** white-tailed deer in small groups (a doe and her young, a lone deer, a few bucks together, now and then a bigger herd)
-  where woods meet fields beside the country lanes: grazing on the verges and in the fields, walking between their spots in single
+  where woods meet fields. Bucks carry one classic set of antlers (eight points: a brow tine and two long tines up from each beam);
+  rarely, about three families a race, a doe has this year's fawn with her, about 0.6 of her size. They live beside the country lanes: grazing on the verges and in the fields, walking between their spots in single
   file, and now and then crossing the lane one at a time (one sometimes turns back halfway). Most are out at dawn and dusk, fewer at
   midday. They are somewhere else every race, and in a room everyone has the same deer in the same places. Hitting one damages
-  the car like a crash, more the faster (at 55 on the speedometer, where a wall does its full 24, a doe does about 13; never more
+  the car like a crash, more the faster (at 55 on the speedometer, where a wall does its full 24, a doe does about 13, a fawn far less, a big buck a little more; never more
   than about 22) with a loud crash, jolts and slows it, and throws the deer over the bonnet and down the road, which lands and lies dead; a deer can be shot, and drops where it stands with a red puff.
   They notice a car coming (heads up, watching it) and, closer, bolt with their tails up: away into cover, frozen in the headlights
   for a moment first (more at night), or, about half the time, darting over the road in front of the car (more if they were standing in it), timed so the first
@@ -44,7 +45,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.30.3**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.31.0**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -65,7 +66,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.30.3` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.31.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it

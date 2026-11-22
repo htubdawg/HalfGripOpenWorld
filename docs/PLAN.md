@@ -1867,41 +1867,28 @@ The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how
 - **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
   walk through trees in the woods; antlers, fawns' spots, lying down.
 
-## Next: a buck and a fawn (the owner's choice for the next session, after 0.30.3)
+## A buck and a fawn (0.31.0)
 
-Two more deer models beside the doe: **a buck with antlers and a fawn with spots.** Today every deer is the doe's model, scaled
-(bucks 1.0 to 1.12, the young in a family 0.72 to 1.0); `Herds.Member.Buck` is already chosen per deer, a fawn is not.
+The owner's call when it came to it (after 0.30.3), simpler than the plan first drawn up here:
+- **One set of antlers for every buck**, "nothing too big but not too small, a classic set": no procedural antlers, no sizes by age,
+  no season. A typical eight-pointer (`tools/deer/antlers.py`): each main beam up from the pedicle, out and back over the ear, then
+  forward and in to the tip ahead of the face; a short brow tine and two long tines (G2, G3) standing up from it. About 42 cm across,
+  31 cm above the skull at the tines' tops; 756 triangles in 6-sided tubes.
+- **The buck's body is the doe's**, at the bucks' drawn size (1 to 1.12), so the frozen mesh and the owner's painted coat carry
+  over; the antlers are rigid on the `head` bone (no new bones, every pose shared). They are a second submesh with a material of
+  their own: a gradient generated in code along each tine (dark at the burr, ivory at the tips), so the coat's texture is untouched.
+- **A fawn is the doe's mesh shrunk**, no model or texture of its own (no spots): the owner has never seen a spotted fawn try to
+  cross a road, so they are rare. A family's last deer is a fawn with chance `Herds.FawnChance` (3.5%, about 3 a race), from a
+  hash of the group's salt, not a draw from its `Rng`, so no other deer, group or spot moves; its size is the young's drawn size
+  (0.72 to 1) mapped to 0.56 to 0.66. Its weight (size cubed) makes its hit about a quarter of a doe's, without any other change.
 
-**The doe stays as it is.** `tools/deer/deer.json` is frozen (decision 8 in `docs/DEER_HANDOFF.md`: the owner's painted coat is
-on its UVs). The buck and the fawn are builds of their own (`buck.json`, `fawn.json`), each with its own UV layout, templates and
-painted coat, the same pipeline (`deer.py` sculpting, `uv.py`, `export_cs.py`, the viewer).
+Done: `export_cs.py` writes the antlers after the doe's arrays (the doe's unchanged); `DeerMesh.Buck()` and `AntlerTexture()`; a
+pooled deer swaps mesh and materials when it is taken for a buck or not; the drawn box made taller for the antlers; the log counts
+bucks and fawns; `meshcheck deer` checks the antlers' faces, that they are on the head bone, and in every pose clear of the ground
+(lowest 9 cm, grazing) and of the body not carried by the head (at least 0.5 cm, grazing), and the fawns over 20 race seeds (count,
+only a family's last deer, never a buck, sizes; every other deer's size in its old range); `render_herd.py` renders the doe, buck
+and fawn with the painted coat (`preview_herd.png`, `preview_buck.png`); the viewer has doe, buck and fawn and the painted coat.
 
-**Shared, so the game code needs little change:**
-- **The same skeleton**: the 26 bones, their names and parents, bind rotations zero. Bone *offsets* differ per model (a fawn's legs
-  longer for its body, a buck's neck thicker), so `DeerMesh.Offsets` becomes per model; the **poses** (absolute rotations) are
-  shared, so the walk, gallop, graze, alert and the tail flag work on all three. Check each pose on each model in the viewer.
-- **Antlers as rigid parts on the head bone** (weights all on `head`), no new bones; kept off the neck when grazing and off the back
-  in every pose.
-
-**The buck:** about 10 to 15% bigger than the doe, heavier neck and shoulders, no white throat patch so bright, antlers (a main beam
-curving forward with tines up from it). **The fawn:** about 0.55 to 0.65 of the doe, a big head and ears for its body, a short
-muzzle, long legs, white spots in rows along the back and flanks on a redder coat.
-
-**Steps** (each shown to the owner before the next, as the doe was):
-1. Sculpt the buck; clay and colour renders and the 3D viewer for the owner. Then the fawn the same way.
-2. UV layouts and templates for each; the owner paints the coats (image model on the templates, as `deer.png`).
-3. `export_cs.py` writes all three models (the doe's arrays unchanged); `DeerMesh` per model; the pool of deer objects per model
-   (`Deer.Take`/`Give`), or swap mesh, bones and material on reuse.
-4. In `Herds`: who is a fawn, from draws already made (the young in a family below a scale, say), so no group, spot or other deer
-   moves; the drawn scale then applied on top of the model's own size. A change to `Herds` is a change to the deer for a room
-   (all must have the same version, as always).
-5. The rest by model: the car's damage (weight: the fawn's far less, the buck's more), the shapes shots and hits are tested
-   against (`Deer.Shapes`: the antlers count for a shot? to ask), a dead body's centre height (`DeerKills.CentreHeight`), the
-   tail flag (bucks sometimes tuck it, PLAN's research).
-6. Checks: `meshcheck deer` per model (weights, faces, every pose), bodies coming to rest for each model; `tools/check.sh`; renders
-   of a family (doe, fawns) and a bachelor group (bucks) in the viewer for the owner.
-
-**To ask the owner:** antlers all year, or by season (the game has no calendar: from the race's seed, as the weather?); one antler
-size or several (spikes on young bucks to 8 or 10 points); fawns spotted always, or a yearling look as well; how many fawns in a
-family (today 1 to 4 young); whether shots should count antlers; whether fawns keep close to the doe when they run (they follow her
-today as any follower does).
+Not done (offer, do not build unasked): fawns' spots or a fawn's proportions (a bigger head on a fawn: one bone's scale); antlers by
+season or age; the antlers as a target for shots (`Deer.Shapes` leaves them out: a shot through the antlers misses); a buck's
+tucked tail; fawns keeping close to the doe when they run; a buck's heavier neck (a new sculpt, a new painted coat).

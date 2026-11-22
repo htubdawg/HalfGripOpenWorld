@@ -9,7 +9,8 @@ namespace HalfGripOpenWorld
 	/// The deer's mesh in Unity's frame and game units, made once from <see cref="DeerModel"/>: the model's x mirrored (it is
 	/// right-handed, Unity left-handed) with the triangles' winding reversed, scaled from metres by 3.3, skinned to the 26 bones. Its
 	/// coat is the painted texture (<c>textures\deer.png</c> in the mod's folder, on the model's UVs); if that cannot be read, each
-	/// vertex's colour region as a texel of a small palette texture instead (the scene's lit shader takes no vertex colours).
+	/// vertex's colour region as a texel of a small palette texture instead (the scene's lit shader takes no vertex colours). A buck
+	/// is the same mesh with the antlers added (<see cref="Buck"/>); a fawn is the doe's mesh drawn small.
 	/// </summary>
 	internal static class DeerMesh
 	{
@@ -35,13 +36,70 @@ namespace HalfGripOpenWorld
 			Mesh m = Get();
 			if (painted != onPainting)
 			{
-				m.uv = Uvs(painted);
+				Vector2[] uv = Uvs(painted);
+				m.uv = uv;
+				buck.uv = BuckUvs(uv);
 				onPainting = painted;
 			}
 			return m;
 		}
 
+		/// <summary>
+		/// The buck: the doe's mesh (its coat on the same UVs, as <see cref="Get(bool)"/> last set them) with the antlers added as a
+		/// second submesh, drawn with their own material (<see cref="AntlerTexture"/>). The same bones and bind poses, so a deer's
+		/// objects take either mesh.
+		/// </summary>
+		internal static Mesh Buck()
+		{
+			Get();
+			return buck;
+		}
+
+		private static Mesh buck;
+
 		private static bool onPainting;
+
+		/// <summary>The doe's UVs followed by the antlers' (u across the gradient's middle, v from the burr to the tips).</summary>
+		private static Vector2[] BuckUvs(Vector2[] doe)
+		{
+			int n = doe.Length, a = DeerModel.AntlerShade.Length;
+			Vector2[] uv = new Vector2[n + a];
+			Array.Copy(doe, uv, n);
+			for (int i = 0; i < a; i++)
+			{
+				uv[n + i] = new Vector2(0.5f, DeerModel.AntlerShade[i]);
+			}
+			return uv;
+		}
+
+		/// <summary>The antlers' colour from the burr (v 0, dark) to the tips (v 1, pale ivory), a gradient (the stops as in <c>tools/deer/render_herd.py</c>).</summary>
+		internal static Texture2D AntlerTexture()
+		{
+			float[] at = { 0f, 0.06f, 0.35f, 0.75f, 1f };
+			int[] col = { 0x3B2E22, 0x5A4632, 0x86704F, 0xB5A284, 0xE6DCC6 };
+			const int h = 64;
+			Texture2D tex = new Texture2D(2, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, name = "OpenWorld Antlers", hideFlags = HideFlags.HideAndDontSave };
+			for (int y = 0; y < h; y++)
+			{
+				float v = y / (h - 1f);
+				int k = 0;
+				while (k < at.Length - 2 && v > at[k + 1])
+				{
+					k++;
+				}
+				float t = Mathf.Clamp01((v - at[k]) / (at[k + 1] - at[k]));
+				Color c = Color.Lerp(Rgb(col[k]), Rgb(col[k + 1]), t);
+				tex.SetPixel(0, y, c);
+				tex.SetPixel(1, y, c);
+			}
+			tex.Apply(false, false);
+			return tex;
+		}
+
+		private static Color Rgb(int c)
+		{
+			return new Color32((byte)(c >> 16), (byte)(c >> 8), (byte)c, 255);
+		}
 
 		private static Vector2[] Uvs(bool painted)
 		{
@@ -167,6 +225,39 @@ namespace HalfGripOpenWorld
 			m.triangles = tris;
 			m.RecalculateBounds();
 			mesh = m;
+
+			// The buck: the same vertices with the antlers after them, wholly on their bone, in a second submesh.
+			int a = DeerModel.AntlerShade.Length;
+			Vector3[] bv = new Vector3[n + a];
+			Vector3[] bn = new Vector3[n + a];
+			BoneWeight[] bw = new BoneWeight[n + a];
+			Array.Copy(v, bv, n);
+			Array.Copy(nor, bn, n);
+			Array.Copy(w, bw, n);
+			for (int i = 0; i < a; i++)
+			{
+				bv[n + i] = new Vector3(-DeerModel.AntlerPositions[i * 3], DeerModel.AntlerPositions[i * 3 + 1], DeerModel.AntlerPositions[i * 3 + 2]) * Scale;
+				bn[n + i] = new Vector3(-DeerModel.AntlerNormals[i * 3], DeerModel.AntlerNormals[i * 3 + 1], DeerModel.AntlerNormals[i * 3 + 2]);
+				bw[n + i] = new BoneWeight { boneIndex0 = DeerModel.AntlerBone, weight0 = 1f };
+			}
+			int[] at = new int[DeerModel.AntlerTriangles.Length];
+			for (int t = 0; t < at.Length; t += 3)
+			{
+				at[t] = n + DeerModel.AntlerTriangles[t];
+				at[t + 1] = n + DeerModel.AntlerTriangles[t + 2];
+				at[t + 2] = n + DeerModel.AntlerTriangles[t + 1];
+			}
+			Mesh bm = new Mesh { name = "OpenWorld Buck", hideFlags = HideFlags.HideAndDontSave };
+			bm.vertices = bv;
+			bm.normals = bn;
+			bm.uv = BuckUvs(uv);
+			bm.boneWeights = bw;
+			bm.bindposes = bindposes;
+			bm.subMeshCount = 2;
+			bm.SetTriangles(tris, 0);
+			bm.SetTriangles(at, 1);
+			bm.RecalculateBounds();
+			buck = bm;
 			return m;
 		}
 
@@ -215,7 +306,9 @@ namespace HalfGripOpenWorld
 
 		private TrackManager tm;
 		private Material material;
-		private Mesh mesh;
+		private Mesh mesh, buckMesh;
+		private Material antlerMaterial;
+		private Material[] doeMaterials, buckMaterials;
 		private System.Threading.Tasks.Task<Herds> building;
 		private Herds herds;
 		private bool failed;
@@ -290,6 +383,8 @@ namespace HalfGripOpenWorld
 			public bool Fresh;
 			public int Key;
 			public bool Seen;
+			/// <summary>Has the buck's mesh (the antlers) on it.</summary>
+			public bool Buck;
 			/// <summary>Drawn as a body (dead), and its group and deer, for the hit tests.</summary>
 			public bool Dead;
 			public int G, M;
@@ -350,6 +445,7 @@ namespace HalfGripOpenWorld
 				Texture2D painted = DeerMesh.Painted();
 				Texture2D coat = painted ?? DeerMesh.Palette(winter);
 				mesh = DeerMesh.Get(painted != null);
+				buckMesh = DeerMesh.Buck();
 				Color tint = painted != null && winter ? new Color(0.84f, 0.88f, 0.93f) : Color.white;
 				if (material.HasProperty("_BaseMap"))
 				{
@@ -367,7 +463,28 @@ namespace HalfGripOpenWorld
 				{
 					material.SetFloat("_Smoothness", 0.15f);
 				}
-				GetComponent<WorldAssets>()?.Add(material);
+				// The buck's antlers: their own material, a gradient from the burr to the tips, a little glossier than the coat.
+				antlerMaterial = new Material(lit) { name = "OpenWorld Antlers", hideFlags = HideFlags.HideAndDontSave };
+				Texture2D antlers = DeerMesh.AntlerTexture();
+				if (antlerMaterial.HasProperty("_BaseMap"))
+				{
+					antlerMaterial.SetTexture("_BaseMap", antlers);
+				}
+				if (antlerMaterial.HasProperty("_MainTex"))
+				{
+					antlerMaterial.SetTexture("_MainTex", antlers);
+				}
+				if (antlerMaterial.HasProperty("_BaseColor"))
+				{
+					antlerMaterial.SetColor("_BaseColor", Color.white);
+				}
+				if (antlerMaterial.HasProperty("_Smoothness"))
+				{
+					antlerMaterial.SetFloat("_Smoothness", 0.3f);
+				}
+				doeMaterials = new[] { material };
+				buckMaterials = new[] { material, antlerMaterial };
+				GetComponent<WorldAssets>()?.Add(material, antlerMaterial);
 			}
 			catch (Exception e)
 			{
@@ -396,7 +513,16 @@ namespace HalfGripOpenWorld
 				}
 				herds = building.Result;
 				building = null;
-				Mod.Log.LogInfo("Deer: " + herds.Groups.Length + " groups, " + herds.DeerCount + " deer drawn from the race's seed (" + DeerSites.All.Count + " places they could live), " + herds.BuildMs.ToString("0") + " ms"
+				int bucks = 0, fawns = 0;
+				foreach (Herds.Group group in herds.Groups)
+				{
+					foreach (Herds.Member member in group.Members)
+					{
+						bucks += member.Buck ? 1 : 0;
+						fawns += member.Fawn ? 1 : 0;
+					}
+				}
+				Mod.Log.LogInfo("Deer: " + herds.Groups.Length + " groups, " + herds.DeerCount + " deer (" + bucks + " bucks, " + fawns + " fawns) drawn from the race's seed (" + DeerSites.All.Count + " places they could live), " + herds.BuildMs.ToString("0") + " ms"
 					+ (Math.Abs(Mod.DeerAmount.Value - 1f) > 0.001f ? (EventLink.InRoom ? " (the standard amount: DeerAmount is only used alone)" : " (DeerAmount " + Mod.DeerAmount.Value.ToString("0.##") + ")") : ""));
 				if (EventLink.InRoom && !HalfGripTools.Net.IsHost)
 				{
@@ -479,7 +605,7 @@ namespace HalfGripOpenWorld
 				int key = g * 64 + m;
 				if (!live.TryGetValue(key, out View v))
 				{
-					v = Take(key);
+					v = Take(key, herds.Groups[g].Members[m].Buck);
 					live[key] = v;
 				}
 				v.Seen = true;
@@ -1225,10 +1351,19 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
-		/// <summary>A deer's objects: from the spares, or made (a root with the bones under it and the skinned mesh on it).</summary>
-		private View Take(int key)
+		/// <summary>
+		/// A deer's objects: from the spares, or made (a root with the bones under it and the skinned mesh on it); a buck's mesh has the
+		/// antlers and a second material for them, a doe's (or a fawn's) not.
+		/// </summary>
+		private View Take(int key, bool buck)
 		{
 			View v = spare.Count > 0 ? spare.Pop() : Make();
+			if (v.Buck != buck || v.Renderer.sharedMesh == null)
+			{
+				v.Renderer.sharedMesh = buck ? buckMesh : mesh;
+				v.Renderer.sharedMaterials = buck ? buckMaterials : doeMaterials;
+				v.Buck = buck;
+			}
 			v.Key = key;
 			v.Fresh = true;
 			v.Dead = false;
@@ -1269,13 +1404,13 @@ namespace HalfGripOpenWorld
 			r.sharedMesh = mesh;
 			r.bones = t;
 			r.rootBone = t[0];
-			r.sharedMaterial = material;
+			r.sharedMaterials = doeMaterials;
 			r.shadowCastingMode = ShadowCastingMode.On;
 			r.receiveShadows = true;
 			r.updateWhenOffscreen = false;
 			r.quality = SkinQuality.Bone4;
-			// Room for every pose about the hips (the bounds are the root bone's).
-			r.localBounds = new Bounds(new Vector3(0f, -0.3f, 0.6f), new Vector3(4f, 6.5f, 9f));
+			// Room for every pose about the hips (the bounds are the root bone's), a buck's antlers held high included.
+			r.localBounds = new Bounds(new Vector3(0f, 0f, 0.6f), new Vector3(4f, 7.4f, 9f));
 			return new View { Go = go, Root = go.transform, Bones = t, Renderer = r, From = new Quaternion[bones], Shown = new Quaternion[bones] };
 		}
 

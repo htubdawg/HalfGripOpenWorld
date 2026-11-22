@@ -339,3 +339,13 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      screenshots or video); if A and B come at one group together, both see the same run. A player who joins later sees groups
      where their runs left them.
    Send `LogOutput.log` and a clip or screenshots of a group bolting, and say whether they feel too jumpy or too calm.
+45. Bucks and fawns (0.31.0; in a room everyone needs 0.31.0). The log's `Deer: ... groups, ... deer (... bucks, ... fawns) drawn
+   from the race's seed` counts them (about 95 bucks and 3 fawns a race at the standard amount).
+   - Bucks (in the groups of two to four bucks, and some lone deer) carry antlers: one set, eight points, pale at the tips and dark
+     at the base, the beams sweeping out over the ears and forward. They stay on the head in every pose: grazing (the antlers low in
+     front of the forelegs, not through them or the ground), alert, walking, galloping, lying dead. They are not cut off at the edge
+     of the screen when the deer's body is off it (the drawn box is bigger now), and they do not flicker.
+   - Fawns are rare: now and then a family has a small deer at its tail, about 0.6 of the doe's size (no spots: the doe's coat).
+     Hitting one does far less damage than a doe (about a quarter); a buck a little more than a doe.
+   - Nothing else about the deer moved: the same groups in the same places as 0.30.3 for the same race seed.
+   Send screenshots of a buck close up (standing and grazing) and of a fawn if you meet one, and say whether the antlers look right.

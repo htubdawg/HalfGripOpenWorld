@@ -4,7 +4,7 @@ For the agent picking up the white-tailed deer. Read `CLAUDE.md`, then the deer 
 white-tailed deer" to "Reactions (0.30.0)"), then this. Work on the branch **`deer-test-branch`** (the owner's deer branch: commit
 and push there, do not start another; the owner merges). The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave it.
 
-## Where things stand (0.30.3, pushed; the owner drove with 0.30.2 for ten minutes)
+## Where things stand (0.31.0, pushed; the owner drove with 0.30.2 for ten minutes)
 
 | Version | What | In-game test | Owner's word |
 |---|---|---|---|
@@ -14,9 +14,10 @@ and push there, do not start another; the owner merges). The old `claude/keen-be
 | 0.30.1 | Harder strike (about 13 HP at 55 on the speedometer, at most about 22; more shake, 8% speed, nose jolt); bodies thrown lower, bounce less | 43 | asked for it |
 | 0.30.2 | Strike sound: the game's own wall crash and car crunch only | 43 | asked for it (the synthesized sound was "like a pinball machine") |
 | 0.30.3 | Darts over the road timed to the car (first deer on the road 1.4 s before it gets there), chosen half the time; the shot's puff red | 43, 44 | asked for it: in 0.30.2 "none reacted fast enough to be a road hazard, most ran away from the road"; the sparks yellow |
+| 0.31.0 | Bucks with one classic set of antlers (eight points; the doe's body); rare fawns (the doe shrunk to about 0.6, 3 a race) | 45 | asked for it, so (one set, no procedural antlers; a fawn just a smaller doe) |
 
-**Next session's work (the owner's choice after 0.30.3):** two more models, a buck and a fawn; the plan is the last section of
-`docs/PLAN.md` ("Next: a buck and a fawn"). Before starting it, ask for the owner's report on 0.30.3 (darts timed to the car, the red
+**0.31.0 done the owner's way** (`docs/PLAN.md` "A buck and a fawn"): ask for their in-game report on it (TESTING 45) and on 0.30.3
+(darts timed to the car, the red
 puff) and fix what it shows.
 
 **Before that, still open:** ask the owner for their in-game report (TESTING 42 to 44, `LogOutput.log`, screenshots) and fix what it shows
@@ -46,6 +47,8 @@ before anything new. Things only the game can show, each logged:
    (bullet on metal) were also dropped as too pingy.
 7. **How many deer is unclear** until tested: hence `DeerAmount`.
 8. Do not reshape the model (`tools/deer/deer.json` is frozen: the owner's painted coat `OpenWorld/textures/deer.png` is on its UVs).
+9. **One set of antlers** for every buck, a classic eight-pointer (no procedural antlers, no sizes); **a fawn is the doe shrunk**, rare
+   (no model or texture of its own, no spots).
 
 ## How it fits together (the files; `CLAUDE.md` has the table)
 
@@ -64,7 +67,7 @@ before anything new. Things only the game can show, each logged:
 
 - Reactions to other players' cars are decided on their machines only (each decides for its own car): fine while all run the mod.
 - Deer walk through trees in the woods (trees are per tile, not in the generator's functions).
-- Antlers on bucks, fawns' spots, lying down, a debug teleport to a crossing.
+- Fawns' spots, lying down, a debug teleport to a crossing; the antlers as a target for shots.
 - A picture of a group's escape routes was drawn from a temporary dump in meshcheck (removed); adding it to `preview` would help.
 
 ## Step 2, calm deer: done as below (kept for the record)
