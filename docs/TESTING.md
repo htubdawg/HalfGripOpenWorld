@@ -385,8 +385,12 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Parked cars' lamps are dark; a car's lamps come on as it sets off and go off when it has parked.
    - Town streets are not lined with parked cars: some at the kerb on the streets, none on the main roads or narrow lanes. (Many
      households' cars are "round the back", not drawn: they appear on the road when they set off. That is known.)
-   - Watch a car leave and one arrive, at the kerb, on a drive pad and in a car park: it drives along its lane until it is alongside
-     its space (turning round if the space is across the road) and curves in nose first, never through a parked car.
+   - Watch a car leave and one arrive, at the kerb, on a drive pad and in a car park. It stops in its lane right beside its space for
+     a few seconds while it pulls in (the cars behind wait for it), and pulls out the same way before it drives off: from the kerb
+     straight sideways, from a drive pad or a bay on a curve. A space across the road means waiting for the oncoming lane to clear,
+     then turning round through it. Never through a parked car, a car driving by or one coming the other way.
+   - Turning at a junction, a car follows a curve from its lane into the junction to its lane out of it: no sideways jump or sudden
+     swing round in the junction's middle.
    - No `Tile ... could not be worked out` lines in the log.
    - Hitting a traffic car is like hitting a wall (damage, no push); the respawn never puts you on one.
    - At night the nearest few moving cars light the road ahead; other players' cars in a room have their headlights on too now (they

@@ -7,13 +7,16 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 ## Start here
 
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
-2. Check out `traffic-test-branch` (last commit `e24ea9f`) and clone `htubdawg/HalfGripRefs` next to the repo (the tools need
+2. Check out `traffic-test-branch` (the second round of stage 2 is the last commit; see "Stage 2: second round" below) and clone
+   `htubdawg/HalfGripRefs` next to the repo (the tools need
    `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for `tools/check.sh`.
 3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span
-   hour]]`. It builds the map, then race N's day twice, checks the day and the parking and exits 0. About 20 s. 16 seeds (1 to 15,
-   20261122) pass at `e24ea9f`.
+   hour]]`. It builds the map, then race N's day twice, checks the day and the parking and exits 0. About 25 s. 16 seeds (1 to 15,
+   20261122) pass after the second round.
 4. **Wait for the owner's second try of stage 2** (test 48 in `docs/TESTING.md`, their screenshots and `LogOutput.log`) and fix what
-   they report before going on to stage 3. What changed since their first try is under "The owner's first report" below.
+   they report before going on to stage 3. What changed since their first try is under "The owner's first report" and "Stage 2:
+   second round" below. The second round was done without a report from the owner (none had come): it changes how cars pull in and
+   out and turn at junctions, which test 48 now asks them to watch.
 
 **Where to look first in their next log:**
 - `Tile ... could not be worked out: Collection was modified`: there should be none now (fixed in `Buildings`, see below). If there
@@ -29,7 +32,8 @@ cars parked on the town's roads; a car phased through a parked car where the roa
 paint, the cars' height on the road, the wheels, frame time or hitting one: ask if the next report does not say.
 
 Open with the owner:
-- **Test 48** (second try): see above.
+- **Test 48** (second try): see above. Since the first try the cars also pull in and out differently and turn at junctions on curves
+  ("Stage 2: second round"); test 48 asks them to watch both.
 - **The cars "round the back":** about 750 of the parked cars at any hour are not drawn (kerb parking was cut to answer "way too many
   cars on the roads"). They pop up on the road when they set off. Ask whether that is noticed; the fix would be somewhere drawn
   behind the houses (back lanes or yards: a world change) or fading them in.
@@ -104,8 +108,8 @@ when the owner releases it.
   - Routes: 2,184 of 2,184 found, 0 broken, 0.05 ms each.
   - 1.10 workers a household, lower than the survey's 1.33 because `WorkersOf` clamps workers to cars. Not changed: decide when tuning
     the day (the clamp may be right, since a worker without a car does not drive).
-  - Not checked yet: that the map itself builds the same in two processes (the day's checksum is checked twice in one process, over
-    one build of the map). Run trafficview twice and compare the checksum line to check it by hand.
+  - The map and the day build the same in two processes: checked by hand in the second round of stage 2 (seed 7's checksum
+    `039684c31fa89f51` in two runs). Run trafficview twice and compare the checksum line to check it again.
 - **`OpenWorld/src/TrafficDay.cs` (pure): each race's day of trips**, checked in trafficview (`--seed`, `--picture`;
   `tools/trafficview/Pictures.cs` draws). See "`TrafficDay.cs`: as built" below. Commit `ab22a3a`.
 - `tools/check.sh` passes against a stub HalfGripTools.dll (below). meshcheck builds with `TrafficDay.cs` in it; its last full run
@@ -242,7 +246,8 @@ the day on a worker at the race's start; headlights. Done as below; next is the 
   plots moved to `Plots.cs` (stage 1), `Buildings` was left with one static list of plots that the four tile workers filled at once.
   Each worker has its own now (`[ThreadStatic]`). Watch for those lines in the next log: there should be none.
 
-**`OpenWorld/src/TrafficParking.cs` (pure, built after the day, about 60 ms):** where every parked car stands and faces.
+**`OpenWorld/src/TrafficParking.cs` (pure):** where every parked car stands and faces. (As first built it ran after the day; since the
+second round the day chooses the spaces as it runs and starts and ends each trip beside its space: see "Stage 2: second round".)
 - A household's own cars, taken one after another in car order, each clear of those before: a **house** on the pad beside it, nose in,
   its tail clear of the street and its sidewalk (`Half + Shoulder + 8`, further than `Traffic.Homes`' pad, which stays as it was so
   the day does not change: the day's gravity uses the anchors' X, Z), a second car beside the first, further from the house; the other side of the house if a
@@ -313,10 +318,66 @@ seed 7, the main town's middle at 12:30; `docs/traffic-retail.png`: the retail p
   the wheels' axle), the raycast heights on the drawn roads and bridges, the cost of 72 cars (each 8 to 10 renderers, the paint's
   material copies keep them batched), the kinematic box against the player's car.
 - About a fifth of the parked cars are out of sight ("round the back") and pop in and out at the start and end of their trips.
-- Pulling out of a nose-in pad, the car goes forward round a curve (no reversing).
-- Moving cars are not checked against each other where they pull in and out (only on the day's lanes).
+- Pulling out of a nose-in pad, the car reverses out round a curve (since the second round).
+- Moving cars are checked against each other as drawn (since the second round); what is left is listed there.
 - The other cars past the nearest 6 have no lamps at night (the plan's glowing lamps and painted pool of light: not done).
 - Parked cars are not obstacles in the day (it was made without them); kept apart only by where kerb spaces are.
+
+## Stage 2: second round (2026-11-22, before the owner's second try)
+
+No report from the owner had come, so this round took the stage 2 weaknesses that can be checked without the game. A new trafficview
+check started it: **moving cars as drawn against each other** (every 5 s of the day, every pair, by what each was doing). On the old
+code it found, over the 16 seeds, 959 meetings, 834 of them with a car pulling in or out: a car drawn coming out of a kerb space or a
+bay up to 90 units along the lane from where the day had it, onto lane the day thought free, where a queue often stood (the "car
+phasing through" the owner saw on a street with cars both sides was this kind, against a parked car). Now 50 with a pull (1 to 6 a
+day), and the check fails over 10.
+
+**What changed:**
+- **The day chooses the parking spaces** (`TrafficParking.Take`, called by `TrafficDay` as each trip sets off; homes' spaces fixed when
+  the day's cars are known). A place's space is held from setting off until the car next leaves it (+ `Clearing`, 17.5 s). The
+  choices are part of the day now: plain arithmetic in the day's order, the same on every machine. `day.Parking` replaces
+  `new TrafficParking(day)` (the game and trafficview use it).
+- **Each trip starts and ends on the lane alongside its space** (`TrafficDay.MoveEnd`), kept out of the junction boxes; where a box
+  stops it (a lot beside a junction: the Westhaven market), the car curves the rest of the way in.
+- **The day holds the car still on its lane while it is drawn pulling out or in** (`Leg.PullOut`, `Leg.PullIn`, from
+  `TrafficParking.PullTime`: 2 to 5 s for the curve, 2.5 s more to turn round); the cars behind wait for it. The drawing is timed
+  (`Place.T`, seconds into the leg) and moves the car between its space and that one spot: from the kerb straight sideways; from a
+  drive pad, cottage or farmyard along the road (or drive) to the space's own line, round a small corner, then straight up it (a
+  curve cutting that corner crossed the tails of the cars in the next column); into a lot's bay off the road square and then along
+  the bay. The car faces the way it moves (reversing out of a nose-in space).
+- **Cottage spaces** stand at least 14 from the drive's line (they stood 9, their tails over the drive, where the day now starts and
+  ends trips beside them).
+- **Crossing the oncoming lane:** a space left of the car's way, or one facing back, is reached by turning across (or round
+  through) the far lane. Pulling out waits, parked, for that lane to be clear (nothing within 80 behind or 40 ahead, nothing coming
+  within the pull's time and 3 s, nothing let in at the junction within 300); turning in waits at its stop, but at most 15 s
+  (`FarHoldMost`), then goes: a longer wait backed queues up through the junctions (tried: up to 300 s gridlocked the road past the
+  retail park on seed 6, 2,084 minutes stopped). A car crossing holds back cars setting off beside it in the far lane; two waiting to
+  cross to each other's side go in the order they stopped. Pulling out at an angle waits for the far lane alongside (25) to clear.
+- **Arriving cars take the kerb on their own side first** (no U-turn through the oncoming lane).
+- **Turning at a junction** is drawn on a curve from the lane where the car comes into the box to the lane where it leaves
+  (`TrafficParking.Corner`), not along the roads' lines to the junction's middle (which jumped sideways by up to about 8 units and
+  snapped round there). The day's junctions reckon movements by those chords. Drawing only.
+- **The wheels** turn with the distance the car is drawn moving (`TrafficCars`), so they turn while pulling in and out too.
+- trafficview: `TV_MEET=1` prints every meeting (and a pull's curve where a car goes through a parked one); the day's build time is
+  judged on the second build of a run (the first makes the house index kept for later days).
+
+**Numbers (16 seeds, 1 to 15 and 20261122):** every check passes; no moving car through a parked one; meetings with a pull 50 (834
+before). Day built again in 1.25 to 1.55 s (the day and its parking; before, about 1.66 s and 0.36 s after it); the first build of a
+run about 2.2 s. Stopped time is up (seed 7: 119 minutes to 199), nearly all of it the cars standing beside their spaces while they
+pull in and out (about 1,340 legs, two pulls of 2 to 5 s); waiting at junctions about as before. The hours, counts by road class and
+the 5 pm peak are unchanged within a few percent; cars out of sight ("round the back") as before, 720 to 830 at noon.
+
+**Left (reported by the check, not failed):**
+- About 12 meetings a day of cars on their way (193 over the 16 seeds; 125 before, as there is more queueing now): cars turning across
+  each other inside a junction's box (the chords the day passes as not crossing still come within a car's width in a small box;
+  drawing them on curves took a few off), and **late ways home driven after the day's end** (a leg that starts
+  after 03:00, in the run's tail, without the next morning's traffic around it, then drawn into that morning: car 3505 on seed 6, leg
+  3013 to 3796 s). The real fix for the second is to stop trips running past 03:00 or to drive the morning with them.
+- A car crossing the far lane holds back cars setting off there, but a car already driving up the far lane does not stop for it (it
+  would need a stand-in leader in that lane).
+- Turning in after 15 s of waiting goes even into oncoming traffic.
+- **The diagnostics** in trafficview (`TV_MEET`) and `TrafficDay` (`FarSide`, `FarEnd`, `HeldSince`) are cheap; keep them until the
+  owner's report on this round.
 
 ## This session's environment, as found
 

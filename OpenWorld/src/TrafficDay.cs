@@ -162,6 +162,13 @@ namespace HalfGripOpenWorld
 			internal double Dwell;
 			internal int Host = -1;
 			internal float[] Profile;
+			/// <summary>Its start has been moved alongside the space the car stands in (once, as it first waits to set off).</summary>
+			internal bool Placed;
+			/// <summary>The space it sets off from (ends in) is across the road, left of its way: it crosses the oncoming lane pulling out (in).</summary>
+			internal bool FarSide, FarEnd;
+
+			/// <summary>Seconds it stands on the lane beside its space before it sets off (pulling out) and after it stops (pulling in).</summary>
+			internal double PullOut, PullIn;
 		}
 
 		/// <summary>A car: a household's (parked at its home between trips) or a through car's.</summary>
@@ -200,15 +207,19 @@ namespace HalfGripOpenWorld
 			public int Leg;
 			/// <summary>When driving: the distance along the leg's path (0 to its <see cref="Leg.Length"/>).</summary>
 			public double P;
+			/// <summary>Driving: seconds since its leg set off.</summary>
+			public double T;
 		}
 
 		internal readonly int Seed;
+		/// <summary>Where every parked car stands: chosen as the day runs, each trip starting and ending on the lane beside its space.</summary>
+		internal readonly TrafficParking Parking;
 		internal readonly bool Weekend;
 		internal readonly List<Car> Cars = new List<Car>();
 		internal readonly List<Leg> Legs = new List<Leg>();
 
 		// What it took, for the checks and the log.
-		internal double BuildMs, PlanMs;
+		internal double BuildMs, PlanMs, ParkingMs;
 		internal int Candidates, Kept, Dropped, Through, Unrouted;
 		internal double Keep, TargetSeconds, CandidateSeconds;
 		internal int Forced, Overlaps, BoxConflicts, Speeding, StoppedAtMouth, PullOutsForced, Unfinished;
@@ -242,6 +253,8 @@ namespace HalfGripOpenWorld
 			}
 			Plan();
 			PlanMs = watch.Elapsed.TotalMilliseconds;
+			Parking = new TrafficParking(this);
+			ParkingMs = watch.Elapsed.TotalMilliseconds - PlanMs;
 			Simulate();
 			BuildMs = watch.Elapsed.TotalMilliseconds;
 		}
@@ -474,6 +487,56 @@ namespace HalfGripOpenWorld
 				a.S = Math.Max(lo, Math.Min(hi, a.S));
 			}
 			return a;
+		}
+
+		/// <summary>
+		/// Moves a leg's start (<paramref name="start"/>) or end along its stretch of road to alongside parking spot
+		/// <paramref name="spot"/>, kept out of the junction boxes: the car sets off from (or stops at) the lane beside its space, so it is
+		/// drawn pulling out (or in) sideways where the day has it, never on lane behind (or ahead of) it that the day thinks free. Left as
+		/// it is if that would turn the stretch round (a trip along one stretch whose space lies past its other end).
+		/// </summary>
+		private static void MoveEnd(Leg leg, bool start, TrafficParking.Spot spot)
+		{
+			int k = start ? 0 : leg.Path.Length - 1;
+			Seg seg = leg.Path[k];
+			if (seg.Edge < 0)
+			{
+				return;
+			}
+			Traffic.Edge edge = Traffic.Edges[seg.Edge];
+			Network.Road road = Network.Roads[edge.Road];
+			double s = seg.Dir > 0 ? seg.S0 + seg.Len : seg.S0 - seg.Len;
+			if (start)
+			{
+				s = seg.S0;
+			}
+			// Two steps of Newton's: the spot is beside the road, a little way along it.
+			for (int it = 0; it < 2; it++)
+			{
+				Traffic.At(road, s, out double x, out double z, out double _);
+				Traffic.Heading(road, s, out double tx, out double tz);
+				s += (spot.X - x) * tx + (spot.Z - z) * tz;
+				s = OffJunctions(new Traffic.Anchor { Edge = seg.Edge, S = s }).S;
+			}
+			double end = seg.Dir > 0 ? seg.S0 + seg.Len : seg.S0 - seg.Len;
+			double len = start ? (end - s) * seg.Dir : (s - seg.S0) * seg.Dir;
+			if (len < 0.0)
+			{
+				return;
+			}
+			if (start)
+			{
+				seg.S0 = s;
+			}
+			seg.Len = len;
+			leg.Path[k] = seg;
+			double p = 0.0;
+			for (int j = 0; j < leg.Path.Length; j++)
+			{
+				leg.Path[j].P0 = p;
+				p += leg.Path[j].Len;
+			}
+			leg.Length = p;
 		}
 
 		/// <summary>The stretch inside portal <paramref name="p"/>'s tunnel between the glue plane and anchor <paramref name="a"/>, coming out or going in.</summary>
@@ -897,6 +960,10 @@ namespace HalfGripOpenWorld
 			public int Seg;
 			public int StartStep;
 			public double Wait;
+			/// <summary>When it began waiting at its stop to cross the oncoming lane into its space (MaxValue: not waiting).</summary>
+			public double HeldSince = double.MaxValue;
+			/// <summary>It stands still on its lane until then, drawn pulling out of its space; and parks at <see cref="ParkAt"/>, drawn pulling in.</summary>
+			public double HoldUntil = -1.0, ParkAt = double.MaxValue;
 			public readonly List<float> Rec = new List<float>();
 			public readonly List<Grant> Grants = new List<Grant>();
 			public long Lane;
@@ -1168,6 +1235,12 @@ namespace HalfGripOpenWorld
 				for (int i = 0; i < movers.Count; i++)
 				{
 					Mover m = movers[i];
+					if (w < m.HoldUntil)
+					{
+						// Still pulling out of its space, standing on the lane beside it.
+						m.V = 0.0;
+						continue;
+					}
 					double a = acc[i], v1 = m.V + a * Step;
 					if (v1 < 0.0)
 					{
@@ -1211,6 +1284,32 @@ namespace HalfGripOpenWorld
 					if (!done)
 					{
 						continue;
+					}
+					// Into a space across the road it waits at its stop, as a driver turning across would, until the oncoming lane is clear.
+					if (leg.FarEnd && m.ParkAt == double.MaxValue && m.HeldSince > w)
+					{
+						m.HeldSince = w;
+					}
+					Seg last = leg.Path[leg.Path.Length - 1];
+					if (leg.FarEnd && m.ParkAt == double.MaxValue && w - m.HeldSince < FarHoldMost && !OppositeClear(last, leg.Length, m))
+					{
+						m.P = Math.Min(m.P, leg.Length);
+						m.V = 0.0;
+						continue;
+					}
+					// Stopped beside its space, it stands on the lane while it is drawn pulling in, then parks.
+					if (!leg.Vanishes && leg.PullIn > 0.0)
+					{
+						if (m.ParkAt == double.MaxValue)
+						{
+							m.ParkAt = w + leg.PullIn;
+						}
+						if (w + Step < m.ParkAt)
+						{
+							m.P = Math.Min(m.P, leg.Length);
+							m.V = 0.0;
+							continue;
+						}
 					}
 					Arrive(m, w + Step);
 					movers.RemoveAt(i);
@@ -1400,6 +1499,20 @@ namespace HalfGripOpenWorld
 			for (int i = 0; i < waiting.Count; i++)
 			{
 				Leg leg = Legs[waiting[i]];
+				if (!leg.Placed)
+				{
+					leg.Placed = true;
+					if (!leg.Appears)
+					{
+						TrafficParking.Spot here = Parking.Here(leg.Car);
+						if (!here.Away)
+						{
+							MoveEnd(leg, true, here);
+							leg.FarSide = LeftOf(leg.Path[0], 0.0, here) || TrafficParking.Backwards(here, leg, 0.0);
+							leg.PullOut = TrafficParking.PullTime(here, leg, 0.0);
+						}
+					}
+				}
 				int k0 = 0;
 				while (k0 + 1 < leg.Path.Length && leg.Path[k0].Len <= 0.0)
 				{
@@ -1435,6 +1548,23 @@ namespace HalfGripOpenWorld
 							break;
 						}
 					}
+				}
+				// From a space across the road the car crosses the oncoming lane (turning round into its own): that lane must be clear
+				// too, for as long as that takes.
+				if (clear && leg.FarSide && first.Edge >= 0)
+				{
+					clear = OppositeClear(first, first.P0);
+				}
+				else if (clear && !leg.Appears && first.Edge >= 0)
+				{
+					// Pulling out at an angle (out of a drive, a bay, or a kerb space on a bend), its corner swings into the far lane on a
+					// narrow road: nothing alongside there.
+					clear = !OppositeNear(first, first.P0, 25.0);
+				}
+				// Nor into the path of a car crossing this lane from the far one, into or out of a space this side.
+				if (clear && first.Edge >= 0)
+				{
+					clear = !CrossingNear(first, first.P0);
 				}
 				// Let in: after a while the car just behind leaves a gap (below), and the car pulls out once the gap is there and
 				// nothing is coming fast.
@@ -1477,13 +1607,20 @@ namespace HalfGripOpenWorld
 					PullOutsForced++;
 				}
 				leg.Start = w;
+				TrafficParking.Spot there = Parking.Take(waiting[i], w);
+				if (!leg.Vanishes && !there.Away)
+				{
+					MoveEnd(leg, false, there);
+					leg.FarEnd = LeftOf(leg.Path[leg.Path.Length - 1], leg.Length, there) || TrafficParking.Backwards(there, leg, leg.Length);
+					leg.PullIn = TrafficParking.PullTime(there, leg, leg.Length);
+				}
 				StartsBy[Math.Min(47, (int)(w / 100.0))]++;
 				leg.Profile = Profile(leg);
 				for (int q = 0; q + 1 < leg.Profile.Length; q++)
 				{
 					ProfileSeconds += Sample / Math.Max(1.0, Math.Min(leg.Profile[q], leg.Profile[q + 1]));
 				}
-				Mover m = new Mover { Index = waiting[i], L = leg, StartStep = step, P = 0.0, Seg = k0 };
+				Mover m = new Mover { Index = waiting[i], L = leg, StartStep = step, P = 0.0, Seg = k0, HoldUntil = leg.Appears ? -1.0 : w + leg.PullOut };
 				m.V = leg.Appears ? Math.Min(leg.Profile[0], leg.Path[0].Speed) : 0.0;
 				movers.Add(m);
 				AddToLane(m);
@@ -1506,7 +1643,110 @@ namespace HalfGripOpenWorld
 		/// Whether a car let through the junction at the start of seg <paramref name="s"/>'s lane is coming into it near a spot
 		/// <paramref name="u"/> along it: a car pulling out there would pull out in front of it.
 		/// </summary>
-		private bool Coming(Seg s, double u)
+		/// <summary>
+		/// Whether the oncoming lane beside path distance <paramref name="p"/> of seg <paramref name="seg"/> is clear for a car to cross it
+		/// to a space (or from one) across the road: nothing within 40, nothing coming within the crossing's time and 3 s more.
+		/// </summary>
+		private bool OppositeClear(Seg seg, double p, Mover self = null)
+		{
+			if (seg.Edge < 0)
+			{
+				return true;
+			}
+			Seg opp = seg;
+			opp.Dir = -seg.Dir;
+			opp.S0 = seg.S0 + seg.Dir * (p - seg.P0);
+			opp.P0 = p;
+			double uo = LaneU(opp, p);
+			// A car let into that lane at the junction it starts from may reach here before the crossing is done.
+			if (Coming(opp, uo, 300.0))
+			{
+				return false;
+			}
+			if (lanes.TryGetValue(LaneOf(opp), out List<Mover> list))
+			{
+				foreach (Mover o in list)
+				{
+					double d = o.LaneU - uo;
+					if (self != null && o.L.FarEnd && o.ParkAt == double.MaxValue && (o.HeldSince > self.HeldSince || (o.HeldSince == self.HeldSince && o.Index > self.Index)))
+					{
+						// Also waiting to cross to this side, but stopped after this car: this one goes first.
+						continue;
+					}
+					if ((d > -80.0 && d < 40.0) || (d < 0.0 && -d < (3.0 + TrafficParking.PullMost) * Math.Max(5.0, o.V)))
+					{
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		/// <summary>Whether <paramref name="spot"/> is left of the way seg <paramref name="seg"/> is driven, beside path distance <paramref name="p"/> (across the road, driving on the right).</summary>
+		private static bool LeftOf(Seg seg, double p, TrafficParking.Spot spot)
+		{
+			if (seg.Edge < 0)
+			{
+				return false;
+			}
+			Network.Road road = Network.Roads[Traffic.Edges[seg.Edge].Road];
+			double rs = seg.S0 + seg.Dir * (p - seg.P0);
+			Traffic.At(road, rs, out double rx, out double rz, out double _);
+			Traffic.Heading(road, rs, out double tx, out double tz);
+			return ((spot.X - rx) * -tz + (spot.Z - rz) * tx) * seg.Dir > 0.0;
+		}
+
+		/// <summary>Whether any car in the oncoming lane is within <paramref name="reach"/> of path distance <paramref name="p"/> of <paramref name="seg"/>.</summary>
+		private bool OppositeNear(Seg seg, double p, double reach)
+		{
+			Seg opp = seg;
+			opp.Dir = -seg.Dir;
+			opp.S0 = seg.S0 + seg.Dir * (p - seg.P0);
+			opp.P0 = p;
+			double uo = LaneU(opp, p);
+			if (lanes.TryGetValue(LaneOf(opp), out List<Mover> list))
+			{
+				foreach (Mover o in list)
+				{
+					if (Math.Abs(o.LaneU - uo) < reach)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>Whether a car in the oncoming lane within 40 of path distance <paramref name="p"/> of <paramref name="seg"/> is crossing this lane, pulling out of or into a space this side.</summary>
+		private bool CrossingNear(Seg seg, double p)
+		{
+			Seg opp = seg;
+			opp.Dir = -seg.Dir;
+			opp.S0 = seg.S0 + seg.Dir * (p - seg.P0);
+			opp.P0 = p;
+			double uo = LaneU(opp, p);
+			if (!lanes.TryGetValue(LaneOf(opp), out List<Mover> list))
+			{
+				return false;
+			}
+			foreach (Mover o in list)
+			{
+				bool crossing = (o.L.FarSide && o.P <= 0.0) || (o.L.FarEnd && o.ParkAt != double.MaxValue);
+				if (crossing && Math.Abs(o.LaneU - uo) < 40.0)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// How long a car waits at its stop for the oncoming lane to clear before crossing it into its space, then it goes anyway: it
+		/// holds up its own lane meanwhile, and a longer wait on a busy main road backs the queue up through the junctions behind it.
+		/// </summary>
+		private const double FarHoldMost = 15.0;
+
+		private bool Coming(Seg s, double u, double reach = 80.0)
 		{
 			if (s.Edge < 0)
 			{
@@ -1514,7 +1754,7 @@ namespace HalfGripOpenWorld
 			}
 			Traffic.Edge e = Traffic.Edges[s.Edge];
 			int node = s.Dir > 0 ? e.A : e.B;
-			if (u > Traffic.Nodes[node].Box + 80.0 || !nodeGrants.TryGetValue(node, out List<Grant> list))
+			if (u > Traffic.Nodes[node].Box + reach || !nodeGrants.TryGetValue(node, out List<Grant> list))
 			{
 				return false;
 			}
@@ -2052,6 +2292,7 @@ namespace HalfGripOpenWorld
 						double p = DistanceAt(leg, t);
 						OnPath(leg, p, ref at);
 						at.P = p;
+						at.T = t - leg.Start;
 						double p1 = DistanceAt(leg, Math.Min(leg.End, t + 0.25));
 						at.Speed = (p1 - p) / 0.25;
 						return at;

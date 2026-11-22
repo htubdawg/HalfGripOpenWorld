@@ -84,6 +84,8 @@ namespace HalfGripOpenWorld
 			public Transform[] Wheels;
 			public Quaternion[] WheelRest;
 			public float Spin;
+			/// <summary>Where it was drawn last frame while driving (world x, z), for turning the wheels by what it moved; NaN: not driving.</summary>
+			public double LastX = double.NaN, LastZ;
 			public Light Light;
 			public int Car = -1;
 			public bool Seen;
@@ -151,7 +153,7 @@ namespace HalfGripOpenWorld
 			building = System.Threading.Tasks.Task.Run(() =>
 			{
 				TrafficDay d = new TrafficDay(seed);
-				return (d, new TrafficParking(d));
+				return (d, d.Parking);
 			});
 		}
 
@@ -668,8 +670,18 @@ namespace HalfGripOpenWorld
 				{
 					return false;
 				}
-				// The wheels turn with the distance driven.
-				v.Spin = Mathf.Repeat(v.Spin + (float)at.Speed * dt / v.Look.WheelRadius * Mathf.Rad2Deg, 360f);
+				// The wheels turn with the distance it is drawn moving (pulling in or out, the day holds it still on its lane), backwards
+				// when it moves backwards; a jump (a body of the pool given another car) turns nothing.
+				double mx = double.IsNaN(v.LastX) ? 0.0 : x - v.LastX, mz = double.IsNaN(v.LastX) ? 0.0 : z - v.LastZ;
+				double moved = Math.Sqrt(mx * mx + mz * mz);
+				if (moved > 5.0 + 80.0 * dt)
+				{
+					moved = 0.0;
+				}
+				v.LastX = x;
+				v.LastZ = z;
+				float roll = (float)(mx * hx + mz * hz >= 0.0 ? moved : -moved);
+				v.Spin = Mathf.Repeat(v.Spin + roll / v.Look.WheelRadius * Mathf.Rad2Deg, 360f);
 				Spin(v);
 				drawnMoving++;
 				return true;
@@ -679,6 +691,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			// Parked: lamps off.
+			v.LastX = double.NaN;
 			Lamps(v, false);
 			if (v.ParkedLeg != at.Leg || !v.Placed)
 			{
@@ -781,6 +794,7 @@ namespace HalfGripOpenWorld
 			Wears(car, out int look, out int paint);
 			View v = spare[look].Count > 0 ? spare[look].Pop() : Make(look);
 			v.Car = car;
+			v.LastX = double.NaN;
 			v.Placed = false;
 			v.ParkedLeg = int.MinValue;
 			if (v.Paint != paint)

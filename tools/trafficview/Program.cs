@@ -9,7 +9,8 @@ using HalfGripOpenWorld;
 // race's day of trips (see docs/TRAFFIC_HANDOFF.md). Exits 1 if a check fails.
 //   dotnet run -c Release --project tools/trafficview [--near <road>]
 // --near lists the roads that come within 30 of a road (gap, heights, driven or not) and the graph's edges along it: for finding why a
-// road is cut off.
+// road is cut off. With TV_MEET set in the environment, every meeting of two moving cars as drawn is printed (cars, edges, way, road
+// distance, speed, place on the leg and the leg's times): for finding why they meet.
 internal static class Program
 {
 	private static int Main(string[] args)
@@ -225,8 +226,8 @@ internal static class Program
 		Stopwatch watch = Stopwatch.StartNew();
 		TrafficDay day = new TrafficDay(seed);
 		double ms = watch.Elapsed.TotalMilliseconds;
-		Console.WriteLine("Day " + seed + ": " + (day.Weekend ? "a weekend day" : "a weekday") + ", built in " + ms.ToString("0") + " ms (plan " + day.PlanMs.ToString("0") + " ms)"
-			+ (ms < 2000.0 ? "  ok" : "  SLOW (aim under 2 s)"));
+		Console.WriteLine("Day " + seed + ": " + (day.Weekend ? "a weekend day" : "a weekday") + ", built in " + ms.ToString("0") + " ms (plan " + day.PlanMs.ToString("0") + " ms, homes' parking " + day.ParkingMs.ToString("0") + " ms)"
+			+ " (the first in a process: it makes the indexes kept for later days)");
 		Console.WriteLine("  tours: " + day.Candidates + " candidates, " + (2.0 * 0 + day.CandidateSeconds / 60.0).ToString("0") + " min of driving; kept with q = " + day.Keep.ToString("0.000")
 			+ " for " + (day.TargetSeconds / 60.0).ToString("0") + " min (" + (day.TargetSeconds / Math.Max(1, CountWithCars())).ToString("0") + " s a household with a car)");
 		Console.WriteLine("  kept " + day.Kept + " (work " + day.TourCount[0] + ", shop " + day.TourCount[1] + ", errand " + day.TourCount[2] + ", social " + day.TourCount[3] + "), "
@@ -391,7 +392,7 @@ internal static class Program
 		watch.Restart();
 		TrafficDay again = new TrafficDay(seed);
 		ulong a = day.Checksum(), b = again.Checksum();
-		Console.WriteLine("  the same day twice: " + a.ToString("x16") + (a == b ? " both times  ok" : " then " + b.ToString("x16") + "  FAIL"));
+		Console.WriteLine("  the same day twice: " + a.ToString("x16") + (a == b ? " both times  ok" : " then " + b.ToString("x16") + "  FAIL") + "; built again in " + again.BuildMs.ToString("0") + " ms (homes' parking " + again.ParkingMs.ToString("0") + " ms)" + (again.BuildMs < 2000.0 ? "  ok" : "  SLOW (aim under 2 s; reported, not failed: it varies with the machine's load)"));
 		ok &= a == b;
 		TrafficDay other = new TrafficDay(seed + 1);
 		Console.WriteLine("  another seed's day differs: " + (other.Checksum() != a ? "yes  ok" : "no  FAIL"));
@@ -609,8 +610,8 @@ internal static class Program
 	{
 		bool ok = true;
 		Stopwatch watch = Stopwatch.StartNew();
-		TrafficParking parking = new TrafficParking(day);
-		Console.WriteLine("  parking: made in " + watch.ElapsedMilliseconds + " ms; at most " + parking.Busiest + " cars at one place, " + parking.Overflow + " stays at the kerb past a place's spaces, " + parking.KerbFull + " found the kerb full; kerb spaces " + parking.KerbSpaces + ", struck over a home's own space " + parking.StruckHome + ", in a house " + parking.StruckHouse + ", on another road or water " + parking.StruckOther);
+		TrafficParking parking = day.Parking;
+		Console.WriteLine("  parking (chosen as the day ran): at most " + parking.Busiest + " cars at one place, " + parking.Overflow + " stays at the kerb past a place's spaces, " + parking.KerbFull + " found the kerb full; kerb spaces " + parking.KerbSpaces + ", struck over a home's own space " + parking.StruckHome + ", in a house " + parking.StruckHouse + ", on another road or water " + parking.StruckOther);
 		// The lots' spaces: how many each kind has, and how many a road, the water or a building took.
 		Dictionary<LotKind, (int kept, int all, int lots)> lotKinds = new Dictionary<LotKind, (int, int, int)>();
 		List<(double u, double v, double nu, double nv)> raw = new List<(double, double, double, double)>();
@@ -913,7 +914,7 @@ internal static class Program
 								string kind = phase + " / parked " + (parking.IsKerb(pc, pleg, out int _) ? "at the kerb" : What(day, pc, w));
 								if (!throughKinds.ContainsKey(kind))
 								{
-									Console.WriteLine("    first " + kind + ": car " + c + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") at " + (3.0 + w / 100.0).ToString("0.00") + " h, parked car " + pc + " at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")");
+									Console.WriteLine("    first " + kind + ": car " + c + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") at " + (3.0 + w / 100.0).ToString("0.00") + " h, parked car " + pc + " at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")" + (Environment.GetEnvironmentVariable("TV_MEET") != null ? DebugPull(day, parking, c, at, s) : ""));
 								}
 								throughKinds[kind] = throughKinds.TryGetValue(kind, out int nk) ? nk + 1 : 1;
 								firstThrough ??= "car " + c + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") at sim " + w.ToString("0") + " s, " + (at.P < 250.0 ? "pulling out" : day.Legs[at.Leg].Length - at.P < 250.0 ? "pulling in" : "on its way");
@@ -931,6 +932,81 @@ internal static class Program
 		}
 		Console.WriteLine("  moving cars (as drawn) through a parked car, every 20 s: " + through + " of " + looks + (firstThrough != null ? " (first: " + firstThrough + ")" : "") + (through == 0 ? "  ok" : "  FAIL"));
 		ok &= through == 0;
+
+		// Moving cars against each other as drawn: the day keeps them apart on its lanes, but the pulls in and out of spaces (and a
+		// drive's single lane) are drawn off them.
+		watch.Restart();
+		int movingLooks = 0, movingHits = 0;
+		Dictionary<string, int> movingKinds = new Dictionary<string, int>();
+		Dictionary<long, List<(TrafficParking.Spot s, int c, TrafficDay.Place at)>> movingCells = new Dictionary<long, List<(TrafficParking.Spot, int, TrafficDay.Place)>>();
+		for (double w = 0.0; w < Traffic.DaySeconds; w += 5.0)
+		{
+			movingCells.Clear();
+			for (int c = 0; c < day.Cars.Count; c++)
+			{
+				TrafficDay.Place at = day.At(c, w);
+				if (at.State != TrafficDay.State.Driving || at.InTunnel)
+				{
+					continue;
+				}
+				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
+				TrafficParking.Spot m = new TrafficParking.Spot { X = x, Z = z, Hx = hx, Hz = hz };
+				movingLooks++;
+				int gx = (int)Math.Floor(x / 32.0), gz = (int)Math.Floor(z / 32.0);
+				bool hit = false;
+				for (int ox = -1; ox <= 1 && !hit; ox++)
+				{
+					for (int oz = -1; oz <= 1 && !hit; oz++)
+					{
+						if (!movingCells.TryGetValue(((long)(gx + ox) << 32) ^ (uint)(gz + oz), out List<(TrafficParking.Spot s, int c, TrafficDay.Place at)> cell))
+						{
+							continue;
+						}
+						foreach ((TrafficParking.Spot s, int oc, TrafficDay.Place oat) in cell)
+						{
+							if (!TrafficParking.Overlap(m, s, -0.5))
+							{
+								continue;
+							}
+							hit = true;
+							string kind = Phase(day, at) + " / " + Phase(day, oat);
+							if (!movingKinds.ContainsKey(kind))
+							{
+								Console.WriteLine("    first " + kind + ": cars " + c + " and " + oc + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") at " + (3.0 + w / 100.0).ToString("0.00") + " h");
+							}
+							if (Environment.GetEnvironmentVariable("TV_MEET") != null)
+							{
+								Console.WriteLine("      meet " + (3.0 + w / 100.0).ToString("0.00") + "h " + kind + " | car " + c + " e" + at.Edge + "/" + at.Dir + " s" + at.S.ToString("0") + " v" + at.Speed.ToString("0.0") + " p" + at.P.ToString("0") + "/" + day.Legs[at.Leg].Length.ToString("0") + " t" + day.Legs[at.Leg].Start.ToString("0") + "-" + day.Legs[at.Leg].End.ToString("0") + " (" + x.ToString("0.0") + "," + z.ToString("0.0") + ") h(" + hx.ToString("0.00") + "," + hz.ToString("0.00") + ") | car " + oc + " e" + oat.Edge + "/" + oat.Dir + " s" + oat.S.ToString("0") + " v" + oat.Speed.ToString("0.0") + " p" + oat.P.ToString("0") + "/" + day.Legs[oat.Leg].Length.ToString("0") + " t" + day.Legs[oat.Leg].Start.ToString("0") + "-" + day.Legs[oat.Leg].End.ToString("0") + " (" + s.X.ToString("0.0") + "," + s.Z.ToString("0.0") + ") h(" + s.Hx.ToString("0.00") + "," + s.Hz.ToString("0.00") + ")");
+							}
+							movingKinds[kind] = movingKinds.TryGetValue(kind, out int nk) ? nk + 1 : 1;
+							break;
+						}
+					}
+				}
+				movingHits += hit ? 1 : 0;
+				long key = ((long)gx << 32) ^ (uint)gz;
+				if (!movingCells.TryGetValue(key, out List<(TrafficParking.Spot, int, TrafficDay.Place)> own))
+				{
+					own = new List<(TrafficParking.Spot, int, TrafficDay.Place)>();
+					movingCells[key] = own;
+				}
+				own.Add((m, c, at));
+			}
+		}
+		foreach (KeyValuePair<string, int> kv in movingKinds)
+		{
+			Console.WriteLine("    meeting: " + kv.Key + " " + kv.Value);
+		}
+		// Pulling in and out is drawn off the day's lanes, and the day holds the car still beside its space meanwhile: those meetings
+		// fail over a few a day (before the day knew the spaces, about 50). The rest are reported: cars turning across each other inside
+		// a junction's box, and late ways home driven after the day's end, which the next morning's traffic does not see.
+		int pullMeets = 0;
+		foreach (KeyValuePair<string, int> kv in movingKinds)
+		{
+			pullMeets += kv.Key.Contains("pulling") ? kv.Value : 0;
+		}
+		Console.WriteLine("  moving cars (as drawn) through each other, every 5 s: " + movingHits + " of " + movingLooks + ", " + pullMeets + " pulling in or out (" + watch.ElapsedMilliseconds + " ms)" + (pullMeets <= MostPullMeetings ? "  ok (the rest reported)" : "  FAIL (more than " + MostPullMeetings + " pulling in or out)"));
+		ok &= pullMeets <= MostPullMeetings;
 
 		// Choosing the cars near the player, as TrafficCars.Choose does: every car's place, the parked ones' spaces.
 		watch.Restart();
@@ -1059,6 +1135,38 @@ internal static class Program
 	}
 
 	/// <summary>What kind of space a parked car is in, for the overlap report.</summary>
+	private static string DebugPull(TrafficDay day, TrafficParking parking, int c, TrafficDay.Place at, TrafficParking.Spot other)
+	{
+		TrafficDay.Leg leg = day.Legs[at.Leg];
+		TrafficParking.Spot own = parking.Before(at.Leg);
+		string r = " | T " + at.T.ToString("0.0") + " leg " + leg.Start.ToString("0") + "-" + leg.End.ToString("0") + " pullOut " + leg.PullOut.ToString("0.0") + " day at (" + at.X.ToString("0.0") + "," + at.Z.ToString("0.0") + ") h(" + at.Hx.ToString("0.00") + "," + at.Hz.ToString("0.00") + ") own (" + own.X.ToString("0.0") + "," + own.Z.ToString("0.0") + ") h(" + own.Hx.ToString("0.00") + "," + own.Hz.ToString("0.00") + ") other (" + other.X.ToString("0.0") + "," + other.Z.ToString("0.0") + ") h(" + other.Hx.ToString("0.00") + "," + other.Hz.ToString("0.00") + ") path:";
+		for (double t = 0; t <= 1.0001; t += 0.125)
+		{
+			TrafficDay.Place p = at;
+			p.T = leg.PullOut * t;
+			parking.Drawn(c, p, out double x, out double z, out double hx, out double hz);
+			r += " (" + x.ToString("0.0") + "," + z.ToString("0.0") + ")";
+		}
+		return r;
+	}
+
+	/// <summary>Meetings of a car pulling in or out with another moving car, as drawn every 5 s, allowed in a day.</summary>
+	private const int MostPullMeetings = 10;
+
+	/// <summary>What a moving car is doing where it is drawn: pulling out of or into its space, on a drive, or on its way.</summary>
+	private static string Phase(TrafficDay day, TrafficDay.Place at)
+	{
+		if (day.Parking.InPull(at, out bool start))
+		{
+			return start ? "pulling out" : "pulling in";
+		}
+		if (at.Edge >= 0 && Network.Roads[Traffic.Edges[at.Edge].Road].Kind == RoadKind.Drive)
+		{
+			return "on a drive";
+		}
+		return "on its way";
+	}
+
 	private static string What(TrafficDay day, int c, double w)
 	{
 		TrafficDay.Place at = day.At(c, w);
