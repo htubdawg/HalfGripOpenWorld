@@ -11,9 +11,14 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
    `-p:GameDir=/home/user/HalfGripRefs/game`).
 3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm]`. It builds the map, then
    race N's day of traffic twice, checks it and exits 0 (see "`TrafficDay.cs`: as built" for what it reports). About 15 s.
-4. Show the owner `docs/traffic.png` and `docs/traffic-frames.png` and ask about the open points below; then stage 2 (the plan).
+4. Stage 2 is under way (see "Stage 2: as built"): the cars are drawn in the game but **not yet tried there**. Ask the owner for test 48
+   (`docs/TESTING.md`) and their `LogOutput.log`; fix what they report before going on.
 
 Open with the owner:
+- **Test 48**: the traffic drawn in the game (stage 2). Look in the log for `Traffic: ... cars, ... trips`, `The traffic's cars could
+  not be made` and `The traffic stopped`; with `VerboseLog`, `Traffic: look N: ...` gives each body's meshes, painted parts, wheels,
+  box, wheels' bottom and radius (if the cars float or sink, that bottom is what to look at; if they are the wrong colour, the
+  paint's channels, see "Stage 2: as built").
 - **Test 47** (`docs/TESTING.md`): the highway's wrap, Westhaven's road out and Millbrook's road north in the game. The owner looked at
   the work and said it looks good, but no in-game report has come back yet. Read their `LogOutput.log` for
   `The highway wrapped round` lines when it comes.
@@ -24,7 +29,8 @@ Open with the owner:
 ## Where things stand
 
 Stage 1 (timetables, no game code): the traffic's map and each race's day of trips (`TrafficDay.cs`) are done and checked; the owner
-has the pictures to look at. Stage 2 (cars drawn in the game) is next. Nothing is
+has the pictures to look at. Stage 2 (cars drawn in the game): written and compiled, the parking checked in trafficview, not yet tried
+in the game (see "Stage 2: as built"). Nothing is
 released and `mod.json` is unchanged. The branch also carries two world changes (the road fix and the wrap), so everyone in a room
 needs the build that has them. Bump the version and the README when the owner releases it.
 
@@ -195,7 +201,83 @@ place costs (`At` scans a car's legs: fine for a few hundred cars, measure in st
 - A car on a leg past the far end of a loaded tile is fine to skip; parked cars are most of the cars at any time.
 
 **Next (stage 2, the plan):** timetabled cars drawn in the game from a pool near the car, moved on an origin shift, no physics; build
-the day on a worker at the race's start; headlights.
+the day on a worker at the race's start; headlights. Done as below; next is the owner's report on test 48, then stage 3.
+
+## Stage 2: as built (not yet tried in the game)
+
+**`OpenWorld/src/TrafficParking.cs` (pure, built after the day, about 60 ms):** where every parked car stands and faces.
+- A household's own cars, taken one after another in car order, each clear of those before: a **house** on the pad beside it, nose in,
+  its tail clear of the street and its sidewalk (`Half + Shoulder + 8`, further than `Traffic.Homes`' pad, which stays as it was so
+  the day does not change: the day's gravity uses the anchors' X, Z), a second car behind the first; the other side of the house if a
+  road, the water, a lot's building or a house is in the way (two houses closer than a car's width have no pad between them). The
+  houses are the plots `Plots` keeps that fit, as `Buildings` draws them (their wings at the back are not counted), indexed once. A **cottage**: side by side by the drive's end, or the drive's other side. A
+  **farm**: in the yard off the road towards the farm's middle, further in if the near row is taken. A home with no room off the road,
+  and every **terrace**, gets a kerb space for the day.
+- **Lots:** the shops' and the retail park's painted bays (the same arithmetic as `Buildings.Lot` / `BayRows` / `BayRow`: if those
+  change, change `TrafficParking.Spaces` with them), nearest the door first; a row along the front of a workshop's shed; the pumps
+  then the kiosk's front at a filling station; the front of a market place; across a course's yard. Spaces a road's paving, the
+  water or a building reaches into are left out (none are, today). A full lot carries on at the kerb.
+- **The kerb:** each side of each stretch cut into spaces 17 apart, clear of the junction boxes at its ends; spaces over a home's
+  own parking, reaching onto another road (a junction's corner) or over water (a bridge) struck out. Terraces' cars keep theirs all
+  day (empty while they are out); everyone else at the kerb (offices, high streets, churches, a visitor in town, a full lot) takes
+  the nearest free one for their stay, in the order they arrive; if their stretch is full, round the corner on the same road (other
+  stretches within 260); else they are parked out of sight (not drawn; about 30 a day).
+- A kerb car's middle is far enough out that a car passing in the lane clears it by 0.4 (`LaneOffset + CarWide + 0.4`, or
+  `Half - 3.5` where the road is wide enough), but never with its outer side past the sidewalk's back (where a terrace's front
+  stands): on a town street two wheels are up on the sidewalk; on a village lane it touches a passing car's side. The day's traffic
+  does not know about parked cars, so this keeps them apart when drawn.
+- `Traffic.Destination.Lot` (new): the destination's lot, so its cars can be put on it. Nothing else in `Traffic` or `TrafficDay`
+  changed but `At` (no array per call; `Place.P`, the distance along the leg); the day's checksum is unchanged.
+
+**`OpenWorld/src/TrafficCars.cs` (the game):**
+- `WorldScene` adds it after the deer; the day and its parking are built on a worker (`Task.Run`), the log line when done.
+- **The bodies:** from `TrackManager.enemyCarPrefab` (the prefab asset, never instantiated: no scripts run), one look per model in its
+  `CarSkinController.carModels` (two on 0.419). Every enabled `MeshRenderer` with a mesh that shows on that model (the other models
+  switched off, anything inactive left out, nothing under `GunFirePoint`, `EffectsController` or `Nitroflames`), copied with its
+  transforms into an inactive template with the car's own scale (1.5); the wheels are what is under a `Wheel_*` transform.
+- **Paint:** the model's `carMeshRenderers` and `hoodsRenderers` get copies of their materials with `_EntireColor` the paint,
+  `_AccentColor` a shade darker and `_TertiaryColor` near black (the channels `CarSkinController.EquipSkin` sets). One copy per material
+  and paint, freed with the world (`WorldAssets`). The paint is a weighted pick of ten everyday colours from the car's index, so a
+  household's car is the same each race. If cars come out one flat colour or the stripes look wrong, the channels mean something
+  else than guessed: try the paint in `_AccentColor`.
+- **Choosing:** every 0.4 s (or after 150 units driven) every car's place (`At`; a car with no trips and its home far off is skipped
+  first), the parked ones' spots; the nearest 72 within reach (moving 900 units, parked 450), moving ones counted at 0.4 of their
+  distance. trafficview measures it: about 0.3 to 0.7 ms in a town's middle.
+- **Placing:** each frame each chosen car's `At`; driving, the lane point, blended at a trip's ends between the space and the lane
+  (smoothstep, over as long a stretch as they are apart, 30 to 150 units, heading by `LerpAngle`); parked, placed once per stay.
+  Height: two raycasts down (the `Default` layer, where the roads, lots and buildings are, and `Floor`, the ground) at the front and
+  back axles from 6 over the higher of the road line and `WorldGen.Height`, the wheels' bottom put on their mean, pitched to them; no
+  hit, not drawn (ground not loaded). Wheels turn with the speed. A car in a tunnel's mouth (`InTunnel`) or away is not drawn.
+- **Hits:** each car a `BoxCollider` round its body on the `Enemy` layer with a kinematic `Rigidbody`: the player hits a wall (as
+  with the Multiplayer mod's stand-ins). The game's scripts that look at that layer (`AreaBlast`, `ExplosiveBarrel`,
+  `PlayerResetLogic`) all check for an `EnemyController` and skip ours; the reset leaves the Enemy layer out of its ground and keeps 30
+  from anything on it. The raycasts for heights leave it out.
+- **Origin:** the cars hang from the world's root, which `Origin.Shift` moves, and each moving car is placed from world coordinates
+  every frame, so nothing is cached in world positions.
+- **Headlights:** the enemy car's `HeadLightsController.spotlight` (a spot of range 150, intensity 500) copied onto each car at the same
+  place, on for the nearest 6 moving cars when `Sky.LightsOn` (new: dusk to dawn, or a black sky).
+- **Clock:** `TrafficDay.SimTime(Sky.StartHourOf(seed), race time + Sky.Skipped)`: the debug weather skip moves the traffic too.
+- **`Sky`** also looks for new `HeadLightsController`s every 2 s and puts every known light to the hour's state, so other players'
+  stand-ins (made after the start, whose own `Start` sets their light from the race's weather) light up at night.
+- **Config:** `World` / `Traffic` (on): off, none drawn. Overlay (`ShowCoords`): the `traffic:` line.
+- meshcheck and jview leave `TrafficCars.cs` out (it needs `Mod`, `Sky`, `Weather`).
+
+**Checks added to trafficview** (exit 1 on a FAIL; 16 seeds pass): parked cars overlapping, looked at every hour (0); spaces on another
+road's paving, in a lot's building, in water, in a house (0 each); kerb spaces made and struck out, and why; the lots' spaces kept of those laid out; the distance from a space to its trip's
+end (median about 30, 90th percentile about 110, most about 350 units: a kerb space down the street); the cost of choosing the cars.
+`--closeup out.ppm [x z span hour]` draws the parked cars round a place (by default the main town's middle at 12:30): the paving, the
+lots, the houses, drive pads green, kerb orange, lots cyan, moving cars yellow where the game draws them (`docs/traffic-parking.png`:
+seed 7, round a village street at 21:30; `docs/traffic-retail.png`: the retail park at 12:30).
+
+**Known weaknesses of stage 2:**
+- **Not tried in the game.** What can only be seen there: whether the copied bodies look right (paint channels, the wheels' bottom,
+  the wheels' axle), the raycast heights on the drawn roads and bridges, the cost of 72 cars (each 8 to 10 renderers, the paint's
+  material copies keep them batched), the kinematic box against the player's car.
+- A car whose kerb space is down the street goes there over the last 150 units of its trip, moving faster than it drives.
+- Pulling out of a nose-in pad, the car turns round on the spot as it goes (no reversing).
+- The other cars past the nearest 6 have no lamps at night (the plan's glowing lamps and painted pool of light: not done).
+- Kerb cars on a narrow lane stand mostly on the verge.
+- Parked cars are not obstacles in the day (it was made without them); kept apart only by where kerb spaces are.
 
 ## This session's environment, as found
 

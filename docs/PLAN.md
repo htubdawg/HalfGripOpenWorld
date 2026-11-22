@@ -1421,6 +1421,27 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
   lead back in); through traffic is 10 cars circling the trunk through the wrap; a stay is counted from leaving home.
 - Next: stage 2, the timetabled cars drawn in the game.
 
+**Stage 2 progress (2026-11-22; see `docs/TRAFFIC_HANDOFF.md`, "Stage 2: as built"):**
+- **Drawn in the game, not yet tried there** (`TrafficCars.cs`): the race's day built on a worker at the start; the nearest 72 cars
+  (moving within about 270 m, parked within about 140 m, moving ones counted nearer) drawn from a pool. The bodies are copies of the
+  game's enemy car's models as meshes only (no physics, AI, guns or effects), painted from everyday colours (white, black, greys and
+  silver most), the same colour for the same car every race; wheels turn; each car stood on the ground under its wheels by raycasts
+  and pitched to it. A box on the Enemy layer moves with it (hitting one is a wall; the respawn already keeps clear of that layer).
+  At night the nearest 6 moving cars carry the enemy car's own spot headlight.
+- **Where parked cars stand** (`TrafficParking.cs`, pure, checked in trafficview over 16 seeds): drive pads beside houses (nose in,
+  tail clear of the street and its sidewalk), by cottages, in farmyards, the shops' and the retail park's painted bays (the same
+  arithmetic `Buildings` paints them with), rows on the workshops', filling stations', market places' and courses' yards; kerb
+  spaces cut along each side of each stretch, shared: terraces keep theirs all day, everyone else (offices, high streets, churches,
+  visitors in town, a full lot) takes the nearest free one as they arrive, round the corner on the same road if their stretch is full.
+  None overlaps another, none is on another road's paving, in water, in a lot's building or in a house.
+- **Pulling out and in:** at a trip's ends the car is drawn between its space and its lane, over as long a stretch of the trip as
+  they are apart (30 to 150 units).
+- **Headlights:** `Sky` now looks for new headlights every 2 seconds, so other players' stand-ins (made after the start) light up at
+  night too (the owner saw them dark).
+- **Left for later in stage 2:** lamps and a painted pool of light for the cars past the nearest 6; a car whose kerb space is down
+  the street drives along to it a little fast; parked cars at the kerb are not seen by the moving traffic (they drive past, not
+  round, them: kerb spaces are at the paving's edge, the lane's middle 5.5 off the line).
+
 ### Traffic: what the studies say, and the trip model (researched 2026-11-22)
 
 Sources (the tables used are cited below):

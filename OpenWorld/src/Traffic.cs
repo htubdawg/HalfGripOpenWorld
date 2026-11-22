@@ -551,6 +551,8 @@ namespace HalfGripOpenWorld
 			/// <summary>How strongly it draws each purpose's trips (<see cref="Purpose"/>).</summary>
 			public double Work, Shop, Errand, Social;
 			public string Name;
+			/// <summary>Its lot in <see cref="Town.Lots"/> (-1: parked at the kerb, or a road out): where its cars park (<see cref="TrafficParking"/>).</summary>
+			public int Lot = -1;
 		}
 
 		internal static readonly List<Destination> Destinations = new List<Destination>();
@@ -763,13 +765,14 @@ namespace HalfGripOpenWorld
 		private static void Draws()
 		{
 			Destinations.Clear();
-			foreach (Town.Lot lot in Town.Lots)
+			for (int li = 0; li < Town.Lots.Count; li++)
 			{
+				Town.Lot lot = Town.Lots[li];
 				if (!LotAnchor(lot, out Anchor a))
 				{
 					continue;
 				}
-				Destination d = new Destination { At = a, Name = lot.Place };
+				Destination d = new Destination { At = a, Name = lot.Place, Lot = li };
 				switch (lot.Kind)
 				{
 					case LotKind.Retail:

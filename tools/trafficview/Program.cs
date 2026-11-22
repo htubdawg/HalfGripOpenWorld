@@ -203,12 +203,23 @@ internal static class Program
 		int seedAt = Array.IndexOf(args, "--seed");
 		int seed = seedAt >= 0 ? int.Parse(args[seedAt + 1]) : 20261122;
 		int picAt = Array.IndexOf(args, "--picture");
-		ok &= Day(seed, picAt >= 0 ? args[picAt + 1] : null);
+		int closeAt = Array.IndexOf(args, "--closeup");
+		string[] closeup = null;
+		if (closeAt >= 0)
+		{
+			List<string> rest = new List<string>();
+			for (int k = closeAt + 1; k < args.Length && !args[k].StartsWith("--"); k++)
+			{
+				rest.Add(args[k]);
+			}
+			closeup = rest.ToArray();
+		}
+		ok &= Day(seed, picAt >= 0 ? args[picAt + 1] : null, closeup);
 		return ok ? 0 : 1;
 	}
 
 	/// <summary>Builds race <paramref name="seed"/>'s day of traffic twice and checks it (docs/TRAFFIC_HANDOFF.md, "Checks").</summary>
-	private static bool Day(int seed, string picture)
+	private static bool Day(int seed, string picture, string[] closeup)
 	{
 		bool ok = true;
 		Stopwatch watch = Stopwatch.StartNew();
@@ -578,12 +589,381 @@ internal static class Program
 		ok &= wrongJumps == 0 && worstJump < 3.0;
 		Console.WriteLine("  cars stopped in a tunnel's mouth or within 60 of it: " + day.StoppedAtMouth + " steps" + (day.StoppedAtMouth == 0 ? "  ok" : "  FAIL"));
 		ok &= day.StoppedAtMouth == 0;
+		ok &= Parking(day, closeup);
 		if (picture != null)
 		{
 			Pictures.Draw(day, passes, picture);
 		}
 		return ok;
 	}
+
+	/// <summary>A parked car's footprint for the checks: a little under a car (about 14 by 5.4).</summary>
+	private const double CarLong = 13.0, CarWide = 5.0;
+
+	/// <summary>
+	/// The parking (TrafficParking): every hour, no two parked cars overlapping; spaces off the paving of roads that are not their own,
+	/// out of the lots' buildings and the water; how far a car goes between its space and its lane; and what choosing the cars near the
+	/// player costs, as the game does it every 0.4 s.
+	/// </summary>
+	private static bool Parking(TrafficDay day, string[] closeup)
+	{
+		bool ok = true;
+		Stopwatch watch = Stopwatch.StartNew();
+		TrafficParking parking = new TrafficParking(day);
+		Console.WriteLine("  parking: made in " + watch.ElapsedMilliseconds + " ms; at most " + parking.Busiest + " cars at one place, " + parking.Overflow + " stays at the kerb past a place's spaces, " + parking.KerbFull + " found the kerb full; kerb spaces " + parking.KerbSpaces + ", struck over a home's own space " + parking.StruckHome + ", in a house " + parking.StruckHouse + ", on another road or water " + parking.StruckOther);
+		// The lots' spaces: how many each kind has, and how many a road, the water or a building took.
+		Dictionary<LotKind, (int kept, int all, int lots)> lotKinds = new Dictionary<LotKind, (int, int, int)>();
+		List<(double u, double v, double nu, double nv)> raw = new List<(double, double, double, double)>();
+		string retailAt = "";
+		for (int d = 0; d < Traffic.Destinations.Count; d++)
+		{
+			Traffic.Destination dest = Traffic.Destinations[d];
+			if (dest.Lot < 0)
+			{
+				continue;
+			}
+			Town.Lot lot = Town.Lots[dest.Lot];
+			TrafficParking.Spaces(lot, raw);
+			int kept = parking.LotSpaces(d).Count;
+			lotKinds.TryGetValue(lot.Kind, out (int kept, int all, int lots) had);
+			lotKinds[lot.Kind] = (had.kept + kept, had.all + raw.Count, had.lots + 1);
+			if (lot.Kind == LotKind.Retail)
+			{
+				retailAt = " (the retail park at " + lot.X.ToString("0") + ", " + lot.Z.ToString("0") + ")";
+			}
+		}
+		string lotText = "";
+		foreach (KeyValuePair<LotKind, (int kept, int all, int lots)> kv in lotKinds)
+		{
+			lotText += (lotText.Length > 0 ? ", " : "") + kv.Key + " " + kv.Value.lots + " lots " + kv.Value.kept + " of " + kv.Value.all;
+		}
+		Console.WriteLine("  lots' spaces (kept of laid out, the rest taken by a road, water or a building): " + lotText + retailAt);
+		int overlaps = 0, samples = 0;
+		Dictionary<string, int> overlapKinds = new Dictionary<string, int>();
+		string firstOverlap = null;
+		List<(TrafficParking.Spot s, int car)> spots = new List<(TrafficParking.Spot, int)>();
+		Dictionary<long, List<int>> grid = new Dictionary<long, List<int>>();
+		for (int hour = 0; hour < 24; hour++)
+		{
+			double w = TrafficDay.SimOfHour(hour + 0.25);
+			spots.Clear();
+			grid.Clear();
+			for (int c = 0; c < day.Cars.Count; c++)
+			{
+				TrafficDay.Place at = day.At(c, w);
+				if (at.State != TrafficDay.State.Parked)
+				{
+					continue;
+				}
+				TrafficParking.Spot s = parking.Parked(c, at.Leg);
+				if (s.Away)
+				{
+					continue;
+				}
+				int i = spots.Count;
+				spots.Add((s, c));
+				long key = ((long)Math.Floor(s.X / 32.0) << 32) ^ (uint)(int)Math.Floor(s.Z / 32.0);
+				if (!grid.TryGetValue(key, out List<int> cell))
+				{
+					cell = new List<int>();
+					grid[key] = cell;
+				}
+				cell.Add(i);
+			}
+			samples += spots.Count;
+			for (int i = 0; i < spots.Count; i++)
+			{
+				TrafficParking.Spot a = spots[i].s;
+				int gx = (int)Math.Floor(a.X / 32.0), gz = (int)Math.Floor(a.Z / 32.0);
+				for (int ox = -1; ox <= 1; ox++)
+				{
+					for (int oz = -1; oz <= 1; oz++)
+					{
+						if (!grid.TryGetValue(((long)(gx + ox) << 32) ^ (uint)(gz + oz), out List<int> cell))
+						{
+							continue;
+						}
+						foreach (int j in cell)
+						{
+							if (j > i && TrafficParking.Overlap(a, spots[j].s, -0.5))
+							{
+								string ka = What(day, spots[i].car, w), kb = What(day, spots[j].car, w);
+								string kk = string.CompareOrdinal(ka, kb) < 0 ? ka + " / " + kb : kb + " / " + ka;
+								overlapKinds[kk] = overlapKinds.TryGetValue(kk, out int nk) ? nk + 1 : 1;
+								overlaps++;
+								if (overlaps <= 6)
+								{
+									TrafficParking.Spot b = spots[j].s;
+									Console.WriteLine("    pair: " + kk + " (" + a.X.ToString("0.0") + ", " + a.Z.ToString("0.0") + ") facing (" + a.Hx.ToString("0.00") + ", " + a.Hz.ToString("0.00") + ") and (" + b.X.ToString("0.0") + ", " + b.Z.ToString("0.0") + ") facing (" + b.Hx.ToString("0.00") + ", " + b.Hz.ToString("0.00") + ") " + parking.Describe(spots[i].car, day.At(spots[i].car, w).Leg) + " / " + parking.Describe(spots[j].car, day.At(spots[j].car, w).Leg));
+								}
+								firstOverlap ??= "cars " + spots[i].car + " and " + spots[j].car + " at (" + a.X.ToString("0") + ", " + a.Z.ToString("0") + ") at " + hour + ":15";
+							}
+						}
+					}
+				}
+			}
+		}
+		foreach (KeyValuePair<string, int> kv in overlapKinds)
+		{
+			Console.WriteLine("    overlapping: " + kv.Key + " " + kv.Value);
+		}
+		Console.WriteLine("  parked cars overlapping, looked at every hour: " + overlaps + " pairs in " + samples + " parked cars" + (firstOverlap != null ? " (first: " + firstOverlap + ")" : "") + (overlaps == 0 ? "  ok" : "  FAIL"));
+		ok &= overlaps == 0;
+
+		// The houses (the plots that fit, as Buildings draws them; their wings at the back left out), for the spaces' test.
+		houses = Houses();
+		// Every space any car uses over the day, once: off other roads' paving, out of buildings and water.
+		HashSet<(long, long)> seen = new HashSet<(long, long)>();
+		int spaces = 0, onRoad = 0, inBuilding = 0, inWater = 0, kerb = 0, inHouse = 0;
+		string firstRoad = null, firstBuilding = null, firstWater = null, firstHouse = null;
+		Dictionary<string, int> roadKinds = new Dictionary<string, int>(), waterKinds = new Dictionary<string, int>();
+		void Look(TrafficParking.Spot s, int ownRoad, bool atKerb, string what)
+		{
+			if (s.Away || !seen.Add(((long)Math.Round(s.X * 4.0), (long)Math.Round(s.Z * 4.0))))
+			{
+				return;
+			}
+			spaces++;
+			kerb += atKerb ? 1 : 0;
+			double ax = s.Hx * CarLong * 0.5, az = s.Hz * CarLong * 0.5, bx = s.Hz * CarWide * 0.5, bz = -s.Hx * CarWide * 0.5;
+			bool road = false, water = false;
+			foreach ((double u, double v) in new[] { (1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0), (0.0, 0.0) })
+			{
+				double x = s.X + ax * u + bx * v, z = s.Z + az * u + bz * v;
+				road |= Network.OnOtherPaving(x, z, atKerb ? ownRoad : -1);
+				water |= Rivers.Water(x, z, out double _);
+				Town.Lot lot = Town.At(x, z, out bool building);
+				if (lot != null && building)
+				{
+					inBuilding++;
+					firstBuilding ??= "(" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ") on a " + lot.Kind + " lot";
+					break;
+				}
+			}
+			if (InHouse(s))
+			{
+				inHouse++;
+				firstHouse ??= "(" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ") " + what;
+			}
+			if (road)
+			{
+				roadKinds[what] = roadKinds.TryGetValue(what, out int nr) ? nr + 1 : 1;
+				onRoad++;
+				firstRoad ??= "(" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")" + (atKerb ? " at the kerb" : "");
+			}
+			if (water)
+			{
+				waterKinds[what] = waterKinds.TryGetValue(what, out int nw) ? nw + 1 : 1;
+				inWater++;
+				firstWater ??= "(" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")";
+			}
+		}
+		for (int c = 0; c < day.Cars.Count; c++)
+		{
+			TrafficDay.Car car = day.Cars[c];
+			if (car.Household >= 0)
+			{
+				Traffic.Household h = Traffic.Households[car.Household];
+				bool homeKerb = parking.IsKerb(c, -1, out int homeRoad);
+				Look(parking.Parked(c, -1), homeRoad, homeKerb, "home " + h.Kind + (homeKerb ? " (kerb)" : ""));
+			}
+			foreach (int li in car.Legs)
+			{
+				TrafficDay.Leg leg = day.Legs[li];
+				if (leg.Start < 0.0 || leg.Vanishes)
+				{
+					continue;
+				}
+				TrafficParking.Spot s = parking.Parked(c, li);
+				bool atKerb = parking.IsKerb(c, li, out int kerbRoad);
+				Look(s, kerbRoad, atKerb, (leg.Return ? "home" : leg.Host >= 0 ? "visit" : "at " + Traffic.Destinations[leg.Dest].Kind) + (atKerb ? " (kerb)" : ""));
+			}
+		}
+		foreach (KeyValuePair<string, int> kv in roadKinds)
+		{
+			Console.WriteLine("    on another road's paving: " + kv.Key + " " + kv.Value);
+		}
+		foreach (KeyValuePair<string, int> kv in waterKinds)
+		{
+			Console.WriteLine("    in water: " + kv.Key + " " + kv.Value);
+		}
+		Console.WriteLine("  spaces used: " + spaces + " (" + kerb + " at the kerb); on another road's paving " + onRoad + (firstRoad != null ? " (first " + firstRoad + ")" : "")
+			+ ", in a lot's building " + inBuilding + (firstBuilding != null ? " (first " + firstBuilding + ")" : "") + ", in water " + inWater + (firstWater != null ? " (first " + firstWater + ")" : "")
+			+ ", in a house " + inHouse + (firstHouse != null ? " (first " + firstHouse + ")" : "")
+			+ (onRoad == 0 && inBuilding == 0 && inWater == 0 && inHouse == 0 ? "  ok" : "  FAIL"));
+		ok &= onRoad == 0 && inBuilding == 0 && inWater == 0 && inHouse == 0;
+
+		// Between the space and the lane: how far apart they are at a trip's ends (the game pulls the car between them over as long a
+		// stretch of the trip, 30 to 150 units).
+		List<double> pulls = new List<double>();
+		foreach (TrafficDay.Leg leg in day.Legs)
+		{
+			if (leg.Start < 0.0)
+			{
+				continue;
+			}
+			TrafficDay.Place p = default;
+			if (!leg.Appears)
+			{
+				TrafficParking.Spot s = parking.Before(day.Legs.IndexOf(leg));
+				TrafficDay.OnPath(leg, 0.0, ref p);
+				if (!s.Away)
+				{
+					pulls.Add(Math.Sqrt((s.X - p.X) * (s.X - p.X) + (s.Z - p.Z) * (s.Z - p.Z)));
+				}
+			}
+			if (!leg.Vanishes)
+			{
+				TrafficParking.Spot s = parking.Parked(leg.Car, day.Legs.IndexOf(leg));
+				TrafficDay.OnPath(leg, leg.Length, ref p);
+				if (!s.Away)
+				{
+					pulls.Add(Math.Sqrt((s.X - p.X) * (s.X - p.X) + (s.Z - p.Z) * (s.Z - p.Z)));
+				}
+			}
+		}
+		pulls.Sort();
+		Console.WriteLine("  space to lane at a trip's ends: median " + Pct(pulls, 0.5).ToString("0") + ", 90th percentile " + Pct(pulls, 0.9).ToString("0") + ", 99th " + Pct(pulls, 0.99).ToString("0")
+			+ ", most " + (pulls.Count > 0 ? pulls[pulls.Count - 1] : 0.0).ToString("0") + " units (" + pulls.Count + " ends)");
+
+		// Choosing the cars near the player, as TrafficCars.Choose does: every car's place, the parked ones' spaces.
+		watch.Restart();
+		int calls = 0, nearest = 0;
+		foreach (double hour in new[] { 8.5, 12.5, 17.5 })
+		{
+			double w = TrafficDay.SimOfHour(hour);
+			foreach (Places.Place place in Places.All)
+			{
+				if (place.Kind != PlaceKind.Town)
+				{
+					continue;
+				}
+				calls++;
+				for (int c = 0; c < day.Cars.Count; c++)
+				{
+					TrafficDay.Car car = day.Cars[c];
+					double hx = car.Home.X - place.X, hz = car.Home.Z - place.Z;
+					if (car.Legs.Count == 0 && hx * hx + hz * hz > 510.0 * 510.0)
+					{
+						continue;
+					}
+					TrafficDay.Place at = day.At(c, w);
+					double x = at.X, z = at.Z;
+					if (at.State == TrafficDay.State.Parked)
+					{
+						TrafficParking.Spot s = parking.Parked(c, at.Leg);
+						x = s.X;
+						z = s.Z;
+					}
+					nearest += (x - place.X) * (x - place.X) + (z - place.Z) * (z - place.Z) < 450.0 * 450.0 ? 1 : 0;
+				}
+			}
+		}
+		double each = watch.Elapsed.TotalMilliseconds / Math.Max(1, calls);
+		if (closeup != null)
+		{
+			// --closeup out.ppm [x z span hour]: by default the main town's middle at 12:30.
+			Places.Place main = null;
+			foreach (Places.Place pl in Places.All)
+			{
+				if (pl.Kind == PlaceKind.Town && (main == null || pl.Radius > main.Radius))
+				{
+					main = pl;
+				}
+			}
+			double x0 = closeup.Length > 1 ? double.Parse(closeup[1]) : main.X, z0 = closeup.Length > 2 ? double.Parse(closeup[2]) : main.Z;
+			double span = closeup.Length > 3 ? double.Parse(closeup[3]) : 700.0, hour = closeup.Length > 4 ? double.Parse(closeup[4]) : 12.5;
+			Pictures.Closeup(day, parking, closeup[0], x0, z0, span, hour);
+		}
+		Console.WriteLine("  choosing the cars near the player (in a town's middle): " + each.ToString("0.00") + " ms a time, " + (nearest / Math.Max(1, calls)) + " cars within 140 m" + (each < 4.0 ? "  ok" : "  SLOW (aim under 4 ms: it runs every 0.4 s)"));
+		return ok;
+	}
+
+	/// <summary>The houses: middle, the way along the road (unit), half width along it and half depth across, in cells of 64.</summary>
+	internal static Dictionary<long, List<(double x, double z, double ux, double uz, double hw, double hd)>> houses;
+
+	internal static Dictionary<long, List<(double x, double z, double ux, double uz, double hw, double hd)>> Houses()
+	{
+		Dictionary<long, List<(double, double, double, double, double, double)>> grid = new Dictionary<long, List<(double, double, double, double, double, double)>>();
+		List<Plots.Plot> plots = new List<Plots.Plot>();
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			for (int i = 0; i + 1 < road.Count; i++)
+			{
+				plots.Clear();
+				Plots.Along(r, road, i, plots);
+				foreach (Plots.Plot p in plots)
+				{
+					if (!Plots.Fits(p))
+					{
+						continue;
+					}
+					long key = ((long)Math.Floor(p.Cx / 64.0) << 32) ^ (uint)(int)Math.Floor(p.Cz / 64.0);
+					if (!grid.TryGetValue(key, out List<(double, double, double, double, double, double)> list))
+					{
+						list = new List<(double, double, double, double, double, double)>();
+						grid[key] = list;
+					}
+					list.Add((p.Cx, p.Cz, p.Dx, p.Dz, p.Width * 0.5, p.Depth * 0.5));
+				}
+			}
+		}
+		return grid;
+	}
+
+	/// <summary>Whether a parked car at <paramref name="s"/> (a little under a car's size) stands in a house.</summary>
+	private static bool InHouse(TrafficParking.Spot s)
+	{
+		int gx = (int)Math.Floor(s.X / 64.0), gz = (int)Math.Floor(s.Z / 64.0);
+		for (int ox = -1; ox <= 1; ox++)
+		{
+			for (int oz = -1; oz <= 1; oz++)
+			{
+				if (!houses.TryGetValue(((long)(gx + ox) << 32) ^ (uint)(gz + oz), out List<(double x, double z, double ux, double uz, double hw, double hd)> list))
+				{
+					continue;
+				}
+				foreach ((double x, double z, double ux, double uz, double hw, double hd) h in list)
+				{
+					if (Boxes(s.X, s.Z, s.Hx, s.Hz, CarLong * 0.5, CarWide * 0.5, h.x, h.z, h.ux, h.uz, h.hw, h.hd))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Whether two rectangles overlap (middle, unit axis, half sizes along it and across), by separating axes.</summary>
+	private static bool Boxes(double ax, double az, double aux, double auz, double ahl, double ahw, double bx, double bz, double bux, double buz, double bhl, double bhw)
+	{
+		double dx = bx - ax, dz = bz - az;
+		foreach ((double ux, double uz) in new[] { (aux, auz), (auz, -aux), (bux, buz), (buz, -bux) })
+		{
+			double ra = Math.Abs(aux * ux + auz * uz) * ahl + Math.Abs(auz * ux - aux * uz) * ahw;
+			double rb = Math.Abs(bux * ux + buz * uz) * bhl + Math.Abs(buz * ux - bux * uz) * bhw;
+			if (Math.Abs(dx * ux + dz * uz) > ra + rb)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>What kind of space a parked car is in, for the overlap report.</summary>
+	private static string What(TrafficDay day, int c, double w)
+	{
+		TrafficDay.Place at = day.At(c, w);
+		if (at.Leg < 0 || day.Legs[at.Leg].Return)
+		{
+			return "home " + Traffic.Households[day.Cars[c].Household].Kind;
+		}
+		TrafficDay.Leg leg = day.Legs[at.Leg];
+		return leg.Host >= 0 ? "visiting " + Traffic.Households[leg.Host].Kind : "at " + Traffic.Destinations[leg.Dest].Kind;
+	}
+
 
 	private static int CountWithCars()
 	{

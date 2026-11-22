@@ -1321,6 +1321,7 @@ namespace HalfGripOpenWorld
 				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
 				+ (Sky.Status != null ? "\n" + Sky.Status : "")
 				+ (Deer.Status != null ? "\n" + Deer.Status : "")
+				+ (TrafficCars.Status != null ? "\n" + TrafficCars.Status : "")
 				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "");
 			GUI.Label(new Rect(12f, 12f, 900f, 130f), text);
 		}

@@ -371,3 +371,25 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Westhaven (teleport to it): its main road now runs north out of the town to a T-junction on the trunk road (before, it stopped in
      the fields). Millbrook's main road north now reaches the road from Northcote, about (-2885, 5832) with `ShowCoords`.
    - Send `LogOutput.log` and say how the jump feels.
+48. Traffic drawn in the game (not released yet; on `traffic-test-branch`; a preview: the cars cannot be pushed or wrecked yet).
+   The log says `Traffic: ... cars, ... trips on a weekday (or weekend day) from the race's seed, built in ... ms` a second or two
+   after the start (the day is made on a worker; no hitch). With `ShowCoords` on, the overlay's `traffic:` line counts the cars drawn
+   (moving and parked), the lit ones and the day's hour; with `WeatherSkip` on, the skip key moves the traffic's hour with the sky.
+   - Cars drive the roads in the right-hand lane at sensible speeds, slow for bends and junctions, queue behind each other and take
+     turns at junctions. No car floats over or sinks into the road, on bridges, hills or in town; their wheels turn.
+   - Busiest at the evening rush (about 5 to 6 pm: try the skip key), a few cars at 3 am, the trunk road busier than the lanes.
+   - Parked cars stand on the drive pads beside houses (nose in), at the kerb in front of terraces and by the offices and high
+     streets (facing the way traffic goes on their side), in the painted bays at the shops and the retail park, on the workshops'
+     yards, at a filling station's pumps, along the front of the market places, by cottages and in farmyards. None stands on a road
+     it does not belong to, in a building, in a garden wall, in the water, or on top of another car.
+   - Watch a car leave: it pulls out of its space into the lane and drives off (a car whose kerb space is down the street drives
+     along to it a little fast; that is known). Watch one arrive and park.
+   - Hitting a traffic car is like hitting a wall (damage, no push); the respawn never puts you on one.
+   - At night the nearest few moving cars light the road ahead; other players' cars in a room have their headlights on too now (they
+     stayed dark before).
+   - The car models: the game's enemy car in white, black, grey, silver, blue, red and a few rarer colours, no guns, no nitro flames.
+     Say if they look wrong (the wrong colour channels, floating wheels, a wheel turning the wrong way).
+   - Frame time: compare with `Traffic` off in a town at the evening rush.
+   - In a room: both players see the same cars in the same places.
+   - Send `LogOutput.log` (with `VerboseLog` on it also says how each car body was made) and screenshots: a town street, a car park,
+     a junction with a queue, a car pulling out, night.

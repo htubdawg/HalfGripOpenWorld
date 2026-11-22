@@ -165,6 +165,8 @@ namespace HalfGripOpenWorld
 			root.AddComponent<Sky>().Setup(tm, paved.ToArray(), unpaved.ToArray());
 			// The deer, drawn from the race's seed as the sky is (placed on a worker; seen once they are).
 			root.AddComponent<Deer>().Setup(tm, lit);
+			// The traffic, from the race's seed too (its day made on a worker; drawn once it is).
+			root.AddComponent<TrafficCars>().Setup(tm);
 
 			PlaceGrid(tm, env, out Vector3 forward);
 			assets.Add(Tunnels(lit, roads[RoadMesh.Concrete]));

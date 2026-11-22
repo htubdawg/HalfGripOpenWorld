@@ -36,6 +36,14 @@ generated from a fixed seed (the same for every player) the way real country com
   for a moment first (more at night), or, about half the time, darting over the road in front of the car (more if they were standing in it), timed so the first
   is in the road a moment before the car gets to their crossing and the others follow as it arrives; a shot near them or one of them killed sends them off too. In a room everybody sees the same deer do the same thing, and
   a deer killed by anybody lies dead in the same place for everybody, also for a player who joins later.
+- **Traffic (a preview, not released yet):** the households' cars drive to work, the shops, the market and friends and back on a
+  day worked out from the race's seed (busiest at the evening rush, quiet at night; a weekend day now and then), so in a room
+  everyone sees the same cars in the same places. Between trips they are parked: on the drive pad beside a house, at the kerb in
+  front of a terrace, by a cottage or in a farmyard, in the painted bays of the shops and the retail park, on the yards of the
+  workshops, filling stations and market places, along the kerb by the offices, the high streets and the churches. They pull out
+  of their space into the lane and back in at the end. They are the game's own enemy car, in everyday colours (the same car the
+  same colour every race), and at night the nearest few light the road. For now a traffic car cannot be pushed or wrecked: hitting
+  one is like hitting a wall.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
   painted into the sky, so on the clearest days you see across the whole world, the far mountains hazy on the horizon.
@@ -190,9 +198,10 @@ the same ground.
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
 | World | `Deer` | true | Draws the deer (within about 150 m of the car, the nearest 40). Off, none are drawn and none can be hit or shot; where they are does not change. |
 | World | `DeerAmount` | 1 | How many deer groups there are, to find what feels right: 1 is 160 groups (about 540 deer), 0.5 half, 0 none; above 1 there are only so many places deer can live, so 2 gives about 215 groups and 4 about 245. Only alone: in a room it is always 1. From the next race. |
+| World | `Traffic` | true | Draws the traffic (a preview): moving cars within about 270 m, parked ones within about 140 m, the nearest 72. Off, none are drawn; where they are does not change. Only changes your own view. |
 | World | `ShiftDistance` | 1000 | Game units (1000 is about 300 m) from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. If another car stands on the place, the car lands a little along the road or beside it, and nothing can hurt it for 2 seconds. |
-| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws; and the deer: how many are drawn, the nearest group's crossing place (how far and which way) how likely groups are to be out feeding at this hour, and how many deer have been killed (by this car, shot here) and how many groups near are reacting. |
+| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws; and the deer: how many are drawn, the nearest group's crossing place (how far and which way) how likely groups are to be out feeding at this hour, and how many deer have been killed (by this car, shot here) and how many groups near are reacting; and the traffic: how many cars are drawn (moving, parked, lit) and the traffic's hour. |
 | Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back), and the Weather fast key (F2) turns a 10x speed for it on and off: the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 

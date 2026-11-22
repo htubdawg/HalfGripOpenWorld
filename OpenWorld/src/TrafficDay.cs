@@ -196,7 +196,10 @@ namespace HalfGripOpenWorld
 			public int Edge, Dir;
 			public double S;
 			public bool InTunnel;
+			/// <summary>When driving, the leg; when parked, the leg that brought it there (-1: at home before its first trip).</summary>
 			public int Leg;
+			/// <summary>When driving: the distance along the leg's path (0 to its <see cref="Leg.Length"/>).</summary>
+			public double P;
 		}
 
 		internal readonly int Seed;
@@ -2037,14 +2040,18 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				foreach (double t in new[] { w, w + Traffic.DaySeconds })
+				// A leg that ran past the day's end is read again the next morning (w + a day). No array for the two: this is called for
+				// every car near the player.
+				for (int k = 0; k < 2; k++)
 				{
+					double t = k == 0 ? w : w + Traffic.DaySeconds;
 					if (t >= leg.Start && t < leg.End)
 					{
 						at.State = State.Driving;
 						at.Leg = li;
 						double p = DistanceAt(leg, t);
 						OnPath(leg, p, ref at);
+						at.P = p;
 						double p1 = DistanceAt(leg, Math.Min(leg.End, t + 0.25));
 						at.Speed = (p1 - p) / 0.25;
 						return at;
