@@ -118,7 +118,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
   (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
   house walls reading whole storeys and roofs with undersides (facades), drives' houses and mailboxes clear of the roads and water
-  (homes), houses, towers and churches off the roads, sidewalks and tracks (clear), few country lane dead ends and no through way hooking round (backroads), the deer's mesh and their spots, legs and
+  (homes), houses, towers and churches off the roads, sidewalks and tracks (clear), few country lane dead ends, no through way hooking round and no main road dead end (backroads), the deer's mesh and their spots, legs and
   positions never in deep water, over a drop or on a road but at their crossing, the buck's antlers clear of the body and the ground in every pose, fawns few and only in families, dead deer's bodies coming to rest on the ground, fleeing deer never in deep water, on another road or jumping (deer);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.

@@ -58,7 +58,8 @@ using UnityEngine;
 //  26. homes:   every drive's home: its mailbox off every road's paving and verge and out of the water (or left out, 1 in 50 at most); a roadside house's footprint
 //                clear of every road, lot, park and the water, at its drive's end
 //  27. backroads: the back roads joined up (Network.Links, Throughs, Drives): few lane dead ends out in the country (a farm at the
-//                end of a long lane boxed in by water or hills), and no through way hooking round on itself
+//                end of a long lane boxed in by water or hills), no through way hooking round on itself, and no main road (trunk,
+//                primary, secondary) ending anywhere but on another road or at the map's edge
 //  28. deer:    the deer's mesh (weights summing to one, no broken faces, bones and vertices in range); for three race seeds, every
 //                group's spots and the legs between them on the drawn ground, never in water above a deer's belly nor over a drop,
 //                every crossing place on the road it crosses, and every deer followed over half an hour of race time never deep in
@@ -3306,9 +3307,23 @@ internal static class Program
 
 	private static bool BackRoads()
 	{
-		int dead = 0, hooks = 0, lanes = 0;
+		int dead = 0, hooks = 0, lanes = 0, mainDead = 0;
 		foreach (Network.Road road in Network.Roads)
 		{
+			// A main road (trunk, primary, secondary) never stops in the fields: Westhaven's link to the trunk did, 270 units short of
+			// it, and the town had no road out (Network.SnapJoin). Its ends at the map's edge are portals, not dead ends.
+			if (road.Kind <= RoadKind.Secondary && road.Count >= 2)
+			{
+				for (int end = 0; end < 2; end++)
+				{
+					int k = end == 0 ? 0 : road.Count - 1;
+					if (end == 0 ? road.Dead0 : road.Dead1)
+					{
+						mainDead++;
+						Console.WriteLine("  main road dead end '" + road.Name + "' (" + road.Kind + ") at (" + road.X[k].ToString("0") + ", " + road.Z[k].ToString("0") + ")");
+					}
+				}
+			}
 			if (road.Kind != RoadKind.Lane)
 			{
 				continue;
@@ -3335,8 +3350,9 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round");
-		return dead <= 10 && hooks == 0;
+		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round; "
+			+ mainDead + " main road dead ends");
+		return dead <= 10 && hooks == 0 && mainDead == 0;
 	}
 
 	/// <summary>Whether (x, z) is within the paving of a road other than <paramref name="self"/>.</summary>

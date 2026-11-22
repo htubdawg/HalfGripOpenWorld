@@ -367,6 +367,71 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>Per node, which connected part of the graph it is in; the biggest part (by length of road) is <see cref="MainPart"/>.</summary>
+		internal static int[] Part;
+		internal static int MainPart;
+		/// <summary>Households and places left out because their road is not joined to the main part.</summary>
+		internal static int CutOff;
+
+		/// <summary>
+		/// The graph's connected parts. Every road should join the rest, but a few town streets are laid with nothing at either end but
+		/// footpaths, and no car could reach them; the biggest part is where all the traffic is.
+		/// </summary>
+		private static void Parts()
+		{
+			Part = new int[Nodes.Count];
+			for (int n = 0; n < Part.Length; n++)
+			{
+				Part[n] = -1;
+			}
+			List<double> length = new List<double>();
+			Stack<int> stack = new Stack<int>();
+			for (int n0 = 0; n0 < Part.Length; n0++)
+			{
+				if (Part[n0] >= 0)
+				{
+					continue;
+				}
+				int part = length.Count;
+				double sum = 0.0;
+				Part[n0] = part;
+				stack.Push(n0);
+				while (stack.Count > 0)
+				{
+					int u = stack.Pop();
+					foreach (int e in Links[u])
+					{
+						int v = Edges[e].A == u ? Edges[e].B : Edges[e].A;
+						// Each edge counted once, from its A end.
+						if (Edges[e].A == u)
+						{
+							sum += Edges[e].Length;
+						}
+						if (Part[v] < 0)
+						{
+							Part[v] = part;
+							stack.Push(v);
+						}
+					}
+				}
+				length.Add(sum);
+			}
+			MainPart = 0;
+			for (int p = 1; p < length.Count; p++)
+			{
+				if (length[p] > length[MainPart])
+				{
+					MainPart = p;
+				}
+			}
+		}
+
+		/// <summary>Whether edge <paramref name="e"/> is on the graph's main part.</summary>
+		internal static bool OnMain(int e)
+		{
+			return Part[Edges[e].A] == MainPart;
+		}
+
 		/// <summary>The edge of road <paramref name="r"/> that distance <paramref name="s"/> along it is on (-1 if none).</summary>
 		internal static int EdgeAt(int r, double s)
 		{
@@ -521,8 +586,12 @@ namespace HalfGripOpenWorld
 					Network.Ensure();
 					System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 					Graph();
+					Parts();
 					Homes();
 					Draws();
+					// A household or place on a road cut off from the rest (a town street joined to nothing but footpaths) has no way
+					// anywhere: left out, so every trip has a route.
+					CutOff = Households.RemoveAll(h => !OnMain(h.Home.Edge)) + Destinations.RemoveAll(d => !OnMain(d.At.Edge));
 					BuildMs = watch.Elapsed.TotalMilliseconds;
 					int cars = 0;
 					foreach (Household h in Households)
@@ -530,7 +599,7 @@ namespace HalfGripOpenWorld
 						cars += h.Cars;
 					}
 					Report = Nodes.Count + " junctions, " + Edges.Count + " stretches of road, " + Households.Count + " households with " + cars + " cars, "
-						+ Destinations.Count + " places that draw trips; " + BuildMs.ToString("0") + " ms";
+						+ Destinations.Count + " places that draw trips (" + CutOff + " left out on roads cut off from the rest); " + BuildMs.ToString("0") + " ms";
 					built = true;
 				}
 			}

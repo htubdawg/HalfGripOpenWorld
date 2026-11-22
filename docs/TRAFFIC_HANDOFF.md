@@ -6,39 +6,47 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 
 ## Where things stand
 
-Stage 1 (timetables, no game code) is about a third done. Nothing is released; `mod.json` is unchanged.
+Stage 1 (timetables, no game code): the traffic's map is done; each race's day of trips (`TrafficDay.cs`) is next. Nothing is
+released; `mod.json` is unchanged.
 
 **Done and pushed:**
 - The plan, the owner's answers and the studies' figures are all in `docs/PLAN.md`.
-- `OpenWorld/src/Plots.cs` (new, pure): the house-plot decisions (`Plots.Along`) and the footprint test (`Plots.Fits`) moved out of
-  `Buildings.cs`, which now calls them. Traffic finds every household from the same arithmetic the drawing uses. Meant to change
-  nothing drawn. **Not yet confirmed:** run `meshcheck` (clear, facades, bases, homes) and compare the house count with
-  `deer-test-branch`. It compiled (meshcheck build, against `-p:GameDir=/home/user/HalfGripRefs/game`).
+- `OpenWorld/src/Plots.cs` (pure): the house-plot decisions (`Plots.Along`) and the footprint test (`Plots.Fits`), moved out of
+  `Buildings.cs`, which calls them. Traffic finds every household from the same arithmetic the drawing uses. **Confirmed to change
+  nothing drawn:** meshcheck's clear, facades, bases and homes give the same counts as `deer-test-branch` (2,606 houses, wings,
+  towers and churches; 274 drive houses).
 - `Heap.Clear()` added.
-- `OpenWorld/src/Traffic.cs` (new, pure, about 900 lines): the traffic's map, fixed with the world.
+- `OpenWorld/src/Traffic.cs` (pure): the traffic's map, fixed with the world.
   - The driving graph: drives included, tracks, paths and courses out; no junction where two roads cross more than 4 units apart in
     height (a bridge over a road).
+  - Its connected parts (`Parts`, `Part`, `MainPart`, `OnMain`): households and places on a part cut off from the main one are left
+    out (`CutOff`), so every trip has a route.
   - Speed limits: Pennsylvania's, lower in towns.
   - Lane offset: right-hand traffic, the trunk's outer lane.
   - Households: drawn houses (a pad beside a garden house, the kerb for terraces), drive homes, farms; cars and workers from hashes.
   - Destinations with spaces and per-purpose draw: offices in the towers, retail, shops, high-street shops, workshops, filling
     stations, markets, churches, courses' yards, the roads leaving the map.
   - `Route` (Dijkstra between two anchors, partial edges at both ends).
-- `tools/trafficview` (new): builds the map and reports it. Last run:
-  - 1,273 junctions, 1,462 stretches of road, 1,984 households with 3,728 cars, 272 destinations, built in 572 ms.
-  - 1.11 workers a household, lower than the survey's 1.33 because `WorkersOf` clamps workers to cars.
-  - Routes: 0 broken, 0.04 ms each, but **only 74.6% found**.
+- **A layout fix (changes the world):** `Network.SnapJoin`. A routed road's end looked for the road whose cell it reached within 140
+  units only; the trunk's smoothed line runs up to about 270 off its cells, so Westhaven's only road out (its link to the trunk)
+  stopped in the fields and the whole town (376 households, 16 places) was cut off. The main road from Millbrook to the north edge
+  and four farm lanes ended short the same way. Now an end that finds nothing looks out to 320. meshcheck's `backroads` fails on any
+  main road dead end (it found these two before the fix). All of meshcheck passes before and after; a few later roads move.
+- `tools/trafficview`: builds the map and reports it; exits 1 on a failed check; `--near <road>` lists what comes near a road (for
+  finding why one is cut off). Last run:
+  - 1,261 junctions, 1,451 stretches of road, 1,907 households with 3,604 cars, 273 destinations, built in about 540 ms (the layout
+    7.5 s first).
+  - The graph in 9 parts: the main one 569,228 units of road; 8 cut-off town streets (2,761 units) whose 110 households are left out.
+  - 3 roads leave the map (the trunk at both ends, the road north), 3 edge destinations: right (the old note suspecting
+    `Network.Portals` was wrong; there are only 3).
+  - Routes: 2,184 of 2,184 found, 0 broken, 0.06 ms each.
+  - 1.10 workers a household, lower than the survey's 1.33 because `WorkersOf` clamps workers to cars. Not changed yet: decide when
+    tuning the day (the clamp may be right: a worker without a car does not drive).
+- `tools/check.sh` passes against a stub HalfGripTools.dll (see below).
 
-**First things to do:**
-1. **Find why a quarter of routes fail.** The likely causes:
-   - drives whose end does not reach a lane within `Half + 3`;
-   - the `Edge` destinations' portals: only 3 were found, so check `Network.Portals` and the 80-unit reach;
-   - the trunk's links;
-   - places on islands.
-
-   Count connected components in trafficview and list the biggest cut-off ones with a position, then draw them with
-   `tools/jview at`. Every household and destination must sit in the main component; drop or join the rest. Add the check.
-2. Confirm `Plots.cs` changed nothing drawn (above).
+**Left for later (in the plan):** the eight cut-off town streets (three in Kingsbridge, five in Westhaven) are a `TownPlan` fault: a
+street laid with both ends free that no cross street came to join, reached only by footpaths. Fixing it is a world change; trafficview
+lists them by position and road index.
 
 ## What comes next: `TrafficDay.cs` (pure, per race; designed, not written)
 
@@ -159,7 +167,10 @@ finishes stage 1; stages 2 to 4 are in the plan.
   from it (the owner's decision).
 - Decompile: `~/.dotnet/tools/ilspycmd`, with `DOTNET_ROLL_FORWARD=Major`.
 - Tools need `-p:GameDir=/home/user/HalfGripRefs/game`. `tools/check.sh` needs a HalfGripTools.dll, so build a stub as
-  `docs/DEER_HANDOFF.md` describes.
+  `docs/DEER_HANDOFF.md` describes. It needs: `HalfGripMod` (abstract `Load`, virtual `Unload`), `ModContext` (`Log`, `Config`,
+  `Harmony`, `Keys`, `Net`, `Folder`, `PatchAll`, `OnSceneLoaded`, `OnUnload`), `ModKey` (`Down`, `Held`), `Keys.Add(KeyCode, string,
+  Controls.Section, Func<bool>)`, `ctx.Net` (`Send(data)`, `Send(data, to)`, `SendToHost`, `OnReceive(Action<ulong, byte[]>)`), the static
+  `Net` (`Available`, `InRoom`, `IsHost`, `LocalId`, `HostId`, `Players`, `PlayerJoined`, `PlayerLeft`) and `NetPlayer` (`Id`, `Name`).
 - The layout takes about 7 s to build in trafficview.
 
 ## Working with the owner

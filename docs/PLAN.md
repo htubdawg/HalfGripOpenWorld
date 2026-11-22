@@ -1393,6 +1393,20 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
    light on the road.
 7. **Driving on the right** (Pennsylvania).
 
+**Stage 1 progress (see `docs/TRAFFIC_HANDOFF.md` for the detail):**
+- The traffic's map (`Traffic.cs`, `Plots.cs`, `tools/trafficview`): done. Splitting out `Plots.cs` changed nothing drawn (meshcheck's
+  clear, facades, bases and homes give the same counts as `deer-test-branch`).
+- **A world change, found by the routes:** Westhaven had no road out. Its link to the trunk stopped in the fields about 270 units
+  short, because a routed road's end looked for the road it reached within 140 only, and the trunk's smoothed line runs up to about
+  270 off the cells it was routed through. Six roads ended short so: Westhaven's link, the main road from Millbrook to the north edge
+  and four farm lanes. Now an end that finds nothing looks out to 320 (`Network.SnapJoin`); meshcheck's backroads check fails on any
+  main road dead end. Every player in a room needs the version with it (it moves a few later roads).
+- **Left for a layout fix:** eight short town streets (three in Kingsbridge, five in Westhaven, about 2,800 units in all, 110 houses)
+  are joined to nothing but footpaths: a street laid with both ends free (a grid's first long street, a seafront) that no cross
+  street came to join. No car could reach them, so traffic leaves their houses out (`Traffic.Parts`); trafficview lists them. The fix
+  belongs in `TownPlan` (join such a street to the nearest road, or not lay it), with a meshcheck check.
+- Next: each race's day of trips (`TrafficDay.cs`), as the handoff sets out.
+
 ### Traffic: what the studies say, and the trip model (researched 2026-11-22)
 
 Sources (the tables used are cited below):

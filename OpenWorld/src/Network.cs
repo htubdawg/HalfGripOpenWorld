@@ -1414,7 +1414,7 @@ namespace HalfGripOpenWorld
 				{
 					pts.Add((ax, az));
 				}
-				else if (segments.Snap(router.X(path[s - 1]), router.Z(path[s - 1]), 140.0, -1, out double px, out double pz, out double py))
+				else if (SnapJoin(router.X(path[s - 1]), router.Z(path[s - 1]), 140.0, out double px, out double pz, out double py))
 				{
 					ToEnd(kind, ref px, ref pz, ref py);
 					pts.Add((px, pz));
@@ -1430,14 +1430,14 @@ namespace HalfGripOpenWorld
 					{
 						pts.Add((bx, bz));
 					}
-					else if (segments.Snap(router.X(path[e]), router.Z(path[e]), 160.0, -1, out double px2, out double pz2, out double py2))
+					else if (SnapJoin(router.X(path[e]), router.Z(path[e]), 160.0, out double px2, out double pz2, out double py2))
 					{
 						ToEnd(kind, ref px2, ref pz2, ref py2);
 						pts.Add((px2, pz2));
 						pinEnd = py2;
 					}
 				}
-				else if (segments.Snap(router.X(path[e + 1]), router.Z(path[e + 1]), 140.0, -1, out double px3, out double pz3, out double py3))
+				else if (SnapJoin(router.X(path[e + 1]), router.Z(path[e + 1]), 140.0, out double px3, out double pz3, out double py3))
 				{
 					ToEnd(kind, ref px3, ref pz3, ref py3);
 					pts.Add((px3, pz3));
@@ -1470,6 +1470,20 @@ namespace HalfGripOpenWorld
 				made.Add(road);
 			}
 			return made;
+		}
+
+		/// <summary>
+		/// How far a routed stretch's end looks for the road whose cell it reached when that road is not within the usual reach. A road's
+		/// cells are the ones it was routed through, but its smoothed line can run well off them (the trunk's by up to about 270 units),
+		/// so the end found nothing, stopped in the fields a cell short, and Westhaven's only road out (its link to the trunk) and the
+		/// main road from Millbrook to the north edge were dead ends.
+		/// </summary>
+		private const double FarJoin = 320.0;
+
+		/// <summary>The nearest road to a routed stretch's end within <paramref name="reach"/>, else within <see cref="FarJoin"/>.</summary>
+		private static bool SnapJoin(double x, double z, double reach, out double px, out double pz, out double py)
+		{
+			return segments.Snap(x, z, reach, -1, out px, out pz, out py) || segments.Snap(x, z, FarJoin, -1, out px, out pz, out py);
 		}
 
 		/// <summary>A back road's end that lands this near another road's end goes to that end (see <see cref="ToEnd"/>).</summary>
