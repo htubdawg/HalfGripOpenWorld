@@ -2818,7 +2818,7 @@ internal static class Program
 					{
 						Seed = 1, Group = g.Index, Member = d, How = how == 0 ? DeerKills.How.Car : DeerKills.How.Shot,
 						X = s.X, Z = s.Z, Y = how == 0 ? Herds.Ground(s.X, s.Z) + DeerKills.CentreHeight * size : Herds.Ground(s.X, s.Z),
-						Vx = how == 0 ? Math.Cos(a) * speed * 1.1 : 0.0, Vz = how == 0 ? Math.Sin(a) * speed * 1.1 : 0.0, Vy = how == 0 ? Math.Min(18.0, 2.5 + 0.18 * speed) : 0.0,
+						Vx = how == 0 ? Math.Cos(a) * speed * 1.1 : 0.0, Vz = how == 0 ? Math.Sin(a) * speed * 1.1 : 0.0, Vy = how == 0 ? Math.Min(DeerKills.MostLaunch, 1.5 + 0.09 * speed) : 0.0,
 						Yaw = s.Yaw, Scale = size, Spin = (u - 0.5) * 14.0, Turn = (w - 0.5) * 3.0, Side = u < 0.5 ? -1 : 1,
 					};
 					// Read back as it would be on another machine.

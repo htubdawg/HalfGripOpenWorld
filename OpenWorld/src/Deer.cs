@@ -244,13 +244,13 @@ namespace HalfGripOpenWorld
 
 		/// <summary>A deer's share of the damage a wall would do hit at the same speed, and the most one deer can do, as shares of the
 		/// car's most crash damage (a grown doe; a bigger deer more, as its weight).</summary>
-		private const float HitShare = 0.4f, HitMost = 0.7f;
+		private const float HitShare = 0.55f, HitMost = 0.9f;
 
 		/// <summary>A car slower than this (units a second, about 3 km/h) goes through a deer without hurting either.</summary>
 		private const float HitSlowest = 3f;
 
 		/// <summary>How much of the car's speed one grown doe takes off it.</summary>
-		private const float HitSlowing = 0.05f;
+		private const float HitSlowing = 0.08f;
 
 		private DeerKills kills;
 		private int hitCount, shotCount;
@@ -1066,27 +1066,22 @@ namespace HalfGripOpenWorld
 				link.TakeCrashDamage(damage, shake: true, DamageKind.Crash);
 				if (Shaker.instance != null && link.crashShakeDamage > 0f)
 				{
-					Shaker.instance.KickSpring(Mathf.Clamp01(damage / link.crashShakeDamage));
+					// Harder than a wall's kick for the same damage: a deer strike is sudden, at the front, in the face.
+					Shaker.instance.KickSpring(Mathf.Clamp01(1.6f * damage / link.crashShakeDamage + 0.15f));
 				}
 			}
 			else
 			{
 				damage = 0f;
 			}
-			try
-			{
-				SoundController.PlayRandomSoundAtPosition(car.carCollisionSounds, contact, 0.4f, 25f, 500f, 0.2f);
-			}
-			catch (Exception)
-			{
-				// No sound is no harm.
-			}
-			// The car loses a little of its way to the deer's weight.
+			Strike(car, impact, weight);
+			// The car loses some of its way to the deer's weight, and the nose is knocked up a little as the body goes over the bonnet.
 			car.rb.AddForceAtPosition(-vel * (HitSlowing * weight * along * car.rb.mass), contact, ForceMode.Impulse);
+			car.rb.AddForceAtPosition(Vector3.up * (0.04f * weight * impact * car.rb.mass), contact, ForceMode.Impulse);
 
 			// The deer thrown on along the car's way, a little aside and up, tumbling toward the side it was pushed.
 			Vector3 side = toDeer - dir * Vector3.Dot(toDeer, dir);
-			Vector3 thrown = vel * (1.05f + 0.1f * along) + side * (0.2f * speed) + Vector3.up * Mathf.Min(18f, 2.5f + 0.18f * impact);
+			Vector3 thrown = vel * (1.0f + 0.1f * along) + side * (0.15f * speed) + Vector3.up * Mathf.Min((float)DeerKills.MostLaunch, 1.5f + 0.09f * impact);
 			double yaw = v.StateYaw;
 			double rightX = Math.Sin(yaw), rightZ = -Math.Cos(yaw);
 			double push = thrown.x * rightX + thrown.z * rightZ;
@@ -1097,12 +1092,63 @@ namespace HalfGripOpenWorld
 				Seed = kills.Seed, Group = v.G, Member = v.M, How = DeerKills.How.Car,
 				X = v.WorldX, Z = v.WorldZ, Y = ground + DeerKills.CentreHeight * size,
 				Vx = thrown.x, Vy = thrown.y, Vz = thrown.z, Yaw = yaw, Scale = size,
-				Spin = (push >= 0.0 ? 1.0 : -1.0) * (3.0 + 5.0 * u) * Math.Min(1.0, impact / 20.0 + 0.3), Turn = (u2 - 0.5) * 3.0,
+				Spin = (push >= 0.0 ? 1.0 : -1.0) * (2.5 + 4.0 * u) * Math.Min(1.0, impact / 20.0 + 0.3), Turn = (u2 - 0.5) * 3.0,
 				Side = push >= 0.0 ? 1 : -1,
 			}, t);
 			hitCount++;
 			Mod.Info("Deer: hit at " + (impact * SpeedDashboard.SpeedToDisplay).ToString("0") + " on the speedometer (the car at " + (speed * SpeedDashboard.SpeedToDisplay).ToString("0") + "): "
 				+ damage.ToString("0.0") + " damage" + (CarLink.godMode ? " (god mode: none taken)" : ""));
+		}
+
+		/// <summary>The strike's own sound (made in code, <see cref="DeerSound"/>) and the game's metal hits, found once a session.</summary>
+		private static AudioClip[] strikes, metal;
+
+		/// <summary>
+		/// The sound of a strike, in the cockpit (2D, through the game's own mixer, so its volume settings count): the sound made for it
+		/// (a deep thump, a crunch, the bonnet ringing) under the game's heaviest wall crash, a car-on-car crunch and a metal hit, all
+		/// pitched down for weight; louder the harder the hit.
+		/// </summary>
+		private static void Strike(CarControllerNew car, float impact, float weight)
+		{
+			try
+			{
+				if (strikes == null)
+				{
+					strikes = new AudioClip[DeerSound.Variants];
+					for (int i = 0; i < strikes.Length; i++)
+					{
+						float[] samples = DeerSound.Strike(i);
+						AudioClip clip = AudioClip.Create("OpenWorld Deer Strike " + (i + 1), samples.Length, 1, DeerSound.Rate, false);
+						clip.SetData(samples, 0);
+						clip.hideFlags = HideFlags.HideAndDontSave;
+						strikes[i] = clip;
+					}
+					var found = new List<AudioClip>();
+					foreach (AudioClip clip in Resources.FindObjectsOfTypeAll<AudioClip>())
+					{
+						if (clip != null && clip.name.StartsWith("HitMetal", StringComparison.Ordinal))
+						{
+							found.Add(clip);
+						}
+					}
+					metal = found.ToArray();
+					Mod.Info("Deer: the strike's sound made (" + strikes.Length + " variants), " + metal.Length + " of the game's metal hits found");
+				}
+				float loud = Mathf.Clamp01(0.5f + impact / 45f) * Mathf.Clamp(weight, 0.6f, 1.3f);
+				float pitch = UnityEngine.Random.Range(0.92f, 1.06f) / Mathf.Sqrt(Mathf.Clamp(weight, 0.5f, 1.6f));
+				GameObject at = car.gameObject;
+				SoundController.PlayRandomSoundWithPitch2D(strikes, at, Mathf.Min(1f, loud * 1.1f), pitch);
+				SoundController.PlayRandomSoundWithPitch2D(car.wallCollisionSounds, at, Mathf.Min(1f, loud * 0.9f), pitch * 0.82f);
+				SoundController.PlayRandomSoundWithPitch2D(car.carCollisionSounds, at, Mathf.Min(1f, loud * 0.7f), pitch * 0.88f);
+				if (metal.Length > 0)
+				{
+					SoundController.PlayRandomSoundWithPitch2D(metal, at, Mathf.Min(1f, loud * 0.8f), pitch * 0.75f);
+				}
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Deer: the strike's sound could not be played: " + e.Message);
+			}
 		}
 
 		/// <summary>

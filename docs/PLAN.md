@@ -1801,5 +1801,13 @@ The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how
   `tools/deersim` (claims of the same group's next reaction and kills of the same deer from several machines at once, the host's
   own claims, a late joiner whose Hello's answer races new claims, twenty players at random, stale and bad messages, alone: every
   machine ends showing exactly the host's reactions and kills; breaking the host's first-claim rule makes it fail).
+- **0.30.1 (the owner: "increase the impact", a powerful metallic sound, the deer a bit too bouncy)**: a doe's share of a wall's damage
+  0.4 -> 0.55 and its most 0.7 -> 0.9 of the car's most crash damage (about 13 HP at 55 on the speedometer, at most about 22); the
+  screen's kick 1.6 times the damage's share plus a little; 8% of the speed lost per doe (was 5%) and the nose knocked up at the
+  contact. The sound: the game's heaviest wall crash, a car-on-car crunch and a `HitMetal` clip (found by name in memory), pitched
+  down for weight, over a strike made in code (`DeerSound`: a thump sweeping 105 to 42 Hz, a crunch of noise, a bonnet ringing at
+  five clashing pitches, a rattle; three variants, 0.9 s, softly clipped), all 2D through the game's mixer, louder the harder.
+  The body: thrown up at most 9 units a second (was 18; 1.5 + 0.09 x impact), less aside, tumbling slower; a bounce only when it comes
+  down faster than 9 (was 5), keeping 18% of its fall (was 35%) and 45% of its way along (was 55%).
 - **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
   walk through trees in the woods; antlers, fawns' spots, lying down.

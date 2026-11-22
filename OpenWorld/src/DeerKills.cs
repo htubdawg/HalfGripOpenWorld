@@ -31,6 +31,10 @@ namespace HalfGripOpenWorld
 		/// <summary>How fast a sliding body loses speed (units a second, a second), and how long a landed body takes to roll onto its side.</summary>
 		internal const double Friction = 22.0, Settle = 0.35;
 
+		/// <summary>The fastest a body is thrown up (units a second; a deer goes over a bonnet and down the road, not into the air), the
+		/// speed it must come down at to bounce, and what a bounce keeps of its way up and along.</summary>
+		internal const double MostLaunch = 9.0, BounceFrom = 9.0, BounceUp = 0.18, BounceAlong = 0.45;
+
 		/// <summary>How long a shot deer takes to fall over.</summary>
 		internal const double FallSeconds = 0.75;
 
@@ -126,15 +130,15 @@ namespace HalfGripOpenWorld
 						else if (y - lift <= g)
 						{
 							y = g + lift;
-							if (!bounced && -vy > 5.0)
+							if (!bounced && -vy > BounceFrom)
 							{
-								// Down hard: one bounce, losing most of its way.
+								// Down hard: one low bounce, losing most of its way (a limp body, not a ball).
 								bounced = true;
-								vy = -0.35 * vy;
-								vx *= 0.55;
-								vz *= 0.55;
-								spin *= 0.5;
-								turn *= 0.5;
+								vy = -BounceUp * vy;
+								vx *= BounceAlong;
+								vz *= BounceAlong;
+								spin *= 0.35;
+								turn *= 0.35;
 							}
 							else
 							{

@@ -305,9 +305,11 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Drive into a deer slowly (under 10 on the speedometer): it dies and is pushed over but the car takes no damage; the log has
      `Deer: hit at ... on the speedometer (the car at ...): 0.0 damage`. The first hit logs `Deer: the car's box for hitting deer is ...`
      (or that a fallback box was used): send that line.
-   - At about 55: the health bar drops by about 9 (of 100), the screen shakes, there is a thump, the car loses a little speed, and the deer
-     is thrown ahead and up, tumbles, lands (bouncing once if hard), slides and lies on its side on the ground (not sunk, not floating, on
-     slopes too). Faster (80 or more) about 17 at most; a buck a little more. With god mode at a garage: no damage. A deer only ever
+   - At about 55: the health bar drops by about 13 (of 100), the screen kicks, a heavy metal crunch with a short ring (0.30.1: louder
+     the harder; the log's first strike says `Deer: the strike's sound made (3 variants), ... of the game's metal hits found`), the car
+     loses some speed and its nose jolts, and the deer is thrown over the bonnet and down the road, low, tumbling, lands (a small bounce
+     only if it came down hard), slides and lies on its side on the ground (not sunk, not floating, on slopes too). Faster (75 or more)
+     about 22 at most; a buck a little more. With god mode at a garage: no damage. A deer only ever
      hit once; driving over the body does nothing.
    - The deer is hit when the car touches it, not before or after: a deer just off the side mirror is missed, one grazing in the path
      is hit, head-on and from the side, and at high speed it is not passed through. Say if hits feel early, late or missed.
