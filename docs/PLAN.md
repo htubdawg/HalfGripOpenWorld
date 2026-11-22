@@ -1393,6 +1393,72 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
    light on the road.
 7. **Driving on the right** (Pennsylvania).
 
+### Traffic: what the studies say, and the trip model (researched 2026-11-22)
+
+Sources (read in full; keep for later sessions):
+- FHWA, *Summary of Travel Trends: 2017 NHTS* (https://www.fhwa.dot.gov/policyinformation/documents/2017_nhts_summary_travel_trends.pdf)
+- FHWA, *Summary of Travel Trends: 2022 NHTS* (https://rosap.ntl.bts.gov/view/dot/73764/dot_73764_DS1.pdf)
+- PennDOT, *2023 Pennsylvania Traffic Data* (https://gis.penndot.pa.gov/BPR_PDF_FILES/Documents/Traffic/Traffic_Information/Annual_Report/2023/2023_Traffic_Information_Report.pdf)
+- FHWA, Highway Statistics 2005, Table NT-3, vehicle trips by hour, 2001 NHTS (https://www.fhwa.dot.gov/policy/ohim/hs05/htm/nt3.cfm)
+
+**Households (NHTS 2017, p. 9 and Tables 6b, 6c, 11, 16, 30, 34).** 2.55 persons, 1.88 vehicles, 1.89 drivers, 1.33 workers a
+household. 1,865 vehicle trips a household a year (5.1 a day): to or from work 450 (24%), shopping 372 (20%), other family and
+personal errands 434 (23%), social and recreational 410 (22%), the rest (school, church, work business) 11%. Average vehicle trip
+9.6 miles (work 12.0, shopping 7.0, errands 6.9, social 10.6). Occupancy 1.18 to work, 1.82 shopping, 2.10 social. A weekday driver
+spends 59 minutes driving. Rural people make slightly fewer trips than urban (3.2 against 3.5 person trips a day), 92% of them
+drive, only 2.3% have no car. 2022 is 32% lower (1,262 vehicle trips a household) after the pandemic; the 2017 figures are the
+normal day.
+
+**Hours.** Person trips by start time (2017 NHTS Table 29): 10 pm to 1 am 2.3%, 1 to 6 am 1.9%, 6 to 9 am 16.6%, 9 am to 1 pm
+25.4%, 1 to 4 pm 22.1%, 4 to 7 pm 22.1%, 7 to 10 pm 9.8%. Vehicle trips by hour (NT-3, 2001 NHTS), percent of the day from
+midnight:
+- Weekday: 0.3 0.2 0.2 0.1 0.5 1.3 3.2 7.7 5.9 4.5 5.1 5.9 6.2 6.0 6.6 7.7 7.8 8.6 7.4 5.6 4.1 3.1 1.5 0.8
+- Saturday (5% more trips in all): 0.8 0.3 0.2 0.1 0.3 0.5 1.1 2.2 3.9 5.6 7.7 8.3 8.6 7.7 8.0 7.6 7.2 6.7 6.8 5.0 4.2 3.6 2.0 1.5
+
+What the counters see on Pennsylvania's central rural collectors (PennDOT Table 350, TPG 9, percent of the day from midnight):
+0.45 0.28 0.28 0.48 1.08 2.79 4.66 5.99 5.45 5.33 5.56 6.09 6.42 6.38 7.06 8.21 8.77 7.68 5.50 4.02 3.14 2.12 1.39 0.87. The
+peak hour is 9 to 11% of the day (Table 385, K-factors).
+
+**Volumes on Pennsylvania's roads** (PennDOT permanent counters by group, AADT = vehicles a day, both ways, pp. 15 to 17):
+rural principal arterials 2,600 to 21,600 (median about 5,400); rural minor arterials 2,000 to 15,700 (about 5,000); rural
+collectors 400 to 8,800 (about 1,800); urban minor arterials and collectors 400 to 15,600 (about 5,700). Local roads are not counted
+(too many); the trip rate gives them: a house makes about 9.4 vehicle trips a day (ITE land use 210, single-family detached), so a
+lane serving 20 houses carries about 190 vehicles a day.
+
+**Our world.** 2 towns, 16 villages, 120 farms and hamlets, about 2,600 houses, about 280 drives: about 2,600 households and 4,900
+cars, most of them parked at any time. The world's day lasts 40 minutes (`Sky.DaySeconds`, 100 seconds an hour): 36 times faster
+than real, while a car drives in real time.
+
+**The problem that sets the model: time runs 36 times fast, driving does not.** A real household's cars are moving about 110 minutes
+of its 1,440 (1.89 drivers x 59 minutes), 7.6% of the day. Kept to that share, the roads look as Pennsylvania's counters say (worked
+below); but in a 40-minute day that is about 3 minutes of driving a household, one trip or two across our country, not five. Five
+trips each would put about four times as many cars on the road at once.
+- Check, at the evening peak (8.5% of the day's driving in that hour): 2,600 households x 110 minutes x 0.085 / 60 = about 400 cars
+  moving over the whole world. A collector at 1,800 a day carries 1,800 x 0.085 = 150 an hour; at 45 mph that is about 2 cars per
+  km of road (both ways), and 400 cars over our roads comes to about the same. A principal arterial at 5,400 a day: about 5 per km.
+  At 3 am: about 25 cars over the whole world.
+
+**The trip model (proposed):**
+1. **Every household and its cars** from the layout: houses in the towns and villages, farms, the homes on the drives; 1.88 cars a
+   household (from the seed: some none, a few three). A car's home is its driveway, or a kerbside spot on its street in the towns.
+2. **Places that draw trips**, from the layout: the retail park and the market places (shopping), the high streets' shops, filling
+   stations, workshops and businesses on the main roads (work and errands), the circuit, rally service and hill climb paddock
+   (social), churches (Sunday), other houses (social, visits). Each has parking: its lot's spaces, kerbside, a drive.
+3. **Each race's day from the seed:** a weekday (5 in 7) or a weekend day, like the weather. Each household gets that day's tours
+   from the purposes' shares and the hour tables above (a commuter out in the morning peak, home in the evening; shopping in the day;
+   social in the evening), scaled so the time households spend driving is 7.6% of the day (above). Destinations by gravity (nearer
+   and bigger draws more), within our 9.7 km.
+4. **Through traffic** on the trunk and main roads, entering and leaving at the edges of the map (a rural principal arterial
+   carries about 5,400 a day, most of it from beyond): the share that brings the trunk road up to its count.
+5. **Parking is part of the timetable:** a car on a trip pulls into its destination's lot or a drive, stays parked for the trip's
+   dwell (a work day, an hour's shopping, scaled to the world's clock), and drives home. Lots fill and empty with the day; driveways
+   empty while their cars are out. A parked car is drawn parked (no physics until a player is near and it is about to leave).
+6. Routes over the road network (fastest way by road class), junctions uncontrolled (above), the gaps and queues worked out.
+
+**For the owner to decide:** keep the roads as busy as Pennsylvania's counters say (so each household drives once or twice in a
+40-minute day; recommended: it is what the player sees), or give every household its five trips (about four times the cars on the
+road at once). Either way the hours' shape is the studies'.
+
 ### Traffic: investigated after 0.17.0 (research; the plan above replaces it where they differ)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
