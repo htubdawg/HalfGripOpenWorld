@@ -45,7 +45,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `DeerKills.cs` | The deer killed in a race: each body's flight, landing and slide (or fall when shot) on fixed steps, from the kill (its message read and written here, sent by `DeerRoom`). No Unity types |
 | `DeerModel.cs` | **Generated** by `tools/deer/export_cs.py` from `tools/deer/deer.json` (frozen: the painted coat is on its UVs) and `tools/deer/antlers.json` (`antlers.py`): the deer's mesh, bones and poses, and the buck's antlers. Never edit by hand |
 | `Plots.cs` | The house plots along the towns' and villages' roads and the footprint test (`Plots.Along`, `Plots.Fits`): what `Buildings` draws and `Traffic` counts as households. No Unity types |
-| `Traffic.cs` | The traffic's map, fixed with the world: the driving graph (drives in, no junction where a road passes over another), speed limits and lanes (right-hand), households and their cars, the places that draw trips and their parking, routes. No Unity types (`tools/trafficview` builds it). Each race's trips: `docs/TRAFFIC_HANDOFF.md` |
+| `Traffic.cs` | The traffic's map, fixed with the world: the driving graph (drives in, no junction where a road passes over another), speed limits and lanes (right-hand), households and their cars, the places that draw trips and their parking, routes. No Unity types (`tools/trafficview` builds it) |
+| `TrafficDay.cs` | One race's day of traffic from its seed: the households' tours thinned to the survey's driving time, through traffic circling the trunk, every car driven on fixed steps (speed profiles, IDM, uncontrolled junctions by reservation, pulling out and being let in), recorded; any car's place at any time (`At`). No Unity types (`tools/trafficview` checks it). See `docs/TRAFFIC_HANDOFF.md` |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
@@ -134,8 +135,10 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - `dotnet run -c Release --project tools/deersim -- [seed]` drives `DeerRoom` on pretend machines over a pretend network (claims of
   one group's reaction and kills of one deer from several machines at once, a late joiner, twenty players, stale messages, alone)
   and checks every machine ends with the host's reactions and kills; run it after any change to `DeerRoom`.
-- `dotnet run -c Release --project tools/trafficview` builds the traffic's map and reports it (households, cars, places, routes found and
-  joined); run it after any change to `Traffic`, `Plots` or the roads.
+- `dotnet run -c Release --project tools/trafficview [-- --seed N] [--picture out.ppm]` builds the traffic's map and reports it
+  (households, cars, places, routes found and joined), then race N's day of traffic twice and checks it (the same twice, gaps, junction
+  boxes, speeds, counts by road class against PennDOT, the hours against TPG 9, the wrap) and can draw it; run it after any change to
+  `Traffic`, `TrafficDay`, `Plots` or the roads.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes

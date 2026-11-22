@@ -9,19 +9,22 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
 2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo (the tools need
    `-p:GameDir=/home/user/HalfGripRefs/game`).
-3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=...`. It should end with `Routes: 2184 of 2184 found ... ok` and
-   exit 0 (see "Where things stand" for the full report).
-4. Write `TrafficDay.cs` as designed below, with its checks in trafficview first. Then the owner gets a map picture and frames.
+3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm]`. It builds the map, then
+   race N's day of traffic twice, checks it and exits 0 (see "`TrafficDay.cs`: as built" for what it reports). About 15 s.
+4. Show the owner `docs/traffic.png` and `docs/traffic-frames.png` and ask about the open points below; then stage 2 (the plan).
 
 Open with the owner:
 - **Test 47** (`docs/TESTING.md`): the highway's wrap, Westhaven's road out and Millbrook's road north in the game. The owner looked at
   the work and said it looks good, but no in-game report has come back yet. Read their `LogOutput.log` for
   `The highway wrapped round` lines when it comes.
 - **The eight cut-off town streets**: a layout fix for later (see below). Ask before doing it: it changes the world.
+- **The day of traffic** (`TrafficDay.cs`, below): the pictures, and the choices made that the design did not settle (trips beyond
+  the map go by the road north only; through traffic circles the trunk; stays counted from leaving home; see "Decided while building").
 
 ## Where things stand
 
-Stage 1 (timetables, no game code): the traffic's map is done, and each race's day of trips (`TrafficDay.cs`) is next. Nothing is
+Stage 1 (timetables, no game code): the traffic's map and each race's day of trips (`TrafficDay.cs`) are done and checked; the owner
+has the pictures to look at. Stage 2 (cars drawn in the game) is next. Nothing is
 released and `mod.json` is unchanged. The branch also carries two world changes (the road fix and the wrap), so everyone in a room
 needs the build that has them. Bump the version and the README when the owner releases it.
 
@@ -86,123 +89,82 @@ needs the build that has them. Bump the version and the README when the owner re
 is a street laid with both ends free that no cross street came to join, reached only by footpaths. Fixing it (join such a street to
 the nearest road, or don't lay it) is a world change with a meshcheck check to add. trafficview lists them by position and road index.
 
-## What comes next: `TrafficDay.cs` (pure, per race; designed, not written)
+## `TrafficDay.cs`: as built (pure, per race)
 
-The owner's decisions are in the plan. These are the agreed ones that shape it:
-- rooms are the main path;
-- realistic from studies;
-- **roads as busy as PennDOT's counts**, not five trips per household;
-- every junction **uncontrolled**: the first to arrive goes first, yield to the car on the right, never block a junction;
-- right-hand traffic;
-- shootable and wreckable;
-- deer react to traffic, but much less than to players;
-- the game's enemy cars with random skins;
-- headlights.
+`new TrafficDay(raceSeed)` builds the day (about 1.3 to 1.5 s: on a worker in the game); `At(car, simTime)` gives a car's place
+(parked at a spot, driving with point, heading, speed and edge, or away off the map); `SimTime(startHour, raceTime)` maps a race's clock
+to the day's (0 at 03:00, `Traffic.DaySeconds` long, repeating). The seed is `Weather.Seed`, the start hour `Sky.StartHourOf(seed)`, as
+for `Herds`. It is not called from the game yet.
 
-`TrafficDay(raceSeed, startHour)`: the seed is `Weather.Seed` in the game; the start hour is `Sky.StartHourOf(seed)`, as `Herds` takes
-it. It has three parts.
+What it does, as the design above had it (only the differences are spelt out):
+- **The day:** a weekend day with probability 2/7.
+- **Tours:** the survey's rates per household (work per worker); a leaving hour from the purpose's table (tuned, see below), a stay,
+  a place by gravity on straight-line distance, weight / (1 + (d / 3000)²) (3000, not 6000: with 6000 trips across the whole map were
+  common, and a long drive spans hours of the world's clock); visits also among eight households drawn at random.
+- **Thinning:** each tour kept with one probability so households drive the survey's 186 s each a day, reckoned at each path's speed
+  profile plus a quarter (`Expected`), not free-flow: the survey's 59 minutes are real driving. q comes out about 0.15 on a weekday,
+  0.18 at a weekend.
+- **One car, one tour at a time;** none leaves after 21:00 (not 23:00); a tour waiting for its car is dropped then.
+- **The simulation:** 0.25 s steps, cars in index order; a speed profile per leg (limits, bends as sqrt(8.1 R) with R over a 40-unit
+  chord either side, so the drawn line's small kinks don't read as bends; turns; the stop; a backward braking pass); IDM behind the car
+  in front along the car's own path (200 units). Cars brake for a slower stretch ahead as the profile allows, not by the IDM's free
+  term (which trails a falling target by up to 27% over it).
+- **Junctions** (all uncontrolled), by reservation, first come first served:
+  - Requests sorted by the soonest a car could arrive (speeding up to its profile), the car on the right first within a second.
+  - Two movements conflict when their chords round the junction cross (each arm has its lane out, then its lane in, in angle order:
+    integers only), or they leave by the same lane. Same lane in never conflicts (the second follows the first).
+  - A conflicting grant is no bar if it clears before this car arrives (reckoned at its turn's speed through the box) or this car
+    clears, from a standstill, a second before it arrives (a gap taken).
+  - Room past the box by distance only: a car let in behind a moving one that then stops would stand in the box and hold it (that
+    made gridlock rings on the Kingsbridge link). Cars let in behind this one in its own lane are not counted against its room.
+  - A car refused for crossing someone keeps its place: nobody later who crosses it goes first. A car refused only for want of room
+    holds nobody up.
+  - The 45 s guard only lets go of the order, never into a car in the box, never without room. It is used 0 to 3 times a day.
+- **Pulling out:** once nothing is within 40 on the lane (or just past a short first stretch), nothing coming within 3 s and no car let
+  into the lane at the junction behind; after 20 s waiting the car behind leaves a gap if it can stop for it (let in); never on top of
+  another car, even after 5 minutes. Parking spots on the road are moved out of the junction boxes along their stretch.
+- **Recording** every 0.5 s per leg, the final place at its end; `At` interpolates. Lane offset right of travel, `Traffic.LaneOffset`.
 
-### 1. The day
+**Decided while building** (for the owner to confirm):
+- **Every car into a trunk tunnel comes out of the other at the same moment.** Since the wrap joins the trunk's ends, they are not a way
+  off the map: trips beyond the map go by the road north only, and it takes the draw the trunk's ends had (`PullOf`, so the share of
+  work beyond the map stays the same; without it, three quarters of the commuters drove to Kingsbridge's towers and jammed it).
+- **Through traffic circles the trunk:** 10 cars, half each way, spread along it at 03:00 and driven all day through the wrap. They add
+  about 1,800 to the trunk's count. Flaw: at 03:00, where the day repeats, each jumps from where the day ends it to where it began.
+  (Through journeys from the road north round the wrap and back were tried first: 72,000 units, 15 to 20 world hours each, mostly on
+  the main roads, not the trunk.)
+- **A stay is counted from leaving home** (`MinStay` 20 s at least). Driving runs in real time while the world's clock runs 36 times
+  fast, so a drive spans one to three world hours; counted from arriving, every way home ran late into the night.
+- **The hour tables are tuned** so the traffic counters' hours come out right (weekday against TPG 9, weekend against the survey's
+  Saturday): departures lead the counts by about the length of a drive, the work peak at 5 to 7, visits end by 20.
 
-- From the seed: a weekend day with probability 2/7, else a weekday.
-- The simulated day runs from 03:00 to 03:00 (the quietest hour), 2,400 real seconds (`Traffic.DaySeconds`).
-- World hour h maps to sim time w = ((h - 3 + 24) mod 24) x 100.
-- Race time t maps to w = ((startHour - 3) x 100 + t) mod 2400. The day repeats.
+**Checks in trafficview** (exit 1 on a FAIL). Seeds 1 to 15 and 20261122 all pass:
+- the same day twice (checksum), and another seed's differs;
+- no leg never started or unfinished; nothing unrouted;
+- no two cars on a lane closer than a car's length (closest about 16);
+- no crossing cars in a junction box together; the guard's uses reported;
+- never over the limit + 5%;
+- AADT-equivalent (passes a game day x 36) by class, reported against PennDOT: trunk median 4,100 to 6,600 (5,400), main roads about
+  5,000 (minor arterials 5,000), secondaries 2,600 (collectors 1,800), streets and lanes about 150;
+- the hours' shape within 3.5 points an hour of TPG 9 (weekday) or a Saturday (weekend); weekdays come out 1.9 to 2.7, weekends 2.3 to
+  3.2. A drive spanning an hour or more of the world's clock smears every hour into the next, which no table fully undoes; the
+  small hours stay a little busy (about 50 cars at 03:30 against 16 expected, mostly late ways home);
+- cars moving at 03:30, 08:30, 12:30 and 17:30 against the expected (households with a car x their driving share x TPG 9's hour):
+  the 5 pm peak about 300 (301 expected);
+- lots' peaks against their spaces (reported: a few high-street shops get one or two more than their two spaces);
+- the wrap: every crossing between the trunk's tunnels, each car's place across it off `Wrap.Move` by 0.0; nobody stopped in or within
+  60 of a tunnel's mouth;
+- `--picture out.ppm` writes the roads coloured by AADT-equivalent and frames at 03:30, 08:30, 12:30, 17:30 (`docs/traffic.png`,
+  `docs/traffic-frames.png`, seed 7, a weekday).
 
-### 2. Tours (candidate, then thinned)
+Diagnostics it prints (not checks): where cars wait and stop, departures by hour and purpose, the trunk's share of the through cars'
+driving, the worst leg's progress, cars on the road each hour of the run.
 
-**How many.** Per household with cars, tours per day:
+**Not done yet:** the relevant checks in meshcheck (the plan says meshcheck; trafficview is where they run now); what one car's
+place costs (`At` scans a car's legs: fine for a few hundred cars, measure in stage 2); the deer reacting to traffic.
 
-| | Work | Shop | Errand | Social |
-|---|---|---|---|---|
-| Weekday | 0.86 per worker | 0.45 | 0.6 | 0.5 |
-| Weekend | 0.12 | 0.75 | 0.45 | 0.85 |
-
-**When they leave.** Start hours come from tables of 24 weights (sample the hour from the table, the minute uniformly):
-- work out: peaks 7 to 8;
-- shop: 9 to 19;
-- errand: 7 to 18;
-- social: 17 to 21.
-
-Weekends are shifted later. Tune them until the total matches PennDOT's TPG 9 hourly profile (the plan has it).
-
-**How long they stay** (world hours, 100 s each): work 8.5 ± 1, shop 0.3 to 1, errand 0.15 to 0.5, social 1 to 3.
-
-**Where they go.** Gravity on straight-line distance: weight / (1 + (d / 6000)^2). Social visits go to other households (pick among
-about 8 drawn at random, by weight).
-
-**Thinning.** Keep each tour with one probability q, so total free-flow driving time equals
-`Traffic.DrivingShare x DaySeconds x households with cars`, about 183 s a household. This keeps the hours' shape and the purpose
-mix, and gives the counts' density.
-
-**Through traffic.** Between portals: about 110 a game day on the trunk (5,400 AADT / 36, less local traffic), fewer on main roads.
-Hours from PennDOT TPG 4: 0.79 0.57 0.51 0.63 1.21 2.53 3.95 5.09 5.20 5.51 6.02 6.39 6.71 6.88 7.33 7.91 7.99 7.02 5.24 4.03
-3.18 2.38 1.73 1.20 (percent, from midnight).
-
-**One car, one tour at a time.** A tour that would start before its car is home waits for the car to get back plus 60 s. Drop out
-legs after 23:00.
-
-### 3. The simulation
-
-Fixed step 0.25 s, cars in index order, doubles with + - * / and `Math.Sqrt` only, so it is deterministic.
-
-**Paths.** Each leg's path is its route's lanes, as (edge, dir) with road s from and to.
-
-**Speed profile.** Built once per leg, every 10 units:
-- the road limit;
-- bends: sqrt(8.1 x R), from the three-point circle at road samples (8.1 is 0.25 g in units);
-- turns: no limit when the angle between lanes is under 20 degrees, 13 units a second (about 9 mph) when sharp;
-- a stop at the end.
-
-Then a backward pass with braking b = 8.25 (2.5 m/s²).
-
-**Car following.** IDM (Intelligent Driver Model): a = 5, b = 8.25, T = 1.5 s, s0 = 7, length 14. The leader is the nearest car ahead
-along the car's own path within 200 units, found from per-lane sorted lists rebuilt each step, with key edge x 2 + dir.
-
-**Junctions.** First come, first served, by reservation:
-- **Request:** a car within a reach of its next node asks for it. The reach is v²/2b + 1.5v + the node's box, at least 40.
-- **Order:** requests sorted by ETA, then index. Adjacent pairs with ETAs within 1 s swap so that the car on the right goes first.
-- **Grant:** a car is granted if it is compatible with every car granted or in the box. Compatible means the same in-lane and out-lane,
-  or the other car clears before this one arrives with 0.5 s to spare.
-- **No blocking:** a car is granted only if its out-lane has room past the box: the last car on it is beyond box + 14 + 4, or moving.
-- **Keep the order:** a refused request also blocks the later requests that conflict with it.
-- **Waiting:** an ungranted car stops at the box's edge, treated as a leader at rest.
-- **Release:** a grant ends when the car is box + 14 past the node.
-- **Deadlock guard:** a car waiting over 45 s is forced through. Count these; there should be none.
-
-**The edges.** A leg to or from an `Edge` destination (a road out) does not park: going out it drives on into the tunnel past
-`Wrap.Depth` and is gone; coming in it appears there and drives out. Through trips between the trunk's two ends carry on across the
-wrap, so a car followed into one tunnel is still ahead of you out of the other: from the west mouth to the east one the move is
-`Wrap.Move`, and its clock carries on. Through trips may enter or leave by the road north too (its tunnel is shut to players, not to
-traffic's timetable). Local routes never use the wrap.
-
-**Parking.**
-- A leg starts at its anchor once the lane is clear: nothing within 40 ahead or behind, and nothing arriving within 3 s; force it after
-  60 s.
-- It ends stopped at the anchor's s; the car is then parked at the anchor's spot.
-- The return leg leaves at arrival + dwell.
-- Count each lot's peak against its spaces.
-
-**Recording.** Every 0.5 s, per leg: (path index, s). `At(car, t)` interpolates and gives the edge, dir, s and the world point:
-the line point plus the right normal of travel times `Traffic.LaneOffset`. A car that is not on a leg is parked at its anchor's spot.
-
-### Checks (add to trafficview, then the relevant ones to meshcheck)
-
-- The same day twice (checksum).
-- No two cars on a lane closer than a car length.
-- No conflicting cars in a junction box together; forced grants counted (expect 0).
-- Speeds never over the limit plus 5%.
-- AADT-equivalent per road class (vehicles past a point per game day x 36) against PennDOT: trunk about 5,400; rural principal and
-  minor arterials 2,000 to 15,000; collectors 400 to 8,800; lanes a few hundred.
-- The hourly share against TPG 9.
-- Cars moving at the 5 pm peak (about 400 expected) and at 3 am (about 25).
-- Lots' peaks against their spaces.
-- The edges: no car ever parked or stopped at a tunnel mouth; a through car into one trunk tunnel out of the other at the same moment
-  (its position across the wrap continuous by `Wrap.Move`); no local route using the wrap.
-- Time to build the day (aim under 2 s, on a worker in the game).
-
-Then a map picture (roads coloured by volume) and frames at 03:00, 08:00, 12:00 and 17:00 for the owner, looked at first. That
-finishes stage 1; stages 2 to 4 are in the plan.
+**Next (stage 2, the plan):** timetabled cars drawn in the game from a pool near the car, moved on an origin shift, no physics; build
+the day on a worker at the race's start; headlights.
 
 ## This session's environment, as found
 

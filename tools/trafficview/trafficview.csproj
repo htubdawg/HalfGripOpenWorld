@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Pictures.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />
@@ -31,5 +32,6 @@
     <Compile Include="../../OpenWorld/src/Courses.cs" />
     <Compile Include="../../OpenWorld/src/Plots.cs" />
     <Compile Include="../../OpenWorld/src/Traffic.cs" />
+    <Compile Include="../../OpenWorld/src/TrafficDay.cs" />
   </ItemGroup>
 </Project>

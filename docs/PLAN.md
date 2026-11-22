@@ -1414,7 +1414,12 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
   see the car come out of the far tunnel. meshcheck's wrap check. For traffic: through trips carry on across the wrap (a car into
   one tunnel comes out of the other at the same moment); local trips to "the road out" end by driving into the tunnel and are gone
   (never parked at the mouth), and routes never take the wrap as a short cut.
-- Next: each race's day of trips (`TrafficDay.cs`), as the handoff sets out.
+- **Each race's day of trips (`TrafficDay.cs`): done and checked in trafficview** (16 seeds pass: no overlaps, no crossing cars in a
+  junction box, no gridlock, speeds kept, the 5 pm peak about 300 cars as expected for our 1,850 households with a car, the hours
+  within 3.5 points of TPG 9 or a Saturday, the trunk about 5,400 a day). Pictures: `docs/traffic.png`, `docs/traffic-frames.png`.
+  Decided while building, for the owner to confirm (see the handoff): trips beyond the map go by the road north only (the trunk's ends
+  lead back in); through traffic is 10 cars circling the trunk through the wrap; a stay is counted from leaving home.
+- Next: stage 2, the timetabled cars drawn in the game.
 
 ### Traffic: what the studies say, and the trip model (researched 2026-11-22)
 
