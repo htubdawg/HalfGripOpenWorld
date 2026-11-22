@@ -1371,6 +1371,49 @@ separate thing: they can use the game's own `EnemyController` unchanged, since a
 
 Open questions for the owner: whether traffic should be shootable and wreckable; how dense.
 
+### What the deer give traffic (discussed with the owner after 0.30.3; for next time)
+
+The owner asked whether the deer make a good foundation for car traffic. The answer agreed: **they give traffic how it is placed and
+how the room agrees on it, not how it acts near a player**, which is the larger part of the work. The design above still holds; the
+deer change three things in it and take one blocker away.
+
+**Carried over from the deer as they are:**
+- **Positions from the seed and the clock.** `Herds.At` computes a deer from (race seed, group, race clock) with nothing simulated
+  frame by frame; a traffic car's timetable is the same idea (point 1 above), and the deer show it works in a room, for late
+  joiners, and on machines that have never loaded that ground.
+- **Rare events settled by the host.** `DeerRoom`'s claims (the machine that caused a change claims it, the host keeps the first
+  claim, a late joiner's Hello) and `tools/deersim` can be copied nearly as they are for traffic's events.
+- **Drawn only near the car**, from a pool of objects (`Deer.Take`/`Give`); moved on an origin shift; hits tested in code where
+  that is enough; a body thrown on fixed steps from an event (`DeerKills`), which could do for a car knocked aside far from its owner.
+- **The blocker is gone.** "Waiting on the Multiplayer mod" above: `ctx.Net` now carries the events' and the deer's messages, so
+  traffic's messages can go the same way.
+
+**Changed from the design above:**
+1. **Delays, not only retirement.** A car that leaves a player's reach goes back on its timetable as "car c is D seconds late from
+   time t" (one claim, settled by the host, as a deer's reaction is), so traffic is not used up as players drive about. A car that is
+   wrecked or knocked off its road is still retired ("car c gone from t").
+2. **Queues worked out, not sent.** The timetables keep cars a safe gap apart and give junctions slots. Applying the delays lane by
+   lane with a least gap between cars is pure, so a delayed car holds up the cars behind it the same way on every machine with no
+   more messages.
+3. **Ownership by claims.** Point 3 above (owner the nearest player, with hysteresis) can be the deer's way instead: a machine
+   claims a car as it comes near, the host keeps the first claim, the owner hands it on with a claim too.
+
+**What the deer do not cover, and why it is the bigger part:** a deer reacts once (startled, it runs, and a minute later it is calm
+again: a few messages); a car near a player reacts all the time (following, waiting at a junction, swerving), so that part must be
+driven on the owner's machine and its state sent, not claimed. Deer do not hold each other up; cars do (hence the queues). A traffic
+car must be a real physics car (hitting a car moved in code feels like hitting a wall), and car physics cannot be made to come out
+the same on every machine, so one machine owns each car near players (points 2 to 4 above).
+
+**First steps next time:**
+- Read how the game's AI racers steer (`EnemyController` in the decompile) and confirm what above can be reused for the
+  `TrafficDriver` near a player.
+- Find how a few extra cars' states can be sent (`ctx.Net` at 10 Hz, about 45 bytes a car) and shown as stand-ins (`RemoteCar`).
+- Measure the timetables at the map's scale: a few hundred cars on routes over `Network.Roads` through the `Signs` junction graph,
+  the gaps and junction slots, what `At` for one car costs; a `tools/trafficsim` like `deersim` for the claims and delays, and
+  `meshcheck` checks that timetabled cars never overlap, stay in their lanes and keep to the speeds of their roads.
+- Still open for the owner: whether traffic can be shot and wrecked; how dense; whether deer react to traffic cars (they could:
+  a timetabled car is a known position at any time, so a dart in front of one can be worked out on every machine alike).
+
 ### 0.24.0: a weather API for other mods (asked for by Slap Pack)
 
 Slap Pack's windscreen (the `test/windshield-weather` branch, `docs/public-weather-api.md` there) read `Sky`'s private fields and
