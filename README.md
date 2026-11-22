@@ -40,9 +40,10 @@ generated from a fixed seed (the same for every player) the way real country com
   day worked out from the race's seed (busiest at the evening rush, quiet at night; a weekend day now and then), so in a room
   everyone sees the same cars in the same places. Between trips they are parked: on the drive pad beside a house, at the kerb in
   front of a terrace, by a cottage or in a farmyard, in the painted bays of the shops and the retail park, on the yards of the
-  workshops, filling stations and market places, along the kerb by the offices, the high streets and the churches. They pull out
-  of their space into the lane and back in at the end. They are the game's own enemy car, in everyday colours (the same car the
-  same colour every race), and at night the nearest few light the road. For now a traffic car cannot be pushed or wrecked: hitting
+  workshops, filling stations and market places, and at the kerb of the town streets near the offices, the high streets and the
+  churches (never on the main roads or the narrow lanes; a household's second car is round the back, out of sight). They drive along
+  the lane to their space and pull in nose first, and out again. They are the game's own enemy car, in everyday colours (the same
+  car the same colour every race), their lamps off when parked, and at night the nearest few light the road. For now a traffic car cannot be pushed or wrecked: hitting
   one is like hitting a wall.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is

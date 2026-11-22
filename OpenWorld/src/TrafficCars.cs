@@ -35,13 +35,6 @@ namespace HalfGripOpenWorld
 		/// <summary>How many moving cars at most have a real headlight at night (the renderer lights only so many lights an object).</summary>
 		private const int MostLit = 6;
 
-		/// <summary>
-		/// Over the first and last stretch of a trip the car goes between its space and its lane (pulling out and in): as long as the
-		/// space is far from where the trip starts or ends (a kerb space down the street), at least <see cref="PullLeast"/> and at most
-		/// <see cref="PullMost"/> units.
-		/// </summary>
-		private const double PullLeast = 30.0, PullMost = 150.0;
-
 		/// <summary>The paint: everyday car colours, with how often each is seen (white, black, greys and silver most).</summary>
 		private static readonly (Color colour, int weight)[] Paints =
 		{
@@ -65,6 +58,9 @@ namespace HalfGripOpenWorld
 			public int[] Paint;
 			/// <summary>The painted renderers' own materials, which each paint's copies are made from.</summary>
 			public Material[][] PaintMaterials;
+			/// <summary>The lamps (renderers with a glowing material, not painted): their lit materials and dark copies, put on when parked.</summary>
+			public int[] Lamps;
+			public Material[][] LampsLit, LampsDark;
 			public int[] Wheels;
 			/// <summary>Each wheel's axle in its parent's frame.</summary>
 			public Vector3[] Axles;
@@ -95,6 +91,8 @@ namespace HalfGripOpenWorld
 			/// <summary>Parked: the spot it was placed at (its leg), so a parked car is placed once.</summary>
 			public int ParkedLeg = int.MinValue;
 			public bool Placed;
+			/// <summary>Whether its lamps are lit (driving) or dark (parked); -1 not set yet.</summary>
+			public int LampsOn = -1;
 		}
 
 		private TrackManager tm;
@@ -275,6 +273,37 @@ namespace HalfGripOpenWorld
 					axles.Add(Quaternion.Inverse(parent) * Vector3.right);
 				}
 			}
+			// The lamps: a material that glows (headlights white, tail lights red) on a renderer that takes no paint. Their dark copies
+			// (no glow) go on a parked car.
+			List<int> lampAt = new List<int>();
+			List<Material[]> lampLit = new List<Material[]>(), lampDark = new List<Material[]>();
+			for (int k = 0; k < renderers.Length; k++)
+			{
+				if (paint.Contains(renderers[k]))
+				{
+					continue;
+				}
+				Material[] mats = renderers[k].sharedMaterials;
+				Material[] dark = null;
+				for (int m = 0; m < mats.Length; m++)
+				{
+					if (Glows(mats[m]))
+					{
+						dark ??= (Material[])mats.Clone();
+						Material d = new Material(mats[m]) { name = mats[m].name + " (traffic, off)", hideFlags = HideFlags.HideAndDontSave };
+						d.SetColor("_EmissionColor", Color.black);
+						d.DisableKeyword("_EMISSION");
+						dark[m] = d;
+						GetComponent<WorldAssets>()?.Add(d);
+					}
+				}
+				if (dark != null)
+				{
+					lampAt.Add(k);
+					lampLit.Add(mats);
+					lampDark.Add(dark);
+				}
+			}
 			Material[][] paintMaterials = new Material[paintAt.Count][];
 			for (int k = 0; k < paintAt.Count; k++)
 			{
@@ -285,6 +314,9 @@ namespace HalfGripOpenWorld
 				Template = template,
 				Paint = paintAt.ToArray(),
 				PaintMaterials = paintMaterials,
+				Lamps = lampAt.ToArray(),
+				LampsLit = lampLit.ToArray(),
+				LampsDark = lampDark.ToArray(),
 				Wheels = wheelAt.ToArray(),
 				Axles = axles.ToArray(),
 				Box = box,
@@ -299,8 +331,21 @@ namespace HalfGripOpenWorld
 				look.LightAt = m.MultiplyPoint3x4(Vector3.zero);
 				look.LightTurn = Quaternion.Inverse(root.rotation) * lightTemplate.transform.rotation;
 			}
-			Mod.Info("Traffic: look " + index + ": " + renderers.Length + " meshes, " + look.Paint.Length + " painted, " + look.Wheels.Length + " wheels, box " + box.size.ToString("0.0") + ", wheels' bottom " + look.Bottom.ToString("0.00") + ", radius " + look.WheelRadius.ToString("0.00"));
+			Mod.Info("Traffic: look " + index + ": " + renderers.Length + " meshes, " + look.Paint.Length + " painted, " + look.Lamps.Length + " lamps, " + look.Wheels.Length + " wheels, box " + box.size.ToString("0.0") + ", wheels' bottom " + look.Bottom.ToString("0.00") + ", radius " + look.WheelRadius.ToString("0.00"));
 			return look;
+		}
+
+		/// <summary>Whether a material glows (a lamp): emission on and brighter than a trace.</summary>
+		private static bool Glows(Material m)
+		{
+			if (m == null || !m.HasProperty("_EmissionColor"))
+			{
+				return false;
+			}
+			Color e = m.GetColor("_EmissionColor");
+			float most = Mathf.Max(e.r, Mathf.Max(e.g, e.b));
+			// The car's lamps are far over 1 (white 512, red 767), whether or not the keyword shows it.
+			return (m.IsKeywordEnabled("_EMISSION") && most > 0.05f) || most > 1f;
 		}
 
 		/// <summary>
@@ -614,33 +659,11 @@ namespace HalfGripOpenWorld
 				{
 					return false;
 				}
-				double x = at.X, z = at.Z, hx = at.Hx, hz = at.Hz;
+				// On its path, or pulling out of its space at the start of a trip and into one at the end (TrafficParking.Drawn).
+				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
 				double roadY = at.Y + Network.Lift;
-				TrafficDay.Leg leg = day.Legs[at.Leg];
-				// Pulling out of its space at the start of a trip, and into one at the end: between the space and the lane.
-				TrafficParking.Spot spot = default;
-				double k = 1.0;
-				if (at.P < PullMost && !leg.Appears)
-				{
-					spot = parking.Before(at.Leg);
-					k = at.P / PullOver(leg, 0.0, spot);
-				}
-				if ((k >= 1.0 || spot.Away) && leg.Length - at.P < PullMost && !leg.Vanishes)
-				{
-					spot = parking.Parked(c, at.Leg);
-					k = (leg.Length - at.P) / PullOver(leg, leg.Length, spot);
-				}
-				if (k < 1.0 && !spot.Away)
-				{
-					k = k * k * (3.0 - 2.0 * k);
-					x = spot.X + (x - spot.X) * k;
-					z = spot.Z + (z - spot.Z) * k;
-					float a0 = Mathf.Atan2((float)spot.Hx, (float)spot.Hz) * Mathf.Rad2Deg, a1 = Mathf.Atan2((float)hx, (float)hz) * Mathf.Rad2Deg;
-					float a = Mathf.LerpAngle(a0, a1, (float)k) * Mathf.Deg2Rad;
-					hx = Mathf.Sin(a);
-					hz = Mathf.Cos(a);
-				}
 				v.ParkedLeg = int.MinValue;
+				Lamps(v, true);
 				if (!Pose(v, x, z, roadY, hx, hz))
 				{
 					return false;
@@ -655,6 +678,8 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
+			// Parked: lamps off.
+			Lamps(v, false);
 			if (v.ParkedLeg != at.Leg || !v.Placed)
 			{
 				TrafficParking.Spot spot = parking.Parked(c, at.Leg);
@@ -676,19 +701,6 @@ namespace HalfGripOpenWorld
 			}
 			drawnParked++;
 			return true;
-		}
-
-		/// <summary>How long the pull between a space and the trip's end at distance <paramref name="p"/> along it is: as far as they are apart, within limits.</summary>
-		private static double PullOver(TrafficDay.Leg leg, double p, TrafficParking.Spot spot)
-		{
-			if (spot.Away)
-			{
-				return PullLeast;
-			}
-			TrafficDay.Place end = default;
-			TrafficDay.OnPath(leg, p, ref end);
-			double dx = spot.X - end.X, dz = spot.Z - end.Z;
-			return Math.Max(PullLeast, Math.Min(PullMost, Math.Sqrt(dx * dx + dz * dz)));
 		}
 
 		/// <summary>
@@ -738,6 +750,20 @@ namespace HalfGripOpenWorld
 			}
 			y = 0f;
 			return false;
+		}
+
+		/// <summary>Lights or darkens a car's lamps (only when that changes).</summary>
+		private static void Lamps(View v, bool on)
+		{
+			if (v.LampsOn == (on ? 1 : 0))
+			{
+				return;
+			}
+			v.LampsOn = on ? 1 : 0;
+			for (int i = 0; i < v.Look.Lamps.Length; i++)
+			{
+				v.Renderers[v.Look.Lamps[i]].sharedMaterials = on ? v.Look.LampsLit[i] : v.Look.LampsDark[i];
+			}
 		}
 
 		private void Spin(View v)

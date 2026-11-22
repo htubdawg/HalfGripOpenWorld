@@ -1438,6 +1438,11 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
   they are apart (30 to 150 units).
 - **Headlights:** `Sky` now looks for new headlights every 2 seconds, so other players' stand-ins (made after the start) light up at
   night too (the owner saw them dark).
+- **The owner's first try (2026-11-22):** lamps lit on parked cars, far too many cars at the kerb in town, a car going through a
+  parked one. Fixed (see the handoff): parked cars' lamps dark; kerb parking only on streets and secondary roads, near the door, a
+  household's first car only (about 1,000 kerb cars down to about 240; the rest out of sight); pulling in and out along the lane
+  then into the space, checked against every parked car. Also from the log: tiles lost to a shared list in `Buildings` (stage 1's
+  `Plots` move), fixed.
 - **Left for later in stage 2:** lamps and a painted pool of light for the cars past the nearest 6; a car whose kerb space is down
   the street drives along to it a little fast; parked cars at the kerb are not seen by the moving traffic (they drive past, not
   round, them: kerb spaces are at the paving's edge, the lane's middle 5.5 off the line).

@@ -506,6 +506,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The houses on the plots along one piece of a road (between samples i and i + 1), both sides (<see cref="Plots.Along"/>).</summary>
 		private static void Plots(Builder b, Data data, int r, Network.Road road, int i)
 		{
+			List<HalfGripOpenWorld.Plots.Plot> plots = plotsOfThread ??= new List<HalfGripOpenWorld.Plots.Plot>();
 			plots.Clear();
 			HalfGripOpenWorld.Plots.Along(r, road, i, plots);
 			foreach (HalfGripOpenWorld.Plots.Plot p in plots)
@@ -557,7 +558,10 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		private static readonly List<HalfGripOpenWorld.Plots.Plot> plots = new List<HalfGripOpenWorld.Plots.Plot>();
+		/// <summary>Each tile worker's own list of plots: tiles are built on several workers at once, and one shared list was filled by two
+		/// of them together ("Collection was modified", the tile lost).</summary>
+		[ThreadStatic]
+		private static List<HalfGripOpenWorld.Plots.Plot> plotsOfThread;
 
 		/// <summary>
 		/// The shops facing a market place from behind it: a terrace of three and four storeys with shopfronts, along its back, their fronts

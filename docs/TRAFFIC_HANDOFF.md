@@ -203,25 +203,46 @@ place costs (`At` scans a car's legs: fine for a few hundred cars, measure in st
 **Next (stage 2, the plan):** timetabled cars drawn in the game from a pool near the car, moved on an origin shift, no physics; build
 the day on a worker at the race's start; headlights. Done as below; next is the owner's report on test 48, then stage 3.
 
-## Stage 2: as built (not yet tried in the game)
+## Stage 2: as built (first tried in the game 2026-11-22)
+
+**The owner's first report** (one race, in a room alone) and what was done about it:
+- *Car lights should be off when parked.* The enemy car's lamp materials glow (`bFata` white, `becuri` red, emission far over 1).
+  Each look now finds its lamps (a material that glows, on a renderer that takes no paint) and makes dark copies; a parked car wears
+  them, a driving one the lit ones. The verbose log's `Traffic: look N` line counts the lamps: if it says 0, the lamps were not found.
+- *Way too many cars parked on roads in town.* About 1,000 cars stood at the kerb at any hour; now about 240 (seed 7). Kerb parking is
+  only on the town streets and the secondary roads (not the main roads, not the narrow lanes), only on the stretch of the door within
+  60 units of it, a household keeps only its first car at the kerb, and kerb spaces are 19 apart. The rest are parked "round the
+  back": not drawn (about 700 to 800 cars at any hour). They appear on the road when they set off and vanish when they get home:
+  the price of a quieter street, until there is somewhere drawn behind the houses to put them.
+- *A car phasing through a parked car, the road with cars on both sides.* Never a car driving by (trafficview now checks that), always
+  one pulling in or out: it slid diagonally through its neighbours, or turned round on the spot for a space across the road. Now
+  (`TrafficParking.Drawn`, shared by the game and the picture) it drives along its lane until alongside its space, U-turns into the
+  other lane if the space faces the other way, and curves in nose first over the last half; a second car on a house's pad stands
+  beside the first (not behind it), a cottage's cars face away from the drive side by side along it, the lots fill every other bay
+  in the front row first, and every space is kept 40 s either side of a stay (the next car's pull-in no longer meets the last one's
+  pull-out). trafficview's new check: every 20 s of the day, every moving car where the game draws it against every parked car: 0.
+- **From the log, not the traffic:** `Tile ... could not be worked out: Collection was modified` (about 25 tiles lost). When the house
+  plots moved to `Plots.cs` (stage 1), `Buildings` was left with one static list of plots that the four tile workers filled at once.
+  Each worker has its own now (`[ThreadStatic]`). Watch for those lines in the next log: there should be none.
 
 **`OpenWorld/src/TrafficParking.cs` (pure, built after the day, about 60 ms):** where every parked car stands and faces.
 - A household's own cars, taken one after another in car order, each clear of those before: a **house** on the pad beside it, nose in,
   its tail clear of the street and its sidewalk (`Half + Shoulder + 8`, further than `Traffic.Homes`' pad, which stays as it was so
-  the day does not change: the day's gravity uses the anchors' X, Z), a second car behind the first; the other side of the house if a
+  the day does not change: the day's gravity uses the anchors' X, Z), a second car beside the first, further from the house; the other side of the house if a
   road, the water, a lot's building or a house is in the way (two houses closer than a car's width have no pad between them). The
-  houses are the plots `Plots` keeps that fit, as `Buildings` draws them (their wings at the back are not counted), indexed once. A **cottage**: side by side by the drive's end, or the drive's other side. A
-  **farm**: in the yard off the road towards the farm's middle, further in if the near row is taken. A home with no room off the road,
-  and every **terrace**, gets a kerb space for the day.
+  houses are the plots `Plots` keeps that fit, as `Buildings` draws them (their wings at the back are not counted), indexed once. A
+  **cottage**: beside the drive's end, noses away from it, side by side along it, or the drive's other side. A **farm**: in the yard
+  off the road towards the farm's middle, further in if the near row is taken. A home with no room off the road, and every
+  **terrace**, gets a kerb space for its first car (see the owner's report above); its other cars are out of sight.
 - **Lots:** the shops' and the retail park's painted bays (the same arithmetic as `Buildings.Lot` / `BayRows` / `BayRow`: if those
-  change, change `TrafficParking.Spaces` with them), nearest the door first; a row along the front of a workshop's shed; the pumps
+  change, change `TrafficParking.Spaces` with them), the front row first, every other bay before its neighbours; a row along the front of a workshop's shed; the pumps
   then the kiosk's front at a filling station; the front of a market place; across a course's yard. Spaces a road's paving, the
   water or a building reaches into are left out (none are, today). A full lot carries on at the kerb.
-- **The kerb:** each side of each stretch cut into spaces 17 apart, clear of the junction boxes at its ends; spaces over a home's
-  own parking, reaching onto another road (a junction's corner) or over water (a bridge) struck out. Terraces' cars keep theirs all
-  day (empty while they are out); everyone else at the kerb (offices, high streets, churches, a visitor in town, a full lot) takes
-  the nearest free one for their stay, in the order they arrive; if their stretch is full, round the corner on the same road (other
-  stretches within 260); else they are parked out of sight (not drawn; about 30 a day).
+- **The kerb** (streets and secondary roads only): each side of each stretch cut into spaces 19 apart, clear of the junction boxes at
+  its ends; spaces over a home's own parking, reaching onto another road (a junction's corner) or over water (a bridge) struck out.
+  Terraces' first cars keep theirs all day (empty while they are out); everyone else at the kerb (offices, high streets, churches, a
+  visitor in town, a full lot) takes the nearest free one within 60 of their door on that stretch for their stay (kept 40 s either
+  side), in the order they arrive; else they are parked out of sight (not drawn).
 - A kerb car's middle is far enough out that a car passing in the lane clears it by 0.4 (`LaneOffset + CarWide + 0.4`, or
   `Half - 3.5` where the road is wide enough), but never with its outer side past the sidewalk's back (where a terrace's front
   stands): on a town street two wheels are up on the sidewalk; on a village lane it touches a passing car's side. The day's traffic
@@ -243,8 +264,8 @@ the day on a worker at the race's start; headlights. Done as below; next is the 
 - **Choosing:** every 0.4 s (or after 150 units driven) every car's place (`At`; a car with no trips and its home far off is skipped
   first), the parked ones' spots; the nearest 72 within reach (moving 900 units, parked 450), moving ones counted at 0.4 of their
   distance. trafficview measures it: about 0.3 to 0.7 ms in a town's middle.
-- **Placing:** each frame each chosen car's `At`; driving, the lane point, blended at a trip's ends between the space and the lane
-  (smoothstep, over as long a stretch as they are apart, 30 to 150 units, heading by `LerpAngle`); parked, placed once per stay.
+- **Placing:** each frame each chosen car's `At`; driving, `TrafficParking.Drawn` (the lane point, or pulling in and out: see the
+  owner's report above; up to 250 units at a trip's ends); parked, placed once per stay. Lamps lit when driving, dark when parked.
   Height: two raycasts down (the `Default` layer, where the roads, lots and buildings are, and `Floor`, the ground) at the front and
   back axles from 6 over the higher of the road line and `WorldGen.Height`, the wheels' bottom put on their mean, pitched to them; no
   hit, not drawn (ground not loaded). Wheels turn with the speed. A car in a tunnel's mouth (`InTunnel`) or away is not drawn.
@@ -263,20 +284,21 @@ the day on a worker at the race's start; headlights. Done as below; next is the 
 - meshcheck and jview leave `TrafficCars.cs` out (it needs `Mod`, `Sky`, `Weather`).
 
 **Checks added to trafficview** (exit 1 on a FAIL; 16 seeds pass): parked cars overlapping, looked at every hour (0); spaces on another
-road's paving, in a lot's building, in water, in a house (0 each); kerb spaces made and struck out, and why; the lots' spaces kept of those laid out; the distance from a space to its trip's
+road's paving, in a lot's building, in water, in a house (0 each); moving cars as drawn through a parked car, every 20 s (0); cars at
+the kerb, off the road and out of sight at 12:30 and 21:30; kerb spaces made and struck out, and why; the lots' spaces kept of those laid out; the distance from a space to its trip's
 end (median about 30, 90th percentile about 110, most about 350 units: a kerb space down the street); the cost of choosing the cars.
 `--closeup out.ppm [x z span hour]` draws the parked cars round a place (by default the main town's middle at 12:30): the paving, the
 lots, the houses, drive pads green, kerb orange, lots cyan, moving cars yellow where the game draws them (`docs/traffic-parking.png`:
-seed 7, round a village street at 21:30; `docs/traffic-retail.png`: the retail park at 12:30).
+seed 7, the main town's middle at 12:30; `docs/traffic-retail.png`: the retail park at 12:30).
 
 **Known weaknesses of stage 2:**
 - **Not tried in the game.** What can only be seen there: whether the copied bodies look right (paint channels, the wheels' bottom,
   the wheels' axle), the raycast heights on the drawn roads and bridges, the cost of 72 cars (each 8 to 10 renderers, the paint's
   material copies keep them batched), the kinematic box against the player's car.
-- A car whose kerb space is down the street goes there over the last 150 units of its trip, moving faster than it drives.
-- Pulling out of a nose-in pad, the car turns round on the spot as it goes (no reversing).
+- About a fifth of the parked cars are out of sight ("round the back") and pop in and out at the start and end of their trips.
+- Pulling out of a nose-in pad, the car goes forward round a curve (no reversing).
+- Moving cars are not checked against each other where they pull in and out (only on the day's lanes).
 - The other cars past the nearest 6 have no lamps at night (the plan's glowing lamps and painted pool of light: not done).
-- Kerb cars on a narrow lane stand mostly on the verge.
 - Parked cars are not obstacles in the day (it was made without them); kept apart only by where kerb spaces are.
 
 ## This session's environment, as found

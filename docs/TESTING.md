@@ -382,8 +382,12 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      streets (facing the way traffic goes on their side), in the painted bays at the shops and the retail park, on the workshops'
      yards, at a filling station's pumps, along the front of the market places, by cottages and in farmyards. None stands on a road
      it does not belong to, in a building, in a garden wall, in the water, or on top of another car.
-   - Watch a car leave: it pulls out of its space into the lane and drives off (a car whose kerb space is down the street drives
-     along to it a little fast; that is known). Watch one arrive and park.
+   - Parked cars' lamps are dark; a car's lamps come on as it sets off and go off when it has parked.
+   - Town streets are not lined with parked cars: some at the kerb on the streets, none on the main roads or narrow lanes. (Many
+     households' cars are "round the back", not drawn: they appear on the road when they set off. That is known.)
+   - Watch a car leave and one arrive, at the kerb, on a drive pad and in a car park: it drives along its lane until it is alongside
+     its space (turning round if the space is across the road) and curves in nose first, never through a parked car.
+   - No `Tile ... could not be worked out` lines in the log.
    - Hitting a traffic car is like hitting a wall (damage, no push); the respawn never puts you on one.
    - At night the nearest few moving cars light the road ahead; other players' cars in a room have their headlights on too now (they
      stayed dark before).

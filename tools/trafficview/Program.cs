@@ -707,6 +707,32 @@ internal static class Program
 		{
 			Console.WriteLine("    overlapping: " + kv.Key + " " + kv.Value);
 		}
+		foreach (double hour in new[] { 12.5, 21.5 })
+		{
+			double w = TrafficDay.SimOfHour(hour);
+			int atKerb = 0, offRoad = 0, hidden = 0;
+			for (int c = 0; c < day.Cars.Count; c++)
+			{
+				TrafficDay.Place at = day.At(c, w);
+				if (at.State != TrafficDay.State.Parked)
+				{
+					continue;
+				}
+				if (parking.Parked(c, at.Leg).Away)
+				{
+					hidden += day.Cars[c].Household >= 0 ? 1 : 0;
+				}
+				else if (parking.IsKerb(c, at.Leg, out int _))
+				{
+					atKerb++;
+				}
+				else
+				{
+					offRoad++;
+				}
+			}
+			Console.WriteLine("  parked at " + hour.ToString("00.0") + ": " + atKerb + " at the kerb, " + offRoad + " off the road, " + hidden + " out of sight (round the back)");
+		}
 		Console.WriteLine("  parked cars overlapping, looked at every hour: " + overlaps + " pairs in " + samples + " parked cars" + (firstOverlap != null ? " (first: " + firstOverlap + ")" : "") + (overlaps == 0 ? "  ok" : "  FAIL"));
 		ok &= overlaps == 0;
 
@@ -825,6 +851,86 @@ internal static class Program
 		pulls.Sort();
 		Console.WriteLine("  space to lane at a trip's ends: median " + Pct(pulls, 0.5).ToString("0") + ", 90th percentile " + Pct(pulls, 0.9).ToString("0") + ", 99th " + Pct(pulls, 0.99).ToString("0")
 			+ ", most " + (pulls.Count > 0 ? pulls[pulls.Count - 1] : 0.0).ToString("0") + " units (" + pulls.Count + " ends)");
+
+		// Moving cars, where the game draws them (pulling in and out included), against the parked cars, every 20 s of the day.
+		int through = 0, looks = 0;
+		string firstThrough = null;
+		Dictionary<long, List<(TrafficParking.Spot s, int c, int leg)>> parkedCells = new Dictionary<long, List<(TrafficParking.Spot, int, int)>>();
+		Dictionary<string, int> throughKinds = new Dictionary<string, int>();
+		for (double w = 0.0; w < Traffic.DaySeconds; w += 20.0)
+		{
+			parkedCells.Clear();
+			List<(int c, TrafficDay.Place at)> moving = new List<(int, TrafficDay.Place)>();
+			for (int c = 0; c < day.Cars.Count; c++)
+			{
+				TrafficDay.Place at = day.At(c, w);
+				if (at.State == TrafficDay.State.Driving)
+				{
+					if (!at.InTunnel)
+					{
+						moving.Add((c, at));
+					}
+					continue;
+				}
+				if (at.State != TrafficDay.State.Parked)
+				{
+					continue;
+				}
+				TrafficParking.Spot s = parking.Parked(c, at.Leg);
+				if (s.Away)
+				{
+					continue;
+				}
+				long key = ((long)Math.Floor(s.X / 32.0) << 32) ^ (uint)(int)Math.Floor(s.Z / 32.0);
+				if (!parkedCells.TryGetValue(key, out List<(TrafficParking.Spot, int, int)> cell))
+				{
+					cell = new List<(TrafficParking.Spot, int, int)>();
+					parkedCells[key] = cell;
+				}
+				cell.Add((s, c, at.Leg));
+			}
+			foreach ((int c, TrafficDay.Place at) in moving)
+			{
+				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
+				TrafficParking.Spot m = new TrafficParking.Spot { X = x, Z = z, Hx = hx, Hz = hz };
+				looks++;
+				int gx = (int)Math.Floor(x / 32.0), gz = (int)Math.Floor(z / 32.0);
+				bool hit = false;
+				for (int ox = -1; ox <= 1 && !hit; ox++)
+				{
+					for (int oz = -1; oz <= 1 && !hit; oz++)
+					{
+						if (!parkedCells.TryGetValue(((long)(gx + ox) << 32) ^ (uint)(gz + oz), out List<(TrafficParking.Spot s, int c, int leg)> cell))
+						{
+							continue;
+						}
+						foreach ((TrafficParking.Spot s, int pc, int pleg) in cell)
+						{
+							if (TrafficParking.Overlap(m, s, -0.5))
+							{
+								hit = true;
+								string phase = at.P < 250.0 ? "pulling out" : day.Legs[at.Leg].Length - at.P < 250.0 ? "pulling in" : "on its way";
+								string kind = phase + " / parked " + (parking.IsKerb(pc, pleg, out int _) ? "at the kerb" : What(day, pc, w));
+								if (!throughKinds.ContainsKey(kind))
+								{
+									Console.WriteLine("    first " + kind + ": car " + c + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") at " + (3.0 + w / 100.0).ToString("0.00") + " h, parked car " + pc + " at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + ")");
+								}
+								throughKinds[kind] = throughKinds.TryGetValue(kind, out int nk) ? nk + 1 : 1;
+								firstThrough ??= "car " + c + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") at sim " + w.ToString("0") + " s, " + (at.P < 250.0 ? "pulling out" : day.Legs[at.Leg].Length - at.P < 250.0 ? "pulling in" : "on its way");
+								break;
+							}
+						}
+					}
+				}
+				through += hit ? 1 : 0;
+			}
+		}
+		foreach (KeyValuePair<string, int> kv in throughKinds)
+		{
+			Console.WriteLine("    through: " + kv.Key + " " + kv.Value);
+		}
+		Console.WriteLine("  moving cars (as drawn) through a parked car, every 20 s: " + through + " of " + looks + (firstThrough != null ? " (first: " + firstThrough + ")" : "") + (through == 0 ? "  ok" : "  FAIL"));
+		ok &= through == 0;
 
 		// Choosing the cars near the player, as TrafficCars.Choose does: every car's place, the parked ones' spaces.
 		watch.Restart();

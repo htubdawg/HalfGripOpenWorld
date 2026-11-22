@@ -26,8 +26,8 @@ namespace HalfGripOpenWorld
 		/// <summary>A painted bay's width and length (as <see cref="Buildings"/> paints them: 2.7 m by 4.8 m).</summary>
 		internal const double BayWidth = 9.0, BayLength = 16.0;
 
-		/// <summary>Spacing of cars parked one behind the other along a kerb (a car and a gap: about 5.2 m).</summary>
-		internal const double KerbSpacing = 17.0;
+		/// <summary>Spacing of cars parked one behind the other along a kerb (a car and a gap: about 5.8 m, room to pull in and out).</summary>
+		internal const double KerbSpacing = 19.0;
 
 		/// <summary>How far in from the edge of the paving the middle of a car at the kerb is (half a car and a little), on a road wide
 		/// enough; and the room left between it and a car driving past in the lane.</summary>
@@ -151,7 +151,10 @@ namespace HalfGripOpenWorld
 			}
 			Traffic.Edge e = Traffic.Edges[edge];
 			KerbLimits(e, out double lo, out double hi);
-			int n = hi > lo ? (int)Math.Floor((hi - lo) / KerbSpacing) : 0;
+			// Only the town streets and the secondary roads have parking at the kerb: a main road keeps its traffic moving, a narrow lane
+			// has no room for a car to pass one parked.
+			RoadKind kind = Network.Roads[e.Road].Kind;
+			int n = hi > lo && (kind == RoadKind.Secondary || kind == RoadKind.Street) ? (int)Math.Floor((hi - lo) / KerbSpacing) : 0;
 			double start = (lo + hi) * 0.5 - (n - 1) * KerbSpacing * 0.5;
 			KerbSide k = new KerbSide { Edge = edge, Side = side > 0 ? 1 : -1, S = new double[n], Kept = new int[n], Stays = new List<(double, double)>[n] };
 			Network.Road road = Network.Roads[e.Road];
@@ -259,8 +262,8 @@ namespace HalfGripOpenWorld
 		{
 			got = default;
 			int side = a.Side >= 0 ? 1 : -1;
-			// Its own stretch first, then the stretches of the same road either side, nearest first (a full street parks round the corner).
-			foreach (int edge in Stretches(a))
+			// Its own stretch only, within a short walk of the door: a car with no space there is parked round the back, out of sight.
+			foreach (int edge in new[] { a.Edge })
 			{
 				foreach (int sd in new[] { side, -side })
 				{
@@ -270,14 +273,14 @@ namespace HalfGripOpenWorld
 					for (int i = 0; i < ks.S.Length; i++)
 					{
 						double d = Math.Abs(ks.S[i] - a.S);
-						if (d >= bestD || ks.Kept[i] != -1 || (keeper >= 0 && ks.Stays[i].Count > 0))
+						if (d >= bestD || d > KerbNear || ks.Kept[i] != -1 || (keeper >= 0 && ks.Stays[i].Count > 0))
 						{
 							continue;
 						}
 						bool free = true;
 						foreach ((double ar, double lv) in ks.Stays[i])
 						{
-							if (ar < leave && arrive < lv)
+							if (ar - Pad < leave && arrive < lv + Pad)
 							{
 								free = false;
 								break;
@@ -307,36 +310,51 @@ namespace HalfGripOpenWorld
 			return false;
 		}
 
-		/// <summary>How far along its road (either way) a car looks for a kerb space when its own stretch is full.</summary>
-		private const double KerbSearch = 260.0;
+		/// <summary>
+		/// A stay holds its space from when the car comes into the stretch it is drawn pulling in over until it has driven out of the one
+		/// it is drawn pulling out over (<see cref="IntoPull"/>, <see cref="OutOfPull"/>), and this many seconds more either side.
+		/// </summary>
+		private const double Pad = 5.0;
 
-		/// <summary>The anchor's stretch, then the other stretches of its road within <see cref="KerbSearch"/> of it, nearest first.</summary>
-		private static List<int> Stretches(Traffic.Anchor a)
+		/// <summary>
+		/// When a leaving car has driven out of the stretch it is drawn pulling out over (it may wait a long while at the start for a gap
+		/// in the traffic, drawn in its space all the while): its space is free only from then.
+		/// </summary>
+		private static double OutOfPull(TrafficDay.Leg leg)
 		{
-			List<(double d, int e)> found = new List<(double, int)> { (-1.0, a.Edge) };
-			int road = Traffic.Edges[a.Edge].Road;
-			foreach (int e in Traffic.RoadEdges[road])
+			double need = Math.Min(PullMost, leg.Length);
+			if (leg.Rec != null)
 			{
-				if (e == a.Edge)
+				for (int i = 0; i < leg.Rec.Length; i++)
 				{
-					continue;
-				}
-				Traffic.Edge ed = Traffic.Edges[e];
-				double lo = Math.Min(ed.Sa, ed.Sb), hi = Math.Max(ed.Sa, ed.Sb);
-				double d = a.S < lo ? lo - a.S : a.S > hi ? a.S - hi : 0.0;
-				if (d < KerbSearch)
-				{
-					found.Add((d, e));
+					if (leg.Rec[i] >= need)
+					{
+						return i == leg.Rec.Length - 1 ? leg.End : leg.Start + i * TrafficDay.RecordStep;
+					}
 				}
 			}
-			found.Sort((x, y) => x.d != y.d ? x.d.CompareTo(y.d) : x.e.CompareTo(y.e));
-			List<int> list = new List<int>(found.Count);
-			foreach ((double _, int e) in found)
-			{
-				list.Add(e);
-			}
-			return list;
+			return leg.End;
 		}
+
+		/// <summary>When an arriving car comes into the stretch it is drawn pulling in over: its space is taken from then.</summary>
+		private static double IntoPull(TrafficDay.Leg leg)
+		{
+			double need = Math.Max(0.0, leg.Length - PullMost);
+			if (leg.Rec != null)
+			{
+				for (int i = 0; i < leg.Rec.Length; i++)
+				{
+					if (leg.Rec[i] >= need)
+					{
+						return i == leg.Rec.Length - 1 ? leg.End : leg.Start + i * TrafficDay.RecordStep;
+					}
+				}
+			}
+			return leg.Start;
+		}
+
+		/// <summary>How far along the kerb from the door (either way) a car looks for a space.</summary>
+		private const double KerbNear = 60.0;
 
 		/// <summary>Whether a stay at place <paramref name="place"/> in space <paramref name="k"/> is at the kerb.</summary>
 		private bool AtKerb(int place, int k)
@@ -365,7 +383,9 @@ namespace HalfGripOpenWorld
 			for (int c = 0; c < day.Cars.Count; c++)
 			{
 				int h = day.Cars[c].Household;
-				if (h >= 0 && !hasOwn[c])
+				// A household's first car at the kerb by its door; any more are parked round the back, out of sight (a terrace street
+				// lined with every household's every car is far busier than a real one).
+				if (h >= 0 && !hasOwn[c] && homeIndex[c] == 0)
 				{
 					if (TakeKerb(Traffic.Households[h].Home, 0.0, double.MaxValue, c, out (KerbSide, int) got))
 					{
@@ -403,7 +423,7 @@ namespace HalfGripOpenWorld
 				{
 					if (next && day.Legs[lj].Start >= 0.0)
 					{
-						leave = day.Legs[lj].Start;
+						leave = OutOfPull(day.Legs[lj]);
 						break;
 					}
 					next |= lj == li;
@@ -413,7 +433,7 @@ namespace HalfGripOpenWorld
 					list = new List<(double, double, int)>();
 					stays[place] = list;
 				}
-				list.Add((leg.End, leave, li));
+				list.Add((IntoPull(leg), leave, li));
 			}
 			List<int> keys = new List<int>(stays.Keys);
 			keys.Sort();
@@ -429,17 +449,17 @@ namespace HalfGripOpenWorld
 				foreach ((double arrive, double leave, int leg) in list)
 				{
 					int k = 0;
-					while (k < freeAt.Count && freeAt[k] > arrive)
+					while (k < freeAt.Count && freeAt[k] > arrive - Pad)
 					{
 						k++;
 					}
 					if (k == freeAt.Count)
 					{
-						freeAt.Add(leave);
+						freeAt.Add(leave + Pad);
 					}
 					else
 					{
-						freeAt[k] = leave;
+						freeAt[k] = leave + Pad;
 					}
 					slot[leg] = first + k;
 					int held = 0;
@@ -531,6 +551,185 @@ namespace HalfGripOpenWorld
 			return AtDestination(place, slot[leg]);
 		}
 
+		/// <summary>
+		/// If car <paramref name="car"/> parked after leg <paramref name="leg"/> (-1: at home before any trip) is at the kerb: the stretch,
+		/// the road distance of its space and the side (1 left of the road's way). For pulling in and out alongside the space.
+		/// </summary>
+		internal bool KerbPlace(int car, int leg, out int edge, out double s, out int side)
+		{
+			edge = -1;
+			s = 0.0;
+			side = 0;
+			(KerbSide side, int k) got;
+			bool kerb = leg < 0 || (day.Legs[leg].Return && PlaceOf(day.Legs[leg]) < 0) ? kerbHome.TryGetValue(car, out got) : kerbOf.TryGetValue(leg, out got);
+			if (!kerb)
+			{
+				return false;
+			}
+			edge = got.side.Edge;
+			s = got.side.S[got.k];
+			side = got.side.Side;
+			return true;
+		}
+
+		/// <summary>Over the first and last stretch of a trip the car is drawn between its space and its lane: at least this long, at most.</summary>
+		internal const double PullLeast = 30.0, PullMost = 250.0;
+
+		/// <summary>
+		/// Where a driving car is drawn: its place on the day's path, except over the first and last stretch of a trip, where it pulls out
+		/// of its space and into one. Out of (or into) a kerb space it drives along its lane until it is alongside the space and then
+		/// moves sideways over the last part, so it never cuts through the cars parked beside its space; out of a drive pad or a lot's
+		/// bay it goes straight between the space and the lane, over as long a stretch as they are apart.
+		/// </summary>
+		internal void Drawn(int car, TrafficDay.Place at, out double x, out double z, out double hx, out double hz)
+		{
+			x = at.X;
+			z = at.Z;
+			hx = at.Hx;
+			hz = at.Hz;
+			if (at.State != TrafficDay.State.Driving || at.Leg < 0)
+			{
+				return;
+			}
+			TrafficDay.Leg leg = day.Legs[at.Leg];
+			if (at.P < PullMost && !leg.Appears && Pull(car, leg, before[at.Leg], at, true, ref x, ref z, ref hx, ref hz))
+			{
+				return;
+			}
+			if (leg.Length - at.P < PullMost && !leg.Vanishes)
+			{
+				Pull(car, leg, at.Leg, at, false, ref x, ref z, ref hx, ref hz);
+			}
+		}
+
+		/// <summary>
+		/// One end's pull (<paramref name="start"/>: out of the space the car was in after leg <paramref name="parkedAfter"/>); false if
+		/// the car is not within it. Measured from the space (q from 0 there to 1 where the pull meets the day's path): over the far half
+		/// the car drives along its lane until it is alongside the space (turning round into the other lane if the space faces the other
+		/// way, as a kerb space across the road does); over the near half it curves in, nose first, along the way the space faces. The
+		/// stretch is long enough that the car never has to go backwards along the lane. Drawing only (floats and trigonometry are fine).
+		/// </summary>
+		private bool Pull(int car, TrafficDay.Leg leg, int parkedAfter, TrafficDay.Place at, bool start, ref double x, ref double z, ref double hx, ref double hz)
+		{
+			Spot spot = Parked(car, parkedAfter);
+			if (spot.Away)
+			{
+				return false;
+			}
+			double endP = start ? 0.0 : leg.Length;
+			double left = start ? at.P : leg.Length - at.P;
+			LaneAt(leg, endP, out double ex, out double ez, out double ehx, out double ehz);
+			// How far along the path, past the trip's end (or before its start), the car is alongside the space.
+			double past = ((spot.X - ex) * ehx + (spot.Z - ez) * ehz) * (start ? -1.0 : 1.0);
+			double abreastP = start ? -past : leg.Length + past;
+			LaneAt(leg, abreastP, out double ax, out double az, out double ahx, out double ahz);
+			double facing = spot.Hx * ahx + spot.Hz * ahz;
+			bool across = facing < -0.3;
+			// A space along the road (at the kerb) is moved into sideways from alongside it, kept straight: kerb spaces leave too little
+			// room between the cars to angle in or out without touching one.
+			bool parallel = Math.Abs(facing) > 0.7;
+			double off = LaneOf(leg, abreastP);
+			// Turned round, the car is in the other lane: twice the lane's offset to the left of its way.
+			double bx = ax, bz = az;
+			if (across)
+			{
+				bx -= ahz * off * 2.0;
+				bz += ahx * off * 2.0;
+			}
+			double sx = spot.X - bx, sz = spot.Z - bz;
+			double side = Math.Sqrt(sx * sx + sz * sz);
+			double length = Math.Min(PullMost, Math.Max(50.0, 3.2 * Math.Abs(past) + 2.0 * side + (across ? 40.0 : 0.0) + 20.0));
+			if (left >= length)
+			{
+				return false;
+			}
+			double q = left / length;
+			// The far half: along the lane (and round, if across).
+			double t1 = Smooth(Math.Max(0.0, Math.Min(1.0, 2.0 * q - 1.0)));
+			double along = past * (1.0 - t1);
+			LaneAt(leg, start ? at.P - along : at.P + along, out double lx, out double lz, out double lhx, out double lhz);
+			if (q > 0.5)
+			{
+				x = lx;
+				z = lz;
+				hx = lhx;
+				hz = lhz;
+				if (across)
+				{
+					// A U-turn into the other lane: over to the middle of the road, round there (the only place a street with cars at
+					// both kerbs has room for it), then into the other lane.
+					double round = 1.0 - t1;
+					double toMiddle = Smooth(round / 0.3), turn = Smooth((round - 0.3) / 0.4), toLane = Smooth((round - 0.7) / 0.3);
+					double leftward = off * (toMiddle + toLane);
+					x -= lhz * leftward;
+					z += lhx * leftward;
+					double a = Math.Atan2(lhx, lhz) - Math.PI * turn;
+					hx = Math.Sin(a);
+					hz = Math.Cos(a);
+				}
+				return true;
+			}
+			// The near half: a curve from alongside into the space, arriving along the way it faces.
+			double g = 1.0 - Smooth(2.0 * q);
+			double cx = parallel ? (bx + spot.X) * 0.5 : spot.X - spot.Hx * side * 0.9, cz = parallel ? (bz + spot.Z) * 0.5 : spot.Z - spot.Hz * side * 0.9;
+			double u = 1.0 - g;
+			x = u * u * bx + 2.0 * u * g * cx + g * g * spot.X;
+			z = u * u * bz + 2.0 * u * g * cz + g * g * spot.Z;
+			double fhx = across ? -ahx : ahx, fhz = across ? -ahz : ahz;
+			Turn(fhx, fhz, spot.Hx, spot.Hz, parallel ? 1.0 : g, out hx, out hz);
+			return true;
+		}
+
+		/// <summary>The lane offset of the road a leg's path is on at distance <paramref name="p"/>.</summary>
+		private static double LaneOf(TrafficDay.Leg leg, double p)
+		{
+			TrafficDay.Place pl = default;
+			TrafficDay.OnPath(leg, Math.Max(0.0, Math.Min(leg.Length, p)), ref pl);
+			return pl.Edge >= 0 ? Traffic.LaneOffset(Network.Roads[Traffic.Edges[pl.Edge].Road]) : 5.5;
+		}
+
+		/// <summary>The lane's point and way at distance <paramref name="p"/> along a leg's path, carried on straight past its ends.</summary>
+		private static void LaneAt(TrafficDay.Leg leg, double p, out double x, out double z, out double hx, out double hz)
+		{
+			TrafficDay.Place pl = default;
+			double cp = Math.Max(0.0, Math.Min(leg.Length, p));
+			TrafficDay.OnPath(leg, cp, ref pl);
+			x = pl.X + pl.Hx * (p - cp);
+			z = pl.Z + pl.Hz * (p - cp);
+			hx = pl.Hx;
+			hz = pl.Hz;
+		}
+
+		private static double Smooth(double k)
+		{
+			k = Math.Max(0.0, Math.Min(1.0, k));
+			return k * k * (3.0 - 2.0 * k);
+		}
+
+		/// <summary>A way between (ax, az) at 0 and (bx, bz) at 1, turning the short way round (unit).</summary>
+		private static void Turn(double ax, double az, double bx, double bz, double k, out double hx, out double hz)
+		{
+			double a0 = Math.Atan2(ax, az), a1 = Math.Atan2(bx, bz);
+			double d = a1 - a0;
+			while (d > Math.PI)
+			{
+				d -= 2.0 * Math.PI;
+			}
+			while (d < -Math.PI)
+			{
+				d += 2.0 * Math.PI;
+			}
+			double a = a0 + d * Math.Max(0.0, Math.Min(1.0, k));
+			hx = Math.Sin(a);
+			hz = Math.Cos(a);
+		}
+
+		/// <summary>The leg that left the car where leg <paramref name="leg"/> starts from (-1: home before any trip; int.MinValue: it came from off the map).</summary>
+		internal int BeforeLeg(int leg)
+		{
+			return day.Legs[leg].Appears ? int.MinValue : before[leg];
+		}
+
 		/// <summary>For the checks: whether car <paramref name="car"/> parked after leg <paramref name="leg"/> is at the kerb (and on which road).</summary>
 		internal bool IsKerb(int car, int leg, out int road)
 		{
@@ -590,11 +789,13 @@ namespace HalfGripOpenWorld
 					{
 						return false;
 					}
-					// On the pad beside the house, nose in, its tail clear of the street and its sidewalk; a second car behind the first.
-					// Beside the house on the other side if that one is taken by a road or the water.
-					double back = Math.Max(off, road.Half + Network.Shoulder + CarLong * 0.5 + 1.0) + BayLength * k;
-					foreach (double u in new[] { along, -along })
+					// On the pad beside the house, nose in, its tail clear of the street and its sidewalk; a second car beside the first,
+					// further from the house (behind it, it could not get in or out). Beside the house on the other side if that one is taken
+					// by a road, the water or a house.
+					double back = Math.Max(off, road.Half + Network.Shoulder + CarLong * 0.5 + 1.0);
+					foreach (double u0 in new[] { along, -along })
 					{
+						double u = u0 + Math.Sign(u0) * BayWidth * 1.1 * k;
 						spot = new Spot { X = px + tx * u + nx * back, Z = pz + tz * u + nz * back, Hx = nx, Hz = nz };
 						if (Fine(spot) && !Blocked(spot))
 						{
@@ -605,7 +806,7 @@ namespace HalfGripOpenWorld
 				}
 				case Traffic.HomeKind.Cottage:
 				{
-					// Side by side by the end of the drive, facing along it, each further from the drive than the last; or the other side.
+					// Side by side beside the end of the drive, noses away from it, one after another along it; or the other side.
 					double dx = a.X - px, dz = a.Z - pz;
 					double d = Math.Sqrt(dx * dx + dz * dz);
 					if (d < 1e-6)
@@ -618,8 +819,8 @@ namespace HalfGripOpenWorld
 					dz /= d;
 					foreach (double sd in new[] { 1.0, -1.0 })
 					{
-						double r = d + BayWidth * 1.2 * k;
-						spot = new Spot { X = px + dx * r * sd, Z = pz + dz * r * sd, Hx = tx, Hz = tz };
+						double u = Spread(k) * BayWidth * 1.2;
+						spot = new Spot { X = px + dx * d * sd + tx * u, Z = pz + dz * d * sd + tz * u, Hx = dx * sd, Hz = dz * sd };
 						if (Fine(spot) && !Blocked(spot))
 						{
 							return true;
@@ -833,21 +1034,26 @@ namespace HalfGripOpenWorld
 				case LotKind.Retail:
 				{
 					// Two blocks of bays each side of a middle island, in two double rows parked nose to nose (Buildings.BayRows): the
-					// rows nearest the store first.
+					// row along the front aisle first (driven straight into from it), then the rest.
 					double block = Math.Floor((half - 13.0) / BayWidth) * BayWidth;
 					int across = (int)Math.Round(block / BayWidth);
-					foreach (double v0 in new[] { 64.0, 14.0 })
+					foreach (double v0 in new[] { 14.0, 64.0 })
 					{
-						for (int row = 1; row >= 0; row--)
+						for (int row = 0; row <= 1; row++)
 						{
 							double a = v0 + row * BayLength;
 							// The first row's noses at its back line (v1), the second's at its front (v0).
 							double nv = row == 0 ? 1.0 : -1.0;
-							for (int i = 0; i < across; i++)
+							// Each block's bays in order across, every other one first.
+							foreach (double sign in new[] { -1.0, 1.0 })
 							{
-								double inner = 3.0 + BayWidth * (i + 0.5);
-								list.Add((-inner, a + BayLength * 0.5, 0.0, nv));
-								list.Add((inner, a + BayLength * 0.5, 0.0, nv));
+								List<(double u, double v, double nu, double nv)> block2 = new List<(double, double, double, double)>();
+								for (int i = 0; i < across; i++)
+								{
+									block2.Add((sign * (3.0 + BayWidth * (i + 0.5)), a + BayLength * 0.5, 0.0, nv));
+								}
+								EveryOther(block2, across);
+								list.AddRange(block2);
 							}
 						}
 					}
@@ -862,7 +1068,7 @@ namespace HalfGripOpenWorld
 					{
 						list.Add((-block * 0.5 + BayWidth * (i + 0.5), 8.0 + BayLength * 0.5, 0.0, 1.0));
 					}
-					list.Sort((a, b) => Math.Abs(a.u).CompareTo(Math.Abs(b.u)));
+					EveryOther(list, list.Count);
 					break;
 				}
 				case LotKind.Workshop:
@@ -889,15 +1095,39 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>The spaces at even places in the list first, then the odd: next to an empty bay a car pulls in clear of its neighbours.</summary>
+		private static void EveryOther(List<(double u, double v, double nu, double nv)> list, int perRow)
+		{
+			List<(double u, double v, double nu, double nv)> first = new List<(double, double, double, double)>(), then = new List<(double, double, double, double)>();
+			for (int i = 0; i < list.Count; i++)
+			{
+				// Within each row (perRow at a time) alternate bays; rows keep their order.
+				int at = i % perRow;
+				(at % 2 == 0 ? first : then).Add(list[i]);
+				if (at == perRow - 1 || i == list.Count - 1)
+				{
+					first.AddRange(then);
+					then.Clear();
+				}
+			}
+			list.Clear();
+			list.AddRange(first);
+		}
+
 		/// <summary>A row of spaces side by side across a lot at depth <paramref name="v"/>, within its sides, each side of a gap of half width <paramref name="gap"/> round the middle, nearest the middle first.</summary>
 		private static void Row(List<(double u, double v, double nu, double nv)> list, double half, double gap, double v, double nv)
 		{
 			double pitch = BayWidth * 1.1;
+			List<(double u, double v, double nu, double nv)> row = new List<(double, double, double, double)>();
 			for (double inner = gap + pitch * 0.5; inner <= half - 4.0 - pitch * 0.5; inner += pitch)
 			{
-				list.Add((-inner, v, 0.0, nv));
-				list.Add((inner, v, 0.0, nv));
+				row.Add((-inner, v, 0.0, nv));
+				row.Add((inner, v, 0.0, nv));
 			}
+			// Across in order, every other one first (a car pulls in next to an empty space).
+			row.Sort((a, b) => a.u.CompareTo(b.u));
+			EveryOther(row, row.Count);
+			list.AddRange(row);
 		}
 
 		/// <summary>

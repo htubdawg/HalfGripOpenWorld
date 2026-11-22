@@ -205,33 +205,8 @@ internal static class Pictures
 				{
 					continue;
 				}
-				s = new TrafficParking.Spot { X = at.X, Z = at.Z, Hx = at.Hx, Hz = at.Hz };
-				TrafficDay.Leg leg = day.Legs[at.Leg];
-				// As the game pulls a car between its space and its lane (TrafficCars.Draw).
-				TrafficParking.Spot sp = default;
-				double kk = 1.0;
-				if (at.P < 150.0 && !leg.Appears)
-				{
-					sp = parking.Before(at.Leg);
-					kk = at.P / PullOver(leg, 0.0, sp);
-				}
-				if ((kk >= 1.0 || sp.Away) && leg.Length - at.P < 150.0 && !leg.Vanishes)
-				{
-					sp = parking.Parked(c, at.Leg);
-					kk = (leg.Length - at.P) / PullOver(leg, leg.Length, sp);
-				}
-				if (kk < 1.0 && !sp.Away)
-				{
-					kk = kk * kk * (3.0 - 2.0 * kk);
-					s.X = sp.X + (s.X - sp.X) * kk;
-					s.Z = sp.Z + (s.Z - sp.Z) * kk;
-					double hx = sp.Hx + (s.Hx - sp.Hx) * kk, hz = sp.Hz + (s.Hz - sp.Hz) * kk, l = Math.Sqrt(hx * hx + hz * hz);
-					if (l > 1e-6)
-					{
-						s.Hx = hx / l;
-						s.Hz = hz / l;
-					}
-				}
+				parking.Drawn(c, at, out double dx0, out double dz0, out double dhx, out double dhz);
+				s = new TrafficParking.Spot { X = dx0, Z = dz0, Hx = dhx, Hz = dhz };
 				r = 250; g = 220; b = 40;
 				moving++;
 			}
@@ -320,15 +295,4 @@ internal static class Pictures
 		return false;
 	}
 
-	private static double PullOver(TrafficDay.Leg leg, double p, TrafficParking.Spot spot)
-	{
-		if (spot.Away)
-		{
-			return 30.0;
-		}
-		TrafficDay.Place end = default;
-		TrafficDay.OnPath(leg, p, ref end);
-		double dx = spot.X - end.X, dz = spot.Z - end.Z;
-		return Math.Max(30.0, Math.Min(150.0, Math.Sqrt(dx * dx + dz * dz)));
-	}
 }
