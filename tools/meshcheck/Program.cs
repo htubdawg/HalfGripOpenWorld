@@ -111,6 +111,7 @@ internal static class Program
 			("farview", FarChecks),
 			("facades", Facades),
 			("homes", Homes),
+			("clear", ClearOfRoads),
 			("backroads", BackRoads),
 			("deer", DeerChecks),
 		};
@@ -2159,6 +2160,20 @@ internal static class Program
 	}
 
 	/// <summary>Where junctions are: each paved road's ends and the middles of its crossings, one a 20-unit square.</summary>
+	/// <summary>Whether a road is cut out whole (a dead end lying along another road: <c>Network.DeadEnds</c>), so nothing of it is drawn.</summary>
+	private static bool Gone(Network.Road road)
+	{
+		double length = road.S[road.Count - 1];
+		foreach (Network.Gap g in road.Gaps)
+		{
+			if (Math.Min(g.L0, g.R0) < 0.0 && Math.Max(g.L1, g.R1) > length)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static List<(double x, double z)> JunctionSpots()
 	{
 		List<(double x, double z)> spots = new List<(double, double)>();
@@ -2172,7 +2187,7 @@ internal static class Program
 		}
 		foreach (Network.Road road in Network.Roads)
 		{
-			if (Network.Unpaved(road.Kind) || road.Kind > RoadKind.Lane)
+			if (Network.Unpaved(road.Kind) || road.Kind > RoadKind.Lane || Gone(road))
 			{
 				continue;
 			}
@@ -2228,7 +2243,7 @@ internal static class Program
 			// samples' corners).
 			foreach (Network.Road road in Network.Roads)
 			{
-				if (Network.Unpaved(road.Kind))
+				if (Network.Unpaved(road.Kind) || Gone(road))
 				{
 					continue;
 				}
@@ -2513,6 +2528,154 @@ internal static class Program
 		}
 		Console.WriteLine("homes:   " + farms + " farm drives, " + houses + " houses on drives; " + mailBad + " mailboxes left out (on a road or in water), " + houseBad + " houses not clear, " + far + " away from their drive's end");
 		return houses > 50 && mailBad * 50 <= Network.Homes.Count && houseBad == 0 && far == 0;
+	}
+
+	/// <summary>
+	/// Per tile, which surfaces the drawn road meshes put over each unit square (bit 1 a road's paving, 2 a verge, 4 a sidewalk, 8 a
+	/// track's, drive's or path's ribbon), from the triangles as the game draws them.
+	/// </summary>
+	private static byte[] SurfaceMask(int tx, int tz)
+	{
+		byte[] mask = new byte[250 * 250];
+		double x0 = tx * 250.0, z0 = tz * 250.0;
+		for (int nz = tz - 1; nz <= tz + 1; nz++)
+		{
+			for (int nx = tx - 1; nx <= tx + 1; nx++)
+			{
+				foreach ((Vector3 a, Vector3 b, Vector3 c, int kind) in TopTris(nx, nz))
+				{
+					double det = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
+					if (Math.Abs(det) < 1e-9)
+					{
+						continue;
+					}
+					int i0 = Math.Max(0, (int)Math.Floor(Math.Min(a.x, Math.Min(b.x, c.x)) - x0)), i1 = Math.Min(249, (int)Math.Ceiling(Math.Max(a.x, Math.Max(b.x, c.x)) - x0));
+					int j0 = Math.Max(0, (int)Math.Floor(Math.Min(a.z, Math.Min(b.z, c.z)) - z0)), j1 = Math.Min(249, (int)Math.Ceiling(Math.Max(a.z, Math.Max(b.z, c.z)) - z0));
+					for (int j = j0; j <= j1; j++)
+					{
+						for (int i = i0; i <= i1; i++)
+						{
+							double x = x0 + i + 0.5, z = z0 + j + 0.5;
+							double u = ((x - a.x) * (c.z - a.z) - (c.x - a.x) * (z - a.z)) / det;
+							double v = ((b.x - a.x) * (z - a.z) - (x - a.x) * (b.z - a.z)) / det;
+							if (u >= 0.0 && v >= 0.0 && u + v <= 1.0)
+							{
+								mask[j * 250 + i] |= (byte)(1 << kind);
+							}
+						}
+					}
+				}
+			}
+		}
+		return mask;
+	}
+
+	private static readonly Dictionary<long, List<(Vector3 a, Vector3 b, Vector3 c, int kind)>> topTris = new Dictionary<long, List<(Vector3, Vector3, Vector3, int)>>();
+
+	/// <summary>As <see cref="TileTris"/>, but a sidewalk's kerb (the strip down under the ground at its back, all its corners at the texture's kerb) left out: it is not seen.</summary>
+	private static List<(Vector3 a, Vector3 b, Vector3 c, int kind)> TopTris(int tx, int tz)
+	{
+		long key = ((long)tx << 32) | (uint)tz;
+		if (topTris.TryGetValue(key, out List<(Vector3, Vector3, Vector3, int)> found))
+		{
+			return found;
+		}
+		List<(Vector3, Vector3, Vector3, int)> list = new List<(Vector3, Vector3, Vector3, int)>();
+		RoadMeshData road = RoadMesh.Build(tx, tz, 250f, Terrain, out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
+		Vector3 o = new Vector3(tx * 250f, 0f, tz * 250f);
+		int kind = 0;
+		foreach (RoadMeshData d in new[] { road, verges, sidewalks, tracks })
+		{
+			if (d != null)
+			{
+				for (int m = 0; m < d.Triangles.Length; m++)
+				{
+					if (d == road && m >= RoadMesh.Boards)
+					{
+						continue;
+					}
+					int[] t = d.Triangles[m];
+					for (int k = 0; k < t.Length; k += 3)
+					{
+						if (d == sidewalks && d.Uv[t[k]].x >= 0.89f && d.Uv[t[k + 1]].x >= 0.89f && d.Uv[t[k + 2]].x >= 0.89f)
+						{
+							continue;
+						}
+						list.Add((d.Vertices[t[k]] + o, d.Vertices[t[k + 1]] + o, d.Vertices[t[k + 2]] + o, kind));
+					}
+				}
+			}
+			kind++;
+		}
+		topTris[key] = list;
+		return list;
+	}
+
+	/// <summary>
+	/// Every house, wing, tower and church (<see cref="Buildings.Data.Boxes"/>) in the towns, villages, farms and drives' homes against
+	/// the drawn road meshes: none of its footprint (half a unit inside its walls, sampled every unit; a sidewalk's kerb, under the ground, aside) on a road's paving, a sidewalk or a
+	/// track's, drive's or path's ribbon. Buildings tested only at their corners and sides' middles let a lane through between them.
+	/// </summary>
+	private static bool ClearOfRoads()
+	{
+		HashSet<long> tiles = new HashSet<long>();
+		foreach (Places.Place p in Places.All)
+		{
+			double reach = p.Kind == PlaceKind.Hamlet ? 120.0 : p.Radius + 120.0;
+			for (int tz = (int)Math.Floor((p.Z - reach) / 250.0); tz <= (int)Math.Floor((p.Z + reach) / 250.0); tz++)
+			{
+				for (int tx = (int)Math.Floor((p.X - reach) / 250.0); tx <= (int)Math.Floor((p.X + reach) / 250.0); tx++)
+				{
+					tiles.Add(((long)tx << 32) | (uint)tz);
+				}
+			}
+		}
+		foreach (Network.Home home in Network.Homes)
+		{
+			tiles.Add(((long)Math.Floor(home.X / 250.0) << 32) | (uint)(int)Math.Floor(home.Z / 250.0));
+		}
+		int n = 0, onRoad = 0, onWalk = 0, onTrack = 0, shown = 0;
+		List<long> sorted = tiles.OrderBy(t => t).ToList();
+		foreach (long key in sorted)
+		{
+			int tx = (int)(key >> 32), tz = (int)(uint)key;
+			Buildings.Data d = Buildings.Build(tx, tz, 250f);
+			if (d.Boxes.Count == 0)
+			{
+				continue;
+			}
+			Dictionary<long, byte[]> masks = new Dictionary<long, byte[]>();
+			foreach ((double cx, double cz, double dx, double dz, double w, double dd) in d.Boxes)
+			{
+				n++;
+				int bits = 0;
+				double nx = -dz, nz = dx;
+				for (double u = -w * 0.5 + 0.5; u <= w * 0.5 - 0.5 + 1e-9; u += Math.Max(0.5, (w - 1.0) / Math.Ceiling(w - 1.0)))
+				{
+					for (double v = -dd * 0.5 + 0.5; v <= dd * 0.5 - 0.5 + 1e-9; v += Math.Max(0.5, (dd - 1.0) / Math.Ceiling(dd - 1.0)))
+					{
+						double x = cx + dx * u + nx * v, z = cz + dz * u + nz * v;
+						int mx = (int)Math.Floor(x / 250.0), mz = (int)Math.Floor(z / 250.0);
+						long mk = ((long)mx << 32) | (uint)mz;
+						if (!masks.TryGetValue(mk, out byte[] mask))
+						{
+							masks[mk] = mask = SurfaceMask(mx, mz);
+						}
+						int i = Math.Min(249, (int)Math.Floor(x - mx * 250.0)), j = Math.Min(249, (int)Math.Floor(z - mz * 250.0));
+						bits |= mask[j * 250 + i];
+					}
+				}
+				onRoad += (bits & 1) != 0 ? 1 : 0;
+				onWalk += (bits & 1) == 0 && (bits & 4) != 0 ? 1 : 0;
+				onTrack += (bits & 5) == 0 && (bits & 8) != 0 ? 1 : 0;
+				if ((bits & 13) != 0 && shown++ < 30)
+				{
+					Console.WriteLine("  building on " + ((bits & 1) != 0 ? "a road" : (bits & 4) != 0 ? "a sidewalk" : "a track") + " at (" + cx.ToString("0") + ", " + cz.ToString("0") + "), " + w.ToString("0") + " by " + dd.ToString("0"));
+				}
+			}
+		}
+		Console.WriteLine("clear:   " + n + " houses, wings, towers and churches on " + tiles.Count + " tiles; " + onRoad + " on a road's paving, " + onWalk + " on a sidewalk, " + onTrack + " on a track, drive or path");
+		return onRoad == 0 && onWalk == 0 && onTrack == 0;
 	}
 
 	/// <summary>How deep the drawn water is over the drawn ground at (x, z) (negative: dry by that much).</summary>
@@ -2979,7 +3142,7 @@ internal static class Program
 						{
 							if (paved < 3)
 							{
-								Console.WriteLine("  group " + g.Index + " deer " + d + " (" + way + "): on a " + kind + "'s paving at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + "), t " + t.ToString("0.0"));
+								Console.WriteLine("  group " + g.Index + " deer " + d + " (" + way + "): on a " + kind + "'s paving at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + "), t " + t.ToString("0.0") + ", " + Math.Sqrt(cx * cx + cz * cz).ToString("0.0") + " from its crossing (" + g.Site.X.ToString("0") + ", " + g.Site.Z.ToString("0") + "; flee " + flee.T0.ToString("0.0") + ", done " + rr.Done.ToString("0.0") + ")");
 							}
 							paved++;
 						}

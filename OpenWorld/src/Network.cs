@@ -1964,7 +1964,26 @@ namespace HalfGripOpenWorld
 						road.Dead1 = true;
 					}
 				}
+				// A paved dead end cut out along most of its length (a short street lying along a main road from a village's middle)
+				// would only show its rounded end beside that road and its verge over it: it is cut out whole instead.
+				if ((road.Dead0 || road.Dead1) && !Unpaved(road.Kind) && Covered(road, length) > length * 0.5)
+				{
+					road.Dead0 = road.Dead1 = false;
+					road.Gaps.Clear();
+					road.Gaps.Add(new Gap { C0 = -1.0, C1 = length + 1.0, L0 = -1.0, L1 = length + 1.0, R0 = -1.0, R1 = length + 1.0 });
+				}
 			}
+		}
+
+		/// <summary>How much of a road's length its cuts take out along one edge or the other.</summary>
+		private static double Covered(Road road, double length)
+		{
+			double cut = 0.0;
+			foreach (Gap g in road.Gaps)
+			{
+				cut += Math.Max(0.0, Math.Min(length, Math.Max(g.L1, g.R1)) - Math.Max(0.0, Math.Min(g.L0, g.R0)));
+			}
+			return cut;
 		}
 
 		/// <summary>
@@ -2154,6 +2173,7 @@ namespace HalfGripOpenWorld
 		{
 			joints.Clear();
 			Hubs.Clear();
+			Overlaps();
 			// Road ends by unit cell.
 			Dictionary<long, List<(int r, int end)>> ends = new Dictionary<long, List<(int, int)>>();
 			for (int r = 0; r < Roads.Count; r++)
@@ -2249,6 +2269,163 @@ namespace HalfGripOpenWorld
 					Join(here[bi], here[bj], x, z);
 				}
 			}
+		}
+
+		/// <summary>The most two road ends can be apart, one road running on past the other's end along it, for <see cref="Overlaps"/> to bring them to one point.</summary>
+		private const double OverlapMost = 48.0;
+
+		/// <summary>
+		/// Two roads that meet end to end but overlap there (one's end lies on the other's centre line, the other running on past it back
+		/// along the first, its end 10 to 48 further: two routes found to one point by different ways) are brought to one point: the one
+		/// that runs on past is cut back to the other's end, so <see cref="Joints"/> draws them as one road round the bend. Left as they
+		/// were, the one running on was cut under the other and its square end, or a wedge of ground, showed in the bend. Only where no
+		/// third road ends near; the smaller road (then the later built) is the one cut back; never a bridge's samples or a course's road.
+		/// </summary>
+		private static void Overlaps()
+		{
+			for (int r = 0; r < Roads.Count; r++)
+			{
+				for (int end = 0; end < 2; end++)
+				{
+					Road a = Roads[r];
+					if (!Overlappable(a))
+					{
+						continue;
+					}
+					int ka = end == 0 ? 0 : a.Count - 1;
+					double x = a.X[ka], z = a.Z[ka];
+					// The other road ends near: exactly one, of a's kind of surface.
+					int other = -1, oend = -1, near = 0;
+					foreach (int o in segments.RoadsNear(x, z, OverlapMost))
+					{
+						Road b = Roads[o];
+						if (o == r || b.Kind >= RoadKind.Rally || b.Count < 3 || Unpaved(b.Kind) != Unpaved(a.Kind))
+						{
+							continue;
+						}
+						for (int eb = 0; eb < 2; eb++)
+						{
+							int kb = eb == 0 ? 0 : b.Count - 1;
+							double dx = b.X[kb] - x, dz = b.Z[kb] - z;
+							if (dx * dx + dz * dz <= OverlapMost * OverlapMost)
+							{
+								near++;
+								other = o;
+								oend = eb;
+							}
+						}
+					}
+					if (near != 1)
+					{
+						continue;
+					}
+					// Which runs on past the other's end: cut the smaller back if both do.
+					bool aOnB = Overlap(r, end, other, oend, out int k1, out double t1);
+					bool bOnA = Overlap(other, oend, r, end, out int k2, out double t2);
+					Road ob = Roads[other];
+					bool aSmaller = a.Kind > ob.Kind || (a.Kind == ob.Kind && r > other);
+					if (bOnA && (!aOnB || aSmaller))
+					{
+						CutBack(r, end, k2, t2, Roads[other], oend);
+					}
+					else if (aOnB)
+					{
+						CutBack(other, oend, k1, t1, a, end);
+					}
+				}
+			}
+		}
+
+		/// <summary>Whether a road may be cut back at an end by <see cref="Overlaps"/>: not a course's own road or its access.</summary>
+		private static bool Overlappable(Road road)
+		{
+			return road.Kind < RoadKind.Rally && road.Count >= 3 && road != CircuitRoad && road != RallyAccess && road != ClimbAccess;
+		}
+
+		/// <summary>
+		/// Whether road <paramref name="r"/>'s end <paramref name="end"/> lies on road <paramref name="o"/>'s centre line within
+		/// <see cref="OverlapMost"/> of <paramref name="o"/>'s end <paramref name="oend"/>, that road running on from there back along r
+		/// (not crossing it), with no bridge in the way: where on o (piece, fraction) it lies.
+		/// </summary>
+		private static bool Overlap(int r, int end, int o, int oend, out int piece, out double along)
+		{
+			piece = -1;
+			along = 0.0;
+			Road a = Roads[r], b = Roads[o];
+			if (!Overlappable(b))
+			{
+				return false;
+			}
+			int ka = end == 0 ? 0 : a.Count - 1;
+			double x = a.X[ka], z = a.Z[ka], best = Math.Min(a.Half, b.Half) * 0.5;
+			int n = b.Count, kb = oend == 0 ? 0 : n - 1;
+			for (int j = 0; j + 1 < n; j++)
+			{
+				int i = oend == 0 ? j : n - 2 - j;
+				double from = oend == 0 ? b.S[i] : b.S[n - 1] - b.S[i + 1];
+				if (from > OverlapMost)
+				{
+					break;
+				}
+				if (b.Bridge[i] || b.Bridge[i + 1])
+				{
+					return false;
+				}
+				Lines.Project(b.X, b.Z, i, x, z, out double t, out double d);
+				if (d < best)
+				{
+					best = d;
+					piece = i;
+					along = t;
+				}
+			}
+			if (piece < 0)
+			{
+				return false;
+			}
+			double s = b.S[piece] + (b.S[piece + 1] - b.S[piece]) * along;
+			double past = oend == 0 ? s : b.S[n - 1] - s;
+			if (past < 10.0 || b.S[n - 1] - past < 3.0 * OverlapMost)
+			{
+				return false;
+			}
+			// o runs on towards its end the way r came from: against r's way out of its end.
+			Direction(a, end, out double ax, out double az);
+			double bx = b.X[kb] - x, bz = b.Z[kb] - z, bl = Math.Sqrt(bx * bx + bz * bz);
+			return bl > 1e-6 && (ax * bx + az * bz) / bl < -0.7;
+		}
+
+		/// <summary>
+		/// Road <paramref name="o"/> cut back at its end <paramref name="oend"/> to the point at <paramref name="along"/> on piece
+		/// <paramref name="piece"/>, which is then put exactly on road <paramref name="a"/>'s end <paramref name="end"/>.
+		/// </summary>
+		private static void CutBack(int o, int oend, int piece, double along, Road a, int end)
+		{
+			Road b = Roads[o];
+			int ka = end == 0 ? 0 : a.Count - 1;
+			// The samples kept, and the new end in place of the piece's far one (a sample within a unit of it is moved there instead).
+			int keep0, keep1;
+			double len = b.S[piece + 1] - b.S[piece];
+			if (oend == 1)
+			{
+				keep0 = 0;
+				keep1 = along * len < 1.0 ? piece : piece + 1;
+			}
+			else
+			{
+				keep0 = (1.0 - along) * len < 1.0 ? piece + 1 : piece;
+				keep1 = b.Count - 1;
+			}
+			double y = b.Y[piece] + (b.Y[piece + 1] - b.Y[piece]) * along;
+			Road cut = Part(b, keep0, keep1);
+			int k = oend == 0 ? 0 : cut.Count - 1;
+			cut.X[k] = a.X[ka];
+			cut.Z[k] = a.Z[ka];
+			cut.Y[k] = y;
+			cut.Bridge[k] = false;
+			Lengths(cut);
+			Roads[o] = cut;
+			segments.Replace(o, b, cut);
 		}
 
 		/// <summary>
@@ -2600,6 +2777,16 @@ namespace HalfGripOpenWorld
 			// (the curve's control point), or none (edges about parallel, a straight side).
 			double[] fromLeft = new double[n], fromRight = new double[n], cx = new double[n], cz = new double[n];
 			bool[] curved = new bool[n];
+			// Which arm of a corner gives way if the two run on alongside each other: the smaller road (then the later built), never
+			// one through the place; -1 if both pass through.
+			int Yields(int i, int j)
+			{
+				Road ri = Roads[arms[i].r], rj = Roads[arms[j].r];
+				bool under = ri.Kind > rj.Kind || (ri.Kind == rj.Kind && arms[i].r > arms[j].r);
+				bool iThrough = Twice(arms, arms[i].r), jThrough = Twice(arms, arms[j].r);
+				int k = (under && !iThrough) || jThrough ? i : j;
+				return Twice(arms, arms[k].r) ? -1 : k;
+			}
 			for (int i = 0; i < n; i++)
 			{
 				int j = (i + 1) % n;
@@ -2611,11 +2798,8 @@ namespace HalfGripOpenWorld
 					if (turn < 0.5 * DetMath.Pi || turn > 1.5 * DetMath.Pi)
 					{
 						// The one drawn under the other, unless it is a road through the place.
-						Road ri = Roads[arms[i].r], rj = Roads[arms[j].r];
-						bool under = ri.Kind > rj.Kind || (ri.Kind == rj.Kind && arms[i].r > arms[j].r);
-						bool iThrough = Twice(arms, arms[i].r), jThrough = Twice(arms, arms[j].r);
-						int k = (under && !iThrough) || jThrough ? i : j;
-						if (Twice(arms, arms[k].r))
+						int k = Yields(i, j);
+						if (k < 0)
 						{
 							return false;
 						}
@@ -2638,6 +2822,14 @@ namespace HalfGripOpenWorld
 				double room = arms[i].dir > 0 ? road.S[road.Count - 1] - arms[i].at : arms[i].at;
 				if (cut[i] > HubMost || cut[i] > room - 2.0 * Step)
 				{
+					// Edges meeting that far out are an arm leaving at a few degrees to its neighbour (a short street beside a main road):
+					// the corner's smaller road is left out, as above, so the rest can still be one plate.
+					int j = fromLeft[i] >= fromRight[i] ? (i + 1) % n : (i + n - 1) % n;
+					int k = Yields(i, j);
+					if (k >= 0)
+					{
+						drop = (arms[k].r, arms[k].at, arms[k].dir);
+					}
 					return false;
 				}
 			}

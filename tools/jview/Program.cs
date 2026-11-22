@@ -23,12 +23,13 @@ using UnityEngine;
 //   meet <road> <others,...>           how a road's mouth meets the others' surface along its first 24 units
 //   pairs                              road ends meeting road ends: counts by distance, bend and height step
 //   ends                               what every road end meets (a bigger road, one of its class, a smaller, nothing)
+//   stubs                              paved dead ends more than half cut out under other roads
 //
 // The colours: asphalt by class (darker bigger), verge sand, sidewalk pale, tracks brown, ground green; centre lines one colour per
 // road. Marked: cyan, a road's own strip (cuts ignored) with nothing drawn on top (ground showing in a mouth); magenta, a smaller
 // road or a verge or sidewalk on top of a bigger road's strip, or two surfaces at one height (flicker); yellow, paving under the
 // ground; orange, neighbouring paving pixels more than 0.1 apart (a lip); red, the visible surface stepping more than 0.12 (often
-// just a verge's outer edge). JVIEW_CLEAN=1 leaves the marks and centre lines out (for pictures to show).
+// just a verge's outer edge); white, buildings' outlines. JVIEW_CLEAN=1 leaves the marks and centre lines out (for pictures to show).
 //
 // "gap" counts cyan pixels, "poke" magenta (on a road's strip), "lip" orange; a street lying wholly along a bigger road is hidden
 // under it but still counted, so read the pictures, not only the numbers.
@@ -112,6 +113,19 @@ internal static class Program
 			}
 			return 0;
 		}
+		if (mode == "stubs")
+		{
+			// Paved dead ends more than half under other roads (cut out along one edge or the other): a street lying along a main road.
+			for (int r = 0; r < Network.Roads.Count; r++)
+			{
+				var rd = Network.Roads[r];
+				if (Network.Unpaved(rd.Kind) || rd.Kind >= RoadKind.Rally || !(rd.Dead0 || rd.Dead1)) continue;
+				double len = rd.S[rd.Count - 1], cut = 0;
+				foreach (var g in rd.Gaps) cut += Math.Max(0, Math.Min(len, Math.Max(g.L1, g.R1)) - Math.Max(0, Math.Min(g.L0, g.R0)));
+				if (cut > len * 0.5) Console.WriteLine(r + " " + rd.Kind + " len " + len.ToString("0") + " cut " + cut.ToString("0") + " at " + rd.X[0].ToString("0") + " " + rd.Z[0].ToString("0") + " dead " + rd.Dead0 + rd.Dead1 + " " + rd.Name);
+			}
+			return 0;
+		}
 		if (mode == "measure")
 		{
 			var mspots = Spots();
@@ -122,8 +136,17 @@ internal static class Program
 			var results = new (long bad, string line)[mspots.Count];
 			System.Threading.Tasks.Parallel.For(0, mspots.Count, n =>
 			{
-				Render("/dev/null", mspots[n].Item1, mspots[n].Item2, 60.0, 240, out string st, out long bad);
-				results[n] = (bad, mspots[n].Item1.ToString("0") + " " + mspots[n].Item2.ToString("0") + " " + mspots[n].Item3 + " " + st);
+				// A spot the renderer cannot draw is listed, not the end of the run.
+				try
+				{
+					Render("/dev/null", mspots[n].Item1, mspots[n].Item2, 60.0, 240, out string st, out long bad);
+					results[n] = (bad, mspots[n].Item1.ToString("0") + " " + mspots[n].Item2.ToString("0") + " " + mspots[n].Item3 + " " + st);
+				}
+				catch (Exception e)
+				{
+					results[n] = (0, mspots[n].Item1.ToString("0") + " " + mspots[n].Item2.ToString("0") + " " + mspots[n].Item3 + " failed: " + e.GetType().Name);
+					Console.WriteLine("failed at " + results[n].line + "\n" + e.StackTrace);
+				}
 			});
 			worst.AddRange(results);
 			Console.WriteLine("spots " + mspots.Count + " nominal px " + Nominal + " gap " + Gap + " poke " + Poke + " lip " + Lip + " lip>0.2 " + BigLip);
@@ -611,6 +634,26 @@ internal static class Program
 					img[p * 3] = (byte)cr; img[p * 3 + 1] = (byte)cg; img[p * 3 + 2] = (byte)cb;
 				}
 		}
+		// Buildings' outlines (houses, wings, towers, churches), white (only in a picture: Buildings.Build is not for many threads).
+		for (int btz = (int)Math.Floor(z0 / Tile); file != "/dev/null" && btz <= (int)Math.Floor((z0 + span) / Tile); btz++)
+			for (int btx = (int)Math.Floor(x0 / Tile); btx <= (int)Math.Floor((x0 + span) / Tile); btx++)
+				foreach (var bx in Buildings.Build(btx, btz, Tile).Boxes)
+				{
+					double bnx = -bx.dz, bnz = bx.dx;
+					for (int e = 0; e < 4; e++)
+					{
+						double su = e < 2 ? (e == 0 ? -0.5 : 0.5) : 0, sv = e >= 2 ? (e == 2 ? -0.5 : 0.5) : 0;
+						for (double t = -0.5; t <= 0.5; t += step * 0.5 / Math.Max(bx.w, bx.d))
+						{
+							double u = e < 2 ? su * bx.w : t * bx.w, v = e < 2 ? t * bx.d : sv * bx.d;
+							double x = bx.x + bx.dx * u + bnx * v, z = bx.z + bx.dz * u + bnz * v;
+							int ii = (int)((x - x0) / step), jj = (int)((z - z0) / step);
+							if (ii < 0 || jj < 0 || ii >= px || jj >= px) continue;
+							int p = (px - 1 - jj) * px + ii;
+							img[p * 3] = 255; img[p * 3 + 1] = 255; img[p * 3 + 2] = 255;
+						}
+					}
+				}
 		if (file != "/dev/null") using (var f = File.Create(file))
 		{
 			byte[] head = System.Text.Encoding.ASCII.GetBytes("P6\n" + px + " " + px + "\n255\n");

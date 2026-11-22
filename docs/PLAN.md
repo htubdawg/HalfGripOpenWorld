@@ -1897,3 +1897,41 @@ the tines, a rough burr, pale tips); the renders and the viewer use it too.
 Not done (offer, do not build unasked): fawns' spots or a fawn's proportions (a bigger head on a fawn: one bone's scale); antlers by
 season or age; the antlers as a target for shots (`Deer.Shapes` leaves them out: a shot through the antlers misses); a buck's
 tucked tail; fawns keeping close to the doe when they run; a buck's heavier neck (a new sculpt, a new painted coat).
+
+## A road pass: buildings on roads, poorly joined junctions (0.31.1; the owner's report on 0.31.0)
+
+The owner saw some buildings on roads and some junctions poorly joined. No meshcheck check saw either: the buildings were tested
+only where `Buildings.Fits` tested them, and the junctions were ones `holes` measures as fine (the paving there is covered, by the
+wrong road). Found with a new `clear` check and jview's `measure` over every junction (it now lists a spot it cannot draw instead of
+stopping the run, and draws buildings' outlines in its pictures). Fixes:
+
+- **Buildings on roads.** `Fits` tested a footprint at its corners, its sides' middles and its middle: 15 to 26 apart on a barn or
+  a terrace, so a lane could run between them (a farm's barn 50 wide stood across one at (2465, -2964)). The corners and middles
+  are still tried first, then the whole footprint on a grid at most 3 apart. And off its own road a house kept only 1.5 from the
+  edge, so a terrace on a bend put its front corners on the sidewalk (15 places); now it keeps its setback less 0.3, up to the
+  sidewalk's width and a half unit. A few houses moved or went (2629 to 2606 houses, wings, towers and churches checked; 702 to
+  691 round Kingsbridge).
+- **Two roads ending near each other, overlapping** (`Network.Overlaps`, before `Joints`): two routes to one point found by different
+  ways, one ending on the other's centre line and the other running on 10 to 48 past it back along the first (Farm 92's lane, the
+  Brookfield and Northcote roads at Oakhurst, Millbrook's street and Farm 17's lane). `Joints` only takes ends within half a unit,
+  so the one running on was cut under the other and its square end or a wedge of ground showed in the bend. The one that runs on
+  (the smaller, if both do) is cut back to the other's end, and the two are drawn as one road round the bend. Only where no third
+  road ends within 48; never a bridge, a course's road or its access. 103 to 108 roads carrying on end to end.
+- **A hub refused for a street beside a main road** (Northcote's middle, (-1486, 5487), where a primary, a secondary and two
+  streets start): a 60-long street left at a few degrees to the secondary, their edges met 80 out, and the hub was refused for an
+  arm cut too far, so the primary stood square across the secondary. `MakeHub` now drops the smaller road of a corner whose cut is
+  too long, as it did for edges that never meet, and makes the plate of the rest (36 to 37 hubs).
+- **A paved dead end lying along another road** (that street): more than half its length cut out under the secondary, only its
+  rounded end and verge showed beside it. `DeadEnds` cuts such a road out whole (one in this world).
+- Found on the way: a deer caught on its crossing and frightened ran in one line to its spot, which could take it 20 along the
+  lane; it now steps off the paving square to the road first (`Reactions.Run`; the layout change moved the deer's places and showed
+  it). The same groups, places and reactions otherwise.
+
+Checks: new meshcheck `clear` (every house, wing, tower and church in the towns, villages, farms and drives' homes, sampled every unit
+half a unit inside its walls, against the drawn road meshes: none on a road's paving, a sidewalk's top or a track's ribbon); `holes`
+leaves out a road cut out whole. meshcheck all pass (`holes` 0.43% to 0.33%); preview repeatable, a country lane dead end fewer
+(5 to 4); deersim ok. `tools/check.sh` not run here (HalfGripTools.dll was not to hand). Not yet tested in game (TESTING.md 46).
+
+Left (looked at, not done): a few lanes meeting another at a shallow angle, a sliver of ground or verge in the narrow corner
+((9301, 9211), (-6569, -9954), (-7272, 1156)); preview's `square` lists two. Making them meet square means moving their ends: offer
+it, with the owner's screenshots of the junctions they saw, if these were not the ones.

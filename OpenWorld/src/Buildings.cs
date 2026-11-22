@@ -91,6 +91,8 @@ namespace HalfGripOpenWorld
 			internal RoadMeshData Mesh;
 			/// <summary>World x, z and radius of every building, so trees and grass keep off them.</summary>
 			internal List<(double x, double z, double r)> Footprints = new List<(double, double, double)>();
+			/// <summary>The houses', wings', towers' and churches' footprints as drawn: middle, along (dx, dz), width along and depth across. For meshcheck (clear of the roads).</summary>
+			internal List<(double x, double z, double dx, double dz, double w, double d)> Boxes = new List<(double, double, double, double, double, double)>();
 		}
 
 		private static readonly ulong Salt = Noise.Mix(WorldGen.Seed + 601);
@@ -684,6 +686,7 @@ namespace HalfGripOpenWorld
 			// Turned so its ridge runs back from the house: along it is away from the road, its across along the road.
 			b.Building(wx, wz, (float)(lo - 0.6), nx, nz, (float)wd, (float)ww, look);
 			data.Footprints.Add((wx, wz, Math.Sqrt(ww * ww + wd * wd) * 0.5));
+			data.Boxes.Add((wx, wz, dx, dz, ww, wd));
 		}
 
 		/// <summary>
@@ -724,6 +727,7 @@ namespace HalfGripOpenWorld
 				b.Box(cx + dx * tw * 0.3 + nx * td * 0.25, cz + dz * tw * 0.3 + nz * td * 0.25, y, dx, dz, 1f, 1f, 14f, Metal, Flat);
 			}
 			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
+			data.Boxes.Add((cx, cz, dx, dz, w, d));
 		}
 
 		/// <summary>
@@ -762,6 +766,7 @@ namespace HalfGripOpenWorld
 					b.Building(tx, tz, y, az, -ax, 12f, 12f, tower);
 					b.Spire(tx, tz, y + plinth + 30f + 1.4f, ax, az, 12.5f, 20f, Slate);
 					data.Footprints.Add((cx, cz, Math.Sqrt(length * length + width * width) * 0.5));
+					data.Boxes.Add((cx, cz, ax, az, length, width));
 					return;
 				}
 			}
@@ -851,6 +856,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
+			data.Boxes.Add((cx, cz, dx, dz, w, d));
 			float y = (float)(lo - 0.6);
 			floor = (float)hi + 0.6f;
 			look.Plinth = floor - y;
@@ -865,6 +871,10 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Whether a footprint <paramref name="w"/> along (dx, dz) by <paramref name="d"/> across fits (see <see cref="House"/>), keeping
 		/// <paramref name="margin"/> off every road; the lowest and highest ground (scene heights) under its corners and middle.
+		/// The corners and middles are tested first (cheap, and most misfits fail there), then the whole footprint on a grid at most
+		/// <see cref="Step"/> apart: a barn 50 wide tested only at its corners and middles once stood across a lane that ran between them.
+		/// Off its own road a point keeps clear of the sidewalk at least (the setback less a hair, up to a verge's width and a little), so a terrace on
+		/// the outside of a bend does not put its front corners on the sidewalk.
 		/// </summary>
 		private static bool Fits(int own, double front, double cx, double cz, double dx, double dz, double w, double d, double margin, out double lo, out double hi)
 		{
@@ -876,12 +886,11 @@ namespace HalfGripOpenWorld
 			{
 				double u = Us[c] * w, v = Vs[c] * d;
 				double x = cx + dx * u + nx * v, z = cz + dz * u + nz * v;
-				// How far this point is from its own road's edge: the front corners the setback, the back ones the setback and depth.
-				if (!Network.Claims(x, z, own, front + (v > 0.0 ? d : (v < 0.0 ? 0.0 : d * 0.5)), margin))
+				if (!Clear(own, front, d, v, x, z, margin))
 				{
 					return false;
 				}
-				if (Town.Taken(x, z, 2.0) || Parks.At(x, z) || (c == 4 && Signs.Near(cx, cz, Math.Sqrt(w * w + d * d) * 0.5 + 1.0)))
+				if (c == 4 && Signs.Near(cx, cz, Math.Sqrt(w * w + d * d) * 0.5 + 1.0))
 				{
 					return false;
 				}
@@ -893,7 +902,42 @@ namespace HalfGripOpenWorld
 				lo = Math.Min(lo, gh);
 				hi = Math.Max(hi, gh);
 			}
-			return hi - lo <= 6.0;
+			if (hi - lo > 6.0)
+			{
+				return false;
+			}
+			int nu = (int)Math.Ceiling(w / Step), nv = (int)Math.Ceiling(d / Step);
+			for (int a = 0; a <= nu; a++)
+			{
+				for (int k = 0; k <= nv; k++)
+				{
+					double u = (a / (double)nu - 0.5) * w, v = (k / (double)nv - 0.5) * d;
+					if (!Clear(own, front, d, v, cx + dx * u + nx * v, cz + dz * u + nz * v, margin))
+					{
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		/// <summary>The most a footprint's test points are apart: under the narrowest path's width and two margins, so none slips between them.</summary>
+		private const double Step = 3.0;
+
+		/// <summary>One point of a footprint <paramref name="v"/> across from its middle (depth <paramref name="d"/>) against the roads, the lots and the parks (see <see cref="Fits"/>).</summary>
+		private static bool Clear(int own, double front, double d, double v, double x, double z, double margin)
+		{
+			// How far this point is from its own road's edge: the front the setback, the back the setback and depth.
+			double ownEdge = front + v + d * 0.5;
+			if (!Network.Claims(x, z, own, ownEdge, margin))
+			{
+				return false;
+			}
+			if (own >= 0 && front > 0.0 && !Network.Claims(x, z, -1, 0.0, Math.Min(front, Network.Verge + 0.5) - 0.3, own))
+			{
+				return false;
+			}
+			return !Town.Taken(x, z, 2.0) && !Parks.At(x, z);
 		}
 
 		/// <summary>

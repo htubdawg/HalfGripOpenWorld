@@ -362,6 +362,14 @@ namespace HalfGripOpenWorld
 			List<int> route = Route(g, from, rr.Dst);
 			points.Clear();
 			points.Add((px, pz));
+			// On the paving: first straight off it to its side, square to the road (making for a spot along the road in one line, a deer
+			// caught a little along from the crossing ran on down the lane).
+			double off = Offset(g, px, pz);
+			if (crossing && Math.Abs(off) < g.Site.Half + 3.0)
+			{
+				double step = side * (g.Site.Half + 5.0) - off;
+				points.Add((px + g.Site.Nx * step, pz + g.Site.Nz * step));
+			}
 			points.Add((g.Spots[from].X, g.Spots[from].Z));
 			double lateral = 0.6 * (d % 3 - 1);
 			var legs = new List<(double x, double z)>();

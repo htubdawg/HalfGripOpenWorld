@@ -350,3 +350,12 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      Hitting one does far less damage than a doe (about a quarter); a buck a little more than a doe.
    - Nothing else about the deer moved: the same groups in the same places as 0.30.3 for the same race seed.
    Send screenshots of a buck close up (standing and grazing) and of a fawn if you meet one, and say whether the antlers look right.
+46. A road pass (0.31.1; in a room everyone needs 0.31.1: the roads changed a little).
+   - No house, barn, church or tower stands on a road, a sidewalk or a track anywhere (the barn by the road at about (2465, -2964)
+     with `ShowCoords` is clear of it now); terraces on bends stand behind the sidewalk.
+   - Northcote's middle: the main roads meet on one plate of tarmac, no square road end across the other and no short street lying
+     along the road to Oakhurst.
+   - Roads that used to end side by side and overlap now run on into each other as one road round the bend: at Oakhurst where the
+     Brookfield and Northcote roads meet, Farm 92's lane at about (9896, 13158), Millbrook's street and Farm 17's lane at about
+     (-6847, 3797).
+   - Say where a junction still looks badly joined (`ShowCoords` and a screenshot), and send `LogOutput.log`.
