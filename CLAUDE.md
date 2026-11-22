@@ -44,6 +44,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `DeerRoom.cs` | The deer in a room: each group's reactions in order and the kills, claimed by the machine that saw them and settled by the room's host (first claim wins), Hello for late joiners; the deer's messages. No Unity types (`tools/deersim` drives it) |
 | `DeerKills.cs` | The deer killed in a race: each body's flight, landing and slide (or fall when shot) on fixed steps, from the kill (its message read and written here, sent by `DeerRoom`). No Unity types |
 | `DeerModel.cs` | **Generated** by `tools/deer/export_cs.py` from `tools/deer/deer.json` (frozen: the painted coat is on its UVs) and `tools/deer/antlers.json` (`antlers.py`): the deer's mesh, bones and poses, and the buck's antlers. Never edit by hand |
+| `Plots.cs` | The house plots along the towns' and villages' roads and the footprint test (`Plots.Along`, `Plots.Fits`): what `Buildings` draws and `Traffic` counts as households. No Unity types |
+| `Traffic.cs` | The traffic's map, fixed with the world: the driving graph (drives in, no junction where a road passes over another), speed limits and lanes (right-hand), households and their cars, the places that draw trips and their parking, routes. No Unity types (`tools/trafficview` builds it). Each race's trips: `docs/TRAFFIC_HANDOFF.md` |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
@@ -131,6 +133,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - `dotnet run -c Release --project tools/deersim -- [seed]` drives `DeerRoom` on pretend machines over a pretend network (claims of
   one group's reaction and kills of one deer from several machines at once, a late joiner, twenty players, stale messages, alone)
   and checks every machine ends with the host's reactions and kills; run it after any change to `DeerRoom`.
+- `dotnet run -c Release --project tools/trafficview` builds the traffic's map and reports it (households, cars, places, routes found and
+  joined); run it after any change to `Traffic`, `Plots` or the roads.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes
