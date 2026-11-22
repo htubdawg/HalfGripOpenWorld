@@ -1315,7 +1315,75 @@ Open with the owner: how much grid (patches cover about a third of a town's area
 square or the widened street of a market town; back alleys driveable or footpaths; whether Westhaven gets a seafront (a promenade
 road along the shore with a terrace facing the sea) in place of streets ending at the beach.
 
-## Later: traffic (investigated after 0.17.0, to agree with the owner)
+## Traffic: the agreed plan (on `traffic-test-branch`, from `deer-test-branch`; agreed with the owner 2026-11-22)
+
+Cars driving the roads, built on what the deer proved (positions from the seed and the clock, claims settled by the host, drawn only
+near the car from a pool, moved on an origin shift) and on the game's own cars and physics. The two older sections below
+("investigated after 0.17.0" and "What the deer give traffic") hold the research; where they differ, this section is the plan.
+
+**Checked, not assumed (2026-11-22):**
+- The game's AI (`EnemyController`, decompile of 0.419) drives a closed lap only. What a traffic driver needs from it is the idea of
+  its steering (`FollowPath`: the signed angle to a point ahead times a gain, clamped to 60 degrees) and of its throttle, brake and
+  gears (`DriveTowardsSpeed`, `AccelInGear`, `UpdateGearSelection`), all through `CarControllerNew.steeringAngleDeg`, `engineAccel`
+  and `brakeAccel`. Written in our own words for our roads.
+- The Multiplayer mod (1.1.1, read from its source in `4l3x4nd3r0/HalfGripMods`, `mods/Multiplayer/src`):
+  - Other players' cars, and on a client the host's AI cars, are stand-ins: the game's enemy prefab with the rigidbody kinematic,
+    moved each physics step towards the last state received (`RemoteCar.cs`).
+  - Only the host drives AI cars (real physics, the game's AI) and sends every one's state about 15 times a second (`AiState`); the
+    list is fixed at the race's start from the host's AI grid (a respawn replaces a car in its slot), up to `Room.Ceiling` = 64 cars,
+    not 8 as written below. It cannot add or remove cars during a race, and the host has no ground loaded under a car far from it,
+    so traffic cannot ride on it.
+  - Collisions have no special handling: hitting a stand-in is plain Unity physics against a kinematic body, and the game counts the
+    hit with the hitter's whole mass, like a wall (`CarControllerNew.ComputeCrashDamage`). Ram damage is not forwarded, no push is
+    sent; on the host the hitter's stand-in shoves the real car, seen by the hitter a round trip later. **The owner finds this
+    acceptable in play**, so traffic's stand-ins work the same way and need no hit messages or "soft" (physical) stand-ins.
+
+**Owner's decisions:**
+1. **No code from the Multiplayer mod** (or anyone else's) is copied or called: not `RemoteCar`, not its smoothing. The stand-in is
+   our own, written from the idea, so the mod is free of any licence.
+2. Traffic's state goes over HalfGripTools' `ctx.Net` (as the events' and the deer's messages do), not the Multiplayer mod's AI sync.
+
+**Stages** (each one something the owner can look at or test before the next):
+
+1. **Timetables, no game code** (`Traffic.cs`, pure, under the determinism rules like `Storms` and `Herds`). Each car's route over
+   the road network from the race's seed (the junction graph `Signs` builds, opened up for routing), and its position at any race
+   time a pure function of (seed, car, clock): speeds by road class and bends, a safe gap to the car in front, a minor road giving
+   way at a junction, worked out lane by lane so queues come out the same on every machine. Driving on the left. Checks in
+   `meshcheck` (no two cars overlap, cars stay in their lane and keep to their roads' speeds, what one car's position costs) and a
+   picture and a short animation from `preview` for the owner.
+2. **Timetabled cars drawn in the game, no physics.** The game's car models moved along their timetables near the car, from a pool,
+   on an origin shift. The same solo and in a room. A look at density and behaviour; hitting one is a wall, so a preview only.
+3. **A real car near the player.** Within about 300 units (90 m) a timetabled car becomes a game car with our driver (follows the car in
+   front, waits at junctions, can be bumped); out of reach it goes back on its timetable, late by what held it up ("car c is D seconds
+   late from t"), so traffic is not used up; a wreck or a car knocked off its road is retired ("car c gone from t"). Solo, this
+   machine drives every car. The owner measures what 20 to 30 extra physics cars cost.
+4. **Rooms.**
+   - **Who drives:** the player nearest a car drives it, because only that player has the ground loaded under it. Claimed as the
+     deer's reactions are; the host keeps the first claim; a hand-over is a claim. Hits do not need the hitter to drive (see above),
+     so hand-overs can be loose (another player clearly nearer, or the driver out of reach).
+   - **What is sent:** the driver sends each car's state about 15 times a second (about 45 bytes a car), stamped with the race clock.
+     Lateness and retirement are claims, so the timetables stay the same everywhere.
+   - **The stand-in (our own):** a kinematic game car played back a little behind the newest state, smoothly between two received
+     states on the race clock; if states stop coming, it carries on along its lane on its route. Hits feel as they do against the
+     Multiplayer mod's AI cars.
+   - **Checks:** a `tools/trafficsim` like `deersim` (claims, hand-overs, delays, late joiners, twenty players).
+
+Superseded in the research below: "copied" (the game's gear and throttle logic is written afresh from the idea, not pasted) and
+"`RemoteCar`'s smoothing as the model" (decision 1); "No solo traffic first" is open again (question 1).
+
+**Open for the owner** (asked 2026-11-22; answers go here):
+1. Solo first? The old call was "rooms only, built once", made while the room channel did not exist. Stages 1 to 3 work solo.
+2. How dense, and on which roads (e.g. busy on the trunk and main roads, some on secondary roads and streets, the odd car on
+   lanes, none on drives, tracks or the courses)? Probably a setting like `DeerAmount` until tested.
+3. Can traffic be shot and wrecked? Keeping the game's `EnemyController` on a traffic car (switched off, its guns off) lets the
+   game's weapons and damage work on it with nothing added.
+4. Junctions: a minor road giving way enough, or traffic lights in the towns later?
+5. Do deer react to traffic cars? A timetabled car's position is known at any time, so every machine can work it out alike.
+6. Which cars: the game's enemy cars with their skins, mixed at random? Headlights at night (the stand-ins of other players have
+   none today)?
+7. Driving on the left (the country is English), as assumed so far?
+
+### Traffic: investigated after 0.17.0 (research; the plan above replaces it where they differ)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
 
@@ -1347,8 +1415,9 @@ the loaded tiles.
 
 **In a room, control must be handed between players.** Each player loads tiles, and so ground colliders, only round their own car:
 the host has no ground under a car near a far-away client, so a physics car there falls through the world. Whoever has that ground
-loaded must drive it. The Multiplayer mod's AI sync cannot carry this: the host runs every AI car and sends `AiState`, read for at
-most 8 cars, its list fixed at the scene's start; the others see kinematic stand-ins (`RemoteCar`). The design:
+loaded must drive it. The Multiplayer mod's AI sync cannot carry this: the host runs every AI car and sends `AiState` (up to 64 cars,
+read from its source in 2026-11; "8" was wrong), its list fixed at the scene's start; the others see kinematic stand-ins
+(`RemoteCar`). The design:
 
 1. **Distant traffic on a timetable, nothing sent.** A car's position is a pure function of (room seed, car id, race clock), as
    `Storms` is, under the same determinism rules, so every machine draws the same distant traffic.
