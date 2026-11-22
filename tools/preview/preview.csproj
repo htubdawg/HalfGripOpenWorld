@@ -30,5 +30,8 @@
     <Compile Include="../../OpenWorld/src/GarageSites.cs" />
     <Compile Include="../../OpenWorld/src/Courses.cs" />
     <Compile Include="../../OpenWorld/src/Herds.cs" />
+    <Compile Include="../../OpenWorld/src/Reactions.cs" />
+    <Compile Include="../../OpenWorld/src/DeerRoom.cs" />
+    <Compile Include="../../OpenWorld/src/DeerKills.cs" />
   </ItemGroup>
 </Project>

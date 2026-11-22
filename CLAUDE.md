@@ -40,7 +40,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Circuit.cs`, `CircuitMesh.cs`, `Rally.cs`, `HillClimb.cs` | The race courses: the circuit, the rally stage, the hill climb (sited and laid out in `Places.Build`; the stage's and the climb's roads made first in `Network.Build`) |
 | `Herds.cs` | The deer: where they could live (`DeerSites`, fixed with the map: crossings on quiet roads where woods meet fields) and each race's groups from the race's seed, their spots, legs tested for water and drops, and what each deer does as a pure function of the race clock (`Herds.At`). No Unity types |
 | `Deer.cs` | The deer in the game: the skinned mesh in Unity's frame (`DeerMesh`), and each deer near the car posed in code from `Herds.At`; hits by this machine's car and shots by its guns (tested in code, no colliders), the car's damage, dead bodies drawn |
-| `DeerKills.cs` | The deer killed in a race: each body's flight, landing and slide (or fall when shot) on fixed steps, the kill messages sent to the room. No Unity types |
+| `Reactions.cs` | Part of `Herds`: the deer's reactions (alert, flee away, across or after freezing) played from a reaction alone, along the tested legs; the calm day going on from the refuge. No Unity types |
+| `DeerRoom.cs` | The deer in a room: each group's reactions in order and the kills, claimed by the machine that saw them and settled by the room's host (first claim wins), Hello for late joiners; the deer's messages. No Unity types (`tools/deersim` drives it) |
+| `DeerKills.cs` | The deer killed in a race: each body's flight, landing and slide (or fall when shot) on fixed steps, from the kill (its message read and written here, sent by `DeerRoom`). No Unity types |
 | `DeerModel.cs` | **Generated** by `tools/deer/export_cs.py` from `tools/deer/deer.json`: the deer's mesh, bones and poses. Never edit by hand |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
@@ -115,7 +117,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
   house walls reading whole storeys and roofs with undersides (facades), drives' houses and mailboxes clear of the roads and water
   (homes), few country lane dead ends and no through way hooking round (backroads), the deer's mesh and their spots, legs and
-  positions never in deep water, over a drop or on a road but at their crossing, dead deer's bodies coming to rest on the ground (deer);
+  positions never in deep water, over a drop or on a road but at their crossing, dead deer's bodies coming to rest on the ground, fleeing deer never in deep water, on another road or jumping (deer);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
@@ -126,6 +128,9 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   delays (joins, leaves, the Host leaving, creates and Starts at once, cut-off, time limit, leaving mid-race, a late joiner, the
   rules, twenty players at random, clocks 30 s apart and machines stalling, worlds built late) and checks every machine agrees with
   the arbiter, syncs its clock on the grid and sees green with it; run it after any change to `EventRoom`.
+- `dotnet run -c Release --project tools/deersim -- [seed]` drives `DeerRoom` on pretend machines over a pretend network (claims of
+  one group's reaction and kills of one deer from several machines at once, a late joiner, twenty players, stale messages, alone)
+  and checks every machine ends with the host's reactions and kills; run it after any change to `DeerRoom`.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes

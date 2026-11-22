@@ -7,10 +7,9 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// The deer killed in one race, by a car or a gun, and how each body moves after: thrown by a car it flies, tumbling, lands
 	/// (bouncing once if it came down hard), slides to a stop and lies on its side; shot it falls over sideways where it stood. A kill
-	/// is found by the machine whose car or gun did it (<c>Deer</c>), which sends it to everybody in the room (<see cref="Encode"/>);
-	/// every machine then plays the same body from the same start (<see cref="Body.At"/>), so a deer one player hits lies dead in the
-	/// same place on every screen. A deer is killed once: a second claim on one already dead (two players hitting it in the same
-	/// moment) is dropped on each machine, keeping the first that came there.
+	/// is found by the machine whose car or gun did it (<c>Deer</c>) and settled by the room's host (<see cref="DeerRoom"/>: the first
+	/// claim on a deer is its kill); every machine plays the same body from the same start on the race clock (<see cref="Body.At"/>),
+	/// so a deer one player hits lies dead in the same place on every screen, also for a player who joins later.
 	///
 	/// No Unity types: the body's motion is in world coordinates and doubles, on fixed steps from its start, so it comes out the same
 	/// however long the frames are (<c>tools/meshcheck</c> checks it lands on the ground and stays there).
@@ -18,10 +17,10 @@ namespace HalfGripOpenWorld
 	internal sealed class DeerKills
 	{
 		/// <summary>The first byte of a deer's message, told apart from the events' (which start with their version, a small number).</summary>
-		internal const byte Tag = 0xD3;
+		internal const byte Tag = DeerRoom.Tag;
 
-		/// <summary>The message's layout. Raise it with any change to what it carries.</summary>
-		internal const byte Version = 1;
+		/// <summary>The kill's layout. Raise it with any change to what it carries.</summary>
+		internal const byte Version = 2;
 
 		/// <summary>A grown doe's body centre above her hooves, and how far it is off the ground when she lies on her side (units).</summary>
 		internal const double CentreHeight = 2.37, Lift = 0.55;
@@ -46,6 +45,8 @@ namespace HalfGripOpenWorld
 		{
 			public int Seed, Group, Member;
 			public How How;
+			/// <summary>The race time it was killed at (the room's race clock, the host's on every machine).</summary>
+			public double T;
 			/// <summary>The body's centre (world x and z, scene height), its velocity, the way it faced (radians from +x toward +z), its size.</summary>
 			public double X, Y, Z, Vx, Vy, Vz, Yaw, Scale;
 			/// <summary>How fast it tumbles about its length (radians a second; plus rolls it toward its right) and turns about the up axis.</summary>
@@ -242,60 +243,21 @@ namespace HalfGripOpenWorld
 			return dead.ContainsKey(Key(group, member));
 		}
 
-		/// <summary>Takes a kill that started at race time <paramref name="t"/>; false (and nothing changed) for another race's or a deer already dead.</summary>
-		internal bool Add(Kill kill, double t)
+		/// <summary>
+		/// Takes a kill (its body starting at its race time), in place of any this deer had (the host's put in place of this machine's
+		/// own); false (nothing changed) for another race's.
+		/// </summary>
+		internal bool Set(Kill kill)
 		{
 			if (kill.Seed != Seed || kill.Group < 0 || kill.Member < 0 || kill.Member >= 64)
 			{
 				return false;
 			}
-			int key = Key(kill.Group, kill.Member);
-			if (dead.ContainsKey(key))
-			{
-				return false;
-			}
-			dead[key] = new Body(kill, t);
+			dead[Key(kill.Group, kill.Member)] = new Body(kill, kill.T);
 			return true;
 		}
 
 		// ---- the messages ----------------------------------------------------------------------------------------
-
-		/// <summary>Kills come from the network on its own thread or the main one: held here until the deer read them each frame.</summary>
-		private static readonly List<(ulong from, Kill kill)> inbox = new List<(ulong, Kill)>();
-
-		/// <summary>The most kills held unread (a world not built yet reads none): the oldest go.</summary>
-		private const int InboxMost = 256;
-
-		internal static void Received(ulong from, byte[] data)
-		{
-			if (!Decode(data, out Kill kill))
-			{
-				return;
-			}
-			lock (inbox)
-			{
-				if (inbox.Count >= InboxMost)
-				{
-					inbox.RemoveAt(0);
-				}
-				inbox.Add((from, kill));
-			}
-		}
-
-		/// <summary>The kills come since the last call, in the order they came.</summary>
-		internal static List<(ulong from, Kill kill)> Take()
-		{
-			lock (inbox)
-			{
-				if (inbox.Count == 0)
-				{
-					return null;
-				}
-				List<(ulong, Kill)> list = new List<(ulong, Kill)>(inbox);
-				inbox.Clear();
-				return list;
-			}
-		}
 
 		internal static byte[] Encode(Kill k)
 		{
@@ -308,6 +270,7 @@ namespace HalfGripOpenWorld
 				w.Write((short)k.Group);
 				w.Write((byte)k.Member);
 				w.Write((byte)k.How);
+				w.Write(k.T);
 				w.Write(k.X);
 				w.Write(k.Z);
 				w.Write((float)k.Y);
@@ -344,6 +307,7 @@ namespace HalfGripOpenWorld
 						return false;
 					}
 					k.How = (How)how;
+					k.T = r.ReadDouble();
 					k.X = r.ReadDouble();
 					k.Z = r.ReadDouble();
 					k.Y = r.ReadSingle();
@@ -355,7 +319,7 @@ namespace HalfGripOpenWorld
 					k.Spin = r.ReadSingle();
 					k.Turn = r.ReadSingle();
 					k.Side = r.ReadSByte() < 0 ? -1 : 1;
-					return !(double.IsNaN(k.X) || double.IsNaN(k.Z) || double.IsNaN(k.Y) || double.IsInfinity(k.X) || double.IsInfinity(k.Z));
+					return !(double.IsNaN(k.T) || double.IsNaN(k.X) || double.IsNaN(k.Z) || double.IsNaN(k.Y) || double.IsInfinity(k.X) || double.IsInfinity(k.Z));
 				}
 			}
 			catch (EndOfStreamException)

@@ -190,7 +190,11 @@ namespace HalfGripOpenWorld
 	/// standing, looking up, walking, trotting). Where a deer is comes from the herds alone (the same on every machine); how its pose
 	/// blends from one thing to the next is only drawing, and is eased here.
 	///
-	/// They do not react to cars yet (step 3 of the plan in docs/PLAN.md), but they can be killed, tested in code with no colliders:
+	/// They react (<see cref="React"/>): a car coming is noticed (heads up), and at about 40% of the distance it was noticed at the group
+	/// flees (<c>Reactions.cs</c>); a shot near them or one of them killed sends them off too. This machine decides only for its
+	/// own car and gun and claims the reaction of the room's host (<see cref="DeerRoom"/>), which settles it for everybody.
+	///
+	/// They can be killed, tested in code with no colliders:
 	/// each frame this machine's car (its colliders' box) against the bodies of the deer drawn near it (<see cref="CarHits"/>), and each
 	/// of this player's gun shots against the deer it passes before what it struck (<see cref="Shoot"/>, from a patch on the gun's ray).
 	/// A car's hit damages the car as a crash does, scaled from the game's own crash numbers to a deer's weight, slows it a little and
@@ -217,7 +221,23 @@ namespace HalfGripOpenWorld
 		private bool failed;
 		private int layer;
 
-		private int stand, alert, graze, walk1, walk2, extend;
+		private int stand, alert, graze, walk1, walk2, extend, gather, flag;
+
+		/// <summary>The room's reactions and kills (the host settles them; alone, this machine).</summary>
+		private DeerRoom room;
+
+		/// <summary>Per group: how far off this machine's car was when the group noticed it (the flee comes at 40% of that).</summary>
+		private readonly Dictionary<int, float> noticed = new Dictionary<int, float>();
+
+		/// <summary>Per group: when a shot here last sent it off (a shotgun's pellets are one shot).</summary>
+		private readonly Dictionary<int, double> shotAt = new Dictionary<int, double>();
+
+		/// <summary>A group notices a car coming at this many seconds' closing (about 4.6 s before it would reach them at 40%, as deer were
+		/// measured to flee), between the nearest and furthest distances; a car not coming at them, only this near.</summary>
+		private const double NoticeSeconds = 11.5, NoticeLeast = 45.0, NoticeMost = 200.0, NoticeStill = 35.0;
+
+		/// <summary>How far a shot is heard by deer (units, about 75 m).</summary>
+		private const double ShotHeard = 250.0;
 
 		/// <summary>The deer drawn now, for the gun's patch (null with no world).</summary>
 		internal static Deer Active;
@@ -243,7 +263,7 @@ namespace HalfGripOpenWorld
 		private float prevY;
 		private Quaternion prevRot;
 
-		private const int Hips = 0, Chest = 2, Neck2 = 4, Head = 5, ShoulderL = 10, FetlockL = 13, ThighL = 14, HfetlockL = 17, ShoulderR = 18, FetlockR = 21, ThighR = 22, HfetlockR = 25;
+		private const int Tail1 = 8, Tail2 = 9, Hips = 0, Chest = 2, Neck2 = 4, Head = 5, ShoulderL = 10, FetlockL = 13, ThighL = 14, HfetlockL = 17, ShoulderR = 18, FetlockR = 21, ThighR = 22, HfetlockR = 25;
 
 		private readonly List<(Vector3 a, Vector3 b, float r, int n)> shapes = new List<(Vector3, Vector3, float, int)>();
 
@@ -289,6 +309,21 @@ namespace HalfGripOpenWorld
 			double amount = EventLink.InRoom ? 1.0 : Mod.DeerAmount.Value;
 			building = System.Threading.Tasks.Task.Run(() => new Herds(seed, hour, Sky.DaySeconds, amount));
 			kills = new DeerKills(seed);
+			room = new DeerRoom(seed, new Link());
+			room.ReactionsChanged = g =>
+			{
+				if (herds != null && g < herds.Groups.Length)
+				{
+					herds.SetReactions(herds.Groups[g], room.Reactions(g));
+				}
+			};
+			room.KillChanged = k =>
+			{
+				if (herds != null && k.Group < herds.Groups.Length && k.Member < herds.Groups[k.Group].Members.Length)
+				{
+					kills.Set(k);
+				}
+			};
 			Active = this;
 			try
 			{
@@ -298,6 +333,8 @@ namespace HalfGripOpenWorld
 				walk1 = DeerMesh.Pose("walk1");
 				walk2 = DeerMesh.Pose("walk2");
 				extend = DeerMesh.Pose("extend");
+				gather = DeerMesh.Pose("gather");
+				flag = DeerMesh.Pose("flag");
 				// Winter coat on a cold day (the race's snow line low), the summer coat otherwise: the painted coat is a summer one, so on
 				// a cold day it is tinted toward the winter coat's grey-brown.
 				bool winter = new Storms(seed).SnowLine < 390.0;
@@ -353,8 +390,12 @@ namespace HalfGripOpenWorld
 				building = null;
 				Mod.Log.LogInfo("Deer: " + herds.Groups.Length + " groups, " + herds.DeerCount + " deer drawn from the race's seed (" + DeerSites.All.Count + " places they could live), " + herds.BuildMs.ToString("0") + " ms"
 					+ (Math.Abs(Mod.DeerAmount.Value - 1f) > 0.001f ? (EventLink.InRoom ? " (the standard amount: DeerAmount is only used alone)" : " (DeerAmount " + Mod.DeerAmount.Value.ToString("0.##") + ")") : ""));
+				if (EventLink.InRoom && !HalfGripTools.Net.IsHost)
+				{
+					room.Hello();
+				}
 			}
-			ReadKills();
+			ReadMessages();
 			if (!Mod.ShowDeer.Value)
 			{
 				Clear();
@@ -405,7 +446,7 @@ namespace HalfGripOpenWorld
 					}
 					else
 					{
-						herds.At(group, m, t, ref move, ref scratch, out DeerState s);
+						herds.Live(group, m, t, ref move, ref scratch, out DeerState s);
 						sx = s.X;
 						sz = s.Z;
 					}
@@ -443,7 +484,7 @@ namespace HalfGripOpenWorld
 				}
 				else
 				{
-					herds.At(group, m, t, ref move, ref scratch, out DeerState s);
+					herds.Live(group, m, t, ref move, ref scratch, out DeerState s);
 					v.Dead = false;
 					v.WorldX = s.X;
 					v.WorldZ = s.Z;
@@ -452,6 +493,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			CarHits(car, t);
+			React(car, t, cx, cz);
 			gone.Clear();
 			foreach (KeyValuePair<int, View> kv in live)
 			{
@@ -482,7 +524,7 @@ namespace HalfGripOpenWorld
 				float nearest = near.Count > 0 ? near[0].d : -1f;
 				Status = "deer: " + drawn + " drawn" + (nearest >= 0f ? ", nearest " + (nearest / 3.3f).ToString("0") + " m" : "") + "; the nearest group's crossing "
 					+ (Math.Sqrt(best) / 3.3).ToString("0") + " m " + Sky.Compass(bx, bz) + " (" + herds.Groups.Length + " groups, " + herds.DeerCount + " deer this race; out feeding: "
-					+ (Herds.Activity(herds.Hour(t)) * 100.0).ToString("0") + "%; killed: " + kills.Count + ", " + hitCount + " by this car, " + shotCount + " shot here)";
+					+ (Herds.Activity(herds.Hour(t)) * 100.0).ToString("0") + "%; killed: " + kills.Count + ", " + hitCount + " by this car, " + shotCount + " shot here; reacting: " + reacting + ")";
 			}
 		}
 
@@ -497,7 +539,7 @@ namespace HalfGripOpenWorld
 			}
 			else
 			{
-				v.Yaw = Mathf.MoveTowardsAngle(v.Yaw, yaw, (s.Motion == DeerMotion.Walk || s.Motion == DeerMotion.Trot ? 360f : 160f) * dt);
+				v.Yaw = Mathf.MoveTowardsAngle(v.Yaw, yaw, (s.Motion == DeerMotion.Gallop ? 720f : s.Motion == DeerMotion.Walk || s.Motion == DeerMotion.Trot ? 360f : 160f) * dt);
 			}
 			// The ground under it, and its slope along the body (only worked out again once it has moved).
 			double mx = s.X - v.LastX, mz = s.Z - v.LastZ;
@@ -532,12 +574,32 @@ namespace HalfGripOpenWorld
 						bob = (s.Motion == DeerMotion.Trot ? 0.05f : 0.012f) * DeerMesh.Scale * Mathf.Abs(Mathf.Sin((float)(phase * 2.0 * Math.PI)));
 						break;
 					}
+				case DeerMotion.Gallop:
+					{
+						// The bound: gathered (legs under) to stretched out and back, once a stride; the tail up in both.
+						double phase = s.Gait - Math.Floor(s.Gait);
+						float k = 0.5f - 0.5f * (float)Math.Cos(phase * 2.0 * Math.PI);
+						Quaternion[] a = DeerMesh.Poses[gather], b = DeerMesh.Poses[extend];
+						for (int i = 0; i < bones; i++)
+						{
+							target[i] = Quaternion.Slerp(a[i], b[i], k);
+						}
+						bob = 0.1f * DeerMesh.Scale * Mathf.Sin((float)(phase * 2.0 * Math.PI));
+						break;
+					}
 				default:
 					{
-						Quaternion[] p = DeerMesh.Poses[s.Motion == DeerMotion.Graze ? graze : s.Motion == DeerMotion.Alert ? alert : stand];
+						Quaternion[] p = DeerMesh.Poses[s.Motion == DeerMotion.Graze ? graze : s.Motion == DeerMotion.Alert ? (s.Flag ? flag : alert) : stand];
 						Array.Copy(p, target, bones);
 						break;
 					}
+			}
+			if (s.Flag)
+			{
+				// Alarmed: the tail up, a white flag.
+				Quaternion[] up = DeerMesh.Poses[flag];
+				target[Tail1] = up[Tail1];
+				target[Tail2] = up[Tail2];
 			}
 			if (v.Fresh)
 			{
@@ -586,35 +648,179 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The kills other players sent, taken as they come (each deer once; another race's dropped).</summary>
-		private void ReadKills()
+		/// <summary>The room's deer messages come since the last frame, read in order.</summary>
+		private void ReadMessages()
 		{
-			List<(ulong from, DeerKills.Kill kill)> list = DeerKills.Take();
-			if (list == null || tm == null)
+			List<(ulong from, byte[] data)> list = DeerRoom.Take();
+			if (list == null)
 			{
 				return;
 			}
-			double t = tm.TimeSinceRaceStart;
-			foreach ((ulong from, DeerKills.Kill kill) in list)
+			foreach ((ulong from, byte[] data) in list)
 			{
-				if (kill.Group >= herds.Groups.Length || kill.Member >= herds.Groups[kill.Group].Members.Length)
+				room.Receive(from, data);
+			}
+		}
+
+		/// <summary>A kill found here, claimed of the host; the rest of the group flees from it.</summary>
+		private void Kill(DeerKills.Kill kill, double t)
+		{
+			kill.T = t;
+			if (room.Claim(kill))
+			{
+				Flee(kill.Group, kill.X, kill.Z, t, kill.How == DeerKills.How.Shot);
+			}
+		}
+
+		/// <summary>The groups this machine's deer messages go through: the game's network (in a room), the host settling.</summary>
+		private sealed class Link : DeerRoom.ILink
+		{
+			public bool IsHost => !EventLink.InRoom || HalfGripTools.Net.IsHost;
+
+			public void ToHost(byte[] data)
+			{
+				EventLink.DeerToHost(data);
+			}
+
+			public void ToAll(byte[] data)
+			{
+				EventLink.DeerToAll(data);
+			}
+
+			public void ToOne(ulong to, byte[] data)
+			{
+				EventLink.DeerToOne(to, data);
+			}
+		}
+
+		private int reacting;
+
+		/// <summary>
+		/// The groups near this machine's car notice it and flee from it: noticed when it is <see cref="NoticeSeconds"/> away at its speed
+		/// toward them (heads up, an alert claimed), fled at 40% of the distance it was noticed at, or when it is very near or under 1.6 s
+		/// off. Which way by chance (<see cref="Herds.ChooseWay"/>). A group galloping off, or with a claim of this machine's waiting, is
+		/// left alone.
+		/// </summary>
+		private void React(CarControllerNew car, double t, double cx, double cz)
+		{
+			Vector3 vel = car.rb != null ? car.rb.linearVelocity : Vector3.zero;
+			reacting = 0;
+			for (int g = 0; g < herds.Groups.Length; g++)
+			{
+				Herds.Group group = herds.Groups[g];
+				double sx = group.Site.X - cx, sz = group.Site.Z - cz;
+				if (sx * sx + sz * sz > 450.0 * 450.0)
+				{
+					noticed.Remove(g);
+					continue;
+				}
+				if (Herds.Alerted(group, t) || Herds.Running(group, t))
+				{
+					reacting++;
+				}
+				if (room.Waiting(g) || Herds.Running(group, t))
 				{
 					continue;
 				}
-				if (kills.Add(kill, t))
+				// The live deer nearest the car.
+				double best = double.MaxValue, nx = 0.0, nz = 0.0;
+				for (int m = 0; m < group.Members.Length; m++)
 				{
-					Mod.Info("Deer: group " + kill.Group + " deer " + kill.Member + " " + (kill.How == DeerKills.How.Shot ? "shot" : "hit") + " by another player");
+					if (room.IsDead(g, m))
+					{
+						continue;
+					}
+					herds.Live(group, m, t, ref move, ref scratch, out DeerState s);
+					double ex = s.X - cx, ez = s.Z - cz;
+					double d2 = ex * ex + ez * ez;
+					if (d2 < best)
+					{
+						best = d2;
+						nx = s.X;
+						nz = s.Z;
+					}
+				}
+				if (best == double.MaxValue)
+				{
+					continue;
+				}
+				double dist = Math.Sqrt(best);
+				double closing = dist > 0.01 ? (vel.x * (nx - cx) + vel.z * (nz - cz)) / dist : 0.0;
+				double notice = closing > 2.0 ? Math.Max(NoticeLeast, Math.Min(NoticeMost, closing * NoticeSeconds)) : NoticeStill;
+				if (!noticed.TryGetValue(g, out float at))
+				{
+					if (dist < notice)
+					{
+						noticed[g] = (float)dist;
+						if (!Herds.Alerted(group, t))
+						{
+							room.Claim(new Reaction { Group = g, Kind = ReactKind.Alert, T0 = t, FromX = cx, FromZ = cz });
+						}
+					}
+					continue;
+				}
+				if (dist > Math.Max(at, notice) * 1.4 + 40.0)
+				{
+					noticed.Remove(g); // gone by
+					continue;
+				}
+				if (dist < 0.4 * at || dist < 14.0 || (closing > 2.0 && dist / closing < 1.6))
+				{
+					FleeWay way = Herds.ChooseWay(group, room.Count(g), Herds.OnRoad(group, nx, nz), herds.Hour(t), false);
+					if (room.Claim(new Reaction { Group = g, Kind = ReactKind.Flee, Way = way, T0 = t, FromX = cx, FromZ = cz }))
+					{
+						noticed.Remove(g);
+						Mod.Info("Deer: group " + g + " flees " + way + " from the car at " + (dist / 3.3).ToString("0") + " m (noticed at " + (at / 3.3f).ToString("0") + " m)");
+					}
 				}
 			}
 		}
 
-		/// <summary>A kill found here: kept as it will be read on the other machines (sent at float precision) and sent to them.</summary>
-		private void Kill(DeerKills.Kill kill, double t)
+		/// <summary>Group g flees from a point (a kill, a shot), unless it is already galloping off or a claim of this machine's waits.</summary>
+		private void Flee(int g, double x, double z, double t, bool shot)
 		{
-			byte[] data = DeerKills.Encode(kill);
-			if (DeerKills.Decode(data, out DeerKills.Kill sent) && kills.Add(sent, t))
+			Herds.Group group = herds.Groups[g];
+			if (room.Waiting(g) || Herds.Running(group, t))
 			{
-				EventLink.SendDeer(data);
+				return;
+			}
+			bool onRoad = Herds.OnRoad(group, x, z);
+			FleeWay way = Herds.ChooseWay(group, room.Count(g), onRoad, herds.Hour(t), shot);
+			room.Claim(new Reaction { Group = g, Kind = ReactKind.Flee, Way = way, T0 = t, FromX = x, FromZ = z });
+		}
+
+		/// <summary>A shot of this player's: every group with a live deer within <see cref="ShotHeard"/> of the gun flees from it.</summary>
+		internal void Gunshot(Vector3 origin)
+		{
+			if (herds == null || tm == null)
+			{
+				return;
+			}
+			double t = tm.TimeSinceRaceStart;
+			Origin.World(origin, out double ox, out double oz);
+			for (int g = 0; g < herds.Groups.Length; g++)
+			{
+				Herds.Group group = herds.Groups[g];
+				double sx = group.Site.X - ox, sz = group.Site.Z - oz;
+				if (sx * sx + sz * sz > (ShotHeard + 300.0) * (ShotHeard + 300.0) || (shotAt.TryGetValue(g, out double last) && t - last < 2.0))
+				{
+					continue;
+				}
+				for (int m = 0; m < group.Members.Length; m++)
+				{
+					if (room.IsDead(g, m))
+					{
+						continue;
+					}
+					herds.Live(group, m, t, ref move, ref scratch, out DeerState s);
+					double ex = s.X - ox, ez = s.Z - oz;
+					if (ex * ex + ez * ez < ShotHeard * ShotHeard)
+					{
+						shotAt[g] = t;
+						Flee(g, ox, oz, t, true);
+						break;
+					}
+				}
 			}
 		}
 

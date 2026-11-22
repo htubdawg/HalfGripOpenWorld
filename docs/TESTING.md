@@ -301,7 +301,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    at midday more are back in the woods. In a room, both players see the same deer in the same places doing the same thing at the
    same moment (compare screenshots at one spot). Turning `Deer` off in the config hides them. Send a screenshot or two close up and
    `LogOutput.log`, with the frame rate near a group if it drops.
-43. Hitting and shooting deer (0.29.0; deer still do not run from cars). Find a group as in 42.
+43. Hitting and shooting deer (0.29.0; from 0.30.0 they also run, item 44). Find a group as in 42.
    - Drive into a deer slowly (under 10 on the speedometer): it dies and is pushed over but the car takes no damage; the log has
      `Deer: hit at ... on the speedometer (the car at ...): 0.0 damage`. The first hit logs `Deer: the car's box for hitting deer is ...`
      (or that a fallback box was used): send that line.
@@ -314,9 +314,24 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Shoot a deer (any gun, a shotgun too): the tracer stops at the deer, there is the gun's hit puff, and the deer falls over sideways
      away from the shot and lies there. Log: `Deer: shot at ... m`. Deer can be shot out to about 150 m (only drawn ones). Shots past or
      over a deer do not kill it.
-   - The rest of a hit deer's group carries on as before (scattering comes with reactions).
-   - In a room: A hits a deer and B, near it, sees the same deer thrown and lying in the same place (B's log: `Deer: group ... deer
-     ... hit by another player`); the same for a shot deer. B cannot then hit that deer again.
+   - The rest of a hit or shot deer's group bolts (0.30.0).
+   - In a room: A hits a deer and B, near it, sees the same deer thrown and lying in the same place; the same for a shot deer. B
+     cannot then hit that deer again. A player who joins after sees the bodies where they lie.
    - `DeerAmount` alone: 0 gives no deer (log `Deer: 0 groups`), 2 more groups (about 215) than 1 (160), from the next race; in a room
      the log says the standard amount is used. Say what amount feels right to drive through.
    Send `LogOutput.log` and screenshots of a thrown deer lying and of a hit's damage.
+44. Deer reacting (0.30.0). Find a group as in 42 (`ShowCoords`: the overlay's `deer:` line also counts the groups near reacting).
+   - Drive toward a group along its lane at a steady speed: a few seconds out (further the faster) they stop grazing and watch the car,
+     heads up; nearer (about 40% of that) they bolt, the nearest deer first and the others a moment after each other, at a gallop with
+     their white tails up: most into the woods or the far field on their side; sometimes (more if one was standing in the road) over
+     the road in front of the car, one after another, so watch for the next; now and then (more at night) they freeze, staring, for
+     a few seconds before running. The log: `Deer: group ... flees Away|Across|Freeze from the car at ... m (noticed at ... m)`.
+   - Fled deer stand watching where they got to with their tails up, then settle and graze; a minute or two later they go about their
+     day from there (no jump back to where they were).
+   - Running deer never go into a river or lake, down a steep bank, or along another road; they cross only at their crossing place.
+   - A car stopped near a group: they watch it but only run if it is very close (about 4 m).
+   - A shot within about 75 m of a group sends it off (away, never across); so does one of them being hit or shot.
+   - In a room: A drives at a group and B, watching from nearby, sees the same deer run the same way at the same time (compare
+     screenshots or video); if A and B come at one group together, both see the same run. A player who joins later sees groups
+     where their runs left them.
+   Send `LogOutput.log` and a clip or screenshots of a group bolting, and say whether they feel too jumpy or too calm.

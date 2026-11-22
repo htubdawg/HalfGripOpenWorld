@@ -278,7 +278,7 @@ namespace HalfGripOpenWorld
 		}
 	}
 	/// <summary>
-	/// Deer can be shot: after each ray of the player's gun (a shotgun fires one per pellet), the deer it passed through before what it
+	/// Deer hear a shot and flee, and can be shot: after each ray of the player's gun (a shotgun fires one per pellet), the deer it passed through before what it
 	/// struck, if any, is killed and the ray made to end at it (so the tracer stops there), with the gun's own hit puff and sound. The
 	/// deer have no colliders (<see cref="Deer.Shoot"/> tests the ray against their bodies in code). Only this player's guns fire these
 	/// rays (they aim from its camera), so a deer is only ever shot here by this player.
@@ -295,6 +295,8 @@ namespace HalfGripOpenWorld
 			}
 			try
 			{
+				// Heard: every group near the gun flees (once for a shotgun's pellets).
+				deer.Gunshot(origin);
 				float reach = (__result - origin).magnitude;
 				if (!deer.Shoot(origin, direction, reach, out Vector3 at))
 				{

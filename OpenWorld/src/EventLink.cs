@@ -130,10 +130,19 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// A deer killed on this machine, to everybody in the room (nothing alone). The deer's messages share the Open World's one
-		/// handler with the events', told apart by their first byte (<see cref="DeerKills.Tag"/>, never an <see cref="EventRoom.Version"/>).
+		/// The deer's messages (<see cref="DeerRoom"/>), in a room only: to the host, to everybody, to one player. They share the Open
+		/// World's one handler with the events', told apart by their first byte (<see cref="DeerRoom.Tag"/>, never an
+		/// <see cref="EventRoom.Version"/>).
 		/// </summary>
-		internal static void SendDeer(byte[] data)
+		internal static void DeerToHost(byte[] data)
+		{
+			if (InRoom && ctx != null && !ctx.Net.SendToHost(data))
+			{
+				Mod.Log.LogWarning("Deer: a message could not be sent to the room's host");
+			}
+		}
+
+		internal static void DeerToAll(byte[] data)
 		{
 			if (InRoom && ctx != null)
 			{
@@ -141,13 +150,21 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		internal static void DeerToOne(ulong to, byte[] data)
+		{
+			if (InRoom && ctx != null)
+			{
+				ctx.Net.Send(data, to);
+			}
+		}
+
 		private static void Received(ulong from, byte[] data)
 		{
 			try
 			{
-				if (data != null && data.Length > 0 && data[0] == DeerKills.Tag)
+				if (data != null && data.Length > 0 && data[0] == DeerRoom.Tag)
 				{
-					DeerKills.Received(from, data);
+					DeerRoom.Received(from, data);
 					return;
 				}
 				bool sync = EventRoom.IsSync(data);

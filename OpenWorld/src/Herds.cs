@@ -204,6 +204,8 @@ namespace HalfGripOpenWorld
 		Alert,
 		Walk,
 		Trot,
+		/// <summary>Fleeing: the bound, tail up.</summary>
+		Gallop,
 	}
 
 	/// <summary>Where one deer is and what it is doing at a moment.</summary>
@@ -214,6 +216,8 @@ namespace HalfGripOpenWorld
 		public DeerMotion Motion;
 		/// <summary>How far through its gait (cycles; the walk's or trot's legs follow it), and its speed (units a second).</summary>
 		public double Gait, Speed;
+		/// <summary>Alarmed: the tail up as a white flag (fleeing, or watching after).</summary>
+		public bool Flag;
 	}
 
 	/// <summary>
@@ -233,7 +237,7 @@ namespace HalfGripOpenWorld
 	/// drawn ground, which can sit a unit or two off the pure height at a channel's edge), never over a drop (a bank, a cutting), never
 	/// onto another road, never through a house or a lot. A leg that fails is never walked; a spot no leg reaches is dropped.
 	/// </summary>
-	internal sealed class Herds
+	internal sealed partial class Herds
 	{
 		/// <summary>Seconds of race time per slot.</summary>
 		internal const double SlotSeconds = 90.0;
@@ -296,6 +300,10 @@ namespace HalfGripOpenWorld
 			/// <summary>The spot each slot ends at, worked out in order from slot 0 (each slot's depends on the last's); grown as needed.</summary>
 			internal readonly List<int> Chain = new List<int>();
 			internal readonly object Gate = new object();
+
+			/// <summary>Its reactions, in order (see Reactions.cs), and the spots they leave it at: slot -> spot, the chain going on from it.</summary>
+			internal readonly List<Reacted> Reactions = new List<Reacted>();
+			internal readonly Dictionary<long, int> Overrides = new Dictionary<long, int>();
 		}
 
 		internal readonly int Seed;
@@ -804,7 +812,7 @@ namespace HalfGripOpenWorld
 				{
 					long slot = g.Chain.Count;
 					int prev = slot == 0 ? Start(g) : g.Chain[(int)slot - 1];
-					g.Chain.Add(Choose(g, slot, prev));
+					g.Chain.Add(g.Overrides.TryGetValue(slot, out int left) ? left : Choose(g, slot, prev));
 				}
 				return g.Chain[(int)k];
 			}
@@ -1012,7 +1020,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>When deer d next leaves <paramref name="spot"/>, if in slot k (far off if not).</summary>
-		private double NextDeparture(Group g, long k, int spot, int d, ref Move mv)
+		internal double NextDeparture(Group g, long k, int spot, int d, ref Move mv)
 		{
 			int next = SpotAt(g, k);
 			if (next == spot)
@@ -1061,7 +1069,7 @@ namespace HalfGripOpenWorld
 		/// Deer d at a spot: its place in the ring, with small steps about it every <see cref="SubSeconds"/> (settling in after it arrived
 		/// and out before it leaves), grazing, now and then head up.
 		/// </summary>
-		private void Rest(Group g, int spot, int d, double t, double arrived, double leaves, ref DeerState s)
+		internal void Rest(Group g, int spot, int d, double t, double arrived, double leaves, ref DeerState s)
 		{
 			Base(g, spot, d, out double bx, out double bz);
 			Member m = g.Members[d];

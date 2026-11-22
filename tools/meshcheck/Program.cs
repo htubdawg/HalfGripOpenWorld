@@ -66,7 +66,9 @@ using UnityEngine;
 //                that is from the drawn ground (nowhere); dead deer (DeerKills): bodies thrown by a car at every deer of one race,
 //                at speeds up to 150 on the speedometer, and shot ones, all coming to rest within the time allowed lying on the
 //                drawn ground (never under it while moving), the same on a second run with frames of other lengths; the kill
-//                messages read back as sent, and a second kill of one deer dropped; how many groups the DeerAmount setting gives
+//                messages read back as sent, and the host's kill put in place of another; how many groups the DeerAmount setting
+//                gives; reactions: every group of a race alerted and fleeing each way at three times of day, never into deep water,
+//                onto paving away from its crossing or jumping (through the run, the watch and back to its calm day), the same twice
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -2682,6 +2684,108 @@ internal static class Program
 			ok &= spotsBad == 0 && legsBad == 0 && deep == 0 && paved == 0 && worstOff < 1e-3 && herds.Groups.Length >= 100;
 		}
 		ok &= DeadDeerChecks();
+		ok &= ReactionChecks();
+		return ok;
+	}
+
+	/// <summary>
+	/// The deer's reactions (Reactions.cs): for one race, every group alerted and then fleeing (each way in turn) from a car on its road
+	/// 60 units from the crossing, at three times of day; every deer followed from the alert to a minute after the group is calm again:
+	/// never in water above its belly, never on any road's paving away from its crossing, and never jumping (no step longer than a gallop
+	/// covers, through the start, the run, the watch and the calm day going on from the refuge); and the same play from the same reactions.
+	/// </summary>
+	private static bool ReactionChecks()
+	{
+		bool ok = true;
+		Herds herds = new Herds(1, Sky0(1), 2400.0);
+		var mv = new Herds.Move();
+		var spare = new Herds.Move();
+		int plays = 0, deep = 0, paved = 0, jumps = 0, samples = 0, across = 0, notCalm = 0;
+		double worstJump = 0.0, longest = 0.0;
+		const double step = 0.2;
+		foreach (Herds.Group g in herds.Groups)
+		{
+			for (int when = 0; when < 3; when++)
+			{
+				double t0 = 300.0 + when * 700.0 + g.Index % 7 * 9.0;
+				FleeWay way = (FleeWay)((g.Index + when) % 3);
+				double side = g.Index % 2 == 0 ? 60.0 : -60.0;
+				var alert = new Reaction { Seed = 1, Group = g.Index, Seq = 0, Kind = ReactKind.Alert, T0 = t0, FromX = g.Site.X + g.Tx * side, FromZ = g.Site.Z + g.Tz * side };
+				var flee = alert;
+				flee.Seq = 1;
+				flee.Kind = ReactKind.Flee;
+				flee.Way = way;
+				flee.T0 = t0 + 2.0;
+				herds.SetReactions(g, new[] { alert, flee });
+				Reacted rr = g.Reactions[1];
+				plays++;
+				longest = Math.Max(longest, rr.Done - flee.T0);
+				int dstSide = g.Spots[rr.Dst].Side;
+				for (int d = 0; d < g.Members.Length; d++)
+				{
+					double lx = 0.0, lz = 0.0;
+					bool crossed = false;
+					int startSide = Herds.SideOf(g, rr.StartX[d], rr.StartZ[d]);
+					for (double t = t0 - 1.0; t < rr.End + 60.0; t += step)
+					{
+						herds.Live(g, d, t, ref mv, ref spare, out DeerState s);
+						samples++;
+						if (t > t0 - 1.0)
+						{
+							double jx = s.X - lx, jz = s.Z - lz;
+							double jump = Math.Sqrt(jx * jx + jz * jz);
+							if (jump > Herds.GallopSpeed * step * 1.05 + 0.3)
+							{
+								if (jumps < 3)
+								{
+									Console.WriteLine("  group " + g.Index + " deer " + d + " (" + way + "): a jump of " + jump.ToString("0.0") + " at t " + t.ToString("0.0") + " (flee " + flee.T0.ToString("0.0") + ", done " + rr.Done.ToString("0.0") + ", calm " + rr.End.ToString("0.0") + ")");
+								}
+								jumps++;
+								worstJump = Math.Max(worstJump, jump);
+							}
+						}
+						lx = s.X;
+						lz = s.Z;
+						if (DeerDepth(s.X, s.Z) > Herds.Belly)
+						{
+							deep++;
+						}
+						double cx = s.X - g.Site.X, cz = s.Z - g.Site.Z;
+						bool atCrossing = cx * cx + cz * cz < (g.Site.Half + 12.0) * (g.Site.Half + 12.0);
+						if (!atCrossing && OnAnyPaving(s.X, s.Z, out RoadKind kind))
+						{
+							if (paved < 3)
+							{
+								Console.WriteLine("  group " + g.Index + " deer " + d + " (" + way + "): on a " + kind + "'s paving at (" + s.X.ToString("0") + ", " + s.Z.ToString("0") + "), t " + t.ToString("0.0"));
+							}
+							paved++;
+						}
+						crossed |= Herds.SideOf(g, s.X, s.Z) != startSide && t < rr.Done;
+					}
+					if (way == FleeWay.Across && g.Crosses && d == 0 && crossed)
+					{
+						across++;
+					}
+				}
+				// The calm day goes on from the refuge: just after the end, the group's spot is the refuge.
+				if (herds.SpotAt(g, rr.Slot - 1) != rr.Dst)
+				{
+					notCalm++;
+				}
+				// The same play again from the same reactions (made afresh).
+				herds.SetReactions(g, Array.Empty<Reaction>());
+				herds.SetReactions(g, new[] { alert, flee });
+				if (g.Reactions[1].Done != rr.Done || g.Reactions[1].Dst != rr.Dst)
+				{
+					Console.WriteLine("  group " + g.Index + ": the same reactions played otherwise the second time");
+					ok = false;
+				}
+				herds.SetReactions(g, Array.Empty<Reaction>());
+			}
+		}
+		Console.WriteLine("         reactions: " + plays + " flees played (" + samples + " deer positions; the longest run " + longest.ToString("0.0") + " s); " + deep + " deep in water, " + paved
+			+ " on paving away from a crossing, " + jumps + " jumps (worst " + worstJump.ToString("0.0") + "), " + notCalm + " not calm from the refuge after; " + across + " groups darted across");
+		ok &= deep == 0 && paved == 0 && jumps == 0 && notCalm == 0 && across > 20;
 		return ok;
 	}
 
@@ -2769,12 +2873,15 @@ internal static class Program
 			+ longest.ToString("0.0") + " s), " + offGround + " not lying on the ground at rest (worst " + worstOff.ToString("0.00") + "), " + differ + " in another place on other frames (worst " + worstDiffer.ToString("0.000") + ")");
 		ok &= under == 0 && restless == 0 && offGround == 0 && differ == 0 && bodies > 100;
 
-		// A second kill of a deer is dropped, as is another race's.
+		// A kill's body is put in place of another's for the same deer (the host's for this machine's own), and another race's is dropped.
 		var kills = new DeerKills(5);
-		var k1 = new DeerKills.Kill { Seed = 5, Group = 3, Member = 1, Scale = 1.0 };
-		bool first = kills.Add(k1, 10.0), again = kills.Add(k1, 11.0), elsewhere = kills.Add(new DeerKills.Kill { Seed = 6, Group = 4, Member = 0, Scale = 1.0 }, 12.0);
-		Console.WriteLine("         kills: the first taken " + first + ", the same deer again " + again + ", another race's " + elsewhere);
-		ok &= first && !again && !elsewhere && kills.Count == 1;
+		var k1 = new DeerKills.Kill { Seed = 5, Group = 3, Member = 1, Scale = 1.0, T = 10.0, X = 1.0 };
+		var k2 = k1;
+		k2.X = 2.0;
+		bool first = kills.Set(k1), again = kills.Set(k2), elsewhere = kills.Set(new DeerKills.Kill { Seed = 6, Group = 4, Member = 0, Scale = 1.0 });
+		bool replaced = kills.Dead[DeerKills.Key(3, 1)].Kill.X == 2.0;
+		Console.WriteLine("         kills: the first taken " + first + ", the host's in place of it " + (again && replaced) + ", another race's " + elsewhere);
+		ok &= first && again && replaced && !elsewhere && kills.Count == 1;
 
 		// The DeerAmount setting (alone only).
 		string amounts = "";

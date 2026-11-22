@@ -1705,8 +1705,8 @@ and a browser viewer before it goes in; the owner sees it before the behaviour i
 1. The model and the pipeline: done (the owner dropped the debug key).
 2. Calm deer (grazing, wandering, the odd slow crossing; no reaction to cars yet), placed from the race's seed, the water and
    drop rules, drawn in the world; `meshcheck` checks: **built for 0.28.0, waiting for the owner's test in game** (TESTING 42).
-3. Reactions, ownership and hits in a room; `deersim`. Hits and shots (with damage) built first, for 0.29.0 (below); reactions and
-   ownership next.
+3. Reactions, ownership and hits in a room; `deersim`. Hits and shots (with damage) built first, for 0.29.0 (below); reactions,
+   settled by the host, for 0.30.0 (below).
 
 ### Calm deer as built (0.28.0)
 
@@ -1768,4 +1768,38 @@ The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how
   20 s lying on the drawn ground and never under it on the way, the same on frames of other lengths; messages read back; a second
   kill dropped; the amounts). The dead poses were looked at in software renders (lying, tumbling, falling over); the trunk lies 0.02
   units over the ground.
-- **Left for later**: reactions (the group scatters from a kill; fleeing a car), the host settling claims, kills for late joiners.
+- **Left for later**: reactions (the group scatters from a kill; fleeing a car), the host settling claims, kills for late joiners
+  (all done in 0.30.0, below).
+
+### Reactions (0.30.0; the owner: "move on to reactions"; the host settles claims and late joiners get the kills)
+
+- **Who decides** (the owner, after 0.29.0: the room's host never changes, the room ends when it leaves, so the host can settle):
+  the machine whose car (or gun, or kill) startles a group decides the reaction from its own exact position, plays it at once and
+  claims it of the host as the group's next reaction (a number per group); the host takes the first claim for each number and sends
+  it to everybody, and a machine whose claim lost puts the winner in place of its own (`DeerRoom`, pure). Kills the same: the first
+  claim on a deer the host gets is the kill everywhere (a near tie no longer leaves bodies in two places). This replaces handing
+  groups to owners with hysteresis: that was for a host that could change; the decider is still the player whose car is there.
+  A machine says Hello once its deer are ready and the host sends it every reaction and kill so far (late joiners, late worlds).
+  Reactions and kills carry race times: Multiplayer 1.1.0 keeps every machine's race clock on the host's.
+- **Noticing** (`Deer.React`, this machine's car only): a group notices the car when its nearest live deer is `closing speed x 11.5 s`
+  away (45 to 200 units; 35 for a car not coming at it): an alert is claimed (heads up, facing the car; where they are does not change).
+  It flees at 40% of the distance it noticed the car at (the measured median), or when the car is under 14 units off or 1.6 s from
+  it. A shot of this player's within 250 units of a group, and a deer of the group killed, claim a flee from there.
+- **Which way** (`Herds.ChooseWay`, by chance from the group and the reaction's number): freeze 8% (25% at night) then away; across
+  30% (55% if the deer nearest the car stands on its road; never for a group with spots one side only, nor from a shot); else away.
+- **The flee** (`Reactions.cs`, pure, under the determinism rules, played the same on every machine from the reaction alone): the
+  refuge is the cover if it is on the side fled to, else the spot there furthest from the road. Deer go nearest first, then one
+  after another (0.35 to 1.15 s apart away, 0.8 to 2.5 s across, where a car meets the followers); each gallops (36 units a second
+  after 0.6 s getting up to speed, the bound posed from `gather` and `extend`, tail up) from where it is to its side's nearest spot
+  it can reach in a straight clear line (or is at, or is crossing to), then spot to spot along the tested legs and the crossing, to
+  its place at the refuge; there it watches 12 s, tail up, then settles. The calm day goes on from the refuge at the start of the
+  slot after (at least 30 s after the last gets there, never in the slot the flee started): the chain of spots is overridden there.
+  A road's side is read from the road itself near the crossing (a lane curves: a spot along it can be across the line through
+  the crossing, which sent deer straight over a lane in the first build).
+- **Checked**: `meshcheck deer` (every group of a race alerted then fleeing each way at three times of day, 480 flees: never in deep
+  water, never on paving away from its crossing, no jump through the run, the watch and the calm day after; the same twice);
+  `tools/deersim` (claims of the same group's next reaction and kills of the same deer from several machines at once, the host's
+  own claims, a late joiner whose Hello's answer races new claims, twenty players at random, stale and bad messages, alone: every
+  machine ends showing exactly the host's reactions and kills; breaking the host's first-claim rule makes it fail).
+- **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
+  walk through trees in the woods; antlers, fawns' spots, lying down.

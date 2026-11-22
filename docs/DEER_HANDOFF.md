@@ -71,7 +71,13 @@ start another). The old `claude/keen-bell-4ybqq3` holds an earlier copy; leave i
 kills sent to the room. In-game test: `docs/TESTING.md` 43. Untested in game: the car's box from its colliders (the log names it),
 the gravity the bodies fall at (the scene's), how the damage feels. Ask for that report and fix what it shows first.
 
-## Next step: reactions and ownership (the rest of step 3)
+## Reactions: built for 0.30.0, waiting for the owner's test
+
+`docs/PLAN.md` "Reactions (0.30.0)". The host settles every reaction and kill (the owner: the host never changes; the room ends when
+it leaves), which replaced per-group owners. In-game test: `docs/TESTING.md` 44. Tune from the owner's report: how jumpy (the notice
+distances and the 40%), how often they dart across.
+
+## Step 3 as first planned (kept for the record)
 
 The owner has seen the calm deer's textured look and handed step 3 on. Ask for their in-game report on calm deer (TESTING 42) if
 it has not come, and fix what it shows first. Then, per `docs/PLAN.md` "Multiplayer": a reaction overrides `Herds.At` for a
