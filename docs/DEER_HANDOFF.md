@@ -15,7 +15,11 @@ and push there, do not start another; the owner merges). The old `claude/keen-be
 | 0.30.2 | Strike sound: the game's own wall crash and car crunch only | 43 | asked for it (the synthesized sound was "like a pinball machine") |
 | 0.30.3 | Darts over the road timed to the car (first deer on the road 1.4 s before it gets there), chosen half the time; the shot's puff red | 43, 44 | asked for it: in 0.30.2 "none reacted fast enough to be a road hazard, most ran away from the road"; the sparks yellow |
 
-**First thing to do:** ask the owner for their in-game report (TESTING 42 to 44, `LogOutput.log`, screenshots) and fix what it shows
+**Next session's work (the owner's choice after 0.30.3):** two more models, a buck and a fawn; the plan is the last section of
+`docs/PLAN.md` ("Next: a buck and a fawn"). Before starting it, ask for the owner's report on 0.30.3 (darts timed to the car, the red
+puff) and fix what it shows.
+
+**Before that, still open:** ask the owner for their in-game report (TESTING 42 to 44, `LogOutput.log`, screenshots) and fix what it shows
 before anything new. Things only the game can show, each logged:
 - The car's box for hitting deer, read from its colliders (`Deer: the car's box for hitting deer is ...`, or the fallback 6.4 x 4.5 x 14).
 - The gravity bodies fall at (`Physics.gravity`; meshcheck assumes 9.81 x 3.3).

@@ -1866,3 +1866,42 @@ The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how
   game's.
 - **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
   walk through trees in the woods; antlers, fawns' spots, lying down.
+
+## Next: a buck and a fawn (the owner's choice for the next session, after 0.30.3)
+
+Two more deer models beside the doe: **a buck with antlers and a fawn with spots.** Today every deer is the doe's model, scaled
+(bucks 1.0 to 1.12, the young in a family 0.72 to 1.0); `Herds.Member.Buck` is already chosen per deer, a fawn is not.
+
+**The doe stays as it is.** `tools/deer/deer.json` is frozen (decision 8 in `docs/DEER_HANDOFF.md`: the owner's painted coat is
+on its UVs). The buck and the fawn are builds of their own (`buck.json`, `fawn.json`), each with its own UV layout, templates and
+painted coat, the same pipeline (`deer.py` sculpting, `uv.py`, `export_cs.py`, the viewer).
+
+**Shared, so the game code needs little change:**
+- **The same skeleton**: the 26 bones, their names and parents, bind rotations zero. Bone *offsets* differ per model (a fawn's legs
+  longer for its body, a buck's neck thicker), so `DeerMesh.Offsets` becomes per model; the **poses** (absolute rotations) are
+  shared, so the walk, gallop, graze, alert and the tail flag work on all three. Check each pose on each model in the viewer.
+- **Antlers as rigid parts on the head bone** (weights all on `head`), no new bones; kept off the neck when grazing and off the back
+  in every pose.
+
+**The buck:** about 10 to 15% bigger than the doe, heavier neck and shoulders, no white throat patch so bright, antlers (a main beam
+curving forward with tines up from it). **The fawn:** about 0.55 to 0.65 of the doe, a big head and ears for its body, a short
+muzzle, long legs, white spots in rows along the back and flanks on a redder coat.
+
+**Steps** (each shown to the owner before the next, as the doe was):
+1. Sculpt the buck; clay and colour renders and the 3D viewer for the owner. Then the fawn the same way.
+2. UV layouts and templates for each; the owner paints the coats (image model on the templates, as `deer.png`).
+3. `export_cs.py` writes all three models (the doe's arrays unchanged); `DeerMesh` per model; the pool of deer objects per model
+   (`Deer.Take`/`Give`), or swap mesh, bones and material on reuse.
+4. In `Herds`: who is a fawn, from draws already made (the young in a family below a scale, say), so no group, spot or other deer
+   moves; the drawn scale then applied on top of the model's own size. A change to `Herds` is a change to the deer for a room
+   (all must have the same version, as always).
+5. The rest by model: the car's damage (weight: the fawn's far less, the buck's more), the shapes shots and hits are tested
+   against (`Deer.Shapes`: the antlers count for a shot? to ask), a dead body's centre height (`DeerKills.CentreHeight`), the
+   tail flag (bucks sometimes tuck it, PLAN's research).
+6. Checks: `meshcheck deer` per model (weights, faces, every pose), bodies coming to rest for each model; `tools/check.sh`; renders
+   of a family (doe, fawns) and a bachelor group (bucks) in the viewer for the owner.
+
+**To ask the owner:** antlers all year, or by season (the game has no calendar: from the race's seed, as the weather?); one antler
+size or several (spikes on young bucks to 8 or 10 points); fawns spotted always, or a yearling look as well; how many fawns in a
+family (today 1 to 4 young); whether shots should count antlers; whether fawns keep close to the doe when they run (they follow her
+today as any follower does).
