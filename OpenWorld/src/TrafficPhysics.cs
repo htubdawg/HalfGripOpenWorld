@@ -421,7 +421,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			b.Place(RestPlace(v.Root.position, b.LookIndex, 0.15f), v.Root.rotation);
+			PlaceAsDrawn(b, v, 0.15f);
 			Vector3 velocity = Vector3.zero;
 			bool pulling = false;
 			double legT = 0.0;
@@ -491,9 +491,30 @@ namespace HalfGripOpenWorld
 				restHeight[b.LookIndex] = r;
 				if (r.n == RestKnown)
 				{
-					Mod.Info("Traffic: body model " + b.LookIndex + " stands " + (r.sum / r.n).ToString("0.00") + " over the ground on its springs (cars are put down there from now on)");
+					// The worked-out rest beside what the game's physics did (on tarmac they should agree to a hundredth or so; the verges, the
+					// ground and the tracks sit 0.1 lower).
+					Rest rest = looks[b.LookIndex].Rest;
+					Mod.Info("Traffic: body model " + b.LookIndex + " stands " + (r.sum / r.n).ToString("0.00") + " over the ground on its springs"
+						+ (rest != null && rest.Ok ? " (worked out: " + rest.Height.ToString("0.00") + ")" : " (cars are put down there from now on)"));
 				}
 			}
+		}
+
+		/// <summary>
+		/// Puts body <paramref name="b"/> where drawn car <paramref name="v"/> is. With the rest worked out (<see cref="Rest"/>) the drawn car
+		/// already stands exactly as the physics car does at rest, so the body goes to the same pose with its springs and wheels at rest too:
+		/// nothing drops, bounces or moves. Without it, as before: a little up (<paramref name="drop"/>) or at the learned height.
+		/// </summary>
+		private void PlaceAsDrawn(TrafficBody b, View v, float drop)
+		{
+			Rest rest = v.Look.Rest;
+			if (rest != null && rest.Ok)
+			{
+				b.Place(v.Root.position, v.Root.rotation);
+				b.Settle(rest);
+				return;
+			}
+			b.Place(RestPlace(v.Root.position, b.LookIndex, drop), v.Root.rotation);
 		}
 
 		/// <summary>Where to put a body of model <paramref name="look"/> standing in for a drawn car at <paramref name="drawn"/>: over the ground at its rest height once that is known, else <paramref name="drop"/> up.</summary>
@@ -627,7 +648,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
-			b.Place(RestPlace(v.Root.position, b.LookIndex, 0.4f), v.Root.rotation);
+			PlaceAsDrawn(b, v, 0.4f);
 			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
 			physical[c] = b;
 			madePhysical++;
@@ -1249,6 +1270,35 @@ namespace HalfGripOpenWorld
 			// The guard starts again from wherever the body is put.
 			trailShifts = -1;
 			ClearParticles();
+		}
+
+		/// <summary>
+		/// The springs and the wheels as at rest (<see cref="TrafficCars.Rest"/>), after <see cref="Place"/>: each of the game's wheels' last
+		/// length (so the damper sees no movement on the first step: a stale length from the pool kicked the body) and each wheel drawn where
+		/// the game draws it at rest (it eases its wheels there a tenth a frame, so from the pool's pose they slid into place).
+		/// </summary>
+		internal void Settle(TrafficCars.Rest rest)
+		{
+			if (Cc == null || Cc.wheels == null || rest.Length == null || Cc.wheels.Length != rest.Length.Length)
+			{
+				return;
+			}
+			for (int i = 0; i < rest.Length.Length; i++)
+			{
+				if (Cc.wheels[i] != null)
+				{
+					Cc.wheels[i].lastLength = rest.Length[i];
+				}
+			}
+			int front = Cc.frontWheels != null ? Cc.frontWheels.Count : 0;
+			for (int i = 0; i < rest.Local.Length; i++)
+			{
+				Transform w = i < front ? Cc.frontWheels[i] : (Cc.backWheels != null && i - front < Cc.backWheels.Count ? Cc.backWheels[i - front] : null);
+				if (w != null)
+				{
+					w.localPosition = rest.Local[i];
+				}
+			}
 		}
 
 		/// <summary>The body's particles (the tyres' smoke, the exhaust) emptied: anything emitted along a move would hang in a line across the country.</summary>

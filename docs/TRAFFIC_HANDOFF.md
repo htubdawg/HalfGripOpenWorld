@@ -449,6 +449,21 @@ They said three things:
    frame's trail points) empties the trails and keeps them off whenever the drawn body is more than 4 units from its rigidbody or a
    marked wheel moved further in a frame than the car's speed allows (origin shifts skipped). Log (`VerboseLog`): `Traffic: car N's
    tyre marks cut at a jump (...)`, once a body: if that line shows, the guard caught one.
+   **Parked cars' wheel height (the owner, after 0.32.0: "a physics enabled car wouldn't have its suspension fully out or in, we need
+   to calculate where it should be so the transition is seamless").** Built (not yet tried): `TrafficRest.cs` works out the game's car
+   at rest from `CarControllerNew.FixedUpdate` (read from the decompile): per wheel a ray from one unit above its place along
+   `-up + right * 0.1 x` (Unity normalises it, so it leans out), length = hit - radius - 1 - the surface's `suspensionOffset`, force
+   `k (rest - length)` along the normal, capped at ten quarter-weights; at rest the forces carry the weight and turn the car about its
+   centre of mass no way. `TrafficCars.RestOf` feeds it the game's own numbers at the race's start (controller springs 15000 of 0.7,
+   radius 0.5, wheel places as `InitializeWheels` takes them, x widened by 1.1; the rigidbody's mass and Unity's centre of mass, the
+   one `BoxCollider`'s centre; `Physics.gravity`) and logs them (`Traffic: the cars at rest on their springs ...`). Drawn cars stand at
+   that height and pitch, the ground under each axle lowered by its surface's offset (our ground, verges and tracks have
+   `HandlingModifier`s left at the default -0.1, so the game's cars sit 0.1 lower there than on roads, lots and sidewalks), wheels
+   drawn where the game draws them at rest, 10% wider than the prefab has them (the game draws the widened places). `PlaceAsDrawn`
+   puts a physics body at exactly the drawn pose and `TrafficBody.Settle` sets each wheel's `lastLength` (a stale one from the pool
+   gave the damper a kick on the first step) and wheel transform (the game eases them a tenth a frame) to rest. The old learned height
+   (`LearnRest`/`RestPlace`) is only the fallback now; its log line shows the worked-out height beside the measured one. trafficview
+   checks the solver against the game's spring and damper law run to a standstill (24 cases, within 0.00001).
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 

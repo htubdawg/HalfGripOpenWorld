@@ -13,6 +13,8 @@
     <Compile Include="Lateness.cs" />
     <Compile Include="Drive.cs" />
     <Compile Include="Contact.cs" />
+    <Compile Include="Rest.cs" />
+    <Compile Include="../../OpenWorld/src/TrafficRest.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />
