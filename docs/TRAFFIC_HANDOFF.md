@@ -435,6 +435,54 @@ They said three things:
    they are. Turn that crap off BEFORE you swap".** Fourth fix (not yet tried): `Place` now turns the trails off and clears them
    before the body is moved at all (it moved first and cleared after), forces `emitting` off every frame of the 0.3 s window (the
    game's effect controller turns them on when the wheels land), and `End` puts a body into the pool with its trails off and empty.
+   **Still seen after 0.32.0 on the odd swapped car (the owner: "only when they get swapped").** What the game's code says (read from
+   the decompile and the Tokyo dump, not guessed): `TireTrails` holds two `TrailRenderer`s (`TireTrailEffect`, material `MAT_Trail`)
+   under `Wheels/Meshes/Wheel_LB` and `Wheel_RB`; the game never sets their points or width, so they draw whenever the car is on the
+   ground; `EnemyCarEffectController.Update` only turns them off or on when `isAirborne` changes; the wheels move in local space
+   (`CarControllerNew.Update`), so nothing lags the body; the game's own resets never clear them (they rely on the car being put 2 up,
+   airborne). `WheatTrampler` and `WaterRippler` also stamp from the last place to this one, but Tokyo has no `TrampleField` or
+   `WaterRippleField`, so they paint nothing here. Every swap path (`TakeBody`, `Place`, `Begin`/`BeginLoose`, the warm pool,
+   `Release`, a stand-in's first state) clears the trails around the move. The hole was the end of `Place`'s window: interpolation
+   and the trails came back on in the same `LateUpdate`, and an interpolated body can be drawn a frame or two from a pose it had before
+   it was placed, so the trails, already on, painted from there. Fifth fix (not yet tried): interpolation comes back first and the
+   trails stay off `TrailsSettle` (0.15 s) longer; and a jump guard every `LateUpdate` (after interpolation, before Unity adds the
+   frame's trail points) empties the trails and keeps them off whenever the drawn body is more than 4 units from its rigidbody or a
+   marked wheel moved further in a frame than the car's speed allows (origin shifts skipped). Log (`VerboseLog`): `Traffic: car N's
+   tyre marks cut at a jump (...)`, once a body: if that line shows, the guard caught one.
+   **Still seen after that (the owner, 2026-11-23), and the guard never fired** (verbose on, no `cut at a jump` line): no trail's wheel
+   jumped while we watched, so the streak was a point the `TrailRenderer` kept from before and joined to the wheel. Sixth fix (not yet
+   tried): the guard also reads each trail's own points every frame: a segment at either end longer than a car goes in a frame, or the
+   head far from both ends while emitting, empties it (`Traffic: car N's tyre mark emptied (...)`, once a body); and the trails are
+   emptied again right after they are turned back on.
+   **The owner's next log (2026-11-23, "looks better") showed where they came from:** every trail emptied was at an origin shift, five
+   with a segment exactly as long as the shift (1118 at (-500, -1000), 1031 at (-250, -1000)). `Origin.Shift` paused interpolation for
+   2 frames, which at a high frame rate pass with no physics step, so an interpolated body was drawn for a frame from its pose before
+   the shift and its trail kept a point there. Seventh fix (not yet tried): interpolation comes back only after two physics steps since
+   the shift as well (`Origin.RestoreInterpolation`). The guard stays as a net. Parked cars are "still a little jiggly, tolerable".
+   **The owner's log over 9 shifts:** no more shift-long segments, but the guard still emptied 5 marks after 3 of the shifts with the
+   wheel 104 to 146 from them (a tenth of the shift): the body still drawn part of the way back for a frame, so holding interpolation
+   off does not clear Unity's history of the old pose. Eighth fix (not yet tried): each traffic body keeps its marks off for
+   `ShiftHold` (0.3 s) from an origin shift, then empties them and turns them back on.
+   **Parked cars' wheel height (the owner, after 0.32.0: "a physics enabled car wouldn't have its suspension fully out or in, we need
+   to calculate where it should be so the transition is seamless").** Built (not yet tried): `TrafficRest.cs` works out the game's car
+   at rest from `CarControllerNew.FixedUpdate` (read from the decompile): per wheel a ray from one unit above its place along
+   `-up + right * 0.1 x` (Unity normalises it, so it leans out), length = hit - radius - 1 - the surface's `suspensionOffset`, force
+   `k (rest - length)` along the normal, capped at ten quarter-weights; at rest the forces carry the weight and turn the car about its
+   centre of mass no way. Drawn cars stand at that height and pitch, the ground under each axle lowered by its surface's offset (our
+   ground, verges and tracks have `HandlingModifier`s left at the default -0.1, so the game's cars sit 0.1 lower there than on roads,
+   lots and sidewalks), wheels drawn where the game draws them at rest. `PlaceAsDrawn` puts a physics body at exactly the drawn pose
+   and `TrafficBody.Settle` sets each wheel's `lastLength` and wheel transform to rest. trafficview checks the solver against the game's
+   spring and damper law run to a standstill (24 cases, within 0.00001).
+   **First try (the owner, 2026-11-23): wheels still popped out sideways, the car still bounced, and the log said `centre of mass
+   (0.00, 0.00, 0.00) (set on the body)`.** Two mistakes, both from the game's code: (1) the prefab asset's rigidbody reports no centre
+   of mass (the rest was first worked out from the prefab); (2) `CarControllerNew.InitializeWheels` runs in `Start`, the frame after a
+   body is first switched on, and takes the wheels' places from the wheel transforms then (widened by 1.1). A body made on demand was
+   placed and its wheels moved to the rest pose before its `Start`, so the controller took the moved wheels: widened twice (the pop)
+   and lowered (the bounce). Fixed (not yet tried): the rest is worked out by `TrafficCars.LearnRestFrom` from the first body woken in
+   the warm pool, after its `Start` (the controller's own wheel places, `Rigidbody.centerOfMass` live, mass, springs, `Physics.gravity`;
+   logged `Traffic: the cars at rest on their springs (...)`), and the drawn cars' wheels are moved there then; the warm pool is kept
+   topped up (`WarmBodies` spare, one a frame) so a body is put to use started; one made on the spot anyway is left alone until its
+   `Start` (`settleLater`). Earlier the drawn wheels were also not widened (the prefab's places), a pop of its own.
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 

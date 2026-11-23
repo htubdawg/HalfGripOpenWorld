@@ -16,6 +16,8 @@ internal static partial class Program
 	private static int Main(string[] args)
 	{
 		bool ok = true;
+		// The cars at rest on their springs first: no map needed.
+		ok &= Rest();
 		Stopwatch watch = Stopwatch.StartNew();
 		Network.Ensure();
 		Console.WriteLine("Layout: " + watch.ElapsedMilliseconds + " ms");
