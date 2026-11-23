@@ -435,6 +435,20 @@ They said three things:
    they are. Turn that crap off BEFORE you swap".** Fourth fix (not yet tried): `Place` now turns the trails off and clears them
    before the body is moved at all (it moved first and cleared after), forces `emitting` off every frame of the 0.3 s window (the
    game's effect controller turns them on when the wheels land), and `End` puts a body into the pool with its trails off and empty.
+   **Still seen after 0.32.0 on the odd swapped car (the owner: "only when they get swapped").** What the game's code says (read from
+   the decompile and the Tokyo dump, not guessed): `TireTrails` holds two `TrailRenderer`s (`TireTrailEffect`, material `MAT_Trail`)
+   under `Wheels/Meshes/Wheel_LB` and `Wheel_RB`; the game never sets their points or width, so they draw whenever the car is on the
+   ground; `EnemyCarEffectController.Update` only turns them off or on when `isAirborne` changes; the wheels move in local space
+   (`CarControllerNew.Update`), so nothing lags the body; the game's own resets never clear them (they rely on the car being put 2 up,
+   airborne). `WheatTrampler` and `WaterRippler` also stamp from the last place to this one, but Tokyo has no `TrampleField` or
+   `WaterRippleField`, so they paint nothing here. Every swap path (`TakeBody`, `Place`, `Begin`/`BeginLoose`, the warm pool,
+   `Release`, a stand-in's first state) clears the trails around the move. The hole was the end of `Place`'s window: interpolation
+   and the trails came back on in the same `LateUpdate`, and an interpolated body can be drawn a frame or two from a pose it had before
+   it was placed, so the trails, already on, painted from there. Fifth fix (not yet tried): interpolation comes back first and the
+   trails stay off `TrailsSettle` (0.15 s) longer; and a jump guard every `LateUpdate` (after interpolation, before Unity adds the
+   frame's trail points) empties the trails and keeps them off whenever the drawn body is more than 4 units from its rigidbody or a
+   marked wheel moved further in a frame than the car's speed allows (origin shifts skipped). Log (`VerboseLog`): `Traffic: car N's
+   tyre marks cut at a jump (...)`, once a body: if that line shows, the guard caught one.
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 

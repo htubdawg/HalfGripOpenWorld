@@ -1245,6 +1245,9 @@ namespace HalfGripOpenWorld
 				}
 			}
 			trailsOffFor = TrailsOff;
+			trailsSettle = 0f;
+			// The guard starts again from wherever the body is put.
+			trailShifts = -1;
 			ClearParticles();
 		}
 
@@ -1348,32 +1351,128 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>After the body was placed: its tyre marks kept empty, then back on (as the game has them: on unless airborne).</summary>
+		/// <summary>
+		/// After the body was placed: its tyre marks kept empty with interpolation held off (<see cref="TrailsOff"/>), then interpolation back
+		/// on while the marks stay off a while longer (<see cref="TrailsSettle"/>), then the marks back on as the game has them (on unless
+		/// airborne). And every frame the jump guard (<see cref="GuardTrails"/>).
+		/// </summary>
+		/// <remarks>
+		/// Interpolation and the marks used to come back on the same frame: an interpolated body can be drawn for a frame or two from a pose it
+		/// had before it was put here (the pool's, the scene's origin), and with its marks already on, that frame painted a streak from there
+		/// to here, on the odd swapped car (the owner, after four fixes that each cleared the marks around the move itself).
+		/// </remarks>
 		private void LateUpdate()
 		{
-			if (trailsOffFor <= 0f || trails == null)
+			if (trails == null)
 			{
 				return;
 			}
-			trailsOffFor -= Time.deltaTime;
-			bool back = trailsOffFor <= 0f;
-			ClearParticles();
-			if (back && interpHeld)
+			if (trailsOffFor > 0f)
 			{
-				interpHeld = false;
-				Rb.interpolation = interpMode;
+				trailsOffFor -= Time.deltaTime;
+				ClearParticles();
+				if (trailsOffFor <= 0f && interpHeld)
+				{
+					// Interpolation back first; the marks wait out a few physics steps more, so its history is all from here.
+					interpHeld = false;
+					Rb.interpolation = interpMode;
+					trailsSettle = TrailsSettle;
+				}
+				TrailsOffNow();
 			}
+			else if (trailsSettle > 0f)
+			{
+				trailsSettle -= Time.deltaTime;
+				TrailsOffNow();
+				if (trailsSettle <= 0f)
+				{
+					foreach (TrailRenderer t in trails)
+					{
+						if (t != null)
+						{
+							t.emitting = !Cc.isAirborne;
+						}
+					}
+				}
+			}
+			GuardTrails();
+		}
+
+		/// <summary>How long the marks stay off after interpolation comes back (seconds: several physics steps).</summary>
+		private const float TrailsSettle = 0.15f;
+		private float trailsSettle;
+
+		/// <summary>The marks off and empty this frame (the game's effect controller turns them on when the wheels land, so each frame).</summary>
+		private void TrailsOffNow()
+		{
 			foreach (TrailRenderer t in trails)
 			{
-				if (t == null)
+				if (t != null)
+				{
+					t.emitting = false;
+					t.Clear();
+				}
+			}
+		}
+
+		/// <summary>Where each mark's wheel was drawn last frame, and the origin shift count then (a shift moves everything: no jump).</summary>
+		private Vector3[] trailLast;
+		private int trailShifts = -1;
+
+		/// <summary>
+		/// The jump guard, whatever moved the body. Runs in LateUpdate, after interpolation has placed the body and before Unity adds this
+		/// frame's points to the marks. If the drawn body is away from its rigidbody (interpolating from a stale pose), or a marked wheel
+		/// went further this frame than the car's speed allows, the marks are emptied and kept off as after a placing: no streak can be
+		/// drawn from where it was to where it is.
+		/// </summary>
+		private void GuardTrails()
+		{
+			if (trailLast == null || trailLast.Length != trails.Length)
+			{
+				trailLast = new Vector3[trails.Length];
+				trailShifts = -1;
+			}
+			bool shifted = trailShifts != Origin.Shifts;
+			trailShifts = Origin.Shifts;
+			// One physics step's travel is the most interpolation lags by; this is many times that.
+			bool stale = !Rb.isKinematic && (transform.position - Rb.position).sqrMagnitude > JumpSlack * JumpSlack;
+			// A stand-in is kinematic, moved by MovePosition, and may report no speed: allowed a fast car's travel instead.
+			float speed = Rb.isKinematic ? Mathf.Max(Rb.linearVelocity.magnitude, 120f) : Rb.linearVelocity.magnitude;
+			float most = speed * Mathf.Max(Time.deltaTime, Time.fixedDeltaTime) * 2f + JumpSlack;
+			bool jumped = stale;
+			for (int i = 0; i < trails.Length; i++)
+			{
+				if (trails[i] == null)
 				{
 					continue;
 				}
-				// Off again each frame (the game's effect controller turns them on when the wheels land) until the window is over.
-				t.emitting = back && !Cc.isAirborne;
-				t.Clear();
+				Vector3 p = trails[i].transform.position;
+				if (!shifted && (p - trailLast[i]).sqrMagnitude > most * most)
+				{
+					jumped = true;
+				}
+				trailLast[i] = p;
+			}
+			if (!jumped)
+			{
+				return;
+			}
+			TrailsOffNow();
+			ClearParticles();
+			if (trailsOffFor <= 0f)
+			{
+				trailsSettle = Mathf.Max(trailsSettle, TrailsSettle);
+			}
+			if (!guardLogged)
+			{
+				guardLogged = true;
+				Mod.Info("Traffic: car " + Car + "'s tyre marks cut at a jump (" + (stale ? "drawn away from its body" : "a wheel moved too far in a frame") + ")");
 			}
 		}
+
+		/// <summary>Distance (units) past which a move in one frame, or the drawn body from its rigidbody, is a jump.</summary>
+		private const float JumpSlack = 4f;
+		private bool guardLogged;
 		internal TrafficDrive.State Drive;
 		internal TrafficDrive.Mover Me;
 		private float offFor, steer;
