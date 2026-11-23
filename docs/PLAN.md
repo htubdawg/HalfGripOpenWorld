@@ -1376,6 +1376,10 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
      alone, out of every player's sight; hiding each machine's own), a car handed over turned from a physics car into a stand-in and
      back in place, hits on a stand-in sent to its driver, a leaver's cars given back from their last states. trafficsim: 16 seeds
      pass. See `docs/TRAFFIC_HANDOFF.md`, "Stage 4". The owner's rule: traffic cars never carry modded or custom items (checked).
+   - **First try (alone in a room, 2026-11-23):** works as stage 3 did; tyre-mark streaks when a body was placed (fixed). The owner
+     asked for physics on parked cars and on the cars the bubble leaves drawn (pulling in or out, at a trip's end, in a junction):
+     **next, "contact physics"** (a loose, driverless physics car made just before the player touches a drawn car, its own small cap),
+     planned in `docs/TRAFFIC_HANDOFF.md` with three decisions for the owner.
 
 Superseded in the research below: "copied" (the game's gear and throttle logic is written afresh from the idea, not pasted) and
 "`RemoteCar`'s smoothing as the model" (decision 1); "No solo traffic first" is open again (question 1).

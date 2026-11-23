@@ -451,3 +451,10 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Traffic cars never carry modded items or bodies (Dacia Body's logging of their lamps and paint is only that mod reading the
      materials).
    - Send both machines' `LogOutput.log` and screenshots from both of the same queue, a hand-over and a wreck.
+   - Owner's first try (2026-11-23, alone in a room): fine as in 49; some cars run into had no physics (the ones pulling in or out, at
+     a trip's end or in a junction: walls by design until contact physics, item 51); tyre marks streaked from the scene's origin to
+     a car as it turned physical (fixed: the trails are cleared when a body is placed). Check no streaks now.
+51. Contact physics (not built yet; see `docs/TRAFFIC_HANDOFF.md`, "Contact physics"): parked cars, and moving cars pulling in or out
+   or at a junction, become real cars just before you hit them. Drive gently into a parked car: it is barely moved; hard: it slides
+   and spins, and is gone from the day once you are out of sight. Drive past without touching: nothing changes. Frame time in a busy
+   town street with `TrafficLoose` 0 and 6.

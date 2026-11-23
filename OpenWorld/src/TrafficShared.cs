@@ -307,6 +307,7 @@ namespace HalfGripOpenWorld
 			{
 				b.transform.SetPositionAndRotation(Origin.Local(s.X, s.Y, s.Z), new Quaternion(s.Qx, s.Qy, s.Qz, s.Qw));
 				b.gameObject.SetActive(true);
+				b.ClearTrails();
 			}
 		}
 

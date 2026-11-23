@@ -6,6 +6,8 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 
 ## Start here
 
+0. **New agent: start with "The owner's report on the stage 4 build" below** (what the owner saw, the tyre-mark fix, and the plan for
+   physics on parked cars, "contact physics", which is the next job).
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
 2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo
    (the tools need `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for
@@ -396,6 +398,88 @@ the 5 pm peak are unchanged within a few percent; cars out of sight ("round the 
 - Turning in after 15 s of waiting goes even into oncoming traffic.
 - **The diagnostics** in trafficview (`TV_MEET`) and `TrafficDay` (`FarSide`, `FarEnd`, `HeldSince`) are cheap; keep them until the
   owner's report on this round.
+
+## The owner's report on the stage 4 build (2026-11-23), and what is next: contact physics
+
+**Read this first.** The owner tried the stage 4 build alone in a room (their log: `Traffic: the room's host, settling who drives
+each car`, 10 physics bodies made, about 30 cars back on their timetables, cars 206 and 2160 retired as damaged, five origin shifts,
+no warnings or exceptions from the traffic). So stage 3's path through the room works; **test 50 (two players) is still not done.**
+They said three things:
+
+1. **"A handful of cars I ran into while driving didn't have physics."** Not a failure in the log: those are the cars the bubble
+   leaves drawn (walls) on purpose. `Drivable` (in `TrafficPhysics.cs`) refuses a moving car that is pulling out of its space (until
+   0.5 s after `PullOut`) or into it (from `PullIn` + 3 s before the end), on the last `EndZone` + 25 = 70 units of its trip, near a
+   tunnel, hidden, or in a junction's box at the moment of the choice (every 0.4 s); and `Bubble` sends a physics car back to being
+   drawn on the last 45 units of its trip ("back on its timetable ... (its trip's end)", six of those in the owner's earlier log).
+   In town most cars are near a trip's end or a junction, so the player meets these often. Parked cars are always walls. The fix
+   is the same as for point 3 (below): a drawn car the player is about to touch becomes a physics car whatever it is doing.
+2. **"When the stand-ins are swapped, it creates tire-marks from the origin to their current location, weird trail artifacts going
+   off into the distance."** Fixed (not yet tried in the game): the enemy car's wheels carry `TrailRenderer`s (the game's
+   `TireTrails`, which turns `emitting` on while the tyres skid), and a body made at the prefab's place (the scene's origin) or
+   taken from the pool where it last was, then moved into place, drew a mark along the move. `TrafficBody.ClearTrails()` clears
+   them after `Become` places a body and after a stand-in is shown at its first state. If streaks still show: look for any other
+   place a body is moved without physics (a playback snap of over a second, `Playback.PlayAt`'s jump), and clear there too.
+3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
+   traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
+
+### Contact physics: the plan (prepared 2026-11-23, not built)
+
+**The idea:** keep everything as it is, and add a second, small kind of physics car, made only where the player is about to touch a
+drawn car: a **loose car**, the same pooled enemy car (`TakeBody`), with no driver. It stands exactly where the drawn car was, in its
+pose, at rest; a parked car keeps its brakes on (a hard shove slides it; a gentle one barely moves it), a moving car brakes to a stop
+(it has no path to follow while pulling in or out). Since it is made a moment before the touch, the player feels a real car, not a
+wall. Its own small cap (config `World` / `TrafficLoose`, default 6), separate from `TrafficPhysics`' 24, so nothing is taken from
+the driven cars.
+
+**When one is made** (each frame, cheap: only the drawn cars, at most 72, and only those within about 40 units): the player's car's
+box, swept along its velocity for 0.3 s (plus 2 units), meets the drawn car's box. Not for a car in a tunnel or away. Also for the
+drawn moving cars point 1 lists (pulling in or out, at a trip's end, in a box). Cars the bubble can drive should go on becoming
+driven cars as now (this is only for what it refuses).
+
+**When it goes back** (in the bubble's pass, every 0.4 s): the player 60 units or more from it and it **untouched** (within 0.5 units
+and 3 degrees of where it was made, no damage): back to being drawn, with no ledger change for a parked car (it is still in its space)
+and, for a moving car it stopped, the time it stood still as lateness (a `Late` op on its leg, the same as `HoldBack` makes). A
+**touched** one stays where it was knocked while anyone can see it, then is retired from the day (`Retire`; a wreck burns and goes as
+now). The owner may prefer a pushed parked car to stay "home" (see the decisions).
+
+**Cost.** The cost of a physics car is mostly the enemy car's scripts (`CarControllerNew`'s wheels and raycasts every physics step),
+not the rigidbody (a body at rest sleeps). With a 40-unit trigger only one to three cars are loose at a time even in a town, and they
+go back once the player is past, so it should cost about what three more driven cars do. Two things to avoid a hitch: make the pool's
+first few bodies at the start of the race (spread over frames; each new body is an `Instantiate` plus the game's `Awake`s, which is
+also when Dacia Body logs its four lines), and never make more than one body in a frame. Measure it: frame time in a busy street
+with loose cars on and off (test 51 below). If it costs too much, the cheaper fallback: make a loose car kinematic with its scripts
+off until the player's car actually touches it (its `OnCollisionEnter`, which a kinematic body gets from a dynamic one), then dynamic;
+the first contact is then a wall for one physics step.
+
+**Code to write** (all in `TrafficPhysics.cs` / `TrafficShared.cs`; nothing in the pure files but a flag):
+- `TrafficBody`: a `Loose` mode (no driver: `FixedUpdate` holds the brakes, steering 0, never `GaveUp`/`Hold` logic), where it was made
+  and when, `Touched` (moved or damaged since). `ClearTrails()` after placing it.
+- `TrafficCars`: a `loose` dictionary (car to body) like `physical`; the swept-box test in `Step` over the drawn cars; making (`Become`
+  generalised: a parked car's pose is its drawn pose; velocity 0 parked, the drawn speed moving); going back in `Bubble`; loose cars
+  count in `IsPhysical`, `OnAPhysicsCar`, `BuildMovers` (as obstacles: the driven cars stop for them) and `PhysicsLights` (never lit
+  when parked).
+- **In a room:** a loose car is claimed like any other (the nearest player simulates it; usually the one about to hit it), so it
+  needs the room's grant before it exists: on the host (alone) that is at once; on a client it is a round trip, so trigger it a
+  little earlier there (sweep 0.3 s + the client's measured round trip, say 0.5 s). The state's flags need a "loose" bit
+  (`TrafficRoom.FlagLoose`, layout `Version` 2) so the stand-ins elsewhere show it parked (lamps dark). A loose car handed over or
+  released goes through the room as the driven ones do (its op: none if untouched and parked; `Late` held time if it was moving;
+  `Retire` if touched).
+- **trafficview / trafficsim:** nothing for the room (the messages are the same); a trafficview check that no loose car would be made
+  in another car's or a building's box (the parked spots are already checked against each other).
+
+**Decisions for the owner (each with a default to build with):**
+1. A parked car pushed out of its space: **default retired once out of sight** (its household goes without it for the rest of the
+   race). Or: put back in its space once out of sight (the day carries on as if nothing happened).
+2. How hard to brake a parked car: **default the full brake** (a gentle nudge barely moves it, a hard hit slides and spins it).
+3. `TrafficLoose` default **6**, 0 turns it off (parked cars walls again, as now).
+
+### Order of work for the next agent
+1. Read `CLAUDE.md`, this file's "Start here", this section, then "Stage 4: the traffic in a room as built".
+2. Ask the owner the three decisions above (and whether test 50 was done with a second player; its report comes first if so).
+3. Build contact physics with the defaults; `tools/check.sh`; trafficview seed 7 (unchanged); trafficsim (16 seeds) if `TrafficRoom`
+   changes; write test 51; commit and push to `traffic-test-branch`.
+4. Still open from before: test 50 (two players), test 49's frame time with `TrafficPhysics` 0, 20, 30, test 48 and test 47, the
+   eight cut-off town streets (a world change: ask), the owner's four stage 3 decisions (built with defaults).
 
 ## Stage 4: the traffic in a room as built (2026-11-23; not yet tried in the game)
 

@@ -297,6 +297,7 @@ namespace HalfGripOpenWorld
 			{
 				b.gameObject.SetActive(true);
 			}
+			b.ClearTrails();
 			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
 			physical[c] = b;
 			madePhysical++;
@@ -752,6 +753,27 @@ namespace HalfGripOpenWorld
 		private Vector3 coastVelocity;
 		private float coastLeft;
 		private bool smoking;
+		private TrailRenderer[] trails;
+
+		/// <summary>
+		/// The tyre marks (the game's <c>TireTrails</c>: trail renderers on the wheels) forgotten after the body is put somewhere new (taken from
+		/// the pool, made, a stand-in shown at its first state): otherwise each draws a mark from where it last was (for a new body, the
+		/// scene's origin) across the country to here.
+		/// </summary>
+		internal void ClearTrails()
+		{
+			if (trails == null)
+			{
+				trails = GetComponentsInChildren<TrailRenderer>(true);
+			}
+			foreach (TrailRenderer t in trails)
+			{
+				if (t != null)
+				{
+					t.Clear();
+				}
+			}
+		}
 		internal TrafficDrive.State Drive;
 		internal TrafficDrive.Mover Me;
 		private float offFor, steer;
