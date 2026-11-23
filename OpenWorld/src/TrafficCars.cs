@@ -207,6 +207,7 @@ namespace HalfGripOpenWorld
 			template.transform.SetParent(transform, false);
 			template.transform.localScale = root.localScale;
 			Dictionary<Transform, Transform> copies = new Dictionary<Transform, Transform> { [root] = template.transform };
+			HashSet<Transform> lowered = new HashSet<Transform>();
 			HashSet<MeshRenderer> paint = new HashSet<MeshRenderer>();
 			HashSet<Transform> wheels = new HashSet<Transform>();
 			// From the car's frame (scaled as the car is) to its parts'.
@@ -215,6 +216,10 @@ namespace HalfGripOpenWorld
 			Bounds box = default, wheelBox = default;
 			bool anyWheel = false;
 			float wheelRadius = 0f;
+			// The wheels let down to their springs' full length: the prefab has them where the game draws a loaded spring (it draws a wheel at
+			// y = its place's y - (spring length - 0.3) in the car's frame, a spring 0.7 at most), so a parked copy looked squatted on its
+			// wheels and the physics car that took its place stood up out of it (the owner, 2026-11-23). Only the height changes.
+			Dictionary<Transform, float> wheelDrop = WheelDrops(prefab);
 			foreach (MeshRenderer r in root.GetComponentsInChildren<MeshRenderer>(true))
 			{
 				MeshFilter f = r.GetComponent<MeshFilter>();
@@ -234,6 +239,17 @@ namespace HalfGripOpenWorld
 					paint.Add(cr);
 				}
 				Bounds b = Through(f.sharedMesh.bounds, toCar * r.transform.localToWorldMatrix);
+				if (wheel != null && wheelDrop.TryGetValue(wheel, out float drop))
+				{
+					Transform wc = copies[wheel];
+					if (!lowered.Contains(wc))
+					{
+						lowered.Add(wc);
+						wc.localPosition = wheel.localPosition + new Vector3(0f, drop, 0f);
+					}
+					// The same move in the car's frame, for the box and the wheels' bottom.
+					b.center += (toCar * wheel.parent.localToWorldMatrix).MultiplyVector(new Vector3(0f, drop, 0f));
+				}
 				if (wheel != null)
 				{
 					wheels.Add(copies[wheel]);
@@ -344,6 +360,41 @@ namespace HalfGripOpenWorld
 			}
 			Mod.Info("Traffic: look " + index + ": " + renderers.Length + " meshes, " + look.Paint.Length + " painted, " + look.Lamps.Length + " lamps, " + look.Wheels.Length + " wheels, box " + box.size.ToString("0.0") + ", wheels' bottom " + look.Bottom.ToString("0.00") + ", radius " + look.WheelRadius.ToString("0.00"));
 			return look;
+		}
+
+		/// <summary>
+		/// How far down (in each wheel's parent's frame) each of the enemy car's wheels goes to stand at its spring's full length, as its
+		/// <see cref="CarControllerNew"/> would draw it: the game puts a wheel at its place in the car's frame with y less (spring - 0.3),
+		/// so at the rest length the wheel's local y is the car-frame y of its place less (rest length - 0.3). Empty if the car has no controller.
+		/// </summary>
+		private static Dictionary<Transform, float> WheelDrops(GameObject prefab)
+		{
+			Dictionary<Transform, float> drops = new Dictionary<Transform, float>();
+			CarControllerNew cc = prefab.GetComponent<CarControllerNew>();
+			if (cc == null)
+			{
+				return drops;
+			}
+			Transform root = prefab.transform;
+			foreach (List<Transform> list in new[] { cc.frontWheels, cc.backWheels })
+			{
+				if (list == null)
+				{
+					continue;
+				}
+				foreach (Transform w in list)
+				{
+					if (w == null || drops.ContainsKey(w))
+					{
+						continue;
+					}
+					float placeY = root.InverseTransformPoint(w.position).y;
+					float target = placeY - (cc.suspensionRestLength - 0.3f);
+					drops[w] = target - w.localPosition.y;
+				}
+			}
+			Mod.Info("Traffic: the parked cars' wheels let down to the springs' full length (" + cc.suspensionRestLength.ToString("0.00") + "): " + string.Join(", ", System.Linq.Enumerable.Select(drops, kv => kv.Key.name + " " + kv.Value.ToString("0.00"))));
+			return drops;
 		}
 
 		/// <summary>Whether a material glows (a lamp): emission on and brighter than a trace.</summary>

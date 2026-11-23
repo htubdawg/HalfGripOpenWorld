@@ -473,14 +473,16 @@ build: `TrafficRoom.Version` is 2 (the state's flags gained `FlagLoose` 8 and `F
   its springs. `LearnRest` (every 0.4 s, at the choice) measures each body model's root height over the ground from this machine's
   physics cars standing or crawling (under 3 units/s, upright, 1.2 s after placing), a running mean of up to 40; once 3 are in,
   `RestPlace` puts bodies of that model at that height over the ground under the drawn car (logged once a model: `body model N
-  stands ... over the ground`). Until then the old small drop. **The springs themselves** (the owner: "the tires start at their maximum
-  compressed amount and drop down when enabled"): the game's `CarControllerNew` keeps each wheel's last spring length
-  (`WheelData.lastLength`, public); a new body's is 0 (its wheels are made in `Start`) and a pooled body's is whatever it last had, so
-  the first physics step's damper saw a jump, cancelled the spring, and the car dropped; and the drawn wheels follow `lastLength`
-  eased at 10% a frame. `TrafficBody.SettleWheels` works out each spring's length where the body stands (the controller's own ray:
-  from over the wheel down the car's up, distance less radius and 1, at most the rest length) and sets it and the drawn wheel's
-  place: in `Place` for a pooled body, and from `TrafficWheelsPatch` (a postfix on `CarControllerNew.Start`) for a new one, before
-  its first physics step.
+  stands ... over the ground`). Until then the old small drop.
+- **The parked (static) cars' wheels** (the owner, 2026-11-23: "the static cars CURRENTLY have their suspension COMPRESSED, the physics
+  cars DO NOT. WE NEED TO UNCOMPRESS THE PARKED STATIC CAR SUSPENSION SO THE WHEELS ARE FULLY EXTENDED"): stage 2's copies took the
+  wheels at the prefab's height, a loaded spring. The game draws a wheel at y = its place's car-frame y - (spring length - 0.3)
+  (the Tokyo/MainMenu dump: rest length 0.7, Wheel_LF at y 0.46 with a spring of 0.33). `TrafficCars.WheelDrops` works out each wheel's
+  drop to the full 0.7 and `MakeLook` lowers the copies' wheels by it (height only), with the box and the wheels' bottom moved to
+  match, so a drawn car stands on extended wheels (logged once: `the parked cars' wheels let down ...`).
+- **A mistake not to repeat:** a `SettleWheels` that set the physics bodies' `WheelData.lastLength` and their drawn wheels' places from
+  a Start postfix (commit 8bd073b) put every wheel in the middle of the car ("unicycles"); taken out the next commit. The cause was
+  not found; leave the physics car's wheels to the game.
 - **Lamps** (the owner, 2026-11-23: "parked cars should not turn their lights on when their physics get switched on"): the game's
   `CarControllerNew.Update` lights the tail lamps (`becSpate`, the `_EMISSION` keyword) whenever `brakeAccel > 0`, and a loose car
   holds its brake, so it showed brake lights; the head lamps glowed too. `TrafficBody.FindLamps` (in `MakeBody`) keeps each lamp's

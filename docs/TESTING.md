@@ -473,8 +473,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Physics cars driving near a parked loose car (still in its space) pass it as before; one knocked into the road, they stop for.
    - No tyre-mark streaks when a car turns loose, turns physical, or a stand-in appears or jumps (second fix: the body is teleported
      and its marks kept off for 0.3 s after any move).
-   - A parked car turning loose: its wheels should already sit on the ground (not drop from fully compressed), and no tyre mark is
-     painted from anywhere to it.
+   - Parked (static) cars stand on fully extended wheels, not squatted; one turning loose doesn't pop up on its wheels, and no tyre
+     mark is painted from anywhere to it. Physics cars have four wheels where they belong (one build put them all in the middle).
    - A parked car turning loose should no longer bob on its springs (after the first few physics cars of the race: the log says
      `body model N stands ... over the ground` once its rest height is known; before that line a small drop is still expected).
    - A parked car that turns loose keeps its lamps dark (no brake lights, no glowing head lamps), in a room on both screens. A moving

@@ -1196,9 +1196,6 @@ namespace HalfGripOpenWorld
 			// The tyre marks off and empty BEFORE the move (they paint from where the wheels were to where they are), kept off a moment after.
 			ClearTrails();
 			transform.SetPositionAndRotation(pos, turn);
-			// The springs at the length they have here, and the wheels drawn there, before the physics first runs (a new body's wheels
-			// don't exist until the game's Start: set then, by TrafficWheelsPatch).
-			SettleWheels();
 			if (!gameObject.activeSelf)
 			{
 				gameObject.SetActive(true);
@@ -1220,49 +1217,6 @@ namespace HalfGripOpenWorld
 				Rb.interpolation = RigidbodyInterpolation.None;
 			}
 			ClearTrails();
-		}
-
-		/// <summary>
-		/// Each wheel's spring set to the length it has standing where the body is now, and the wheel drawn there, as the game's controller
-		/// works them out (a ray from over the wheel down the car's up, the spring the distance less the wheel's radius and 1, at most its rest
-		/// length). Otherwise a pooled body's springs keep their last length and a new body's are 0: the first physics step's damper sees
-		/// the spring jump, cancels the spring, and the car drops onto them and bounces; and the drawn wheels start fully compressed and ease
-		/// down over a dozen frames (the owner, 2026-11-23).
-		/// </summary>
-		internal void SettleWheels()
-		{
-			CarControllerNew.WheelData[] wheels = Cc.wheels;
-			if (wheels == null)
-			{
-				return;
-			}
-			Transform t = transform;
-			Vector3 up = t.up;
-			int mask = Physics.DefaultRaycastLayers & ~(1 << gameObject.layer) & -5;
-			for (int j = 0; j < wheels.Length; j++)
-			{
-				CarControllerNew.WheelData w = wheels[j];
-				if (w == null)
-				{
-					continue;
-				}
-				Vector3 from = t.TransformPoint(w.localPosition) + up;
-				Vector3 dir = -up + t.right * w.localPosition.x * 0.1f;
-				float reach = w.restLength + w.radius + 1f + Cc.groundSearchSlack;
-				float length = w.restLength;
-				if (Physics.Raycast(from, dir.normalized, out RaycastHit hit, reach, mask, QueryTriggerInteraction.Ignore))
-				{
-					length = Mathf.Clamp(hit.distance - w.radius - 1f, 0f, w.restLength);
-				}
-				w.lastLength = length;
-				Transform drawn = j < Cc.frontWheels.Count ? Cc.frontWheels[j] : (j - Cc.frontWheels.Count < Cc.backWheels.Count ? Cc.backWheels[j - Cc.frontWheels.Count] : null);
-				if (drawn != null)
-				{
-					Vector3 lp = w.localPosition;
-					lp.y -= Mathf.Max(0.1f, length) - 0.3f;
-					drawn.localPosition = lp;
-				}
-			}
 		}
 
 		private bool interpHeld;
@@ -1976,19 +1930,6 @@ namespace HalfGripOpenWorld
 	/// counting as a kill (no <c>EnemyKilled</c> signal, so no heal, ammo, kill stats or feats; no lifesteal, combo or "WRECKED"). A hit on
 	/// a stand-in goes to the machine that drives the car (in a room), which shows the smoke and the wreck to everybody through its states.
 	/// </summary>
-	[HarmonyPatch(typeof(CarControllerNew), "Start")]
-	internal static class TrafficWheelsPatch
-	{
-		/// <summary>A traffic car's wheels are made in the game's Start, after the body was placed: set to their length there at once, before the first physics step.</summary>
-		private static void Postfix(CarControllerNew __instance)
-		{
-			if (__instance != null && __instance.TryGetComponent(out TrafficBody body))
-			{
-				body.SettleWheels();
-			}
-		}
-	}
-
 	[HarmonyPatch(typeof(EnemyController), nameof(EnemyController.TakeDamage), new[] { typeof(float), typeof(bool) })]
 	internal static class TrafficDamagePatch
 	{
