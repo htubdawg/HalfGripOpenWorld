@@ -93,7 +93,10 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   they say, so they may use floats.
 - **Origin.** Anything that keeps a world position outside a transform must be moved on `Origin.Shifted` (or listed in `GameCaches`).
   Positions sent over the network are world coordinates. Only x and z shift; heights never change.
-- Bump `version` in `mod.json` with each release and keep `README.md` in step.
+- Bump `version` in `mod.json` with each release and keep `README.md` in step (its `Version **x.y.z**` and `Loaded Open World x.y.z`
+  lines). Merging a new version to `main` releases it: `.github/workflows/release.yml` tags `v<version>` and makes the release
+  "Version <version>" with `OpenWorld.zip` (it fails if the README's version differs; a version already tagged is skipped). It does
+  not compile the mod (no game DLLs there): run `tools/check.sh` before merging.
 - C# 10 and netstandard2.1 APIs only.
 - Units: game units, about 3.3 to a real metre (a car is about 14 long, a lane 11). Size things at real scale through that.
   Text a player reads (README, `mod.json`, config descriptions, log lines, the overlay) gives real distances (units / 3.3) or
