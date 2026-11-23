@@ -909,9 +909,13 @@ namespace HalfGripOpenWorld
 			return b;
 		}
 
-		/// <summary>Bodies made and woken ahead of need at the start of the race, and the one awake now (for one frame).</summary>
+		/// <summary>
+		/// Bodies kept woken and spare ahead of need (topped up one a frame), and the one awake now (for one frame). A body is only ever put
+		/// to use woken: the game's controller takes its wheels' places in its <c>Start</c>, the frame after the body is first switched on, so
+		/// a body made and placed at once had its wheels moved to the rest pose first and the controller took those, widened again by 1.1
+		/// (the wheels popped out) and lowered (the car bounced) (the owner, 2026-11-23).
+		/// </summary>
 		private const int WarmBodies = 3;
-		private int warmed;
 		private TrafficBody warming;
 
 		/// <summary>
@@ -923,6 +927,8 @@ namespace HalfGripOpenWorld
 		{
 			if (warming != null)
 			{
+				// Started now (its controller's Start ran as it woke): the rest is worked out from it, once.
+				LearnRestFrom(warming);
 				warming.gameObject.SetActive(false);
 				warming.Rb.isKinematic = false;
 				if (warming.Ec.audioSource != null)
@@ -933,11 +939,12 @@ namespace HalfGripOpenWorld
 				warming = null;
 				return;
 			}
-			if (warmed >= WarmBodies || (MostLoose == 0 && MostPhysics == 0) || tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
+			int bodies = physical.Count + remote.Count + bodySpare.Count;
+			if (bodySpare.Count >= WarmBodies || bodies >= MostPhysics + MostLoose + WarmBodies || (MostLoose == 0 && MostPhysics == 0) || tm.enemyCarPrefab == null
+				|| madeFrame == Time.frameCount || physicsFailed)
 			{
 				return;
 			}
-			warmed++;
 			TrafficBody b;
 			try
 			{
@@ -1279,10 +1286,18 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal void Settle(TrafficCars.Rest rest)
 		{
-			if (Cc == null || Cc.wheels == null || rest.Length == null || Cc.wheels.Length != rest.Length.Length)
+			if (Cc == null || rest.Length == null)
 			{
 				return;
 			}
+			if (Cc.wheels == null || Cc.wheels.Length != rest.Length.Length || Cc.wheels[0] == null)
+			{
+				// Not started yet (made this frame: the warm pool ran short). Its controller's Start must take the wheels where the prefab has
+				// them, so they are left alone until it has (LateUpdate).
+				settleLater = rest;
+				return;
+			}
+			settleLater = null;
 			for (int i = 0; i < rest.Length.Length; i++)
 			{
 				if (Cc.wheels[i] != null)
@@ -1300,6 +1315,9 @@ namespace HalfGripOpenWorld
 				}
 			}
 		}
+
+		/// <summary>A rest to settle into once the controller has started (<see cref="Settle"/>).</summary>
+		private TrafficCars.Rest settleLater;
 
 		/// <summary>The body's particles (the tyres' smoke, the exhaust) emptied: anything emitted along a move would hang in a line across the country.</summary>
 		private void ClearParticles()
@@ -1413,6 +1431,10 @@ namespace HalfGripOpenWorld
 		/// </remarks>
 		private void LateUpdate()
 		{
+			if (settleLater != null && Cc != null && Cc.wheels != null && Cc.wheels.Length > 0 && Cc.wheels[0] != null)
+			{
+				Settle(settleLater);
+			}
 			if (trails == null)
 			{
 				return;
@@ -1441,6 +1463,8 @@ namespace HalfGripOpenWorld
 						if (t != null)
 						{
 							t.emitting = !Cc.isAirborne;
+							// Emptied again with it on: whatever it kept from before starts nowhere.
+							t.Clear();
 						}
 					}
 				}
@@ -1505,6 +1529,22 @@ namespace HalfGripOpenWorld
 			}
 			if (!jumped)
 			{
+				// The marks' own points: a segment no car draws in a frame, or a head far from both ends (a point kept from before, which
+				// the drawn line would join to the wheel), is a streak, whatever made it. Emptied before it is drawn again.
+				float seg = most + speed * Time.deltaTime * 2f + 6f;
+				for (int i = 0; i < trails.Length; i++)
+				{
+					string why = Streak(trails[i], seg);
+					if (why != null)
+					{
+						trails[i].Clear();
+						if (!streakLogged)
+						{
+							streakLogged = true;
+							Mod.Info("Traffic: car " + Car + "'s tyre mark emptied (" + why + ")");
+						}
+					}
+				}
 				return;
 			}
 			TrailsOffNow();
@@ -1518,6 +1558,39 @@ namespace HalfGripOpenWorld
 				guardLogged = true;
 				Mod.Info("Traffic: car " + Car + "'s tyre marks cut at a jump (" + (stale ? "drawn away from its body" : "a wheel moved too far in a frame") + ")");
 			}
+		}
+
+		private bool streakLogged;
+
+		/// <summary>Why trail <paramref name="t"/> holds a streak (a segment at either end longer than <paramref name="seg"/>, or its head that far from both ends), or null.</summary>
+		private static string Streak(TrailRenderer t, float seg)
+		{
+			if (t == null)
+			{
+				return null;
+			}
+			int n = t.positionCount;
+			if (n == 0)
+			{
+				return null;
+			}
+			float seg2 = seg * seg;
+			Vector3 head = t.transform.position;
+			Vector3 first = t.GetPosition(0), last = t.GetPosition(n - 1);
+			// Only while it draws: off (airborne), a mark stays behind as the car flies on.
+			if (t.emitting && (head - first).sqrMagnitude > seg2 && (head - last).sqrMagnitude > seg2)
+			{
+				return "its wheel " + Mathf.Sqrt(Mathf.Min((head - first).sqrMagnitude, (head - last).sqrMagnitude)).ToString("0") + " from its ends";
+			}
+			if (n >= 2)
+			{
+				float a = (t.GetPosition(1) - first).sqrMagnitude, b = (last - t.GetPosition(n - 2)).sqrMagnitude;
+				if (a > seg2 || b > seg2)
+				{
+					return "a segment " + Mathf.Sqrt(Mathf.Max(a, b)).ToString("0") + " long";
+				}
+			}
+			return null;
 		}
 
 		/// <summary>Distance (units) past which a move in one frame, or the drawn body from its rigidbody, is a jump.</summary>

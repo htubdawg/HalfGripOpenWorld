@@ -69,6 +69,8 @@ namespace HalfGripOpenWorld
 			public float Bottom, WheelRadius, Axle;
 			/// <summary>Where the car stands at rest on its springs as the game's suspension has it (<see cref="TrafficRest"/>), shared by every look.</summary>
 			public Rest Rest;
+			/// <summary>For each of <see cref="Wheels"/>, the game's wheel it copies (its index in the controller's order, front then back).</summary>
+			public int[] WheelCtl;
 			/// <summary>The enemy car's headlight, in the car's frame (none: no light).</summary>
 			public bool HasLight;
 			public Vector3 LightAt;
@@ -173,17 +175,21 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// The enemy car at rest on its springs (<see cref="TrafficRest"/>): its root's height over the ground and its pitch, how much a
 		/// surface's offset sinks it, and for each wheel (in its controller's order, front then back, as the game's <c>wheels</c>) its spring's
-		/// length and where it is drawn in its parent's frame. Null fields when it could not be worked out (then the wheels are drawn at the
-		/// springs' full length and a physics car is put down where the drawn one is and settles, as before).
+		/// length and where it is drawn in its parent's frame. Worked out from the first physics body woken at the race's start
+		/// (<see cref="LearnRestFrom"/>), as the game's own <c>Start</c> leaves it: the prefab can't give it (its rigidbody reports no centre
+		/// of mass, and the wheels' places the suspension uses are only taken in <c>Start</c>). Until then not <see cref="Ok"/>: the wheels
+		/// are drawn at the springs' full length and a physics car is put down where the drawn one is, as before.
 		/// </summary>
 		internal sealed class Rest
 		{
 			public bool Ok;
 			public float Height, PitchDeg, Sink;
-			public Transform[] PrefabWheels;
 			public float[] Length;
 			public Vector3[] Local;
 		}
+
+		/// <summary>The rest every look shares (one car, one suspension).</summary>
+		private readonly Rest rest = new Rest();
 
 		/// <summary>One look for each of the enemy car's models (its <see cref="CarSkinController.carModels"/>; the whole car if it has none).</summary>
 		private Look[] MakeLooks(GameObject prefab)
@@ -195,11 +201,11 @@ namespace HalfGripOpenWorld
 			{
 				lightTemplate = lights.spotlight.GetComponent<Light>();
 			}
-			Rest rest = RestOf(prefab);
+			List<Transform> ctl = ControllerWheels(prefab);
 			List<Look> made = new List<Look>();
 			for (int i = 0; i < Math.Max(1, models.Length); i++)
 			{
-				Look look = MakeLook(prefab, skin, models, i, rest);
+				Look look = MakeLook(prefab, skin, models, i, ctl);
 				if (look != null)
 				{
 					made.Add(look);
@@ -217,7 +223,7 @@ namespace HalfGripOpenWorld
 		/// root, laid out as in the car with the car's own scale: everything a model shows when the game puts it on, nothing that is
 		/// switched off (the guns, the nitro flames) and no effects, sounds or scripts.
 		/// </summary>
-		private Look MakeLook(GameObject prefab, CarSkinController skin, GameObject[] models, int index, Rest rest)
+		private Look MakeLook(GameObject prefab, CarSkinController skin, GameObject[] models, int index, List<Transform> ctl)
 		{
 			Transform root = prefab.transform;
 			GameObject template = new GameObject("Traffic car " + index) { layer = layer };
@@ -234,10 +240,10 @@ namespace HalfGripOpenWorld
 			Bounds box = default, wheelBox = default;
 			bool anyWheel = false;
 			float wheelRadius = 0f;
-			// The wheels where the game draws them on a car at rest (its place in the car's frame, widened as the game widens it, less the
-			// spring's length at rest - 0.3): the prefab has them elsewhere, so a parked copy squatted on them (the owner, 2026-11-23), and let
-			// down to full length instead they stood the physics car that took its place up and dropped it (the owner, again).
-			Dictionary<Transform, Vector3> wheelPlace = WheelPlaces(prefab, rest);
+			// The wheels, until the rest is known (LearnRestFrom moves them there), where the game draws them at the springs' full length:
+			// widened as it widens them, let down. The prefab has them where a loaded spring would put them, so a parked copy squatted.
+			Dictionary<Transform, Vector3> wheelPlace = WheelPlaces(prefab);
+			Dictionary<Transform, Transform> wheelOf = new Dictionary<Transform, Transform>();
 			foreach (MeshRenderer r in root.GetComponentsInChildren<MeshRenderer>(true))
 			{
 				MeshFilter f = r.GetComponent<MeshFilter>();
@@ -264,6 +270,7 @@ namespace HalfGripOpenWorld
 					{
 						lowered.Add(wc);
 						wc.localPosition = local;
+						wheelOf[wc] = wheel;
 					}
 					// The same move in the car's frame, for the box and the wheels' bottom.
 					b.center += (toCar * wheel.parent.localToWorldMatrix).MultiplyVector(local - wheel.localPosition);
@@ -299,7 +306,7 @@ namespace HalfGripOpenWorld
 			}
 			MeshRenderer[] renderers = template.GetComponentsInChildren<MeshRenderer>(true);
 			Transform[] all = template.GetComponentsInChildren<Transform>(true);
-			List<int> paintAt = new List<int>(), wheelAt = new List<int>();
+			List<int> paintAt = new List<int>(), wheelAt = new List<int>(), wheelCtl = new List<int>();
 			List<Vector3> axles = new List<Vector3>();
 			for (int k = 0; k < renderers.Length; k++)
 			{
@@ -313,6 +320,7 @@ namespace HalfGripOpenWorld
 				if (wheels.Contains(all[k]))
 				{
 					wheelAt.Add(k);
+					wheelCtl.Add(wheelOf.TryGetValue(all[k], out Transform of) ? ctl.IndexOf(of) : -1);
 					// The car's right in the wheel's parent's frame: the axle it turns on, whatever way the wheel's own frame faces.
 					Quaternion parent = Quaternion.Inverse(template.transform.rotation) * all[k].parent.rotation;
 					axles.Add(Quaternion.Inverse(parent) * Vector3.right);
@@ -369,6 +377,7 @@ namespace HalfGripOpenWorld
 				WheelRadius = Mathf.Max(0.5f, wheelRadius),
 				Axle = anyWheel ? Mathf.Max(2f, wheelBox.extents.z * 0.85f) : Mathf.Max(2f, box.extents.z * 0.6f),
 				Rest = rest,
+				WheelCtl = wheelCtl.ToArray(),
 			};
 			if (lightTemplate != null)
 			{
@@ -381,22 +390,64 @@ namespace HalfGripOpenWorld
 			return look;
 		}
 
-		/// <summary>
-		/// The enemy car at rest (<see cref="Rest"/>), from the game's own numbers: its controller's springs, rest length and wheel radius
-		/// and its wheels' places (as its <c>InitializeWheels</c> takes them: in the root's frame, x widened by 1.1), its rigidbody's mass and
-		/// centre of mass (Unity's own from its one collider, as nothing in the game sets it for an enemy car), and the scene's gravity.
-		/// </summary>
-		private static Rest RestOf(GameObject prefab)
+		/// <summary>The enemy car's wheels in its controller's order (front then back, none missing), as the game's <c>wheels</c> are.</summary>
+		private static List<Transform> ControllerWheels(GameObject prefab)
 		{
-			Rest rest = new Rest();
+			List<Transform> wheels = new List<Transform>();
 			CarControllerNew cc = prefab.GetComponent<CarControllerNew>();
-			Rigidbody rb = prefab.GetComponent<Rigidbody>();
-			if (cc == null || rb == null)
+			if (cc == null)
 			{
-				Mod.Log.LogWarning("Traffic: the enemy car has no controller or body; parked cars' wheels drawn at full length");
-				return rest;
+				return wheels;
+			}
+			foreach (List<Transform> list in new[] { cc.frontWheels, cc.backWheels })
+			{
+				foreach (Transform w in list ?? new List<Transform>())
+				{
+					if (w != null)
+					{
+						wheels.Add(w);
+					}
+				}
+			}
+			return wheels;
+		}
+
+		/// <summary>
+		/// Where each of the enemy car's wheels is drawn on a parked copy (in its parent's frame) until the rest is known: as the game draws
+		/// it with the spring at full length, its place widened by 1.1 as <c>InitializeWheels</c> widens it and let down by (length - 0.3).
+		/// </summary>
+		private static Dictionary<Transform, Vector3> WheelPlaces(GameObject prefab)
+		{
+			Dictionary<Transform, Vector3> at = new Dictionary<Transform, Vector3>();
+			CarControllerNew cc = prefab.GetComponent<CarControllerNew>();
+			if (cc == null)
+			{
+				return at;
 			}
 			Transform root = prefab.transform;
+			foreach (Transform w in ControllerWheels(prefab))
+			{
+				Vector3 place = root.InverseTransformPoint(w.position);
+				Vector3 drawn = new Vector3(place.x * 1.1f, place.y - (cc.suspensionRestLength - 0.3f), place.z);
+				at[w] = w.parent.InverseTransformPoint(root.TransformPoint(drawn));
+			}
+			return at;
+		}
+
+		/// <summary>
+		/// Works out the rest (<see cref="Rest"/>) from body <paramref name="b"/>, woken and started (its controller's <c>Start</c> has run),
+		/// from what the game itself uses: the wheels' places as <c>InitializeWheels</c> took them, the rigidbody's mass and centre of mass
+		/// (Unity's, from the car's collider), the springs, the wheel radius, the scale and the scene's gravity. Then every drawn car's wheels
+		/// (and the copies' templates) are moved to where the game draws them at rest. Once a race.
+		/// </summary>
+		internal void LearnRestFrom(TrafficBody b)
+		{
+			if (rest.Ok || b == null || b.Cc == null || b.Rb == null)
+			{
+				return;
+			}
+			CarControllerNew cc = b.Cc;
+			CarControllerNew.WheelData[] data = cc.wheels;
 			List<Transform> wheels = new List<Transform>();
 			foreach (List<Transform> list in new[] { cc.frontWheels, cc.backWheels })
 			{
@@ -409,114 +460,99 @@ namespace HalfGripOpenWorld
 				}
 			}
 			int n = wheels.Count;
+			if (data == null || data.Length != n || n == 0)
+			{
+				Mod.Log.LogWarning("Traffic: the physics car's wheels are not as expected (" + (data == null ? "none" : data.Length.ToString()) + " for " + n + "); parked cars stay at the springs' full length");
+				return;
+			}
 			double[] x = new double[n], y = new double[n], z = new double[n];
 			for (int i = 0; i < n; i++)
 			{
-				Vector3 p = root.InverseTransformPoint(wheels[i].position);
-				x[i] = p.x * 1.1;
-				y[i] = p.y;
-				z[i] = p.z;
+				if (data[i] == null)
+				{
+					Mod.Log.LogWarning("Traffic: the physics car's wheels are not set up yet; parked cars stay at the springs' full length");
+					return;
+				}
+				x[i] = data[i].localPosition.x;
+				y[i] = data[i].localPosition.y;
+				z[i] = data[i].localPosition.z;
 			}
-			if (!CentreOfMass(prefab, rb, out Vector3 com, out string how))
-			{
-				Mod.Log.LogWarning("Traffic: the enemy car's centre of mass is not known (" + how + "); parked cars' wheels drawn at full length");
-				return rest;
-			}
-			float scale = root.localScale.y;
+			Transform root = b.transform;
+			Vector3 com = b.Rb.centerOfMass;
+			float scale = root.lossyScale.y;
 			float g = -Physics.gravity.y;
-			TrafficRest.Result r = TrafficRest.Solve(x, y, z, scale, com.y, com.z, rb.mass, g, cc.springStiffness, cc.suspensionRestLength, cc.wheelRadius);
-			rest.PrefabWheels = wheels.ToArray();
+			float radius = data[0].radius;
+			TrafficRest.Result r = TrafficRest.Solve(x, y, z, scale, com.y, com.z, b.Rb.mass, g, data[0].springStiffness, data[0].restLength, radius);
+			string numbers = "gravity " + g.ToString("0.##") + ", mass " + b.Rb.mass.ToString("0") + ", centre of mass " + com.ToString("0.000") + ", scale "
+				+ scale.ToString("0.##") + ", springs " + data[0].springStiffness.ToString("0") + " of " + data[0].restLength.ToString("0.00") + ", wheels "
+				+ string.Join(" ", System.Linq.Enumerable.Select(data, d => d.localPosition.ToString("0.00")));
+			if (!r.Ok)
+			{
+				Mod.Log.LogWarning("Traffic: the cars' rest on their springs not found (" + numbers + "); parked cars stay at the springs' full length");
+				return;
+			}
 			rest.Length = new float[n];
 			rest.Local = new Vector3[n];
 			for (int i = 0; i < n; i++)
 			{
 				rest.Length[i] = (float)r.Length[i];
-				// As the game's Update draws it: the place (widened) less (length - 0.3), in the root's frame, which the wheel's parent shares.
+				// As the game's Update draws it: the place less (length - 0.3), in the root's frame (unscaled), which the wheel's parent shares.
 				Vector3 inRoot = new Vector3((float)x[i], (float)(y[i] - (r.Length[i] - 0.3)), (float)z[i]);
 				rest.Local[i] = wheels[i].parent.InverseTransformPoint(root.TransformPoint(inRoot));
 			}
-			rest.Ok = r.Ok;
 			rest.Height = (float)r.Height;
 			rest.PitchDeg = (float)(r.Pitch * 180.0 / Math.PI);
 			rest.Sink = (float)r.Sink;
-			Mod.Log.LogInfo("Traffic: the cars at rest on their springs (gravity " + g.ToString("0.##") + ", mass " + rb.mass.ToString("0") + ", centre of mass "
-				+ com.ToString("0.00") + " " + how + ", springs " + cc.springStiffness.ToString("0") + " of " + cc.suspensionRestLength.ToString("0.00") + "): "
-				+ (r.Ok ? "springs " + string.Join(", ", System.Linq.Enumerable.Select(rest.Length, l => l.ToString("0.000"))) + ", root " + rest.Height.ToString("0.000")
-				+ " over the ground, pitched " + rest.PitchDeg.ToString("0.00") + " deg" : "not found; parked cars' wheels drawn at full length"));
-			return rest;
+			rest.Ok = true;
+			int moved = ApplyRest();
+			Mod.Log.LogInfo("Traffic: the cars at rest on their springs (" + numbers + "): springs " + string.Join(", ", System.Linq.Enumerable.Select(rest.Length, l => l.ToString("0.000")))
+				+ ", root " + rest.Height.ToString("0.000") + " over the ground, pitched " + rest.PitchDeg.ToString("0.00") + " deg; " + moved + " drawn cars' wheels moved there");
 		}
 
-		/// <summary>The centre of mass Unity gives the car's rigidbody (in its root's frame): its own if set by hand, else its one solid collider's centre.</summary>
-		private static bool CentreOfMass(GameObject prefab, Rigidbody rb, out Vector3 com, out string how)
+		/// <summary>Every drawn car's wheels (live and spare, and the looks' templates) put where the game draws them at rest. Returns how many cars.</summary>
+		private int ApplyRest()
 		{
-			com = Vector3.zero;
-			if (!rb.automaticCenterOfMass)
+			int moved = 0;
+			foreach (Look look in looks)
 			{
-				com = rb.centerOfMass;
-				how = "(set on the body)";
-				return true;
-			}
-			List<Collider> solid = new List<Collider>();
-			foreach (Collider c in prefab.GetComponentsInChildren<Collider>(true))
-			{
-				if (c.enabled && !c.isTrigger)
+				Transform[] all = look.Template.GetComponentsInChildren<Transform>(true);
+				for (int i = 0; i < look.Wheels.Length; i++)
 				{
-					solid.Add(c);
-				}
-			}
-			if (solid.Count != 1)
-			{
-				how = solid.Count + " colliders";
-				return false;
-			}
-			Collider one = solid[0];
-			Vector3 centre;
-			switch (one)
-			{
-				case BoxCollider box: centre = box.center; break;
-				case SphereCollider sphere: centre = sphere.center; break;
-				case CapsuleCollider capsule: centre = capsule.center; break;
-				default: how = "a " + one.GetType().Name; return false;
-			}
-			com = prefab.transform.InverseTransformPoint(one.transform.TransformPoint(centre));
-			how = "(its " + one.GetType().Name + "'s centre)";
-			return true;
-		}
-
-		/// <summary>
-		/// Where each of the enemy car's wheels is drawn on a parked copy, in its parent's frame: at rest (<see cref="Rest"/>), or if that
-		/// is not known at the spring's full length as before (the game draws a wheel at its place's y - (spring length - 0.3)).
-		/// </summary>
-		private static Dictionary<Transform, Vector3> WheelPlaces(GameObject prefab, Rest rest)
-		{
-			Dictionary<Transform, Vector3> at = new Dictionary<Transform, Vector3>();
-			if (rest.Ok)
-			{
-				for (int i = 0; i < rest.PrefabWheels.Length; i++)
-				{
-					at[rest.PrefabWheels[i]] = rest.Local[i];
-				}
-				return at;
-			}
-			CarControllerNew cc = prefab.GetComponent<CarControllerNew>();
-			if (cc == null)
-			{
-				return at;
-			}
-			Transform root = prefab.transform;
-			foreach (List<Transform> list in new[] { cc.frontWheels, cc.backWheels })
-			{
-				foreach (Transform w in list ?? new List<Transform>())
-				{
-					if (w == null || at.ContainsKey(w))
+					int c = look.WheelCtl[i];
+					if (c >= 0 && c < rest.Local.Length)
 					{
-						continue;
+						all[look.Wheels[i]].localPosition = rest.Local[c];
 					}
-					float placeY = root.InverseTransformPoint(w.position).y;
-					at[w] = w.localPosition + new Vector3(0f, placeY - (cc.suspensionRestLength - 0.3f) - w.localPosition.y, 0f);
 				}
 			}
-			return at;
+			foreach (View v in live.Values)
+			{
+				moved += RestWheels(v) ? 1 : 0;
+			}
+			foreach (Stack<View> s in spare)
+			{
+				foreach (View v in s)
+				{
+					RestWheels(v);
+				}
+			}
+			return moved;
+		}
+
+		private bool RestWheels(View v)
+		{
+			for (int i = 0; i < v.Wheels.Length; i++)
+			{
+				int c = v.Look.WheelCtl[i];
+				if (c >= 0 && c < rest.Local.Length)
+				{
+					v.Wheels[i].localPosition = rest.Local[c];
+				}
+			}
+			// Stood again at the rest height where it is next drawn.
+			v.Placed = false;
+			v.ParkedLeg = int.MinValue;
+			return true;
 		}
 
 		/// <summary>Whether a material glows (a lamp): emission on and brighter than a trace.</summary>
