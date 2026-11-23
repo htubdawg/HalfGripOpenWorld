@@ -11,7 +11,7 @@ using HalfGripOpenWorld;
 // --near lists the roads that come within 30 of a road (gap, heights, driven or not) and the graph's edges along it: for finding why a
 // road is cut off. With TV_MEET set in the environment, every meeting of two moving cars as drawn is printed (cars, edges, way, road
 // distance, speed, place on the leg and the leg's times): for finding why they meet.
-internal static class Program
+internal static partial class Program
 {
 	private static int Main(string[] args)
 	{
@@ -591,6 +591,7 @@ internal static class Program
 		Console.WriteLine("  cars stopped in a tunnel's mouth or within 60 of it: " + day.StoppedAtMouth + " steps" + (day.StoppedAtMouth == 0 ? "  ok" : "  FAIL"));
 		ok &= day.StoppedAtMouth == 0;
 		ok &= Parking(day, closeup);
+		ok &= Lateness(day);
 		if (picture != null)
 		{
 			Pictures.Draw(day, passes, picture);

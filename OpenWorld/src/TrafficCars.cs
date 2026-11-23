@@ -101,6 +101,13 @@ namespace HalfGripOpenWorld
 		private System.Threading.Tasks.Task<(TrafficDay day, TrafficParking parking)> building;
 		private TrafficDay day;
 		private TrafficParking parking;
+		/// <summary>Which cars are behind their timetable or gone (stage 3 writes it; empty until then), and the drawn cars it guards.</summary>
+		private TrafficLate late;
+		private readonly List<TrafficLate.Near> nearCars = new List<TrafficLate.Near>();
+		private double playerX, playerZ;
+
+		/// <summary>The race's lateness ledger (null until the day is built): stage 3's physics cars put a car back on its timetable through it.</summary>
+		internal TrafficLate Late => late;
 		private double startHour;
 		private bool failed;
 		private Look[] looks;
@@ -483,6 +490,7 @@ namespace HalfGripOpenWorld
 				}
 				day = building.Result.day;
 				parking = building.Result.parking;
+				late = new TrafficLate(day);
 				building = null;
 				int legs = 0;
 				foreach (TrafficDay.Leg leg in day.Legs)
@@ -582,7 +590,8 @@ namespace HalfGripOpenWorld
 				double hour = 3.0 + w / 100.0;
 				hour -= Math.Floor(hour / 24.0) * 24.0;
 				Status = "traffic: " + drawnMoving + " moving and " + drawnParked + " parked drawn, " + lit + " lit, chosen in " + chooseMs.ToString("0.0") + " ms (" + (day.Weekend ? "a weekend" : "a weekday") + ", "
-					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")";
+					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
+					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "");
 			}
 		}
 
@@ -601,7 +610,11 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				TrafficDay.Place at = day.At(c, w);
+				TrafficDay.Place at = late.At(c, w, out bool hidden);
+				if (hidden)
+				{
+					continue;
+				}
 				double x, z;
 				float reach;
 				bool moving = at.State == TrafficDay.State.Driving;
@@ -635,7 +648,30 @@ namespace HalfGripOpenWorld
 				if (d2 < (double)reach * reach)
 				{
 					near.Add(((float)Math.Sqrt(d2) * (moving ? MovingWeight : 1f), c, moving));
+					if (late.Count > 0)
+					{
+						// Guarded where it is drawn (pulling out of a lot's bay is off its lane).
+						double gx = x, gz = z;
+						if (moving)
+						{
+							parking.Drawn(c, at, out gx, out gz, out double _, out double _);
+						}
+						nearCars.Add(new TrafficLate.Near { Car = c, X = gx, Z = gz, Hx = at.Hx, Hz = at.Hz, Moving = moving, Distance = Math.Sqrt(d2) });
+					}
 				}
+			}
+			if (late.Count > 0)
+			{
+				// A late car would be drawn overlapping another: the farther of the two is hidden until it catches up.
+				if (late.Guard(nearCars, w) > 0)
+				{
+					near.RemoveAll(e => late.TryGet(e.car, out TrafficLate.Entry le) && le.Hidden);
+				}
+				nearCars.Clear();
+				// Late and hidden cars that can't be seen, where they are drawn or where the day has them, catch up in the background.
+				playerX = cx;
+				playerZ = cz;
+				late.Settle(w, Seen);
 			}
 			near.Sort((a, b) => a.d != b.d ? a.d.CompareTo(b.d) : a.car.CompareTo(b.car));
 			chosen.Clear();
@@ -651,10 +687,38 @@ namespace HalfGripOpenWorld
 			chooseMs = (float)watch.Elapsed.TotalMilliseconds;
 		}
 
+		/// <summary>Whether car <paramref name="c"/> at <paramref name="at"/> could be seen: within the drawn reach of the player, on a loaded tile.</summary>
+		private bool Seen(int c, TrafficDay.Place at)
+		{
+			double x = at.X, z = at.Z;
+			float reach = MovingReach;
+			if (at.State == TrafficDay.State.Parked)
+			{
+				TrafficParking.Spot spot = parking.Parked(c, at.Leg);
+				if (spot.Away)
+				{
+					return false;
+				}
+				x = spot.X;
+				z = spot.Z;
+				reach = ParkedReach;
+			}
+			double dx = x - playerX, dz = z - playerZ;
+			if (dx * dx + dz * dz > (double)reach * reach)
+			{
+				return false;
+			}
+			return Streamer.Instance != null && Streamer.Instance.IsLoadedAt(x, z);
+		}
+
 		/// <summary>Puts car <paramref name="c"/> where its day says now; false if it is not to be seen (away, in a tunnel).</summary>
 		private bool Draw(View v, int c, double w, float dt)
 		{
-			TrafficDay.Place at = day.At(c, w);
+			TrafficDay.Place at = late.At(c, w, out bool hidden);
+			if (hidden)
+			{
+				return false;
+			}
 			if (at.State == TrafficDay.State.Driving)
 			{
 				if (at.InTunnel)

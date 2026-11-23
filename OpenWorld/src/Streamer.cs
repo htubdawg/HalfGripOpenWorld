@@ -136,6 +136,12 @@ namespace HalfGripOpenWorld
 			return tiles.ContainsKey(Key(tx, tz));
 		}
 
+		/// <summary>True if the tile under world point (x, z) is built and in the scene.</summary>
+		internal bool IsLoadedAt(double x, double z)
+		{
+			return IsLoaded(TileOf(x), TileOf(z));
+		}
+
 		/// <summary>
 		/// True when every tile in reach of the car is built and none is being worked out or waiting to be made: after a teleport the
 		/// ring round the new place is made a few tiles a frame, each a long frame, and this is when that is over (the events' grid

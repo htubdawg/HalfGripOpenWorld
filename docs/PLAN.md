@@ -1357,6 +1357,10 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
    front, waits at junctions, can be bumped); out of reach it goes back on its timetable, late by what held it up ("car c is D seconds
    late from t"), so traffic is not used up; a wreck or a car knocked off its road is retired ("car c gone from t"). Solo, this
    machine drives every car. The owner measures what 20 to 30 extra physics cars cost.
+   - **A late car that would overlap other traffic (the owner, 2026-11-23):** hide it, and let it catch up in the background once its
+     tile is unloaded. As built (`TrafficLate.cs`): of two drawn cars that would overlap because one is late, the farther from the
+     player is hidden; a late or hidden car is put back on its timetable once neither where it is drawn nor where the day has it can be
+     seen (tile not loaded, or out of drawing reach). In a room (stage 4) a catch-up moves a car, so it is a claim like the lateness.
 4. **Rooms.**
    - **Who drives:** the player nearest a car drives it, because only that player has the ground loaded under it. Claimed as the
      deer's reactions are; the host keeps the first claim; a hand-over is a claim. Hits do not need the hitter to drive (see above),

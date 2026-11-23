@@ -65,7 +65,7 @@ namespace HalfGripOpenWorld
 		/// driving does not, so a drive spans an hour or two of it, and a stay counted from arriving would push every way home late into
 		/// the night. Counted from leaving, a tour keeps its place in the day (out in the morning, home in the late afternoon).
 		/// </summary>
-		private const double MinStay = 20.0;
+		internal const double MinStay = 20.0;
 
 		/// <summary>A car is not taken out again until it has been home this long.</summary>
 		private const double Rest = 60.0;
@@ -2267,6 +2267,24 @@ namespace HalfGripOpenWorld
 			at.Z -= at.Hx * off;
 		}
 
+		/// <summary>
+		/// Where leg <paramref name="li"/>'s car is at time <paramref name="t"/> on the leg's own clock (clamped to the leg's start and
+		/// end): driving on its path. <see cref="TrafficLate"/> reads a late car's place this way, at the time it is behind by.
+		/// </summary>
+		internal Place Driving(int li, double t)
+		{
+			Leg leg = Legs[li];
+			t = Math.Max(leg.Start, Math.Min(leg.End, t));
+			Place at = new Place { State = State.Driving, Leg = li };
+			double p = DistanceAt(leg, t);
+			OnPath(leg, p, ref at);
+			at.P = p;
+			at.T = t - leg.Start;
+			double p1 = DistanceAt(leg, Math.Min(leg.End, t + 0.25));
+			at.Speed = (p1 - p) / 0.25;
+			return at;
+		}
+
 		/// <summary>Where car <paramref name="car"/> is at sim time <paramref name="w"/> (0 to <see cref="Traffic.DaySeconds"/>; the day repeats).</summary>
 		internal Place At(int car, double w)
 		{
@@ -2287,15 +2305,7 @@ namespace HalfGripOpenWorld
 					double t = k == 0 ? w : w + Traffic.DaySeconds;
 					if (t >= leg.Start && t < leg.End)
 					{
-						at.State = State.Driving;
-						at.Leg = li;
-						double p = DistanceAt(leg, t);
-						OnPath(leg, p, ref at);
-						at.P = p;
-						at.T = t - leg.Start;
-						double p1 = DistanceAt(leg, Math.Min(leg.End, t + 0.25));
-						at.Speed = (p1 - p) / 0.25;
-						return at;
+						return Driving(li, t);
 					}
 				}
 				if (leg.End <= w)

@@ -13,7 +13,10 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span
    hour]]`. It builds the map, then race N's day twice, checks the day and the parking and exits 0. About 25 s. 16 seeds (1 to 15,
    20261122) pass after the second round.
-4. **The owner chose (2026-11-23) to go ahead to stage 3 without waiting for their second try of stage 2.** Start with "Stage 3: the
+4. **The owner answered (2026-11-23) the late-car question:** hide a late car in danger of overlapping and let it catch up in the
+   background once its tile is unloaded. Built as the lateness ledger (`TrafficLate.cs`), see "The ledger as built" under stage 3.
+   The physics cars themselves are next.
+5. **The owner chose (2026-11-23) to go ahead to stage 3 without waiting for their second try of stage 2.** Start with "Stage 3: the
    plan" below. Test 48 (`docs/TESTING.md`) is still open: when its report comes (screenshots, `LogOutput.log`), fix what it shows
    first, since stage 3 swaps stage 2's bodies for physics cars and shares their paint, poses and lamps. Before that report, stage 3
    was planned on stage 2 never yet confirmed in the game. What changed since their first try is under "The owner's first report" and "Stage 2:
@@ -381,7 +384,7 @@ the 5 pm peak are unchanged within a few percent; cars out of sight ("round the 
 - **The diagnostics** in trafficview (`TV_MEET`) and `TrafficDay` (`FarSide`, `FarEnd`, `HeldSince`) are cheap; keep them until the
   owner's report on this round.
 
-## Stage 3: the plan (prepared 2026-11-23; nothing of it built yet)
+## Stage 3: the plan (prepared 2026-11-23; the lateness ledger built, the physics cars not yet)
 
 The agreed stage (`docs/PLAN.md`, "Traffic: the agreed plan", stage 3): **within about 300 units (90 m) of the player a timetabled
 car becomes a game car with our own driver** (follows the car in front, waits at junctions, can be bumped, shot and wrecked); out of
@@ -484,10 +487,40 @@ frames when nothing else is loading).
 (not below the day's `MinStay`, 20 s), and whatever is left over carries into the next leg. `At` for a gone car: away (not drawn,
 its home's space empty). Kept small: an entry only when a car leaves the bubble late by more than a second or two.
 
-**What this leaves (say so to the owner):** a late car back on its timetable outside the bubble can be drawn overlapping a car the
-day put just behind it (the day never knew it was late). Out to 900 units that can be seen. The cheap fix is to hide the farther of
-two drawn moving cars closer than a car's length on one lane; the real one is to feed lateness into the day's lanes, which the day
-cannot do after it is built. Measure how often first (trafficview can apply a ledger and count overlaps).
+**What this leaves, and the owner's answer (2026-11-23):** a late car back on its timetable outside the bubble can be drawn
+overlapping a car the day put just behind it (the day never knew it was late). The owner: *"if a car is late to its waypoint and in
+danger of overlapping other traffic, we can just despawn it on unloading or simply make it catch back up in the background when the
+tile it's on is unloaded."*
+
+**The ledger as built (`OpenWorld/src/TrafficLate.cs`, pure; `TrafficCars` draws through it):**
+- `Late(car, leg, w, D)`: car is D seconds behind on that leg from sim time w (under 1.5 s: no entry). `Retire(car, w)`: gone for the
+  rest of the race (drawn as away). `Hide(car, w)`: not drawn until it catches up.
+- `At(car, w, out hidden)` replaces `TrafficDay.At` in `TrafficCars`: a late car is the day's place at `w - D` on its leg (new
+  `TrafficDay.Driving(leg, t)`); once that trip is over it parks at the trip's end, its stay cut short (never below `MinStay`, now
+  internal) and anything left over makes its next trip late. An entry made up in full is dropped there.
+- `Guard(near, w)`, every choice (0.4 s): of two drawn cars that would overlap with at least one late (moving: same way, under 18
+  apart along the lane, under 3 beside; or a car within 6 of a parked car's middle, in its space), **the farther from the player is
+  hidden** (the one in front of them stays). An on-time car can be the one hidden (an entry with leg -1).
+- `Settle(w, seen)`, every choice: **a late or hidden car catches up in the background** (its entry dropped, back on the day) once
+  neither where it is drawn nor where the day has it can be seen: `TrafficCars.Seen` is a loaded tile (`Streamer.IsLoadedAt`, new)
+  within the drawing reach (900 moving, 450 parked). So a car never vanishes or pops back where the player is looking, except the
+  hide itself.
+- The overlay's traffic line adds `late N (made, caught up, hidden, retired)` once anything is late.
+- Nothing calls `Late` or `Retire` yet: that is the physics cars' job (`TrafficCars.Late`). Until then the ledger is empty and the
+  game draws as before.
+- In a room (stage 4), what each machine can see differs, so a catch-up (and a hide, if it should be shared) is a claim like the
+  lateness itself. Alone it is local.
+
+**trafficview's lateness check** (`tools/trafficview/Lateness.cs`): from 17:00 for 10 minutes, as stage 3 would: every driving car
+300 to 900 from a pretend player made late at the start, then every 10 s those 380 to 420 out (leaving the bubble), each by 2 to 120
+s; drawn as `TrafficCars` draws (loaded tiles 5 round the player, the reaches), guarded and settled every 0.4 s. Two players: one
+driving with a household's car, one standing where the most cars drive. FAIL on any drawn overlap with a late car or a drawn late car
+jumping. Seed 7: following, 16 made late, 6 hidden, 17 caught up (hidden on-time cars count too); standing (38 cars driving within 450), 89
+made late, 106 hidden (37 within 300 of the player, which in stage 3 are physics cars, not drawn bodies; 52 at 300 to 600; 14
+farther), 117 caught up, 0 overlaps, 0 jumps, 0.04 ms a choice. Its first run found two faults, both fixed: the overlap test
+measured "beside" by one car's heading only (so a pair could pass one way round and fail the other), and the guard placed a car
+pulling out of a lot's bay on its lane rather than where it is drawn (`TrafficParking.Drawn`). The lateness here is harsh (up to two minutes, everyone leaving the bubble); measure again with
+the real lateness once the physics cars give it.
 
 ### Decisions for the owner (each has a default to build with if there is no answer yet)
 
@@ -516,7 +549,9 @@ cannot do after it is built. Measure how often first (trafficview can apply a le
 1. One physics car: make and prepare a prefab instance as above (log what it has), place it on a road ahead of the player with no
    driver, check it stands, can be pushed and shot, wrecks without the kill (or with, per decision 1).
 2. `TrafficDriver` on that car, following one leg; then the bubble with one car; then all cars in the bubble, the cap, held back.
-3. Going back on the timetable, the ledger and `At` with it; retirement.
+3. Going back on the timetable through the ledger (built: `TrafficCars.Late.Late(car, leg, w, D)` with D from where the physics car
+   is on its leg, so it does not jump); retirement (`Retire`). A late car coming back into the bubble is made physical at its late
+   place.
 4. trafficview checks; test 49; the owner measures cost.
 
 ### Also pending
