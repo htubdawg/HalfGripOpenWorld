@@ -13,8 +13,10 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span
    hour]]`. It builds the map, then race N's day twice, checks the day and the parking and exits 0. About 25 s. 16 seeds (1 to 15,
    20261122) pass after the second round.
-4. **Wait for the owner's second try of stage 2** (test 48 in `docs/TESTING.md`, their screenshots and `LogOutput.log`) and fix what
-   they report before going on to stage 3. What changed since their first try is under "The owner's first report" and "Stage 2:
+4. **The owner chose (2026-11-23) to go ahead to stage 3 without waiting for their second try of stage 2.** Start with "Stage 3: the
+   plan" below. Test 48 (`docs/TESTING.md`) is still open: when its report comes (screenshots, `LogOutput.log`), fix what it shows
+   first, since stage 3 swaps stage 2's bodies for physics cars and shares their paint, poses and lamps. Before that report, stage 3
+   was planned on stage 2 never yet confirmed in the game. What changed since their first try is under "The owner's first report" and "Stage 2:
    second round" below. The second round was done without a report from the owner (none had come): it changes how cars pull in and
    out and turn at junctions, which test 48 now asks them to watch.
 
@@ -43,9 +45,9 @@ Open with the owner:
 - **The day of traffic** (`TrafficDay.cs`, below): the choices the design did not settle (trips beyond the map go by the road north
   only; through traffic circles the trunk; stays counted from leaving home; see "Decided while building").
 
-**Next after test 48 is good:** stage 3 (the plan): a real car near the player (our own driver on the game's car physics, within about
-300 units), back on its timetable out of reach, late by what held it up; wrecks retired. The owner measures what 20 to 30 physics
-cars cost.
+**Next: stage 3** (the owner's call, 2026-11-23, ahead of test 48's report): a real car near the player (our own driver on the game's
+car physics, within about 300 units), back on its timetable out of reach, late by what held it up; wrecks retired. The owner measures
+what 20 to 30 physics cars cost. Planned in "Stage 3: the plan" below.
 
 ## Where things stand
 
@@ -378,6 +380,151 @@ the 5 pm peak are unchanged within a few percent; cars out of sight ("round the 
 - Turning in after 15 s of waiting goes even into oncoming traffic.
 - **The diagnostics** in trafficview (`TV_MEET`) and `TrafficDay` (`FarSide`, `FarEnd`, `HeldSince`) are cheap; keep them until the
   owner's report on this round.
+
+## Stage 3: the plan (prepared 2026-11-23; nothing of it built yet)
+
+The agreed stage (`docs/PLAN.md`, "Traffic: the agreed plan", stage 3): **within about 300 units (90 m) of the player a timetabled
+car becomes a game car with our own driver** (follows the car in front, waits at junctions, can be bumped, shot and wrecked); out of
+reach it goes back on its timetable, **late by what held it up** ("car c is D seconds late from t"), so traffic is not used up; a
+wreck or a car knocked off its road is **retired** ("car c gone from t"). Alone (solo, or alone in a room) this machine drives every
+car. Rooms (who drives which car, states sent, stand-ins) are stage 4: keep everything a room will need to agree on (lateness,
+retirement) as small pure records from the start, so stage 4 only sends them.
+
+### What the game gives (read in the 0.419 decompile, 2026-11-23; file and line as `ilspycmd -p` writes them)
+
+- **The car:** `TrackManager.enemyCarPrefab` (stage 2 already reads it; 'EnemyPrefab'). On it (main menu dump, `Enemy_0`):
+  `Rigidbody` (mass 1000), `CarControllerNew`, `EnemyController`, `CarSkinController`, `CarDamageVisuals`, `CarTireDamage`,
+  `GlassDamage`, `PitGuard`, `EnemyNitro` (disabled), `TireTrails`, `WaterRippler`, `WheatTrampler`, and under it
+  `EnemyCarEffectController` (smoke, fire, explosion), `HeadLightsController` with its spot light, the guns' fire points.
+- **`CarControllerNew`** (`CarControllerNew.cs`) is the physics: four raycast wheels (`CastGround`, layer mask -5, skips car bodies),
+  springs, grip from a `HandlingModifier` on the ground's collider if any (else 1). It is driven only through **`steeringAngleDeg`**,
+  **`engineAccel`** and **`brakeAccel`** (and `handBrake`); `forwardSpeed` reads back. It needs nothing from a path or the lap.
+  `Start` takes `rb` and the wheels; `tm` (TrackManager) is used for the brake lamps before the start (`tm.raceStarted`). It rights
+  itself after 4 s upside down (`timeUpsideDown`, with `UnityEngine.Random`: fine, drawing only).
+- **`EnemyController`** (`EnemyController.cs`) is the racing AI, on one closed lap (see "investigated after 0.17.0" in the plan): not
+  usable as the driver. What matters:
+  - `Awake` (`:758`) sets `carController.carStats = PlayerStats.carStats` (**the player's stats**), makes `CarDamageVisuals` and
+    `CarTireDamage`. Awake runs on activation even with the component disabled.
+  - `Start` (`:775`) gives the skin's stats and behaviour (`skinController.GetStatsForThisEnemyName()`), sets health from
+    `carStats.health`, **fits every `EnemyModule` (the guns, rockets, nitro: `Fit`)**, then with no `pathManager` logs an error and
+    disables itself. **So disable the component before the object is first activated:** Start never runs, no guns are fitted, no
+    error; set `carController.carStats` from `GetStatsForThisEnemyName()` yourself after activation; health stays its default 100
+    (`health` is private; `startingHealthOverride` too) unless set by reflection (`AimTest` reads it that way).
+  - `TakeDamage` (`:276`, `:292`) works with the component disabled. **It is how every hit reaches a car:** the player's guns
+    (`Gun.HandleEnemyCollision`, `hit.collider.GetComponent<EnemyController>()`, on the collider's own object, and `ShootSeen` through
+    `CarTireDamage`), rockets, rams, spikes, area blasts (`GetComponentInParent`), and the player's crashes
+    (`CarControllerNew.OnCollisionEnter` `:1078`: `ComputeCrashDamage`, then the other car's `EnemyController.TakeDamage`); an enemy
+    car hit by something else within 3 s of the player touching it takes half (`EnemyCrash`).
+  - **A wreck counts as killing an enemy** (`TakeDamage` at 0 health): `alive = false`, `damageVisuals.SetWrecked()`,
+    `RaceStats.ReportEnemyDestroyed`, the `EnemyKilled` signal, "WRECKED" text, flames, and **the object destroyed after
+    `explodeDelay`** (`DestroyAfterDelay`). `EnemyKilled` with `byPlayer` heals the player (`CarLink`, `Stat.HealPerKill`), gives ammo
+    (`MagazineManager.GrantForKill`), counts in lifetime stats and feats (`LifetimeTracker`: `DriftKill`), `BossCar` and
+    `ClapperFrame` listen too; hits add combo and lifesteal. **Owner decision 1 below.**
+  - `FindObjectsByType<EnemyController>` is used by `AimTest` (a debug aid), `ClapperFrame` and `TutorialArena`: traffic cars will be
+    in those lists. `TrackManager.enemies` (the race's list, what the Multiplayer mod's AI sync and the lap manager use) is filled
+    only by `SpawnEnemies`: traffic stays out of it, as long as nothing adds it.
+- **The gears and throttle** (for our driver, written in our own words, as the plan says): `EnemyController.DriveTowardsSpeed`
+  (`:379`): over 0.9 of the target speed, no throttle and `carStats.brakeDeccel`; under 0.8, the gear that gives the most
+  acceleration (`AccelInGear`: `carStats.torqueCurve.Evaluate(forwardSpeed / carStats.speedMultiplier * ratio) * ratio *
+  carStats.engineAccel`, with `carStats.gearbox.Forward(gear)` and `ForwardCount`), changed with a neutral gap
+  (`behaviour.gearChangeTime`) and a hold; between, coast. Steering (`FollowPath` `:360`): the signed angle to a point ahead times a
+  gain (more for small angles), clamped to 60 degrees. All `CarStats` fields used are public.
+- **`CarSkinController.Awake`** (`:285`) takes a unique enemy name from the game's `NamePool` (shared with the race's enemies:
+  traffic would use names up and could appear in a wreck's stats) and equips that name's skin. Re-paint after it (stage 2's
+  `_EntireColor`, `_AccentColor`, `_TertiaryColor` copies), so a car keeps its colour when it turns physical.
+- **Shots push:** `Gun.ApplyTargetRecoil` and `ShootSeen` push any non-kinematic body they hit, so a physics traffic car is shoved
+  by gunfire as well as by the player's car.
+- **Origin:** `Origin.Shift` already moves every rigidbody (`Origin.cs`, it pauses interpolation over the shift), so physics cars
+  under the world's root follow a shift. Positions the driver keeps (its target, last point) must be world doubles, as stage 2's are.
+
+### The design (recommended; the owner's decisions below may change parts)
+
+**Two kinds of car near the player:** stage 2's drawn bodies (everything as now) and, within the bubble, **physics cars**: an
+instance of the enemy prefab, prepared as above (made under an inactive holder, `EnemyController`, `EnemyNitro`, every
+`EnemyModule`, `PitGuard` disabled before the first activation; `carStats` from the skin; our paint; lamps as stage 2's), with
+**`TrafficDriver`** (new MonoBehaviour) driving it. Kept in a small pool (they are dear to make: instantiate a few at the start, on
+frames when nothing else is loading).
+
+**The bubble:**
+- A driving car (not parked, not in a tunnel's mouth, not pulling in or out: let the day finish those) is **made physical** when it is
+  within `PhysicsReach` (300) of the player, the ground under it is loaded (stage 2's `Pose` found it), and fewer than
+  `MostPhysics` (config, default 24) are physical. Nearest first. Its stage 2 body is hidden and the physics car placed at the same
+  pose with velocity `heading * speed` from the day.
+- **All driving cars inside the bubble are physical** (up to the cap): then the cars behind a held-up car are physics cars too and
+  queue behind it for real, and nothing timetabled drives through a car that is late. A car about to be made physical where its
+  timetable puts it on top of (or within 20 units behind) a physics car on its lane is made physical **held back**: given lateness so
+  it appears behind (the ledger below).
+- It **goes back on its timetable** beyond `PhysicsLeave` (400, the gap stops cars flicking at the edge) if it is upright, on its
+  leg's path (within about 8 units of its lane, heading within 45 degrees) and not damaged; its lateness is how far behind its
+  timetable it is then (the time the day had it at its present place along the leg, against the clock). Otherwise it is
+  **retired**.
+- Parked cars stay stage 2's kinematic boxes in stage 3 (a parked physics car still raycasts four wheels each physics step). A later
+  step could make a parked car physical when hit.
+- Never near a tunnel mouth (the day's own tunnel handling, `InTunnel`, and the wrap): no physics car within 60 of a mouth; one that
+  gets there goes back on its timetable.
+
+**`TrafficDriver`** (per physics car, `FixedUpdate`; its arithmetic in a pure class so trafficview can test it):
+- **Where it goes:** its leg's path (`TrafficDay.Leg.Path`, `OnPath`), the lane offset, through junctions on stage 2's corner curve
+  (`TrafficParking.Corner`: the same line it was drawn on). Progress P along the leg is found by projecting the car onto the path,
+  searching forward from the last P.
+- **Steering:** a point a speed-dependent distance ahead (about 10 + 0.6 s of travel) on that line; signed angle times a gain,
+  clamped.
+- **Speed:** the least of the leg's speed profile at P (`TrafficDay.Profile` is private and built at a leg's start then dropped at
+  its end: expose it, or rebuild it for the leg), the IDM behind the car in front on its lane (a physics car's place, or a drawn car's
+  from the day: the same parameters as the day, `a` 5, `b` 8.25, `T` 1.5 s, `s0` 7), and a stop at the junction box's edge while a
+  car is in the box on a crossing chord (the day's `Crosses`) or one with right of way is closer (first come, first served, the car on
+  the right first). Simple and local; it does not have to match the day exactly, only never drive through anyone and never block a
+  junction.
+- **Throttle, brake, gears:** as the game's idea above, our own code.
+- **The trip's end:** a physics car that reaches the last stretch of its leg goes back on its timetable to pull in (stage 2 draws
+  the pull), late by however late it is.
+
+**The lateness ledger** (pure, `TrafficLate.cs` or in `TrafficDay`; what stage 4 will send): per car, a list of `(from t, late D)` and
+`gone from t`. The drawn place of a late car is the day's place at `w - D` **until it next parks**; its stay there is shortened by D
+(not below the day's `MinStay`, 20 s), and whatever is left over carries into the next leg. `At` for a gone car: away (not drawn,
+its home's space empty). Kept small: an entry only when a car leaves the bubble late by more than a second or two.
+
+**What this leaves (say so to the owner):** a late car back on its timetable outside the bubble can be drawn overlapping a car the
+day put just behind it (the day never knew it was late). Out to 900 units that can be seen. The cheap fix is to hide the farther of
+two drawn moving cars closer than a car's length on one lane; the real one is to feed lateness into the day's lanes, which the day
+cannot do after it is built. Measure how often first (trafficview can apply a ledger and count overlaps).
+
+### Decisions for the owner (each has a default to build with if there is no answer yet)
+
+1. **Does wrecking a traffic car count as killing an enemy?** (heals with `HealPerKill`, gives ammo, kill stats and feats, "WRECKED",
+   combo.) Default **no**: a Harmony prefix on `EnemyController.TakeDamage(float, bool)` for traffic cars keeps their own health and
+   wreck (damage visuals, smoke, flames, the explosion, retire) without the `EnemyKilled` signal, `RaceStats`, lifesteal or combo.
+2. **What a wreck looks like and how long it stays:** the game destroys an enemy car after `explodeDelay`. Default: the same
+   (explodes and goes), retired from the day.
+3. **How many physics cars and how far:** default 24 within 300 units; a config value (`World` / `TrafficPhysics`, 0 = stage 2 only)
+   so the owner can measure 0, 20, 30.
+4. **Parked cars pushable?** Default no (stage 3 keeps them walls).
+
+### Checks
+
+- trafficview (no Unity): the driver's pure parts (the point ahead on a leg at any P, through a junction's curve; the speed target:
+  profile, IDM, junction hold), the ledger (a late car's place, its stay shortened, the overlap count after applying random
+  lateness), the bubble's choice (which cars, held back where they would overlap).
+- In the game (write test 49 in `docs/TESTING.md`): cars near you are physics cars (bump one: it is pushed, not a wall; shoot one: it
+  smokes, then wrecks); they follow their lanes, queue, wait at junctions, pull in and out as before; nothing drives through a car
+  you stopped; far cars carry on; frame time with `TrafficPhysics` 0, 20, 30 at the evening rush in Kingsbridge; the log line counts
+  physics cars made, gone back late, retired.
+- `tools/check.sh` builds it; meshcheck and jview leave the game-side files out as now.
+
+### Order of work (suggested)
+
+1. One physics car: make and prepare a prefab instance as above (log what it has), place it on a road ahead of the player with no
+   driver, check it stands, can be pushed and shot, wrecks without the kill (or with, per decision 1).
+2. `TrafficDriver` on that car, following one leg; then the bubble with one car; then all cars in the bubble, the cap, held back.
+3. Going back on the timetable, the ledger and `At` with it; retirement.
+4. trafficview checks; test 49; the owner measures cost.
+
+### Also pending
+
+- **HalfGripTools 2.0** (no BepInEx) is coming: `HalfGripRefs/docs/HalfGripTools-2.0-port.md`. OpenWorld is last in the port order
+  and not to be started until the owner says. Stage 3 uses no new loader API; stage 4's messages will (`ctx.Net`), so check the port
+  plan before stage 4.
+- Test 47 (the wrap) and the eight cut-off town streets, as listed under "Start here".
 
 ## This session's environment, as found
 

@@ -1419,7 +1419,9 @@ Superseded in the research below: "copied" (the game's gear and throttle logic i
   within 3.5 points of TPG 9 or a Saturday, the trunk about 5,400 a day). Pictures: `docs/traffic.png`, `docs/traffic-frames.png`.
   Decided while building, for the owner to confirm (see the handoff): trips beyond the map go by the road north only (the trunk's ends
   lead back in); through traffic is 10 cars circling the trunk through the wrap; a stay is counted from leaving home.
-- Stage 2, the timetabled cars drawn in the game: built, see below. Next after it: stage 3.
+- Stage 2, the timetabled cars drawn in the game: built, see below. Next: stage 3 (the owner's call, 2026-11-23, ahead of the second
+  try of stage 2): planned in `docs/TRAFFIC_HANDOFF.md`, "Stage 3: the plan", with the facts read from the game and four decisions
+  for the owner (a wreck counted as a kill or not, what a wreck looks like, how many physics cars, parked cars pushable).
 
 **Stage 2 progress (2026-11-22; see `docs/TRAFFIC_HANDOFF.md`, "Stage 2: as built"):**
 - **Drawn in the game, tried once by the owner (fixes below; waiting for the second try)** (`TrafficCars.cs`): the race's day built on a worker at the start; the nearest 72 cars
