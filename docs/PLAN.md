@@ -1315,7 +1315,224 @@ Open with the owner: how much grid (patches cover about a third of a town's area
 square or the widened street of a market town; back alleys driveable or footpaths; whether Westhaven gets a seafront (a promenade
 road along the shore with a terrace facing the sea) in place of streets ending at the beach.
 
-## Later: traffic (investigated after 0.17.0, to agree with the owner)
+## Traffic: the agreed plan (on `traffic-test-branch`, from `deer-test-branch`; agreed with the owner 2026-11-22)
+
+Cars driving the roads, built on what the deer proved (positions from the seed and the clock, claims settled by the host, drawn only
+near the car from a pool, moved on an origin shift) and on the game's own cars and physics. The two older sections below
+("investigated after 0.17.0" and "What the deer give traffic") hold the research; where they differ, this section is the plan.
+
+**Checked, not assumed (2026-11-22):**
+- The game's AI (`EnemyController`, decompile of 0.419) drives a closed lap only. What a traffic driver needs from it is the idea of
+  its steering (`FollowPath`: the signed angle to a point ahead times a gain, clamped to 60 degrees) and of its throttle, brake and
+  gears (`DriveTowardsSpeed`, `AccelInGear`, `UpdateGearSelection`), all through `CarControllerNew.steeringAngleDeg`, `engineAccel`
+  and `brakeAccel`. Written in our own words for our roads.
+- The Multiplayer mod (1.1.1, read from its source in `4l3x4nd3r0/HalfGripMods`, `mods/Multiplayer/src`):
+  - Other players' cars, and on a client the host's AI cars, are stand-ins: the game's enemy prefab with the rigidbody kinematic,
+    moved each physics step towards the last state received (`RemoteCar.cs`).
+  - Only the host drives AI cars (real physics, the game's AI) and sends every one's state about 15 times a second (`AiState`); the
+    list is fixed at the race's start from the host's AI grid (a respawn replaces a car in its slot), up to `Room.Ceiling` = 64 cars,
+    not 8 as written below. It cannot add or remove cars during a race, and the host has no ground loaded under a car far from it,
+    so traffic cannot ride on it.
+  - Collisions have no special handling: hitting a stand-in is plain Unity physics against a kinematic body, and the game counts the
+    hit with the hitter's whole mass, like a wall (`CarControllerNew.ComputeCrashDamage`). Ram damage is not forwarded, no push is
+    sent; on the host the hitter's stand-in shoves the real car, seen by the hitter a round trip later. **The owner finds this
+    acceptable in play**, so traffic's stand-ins work the same way and need no hit messages or "soft" (physical) stand-ins.
+
+**Owner's decisions:**
+1. **No code from the Multiplayer mod** (or anyone else's) is copied or called: not `RemoteCar`, not its smoothing. The stand-in is
+   our own, written from the idea, so the mod is free of any licence.
+2. Traffic's state goes over HalfGripTools' `ctx.Net` (as the events' and the deer's messages do), not the Multiplayer mod's AI sync.
+
+**Stages** (each one something the owner can look at or test before the next):
+
+1. **Timetables, no game code** (`Traffic.cs`, pure, under the determinism rules like `Storms` and `Herds`). Each car's route over
+   the road network from the race's seed (the junction graph `Signs` builds, opened up for routing), and its position at any race
+   time a pure function of (seed, car, clock): speeds by road class and bends, a safe gap to the car in front, uncontrolled junctions
+   (first to arrive goes first, yield to the right, never block one), worked out lane by lane so queues come out the same on every machine. Driving on the right (the owner pictures Pennsylvania). Checks in
+   `meshcheck` (no two cars overlap, cars stay in their lane and keep to their roads' speeds, what one car's position costs) and a
+   picture and a short animation from `preview` for the owner.
+2. **Timetabled cars drawn in the game, no physics.** The game's car models moved along their timetables near the car, from a pool,
+   on an origin shift. The same solo and in a room. A look at density and behaviour; hitting one is a wall, so a preview only.
+3. **A real car near the player.** Within about 300 units (90 m) a timetabled car becomes a game car with our driver (follows the car in
+   front, waits at junctions, can be bumped); out of reach it goes back on its timetable, late by what held it up ("car c is D seconds
+   late from t"), so traffic is not used up; a wreck or a car knocked off its road is retired ("car c gone from t"). Solo, this
+   machine drives every car. The owner measures what 20 to 30 extra physics cars cost.
+   - **A late car that would overlap other traffic (the owner, 2026-11-23):** hide it, and let it catch up in the background once its
+     tile is unloaded. As built (`TrafficLate.cs`): of two drawn cars that would overlap because one is late, the farther from the
+     player is hidden; a late or hidden car is put back on its timetable once neither where it is drawn nor where the day has it can be
+     seen (tile not loaded, or out of drawing reach). In a room (stage 4) a catch-up moves a car, so it is a claim like the lateness.
+4. **Rooms.**
+   - **Who drives:** the player nearest a car drives it, because only that player has the ground loaded under it. Claimed as the
+     deer's reactions are; the host keeps the first claim; a hand-over is a claim. Hits do not need the hitter to drive (see above),
+     so hand-overs can be loose (another player clearly nearer, or the driver out of reach).
+   - **What is sent:** the driver sends each car's state about 15 times a second (about 45 bytes a car), stamped with the race clock.
+     Lateness and retirement are claims, so the timetables stay the same everywhere.
+   - **The stand-in (our own):** a kinematic game car played back a little behind the newest state, smoothly between two received
+     states on the race clock; if states stop coming, it carries on along its lane on its route. Hits feel as they do against the
+     Multiplayer mod's AI cars.
+   - **Checks:** a `tools/trafficsim` like `deersim` (claims, hand-overs, delays, late joiners, twenty players).
+   - **Built (2026-11-23; not yet tried in the game, test 50):** `TrafficRoom.cs` (pure) and `TrafficShared.cs`, as above, with: the
+     host's clock taken by every machine (the race clocks drift), the ledger's entries settled by the host (catching up the host's
+     alone, out of every player's sight; hiding each machine's own), a car handed over turned from a physics car into a stand-in and
+     back in place, hits on a stand-in sent to its driver, a leaver's cars given back from their last states. trafficsim: 16 seeds
+     pass. See `docs/TRAFFIC_HANDOFF.md`, "Stage 4". The owner's rule: traffic cars never carry modded or custom items (checked).
+   - **First try (alone in a room, 2026-11-23):** works as stage 3 did; tyre-mark streaks when a body was placed (fixed). The owner
+     asked for physics on parked cars and on the cars the bubble leaves drawn (pulling in or out, at a trip's end, in a junction):
+     **next, "contact physics"** (a loose, driverless physics car made just before the player touches a drawn car, its own small cap),
+     planned in `docs/TRAFFIC_HANDOFF.md` with three decisions for the owner.
+   - **Contact physics built (2026-11-23, not yet tried: test 51):** config `TrafficLoose` (6). A drawn car the player's car, swept
+     0.3 s ahead, would touch becomes a loose car through the room; untouched it is drawn again 60 units away (a moving one late by
+     the time it stood), knocked it is retired 500 away. Built with the three decisions' defaults (still to be answered). The
+     messages' version is 2. See `docs/TRAFFIC_HANDOFF.md`, "Contact physics: as built".
+
+Superseded in the research below: "copied" (the game's gear and throttle logic is written afresh from the idea, not pasted) and
+"`RemoteCar`'s smoothing as the model" (decision 1); "No solo traffic first" is open again (question 1).
+
+**The owner's answers (2026-11-22):**
+1. **Rooms are the main path.** The owner tests with the Multiplayer mod, alone in a room; solo without it is "just in case" (the game
+   may get a sandbox mode one day). Alone in a room this machine is the host and drives every car, so one code path serves both.
+2. **Realistic, from studies, as the world generation is:** traffic volumes by road class, trips by purpose and hour, cars that pull
+   into parking lots and driveways and are parked there, on a daily schedule that follows the world's hour. So stage 1's timetables
+   come from trips between real places (homes on the drives and in the towns, the lots, shops, workshops, filling stations, farms),
+   not random routes. Research first (US and Pennsylvania figures: PennDOT traffic counts by road class, the National Household
+   Travel Survey's trips by purpose and hour, trip generation rates), as `docs/PLAN.md` did for the land.
+3. **Traffic can be shot and wrecked.**
+4. **Every junction is uncontrolled** (the world has no stop signs or traffic lights yet): the first car to arrive goes first, a car
+   yields to one arriving from its right at the same time, and no car enters a junction it cannot clear (no blocking it). In the
+   timetables this is pure: arrival times come from the timetable, ties go to the car on the right, then to the lower car number.
+   Signs or lights would be a change to the world first, then to these rules.
+5. **Deer react to traffic cars, much less often than to players' cars.**
+6. **The game's enemy cars, skins at random. Headlights at night** on traffic and on other players' stand-ins. The enemy prefab
+   carries a headlight (`Headlights` > `Spot Light`, a spot of range 150, under `HeadLightsController`, in the 0.419 main menu
+   dump), but `Sky` gathers headlights only once at the race's start, so stand-ins spawned later stay dark (as the owner saw):
+   gather them as they appear. The renderer lights only so many lights per object (about 8 in URP's forward path, to be checked in
+   the game's pipeline settings), so real spot lights go to the nearest few cars and the rest get glowing lamps and a painted pool of
+   light on the road.
+7. **Driving on the right** (Pennsylvania).
+
+**Stage 1 progress (see `docs/TRAFFIC_HANDOFF.md` for the detail):**
+- The traffic's map (`Traffic.cs`, `Plots.cs`, `tools/trafficview`): done. Splitting out `Plots.cs` changed nothing drawn (meshcheck's
+  clear, facades, bases and homes give the same counts as `deer-test-branch`).
+- **A world change, found by the routes:** Westhaven had no road out. Its link to the trunk stopped in the fields about 270 units
+  short, because a routed road's end looked for the road it reached within 140 only, and the trunk's smoothed line runs up to about
+  270 off the cells it was routed through. Six roads ended short so: Westhaven's link, the main road from Millbrook to the north edge
+  and four farm lanes. Now an end that finds nothing looks out to 320 (`Network.SnapJoin`); meshcheck's backroads check fails on any
+  main road dead end. Every player in a room needs the version with it (it moves a few later roads).
+- **Left for a layout fix:** eight short town streets (three in Kingsbridge, five in Westhaven, about 2,800 units in all, 110 houses)
+  are joined to nothing but footpaths: a street laid with both ends free (a grid's first long street, a seafront) that no cross
+  street came to join. No car could reach them, so traffic leaves their houses out (`Traffic.Parts`); trafficview lists them. The fix
+  belongs in `TownPlan` (join such a street to the nearest road, or not lay it), with a meshcheck check.
+- **The highway wraps round (agreed with the owner 2026-11-22):** the trunk's two tunnels are open, and a car driving into one comes
+  out of the other at the same speed, in the same lane, facing the same way (the tunnels face opposite ways, so there is no turn).
+  `Wrap.cs` (pure) pairs them and gives the move; `Streamer` loads the far end's ground once the car is within 700 units of a tunnel
+  and does the jump as an origin shift that leaves the car, its cockpit and cameras in place, so nothing sweeps across the map;
+  `WorldScene` builds the open tunnels (floor at the road's height, walls, roof, a back wall seen but not solid). The road north's
+  tunnel stays shut. Read from the Multiplayer mod's source: a stand-in more than 10 units from a new state snaps to it, so others
+  see the car come out of the far tunnel. meshcheck's wrap check. For traffic: through trips carry on across the wrap (a car into
+  one tunnel comes out of the other at the same moment); local trips to "the road out" end by driving into the tunnel and are gone
+  (never parked at the mouth), and routes never take the wrap as a short cut.
+- **Each race's day of trips (`TrafficDay.cs`): done and checked in trafficview** (16 seeds pass: no overlaps, no crossing cars in a
+  junction box, no gridlock, speeds kept, the 5 pm peak about 300 cars as expected for our 1,850 households with a car, the hours
+  within 3.5 points of TPG 9 or a Saturday, the trunk about 5,400 a day). Pictures: `docs/traffic.png`, `docs/traffic-frames.png`.
+  Decided while building, for the owner to confirm (see the handoff): trips beyond the map go by the road north only (the trunk's ends
+  lead back in); through traffic is 10 cars circling the trunk through the wrap; a stay is counted from leaving home.
+- Stage 2, the timetabled cars drawn in the game: built, see below. Next: stage 3 (the owner's call, 2026-11-23, ahead of the second
+  try of stage 2): planned in `docs/TRAFFIC_HANDOFF.md`, "Stage 3: the plan", with the facts read from the game and four decisions
+  for the owner (a wreck counted as a kill or not, what a wreck looks like, how many physics cars, parked cars pushable).
+
+**Stage 2 progress (2026-11-22; see `docs/TRAFFIC_HANDOFF.md`, "Stage 2: as built"):**
+- **Drawn in the game, tried once by the owner (fixes below; waiting for the second try)** (`TrafficCars.cs`): the race's day built on a worker at the start; the nearest 72 cars
+  (moving within about 270 m, parked within about 140 m, moving ones counted nearer) drawn from a pool. The bodies are copies of the
+  game's enemy car's models as meshes only (no physics, AI, guns or effects), painted from everyday colours (white, black, greys and
+  silver most), the same colour for the same car every race; wheels turn; each car stood on the ground under its wheels by raycasts
+  and pitched to it. A box on the Enemy layer moves with it (hitting one is a wall; the respawn already keeps clear of that layer).
+  At night the nearest 6 moving cars carry the enemy car's own spot headlight.
+- **Where parked cars stand** (`TrafficParking.cs`, pure, checked in trafficview over 16 seeds): drive pads beside houses (nose in,
+  tail clear of the street and its sidewalk), by cottages, in farmyards, the shops' and the retail park's painted bays (the same
+  arithmetic `Buildings` paints them with), rows on the workshops', filling stations', market places' and courses' yards; kerb
+  spaces cut along each side of each stretch, shared: terraces keep theirs all day, everyone else (offices, high streets, churches,
+  visitors in town, a full lot) takes the nearest free one as they arrive, round the corner on the same road if their stretch is full.
+  None overlaps another, none is on another road's paving, in water, in a lot's building or in a house.
+- **Pulling out and in:** at a trip's ends the car is drawn between its space and its lane, over as long a stretch of the trip as
+  they are apart (30 to 150 units).
+- **Headlights:** `Sky` now looks for new headlights every 2 seconds, so other players' stand-ins (made after the start) light up at
+  night too (the owner saw them dark).
+- **The owner's first try (2026-11-22):** lamps lit on parked cars, far too many cars at the kerb in town, a car going through a
+  parked one. Fixed (see the handoff): parked cars' lamps dark; kerb parking only on streets and secondary roads, near the door, a
+  household's first car only (about 1,000 kerb cars down to about 240; the rest out of sight); pulling in and out along the lane
+  then into the space, checked against every parked car. Also from the log: tiles lost to a shared list in `Buildings` (stage 1's
+  `Plots` move), fixed.
+- **Left for later in stage 2:** lamps and a painted pool of light for the cars past the nearest 6; a car whose kerb space is down
+  the street drives along to it a little fast; parked cars at the kerb are not seen by the moving traffic (they drive past, not
+  round, them: kerb spaces are at the paving's edge, the lane's middle 5.5 off the line).
+
+### Traffic: what the studies say, and the trip model (researched 2026-11-22)
+
+Sources (the tables used are cited below):
+- FHWA, *Summary of Travel Trends: 2017 NHTS* (https://www.fhwa.dot.gov/policyinformation/documents/2017_nhts_summary_travel_trends.pdf)
+- FHWA, *Summary of Travel Trends: 2022 NHTS* (https://rosap.ntl.bts.gov/view/dot/73764/dot_73764_DS1.pdf)
+- PennDOT, *2023 Pennsylvania Traffic Data* (https://gis.penndot.pa.gov/BPR_PDF_FILES/Documents/Traffic/Traffic_Information/Annual_Report/2023/2023_Traffic_Information_Report.pdf)
+- FHWA, Highway Statistics 2005, Table NT-3, vehicle trips by hour, 2001 NHTS (https://www.fhwa.dot.gov/policy/ohim/hs05/htm/nt3.cfm)
+
+**Households (NHTS 2017, p. 9 and Tables 6b, 6c, 11, 16, 30, 34).** 2.55 persons, 1.88 vehicles, 1.89 drivers, 1.33 workers a
+household. 1,865 vehicle trips a household a year (5.1 a day): to or from work 450 (24%), shopping 372 (20%), other family and
+personal errands 434 (23%), social and recreational 410 (22%), the rest (school, church, work business) 11%. Average vehicle trip
+9.6 miles (work 12.0, shopping 7.0, errands 6.9, social 10.6). Occupancy 1.18 to work, 1.82 shopping, 2.10 social. A weekday driver
+spends 59 minutes driving. Rural people make slightly fewer trips than urban (3.2 against 3.5 person trips a day), 92% of them
+drive, only 2.3% have no car. 2022 is 32% lower (1,262 vehicle trips a household) after the pandemic; the 2017 figures are the
+normal day.
+
+**Hours.** Person trips by start time (2017 NHTS Table 29): 10 pm to 1 am 2.3%, 1 to 6 am 1.9%, 6 to 9 am 16.6%, 9 am to 1 pm
+25.4%, 1 to 4 pm 22.1%, 4 to 7 pm 22.1%, 7 to 10 pm 9.8%. Vehicle trips by hour (NT-3, 2001 NHTS), percent of the day from
+midnight:
+- Weekday: 0.3 0.2 0.2 0.1 0.5 1.3 3.2 7.7 5.9 4.5 5.1 5.9 6.2 6.0 6.6 7.7 7.8 8.6 7.4 5.6 4.1 3.1 1.5 0.8
+- Saturday (5% more trips in all): 0.8 0.3 0.2 0.1 0.3 0.5 1.1 2.2 3.9 5.6 7.7 8.3 8.6 7.7 8.0 7.6 7.2 6.7 6.8 5.0 4.2 3.6 2.0 1.5
+
+What the counters see on Pennsylvania's central rural collectors (PennDOT Table 350, TPG 9, percent of the day from midnight):
+0.45 0.28 0.28 0.48 1.08 2.79 4.66 5.99 5.45 5.33 5.56 6.09 6.42 6.38 7.06 8.21 8.77 7.68 5.50 4.02 3.14 2.12 1.39 0.87. The
+peak hour is 9 to 11% of the day (Table 385, K-factors).
+
+**Volumes on Pennsylvania's roads** (PennDOT permanent counters by group, AADT = vehicles a day, both ways, pp. 15 to 17):
+rural principal arterials 2,600 to 21,600 (median about 5,400); rural minor arterials 2,000 to 15,700 (about 5,000); rural
+collectors 400 to 8,800 (about 1,800); urban minor arterials and collectors 400 to 15,600 (about 5,700). Local roads are not counted
+(too many); the trip rate gives them: a house makes about 9.4 vehicle trips a day (ITE land use 210, single-family detached), so a
+lane serving 20 houses carries about 190 vehicles a day.
+
+**Our world.** 2 towns, 16 villages, 120 farms and hamlets, about 2,600 houses (from the 0.31 checks; shops and lots not separated out yet), about 280 drives: roughly 2,600 households and 4,900
+cars, most of them parked at any time. The world's day lasts 40 minutes (`Sky.DaySeconds`, 100 seconds an hour): 36 times faster
+than real, while a car drives in real time.
+
+**The problem that sets the model: time runs 36 times fast, driving does not.** A real household's cars are moving about 110 minutes
+of its 1,440 (1.89 drivers x 59 minutes), 7.6% of the day. Kept to that share, the roads look as Pennsylvania's counters say (worked
+below); but in a 40-minute day that is about 3 minutes of driving a household, one trip or two across our country, not five. Five
+trips each would put about four times as many cars on the road at once.
+- Check, at the evening peak (8.5% of the day's driving in that hour): 2,600 households x 110 minutes x 0.085 / 60 = about 400 cars
+  moving over the whole world. A collector at 1,800 a day carries 1,800 x 0.085 = 150 an hour; at 45 mph that is about 2 cars per
+  km of road (both ways), and 400 cars over our roads comes to about the same. A principal arterial at 5,400 a day: about 5 per km.
+  At 3 am: about 25 cars over the whole world.
+
+**The trip model (proposed):**
+1. **Every household and its cars** from the layout: houses in the towns and villages, farms, the homes on the drives; 1.88 cars a
+   household (from the seed: some none, a few three). A car's home is its driveway, or a kerbside spot on its street in the towns.
+2. **Places that draw trips**, from the layout: the retail park and the market places (shopping), the high streets' shops, filling
+   stations, workshops and businesses on the main roads (work and errands), the circuit, rally service and hill climb paddock
+   (social), churches (Sunday), other houses (social, visits). Each has parking: its lot's spaces, kerbside, a drive.
+3. **Each race's day from the seed:** a weekday (5 in 7) or a weekend day, like the weather. Each household gets that day's tours
+   from the purposes' shares and the hour tables above (a commuter out in the morning peak, home in the evening; shopping in the day;
+   social in the evening), scaled so the time households spend driving is 7.6% of the day (above). Destinations by gravity (nearer
+   and bigger draws more), within our 9.7 km.
+4. **Through traffic** on the trunk and main roads, entering and leaving at the edges of the map (a rural principal arterial
+   carries about 5,400 a day, most of it from beyond): the share that brings the trunk road up to its count.
+5. **Parking is part of the timetable:** a car on a trip pulls into its destination's lot or a drive, stays parked for the trip's
+   dwell (a work day, an hour's shopping, scaled to the world's clock), and drives home. Lots fill and empty with the day; driveways
+   empty while their cars are out. A parked car is drawn parked (no physics until a player is near and it is about to leave).
+6. Routes over the road network (fastest way by road class), junctions uncontrolled (above), the gaps and queues worked out.
+
+**For the owner to decide:** keep the roads as busy as Pennsylvania's counters say (so each household drives once or twice in a
+40-minute day; recommended: it is what the player sees), or give every household its five trips (about four times the cars on the
+road at once). Either way the hours' shape is the studies'.
+
+### Traffic: investigated after 0.17.0 (research; the plan above replaces it where they differ)
 
 AI cars driving the roads. Feasible; the game's cars and car physics can be used as they are, but not its AI driver.
 
@@ -1347,8 +1564,9 @@ the loaded tiles.
 
 **In a room, control must be handed between players.** Each player loads tiles, and so ground colliders, only round their own car:
 the host has no ground under a car near a far-away client, so a physics car there falls through the world. Whoever has that ground
-loaded must drive it. The Multiplayer mod's AI sync cannot carry this: the host runs every AI car and sends `AiState`, read for at
-most 8 cars, its list fixed at the scene's start; the others see kinematic stand-ins (`RemoteCar`). The design:
+loaded must drive it. The Multiplayer mod's AI sync cannot carry this: the host runs every AI car and sends `AiState` (up to 64 cars,
+read from its source in 2026-11; "8" was wrong), its list fixed at the scene's start; the others see kinematic stand-ins
+(`RemoteCar`). The design:
 
 1. **Distant traffic on a timetable, nothing sent.** A car's position is a pure function of (room seed, car id, race clock), as
    `Storms` is, under the same determinism rules, so every machine draws the same distant traffic.
@@ -1370,6 +1588,49 @@ tiers, `meshcheck` checks on the routes, the timetable, ownership, handoff and r
 separate thing: they can use the game's own `EnemyController` unchanged, since a course is a closed lap, as the token loop is.)
 
 Open questions for the owner: whether traffic should be shootable and wreckable; how dense.
+
+### What the deer give traffic (discussed with the owner after 0.30.3; for next time)
+
+The owner asked whether the deer make a good foundation for car traffic. The answer agreed: **they give traffic how it is placed and
+how the room agrees on it, not how it acts near a player**, which is the larger part of the work. The design above still holds; the
+deer change three things in it and take one blocker away.
+
+**Carried over from the deer as they are:**
+- **Positions from the seed and the clock.** `Herds.At` computes a deer from (race seed, group, race clock) with nothing simulated
+  frame by frame; a traffic car's timetable is the same idea (point 1 above), and the deer show it works in a room, for late
+  joiners, and on machines that have never loaded that ground.
+- **Rare events settled by the host.** `DeerRoom`'s claims (the machine that caused a change claims it, the host keeps the first
+  claim, a late joiner's Hello) and `tools/deersim` can be copied nearly as they are for traffic's events.
+- **Drawn only near the car**, from a pool of objects (`Deer.Take`/`Give`); moved on an origin shift; hits tested in code where
+  that is enough; a body thrown on fixed steps from an event (`DeerKills`), which could do for a car knocked aside far from its owner.
+- **The blocker is gone.** "Waiting on the Multiplayer mod" above: `ctx.Net` now carries the events' and the deer's messages, so
+  traffic's messages can go the same way.
+
+**Changed from the design above:**
+1. **Delays, not only retirement.** A car that leaves a player's reach goes back on its timetable as "car c is D seconds late from
+   time t" (one claim, settled by the host, as a deer's reaction is), so traffic is not used up as players drive about. A car that is
+   wrecked or knocked off its road is still retired ("car c gone from t").
+2. **Queues worked out, not sent.** The timetables keep cars a safe gap apart and give junctions slots. Applying the delays lane by
+   lane with a least gap between cars is pure, so a delayed car holds up the cars behind it the same way on every machine with no
+   more messages.
+3. **Ownership by claims.** Point 3 above (owner the nearest player, with hysteresis) can be the deer's way instead: a machine
+   claims a car as it comes near, the host keeps the first claim, the owner hands it on with a claim too.
+
+**What the deer do not cover, and why it is the bigger part:** a deer reacts once (startled, it runs, and a minute later it is calm
+again: a few messages); a car near a player reacts all the time (following, waiting at a junction, swerving), so that part must be
+driven on the owner's machine and its state sent, not claimed. Deer do not hold each other up; cars do (hence the queues). A traffic
+car must be a real physics car (hitting a car moved in code feels like hitting a wall), and car physics cannot be made to come out
+the same on every machine, so one machine owns each car near players (points 2 to 4 above).
+
+**First steps next time:**
+- Read how the game's AI racers steer (`EnemyController` in the decompile) and confirm what above can be reused for the
+  `TrafficDriver` near a player.
+- Find how a few extra cars' states can be sent (`ctx.Net` at 10 Hz, about 45 bytes a car) and shown as stand-ins (`RemoteCar`).
+- Measure the timetables at the map's scale: a few hundred cars on routes over `Network.Roads` through the `Signs` junction graph,
+  the gaps and junction slots, what `At` for one car costs; a `tools/trafficsim` like `deersim` for the claims and delays, and
+  `meshcheck` checks that timetabled cars never overlap, stay in their lanes and keep to the speeds of their roads.
+- Still open for the owner: whether traffic can be shot and wrecked; how dense; whether deer react to traffic cars (they could:
+  a timetabled car is a known position at any time, so a dart in front of one can be worked out on every machine alike).
 
 ### 0.24.0: a weather API for other mods (asked for by Slap Pack)
 
@@ -1605,3 +1866,290 @@ once a second, a machine more than 0.5 s off set to it, nearer eased by 50 ms a 
   goes on through it, and `GameCaches` already moves the rewinder's recorded frames on an origin shift.
 - Checks: `tools/check.sh` (against the game's DLLs and a stub of HalfGripTools' API: building HalfGripTools was not allowed in this
   session), `tools/eventsim` 20 seeds (machines time their runs on their own game time, which their stalls hold back).
+
+## Next: white-tailed deer (asked for by the owner after 0.27.1; agreed in outline)
+
+Herds of white-tailed deer that live along the edges of woods and fields, feed on the verges and dart across the roads one or two at
+a time: a road hazard, the same for every player in a room.
+
+Handoff notes for whoever builds it (state, the owner's decisions, the next step, code to read): `docs/DEER_HANDOFF.md`.
+
+### What real deer do (researched before any work; the papers' abstracts and agency pages, the journals' hosts were blocked)
+
+- **Small groups.** The unit is a doe, her fawns and her yearling daughters; a Virginia study found groups of 1 to 28, a mean of 2.4.
+  Bucks run in loose bachelor groups of 2 to 5 from late winter to early autumn, alone in the rut. Groups of 30 to 40 are several
+  families feeding together in late winter, which split again. The groups met on roads in the main vehicle study averaged two.
+- **They cross one at a time.** One goes, the others follow seconds later in single file ("if one crosses, watch for more"); one
+  that has crossed may turn back. A Georgia dataset records crossings as an initiator and its followers within five minutes. They
+  cross at the same places again and again, and most on quiet, wooded roads with little traffic, least on busy ones.
+- **They hang about the roadside.** Edges are where they live (more edge, smaller home ranges); beside I-64 in Virginia deer were seen
+  on the roadside as often as in the underpasses, walking and feeding, paying traffic little attention.
+- **Their reaction to a car is unpredictable.** At night, at 20 to 90 km/h, deer fled at a median 40% of the distance they first had
+  to the car, whatever its speed: a median 4.6 s before it would reach them, so the faster the car the later they go. Whether a deer
+  ran across in front of the car was linked to nothing measured (one secondary source: about 36% did). Deer standing in the road
+  fled sooner and crossed more often than deer on the verge. They freeze in headlights at times (strongest without bright lights).
+- **Alarm:** a foot stamp, a snort, a whistle, then away with the tail up as a white flag (bucks sometimes tuck it).
+- **Time:** about at dawn and dusk, collisions peaking around sunset; November (the rut) is the worst month.
+- **Size and pace:** shoulder about 1 m (3.3 units), body about 1.8 m (6 units: under half a car), does 40 to 90 kg, bucks to about
+  135 kg; home ranges about 1 to 1.5 km² for does (3,300 to 4,000 units across), bucks much more; 35 to 40 mph in bursts (50 to 60
+  units a second), 25 mph held; clears about 2.6 m up and 9 m along in a bound. They wade streams; they swim too, which is left out.
+
+### Behaviour
+
+- **Groups are drawn fresh each race, like the weather** (the owner's call): from the race's seed (`Weather.Seed`: the room's seed
+  in a room, a random one alone, salted for the deer), not the world's fixed seed, so the herds are somewhere else every race and
+  the same for everyone in a room. The map only says where a deer could be; the race's seed picks which of those places get herds.
+  Mostly family groups of 2 to 5, some lone deer and bachelor groups, now and then a bigger group in a field. Each lives in a home
+  area about 4,000 units across on the edges of woods and fields (land use), with feeding spots on the verges and a few crossing
+  places on quiet roads (lanes and back roads, seldom main roads, never the trunk road's middle), all drawn for the race.
+- **Calm:** feeding, walking between spots, and now and then crossing a road at its crossing place: the first deer, then each
+  follower a second or more after, one sometimes turning back.
+- **A car coming:** alert (head up, stamp, snort), then at about 40% of the distance it noticed the car at, a choice by chance:
+  bolt across (more likely when standing in the road), bolt away, or freeze (more at night). Followers go after the first. Tail up.
+- **More deer at dusk and dawn** (the hour from `Sky`), fewer at midday.
+- **Water:** never into water deeper than about 2 units (the belly): depth is `Rivers.DrawnWater` + `Network.Lift` less the ground,
+  as `Foliage.Wet` does; shallower they wade, slower. Homes, feeding spots, crossing places, every leg of a walk and every escape
+  path are tested along their length (with a margin for the drawn ground, which can sit a unit or two off the pure height at a
+  channel's edge); a path that would go deeper turns along the bank. The same for drops: a bridge's edge, a cutting, a steep bank.
+
+### Multiplayer
+
+- **Calm deer are a pure function** of (the race's seed, group, race clock), under the world's determinism rules, as `Storms` is: every
+  machine draws the same deer in the same places with nothing sent, whether or not it has their tiles loaded (so only the generator's
+  functions, never the tiles' meshes).
+- **Reactions are decided by the group's owner:** the host hands each group to one player, normally the nearest within reach, with
+  hysteresis (clearly nearer, or the owner gone out of reach), as the traffic plan's owners. The owner decides from its own car's
+  exact position, starts the reaction at once and sends it: "group g, deer d: this path from race time t". Others play the path from
+  t (late, they join it part way). A reaction going on is finished as sent whoever owns the group after. An owner leaving the room:
+  the host takes its groups back or hands them on. With no player near, the group goes back to what the race's seed says. Alone, this machine owns all.
+- **Hits:** each machine tests only its own car against the deer (the paths are the same everywhere), so the hit is felt at once.
+  The hitter sends the hit to everybody (deer, race time, place, the car's velocity) and every machine plays the same knock and
+  leaves the carcass where it lands; the host settles two claims on one deer (one death kept). Another player's car reaching a deer
+  on this screen before the message plays a provisional knock, put right when it comes. A dead deer is gone until a time from the
+  seed, then the group is made up again. The rest of its group scatters (a reaction like any other).
+- **Late joiners** get the reactions going on and the deaths from the host, as the lobbies do. Positions in messages are world
+  coordinates; deer move with `Origin.Shifted`.
+- To find out: whether the Multiplayer mod shows another player's car damage (its messages as `MultiplayerLink` lists them carry
+  none: then a hit deer flies but their car looks whole); how the game damages a car and how heavy its cars are, so a hit feels
+  like 50 to 135 kg; whether `ctx.Net` is reliable and in order (a lost "deer down" needs a resend).
+
+### The model (first)
+
+Built the way the owner's Claudeinoid human was (`htubdawg/Claudeinoid`, `HANDOFF.md`), not in C# by hand: a Python pipeline in
+`tools/deer/` sculpts the deer as a signed distance field of primitives with bone weights and colour regions, meshes it (surface
+nets), decimates it to a game budget (about 1,200 to 1,800 triangles, more weight on the head, ears and legs), skins it (the top four
+bones), splits it by region so each triangle has one flat colour, and writes `OpenWorld/src/DeerModel.cs` (generated: positions,
+normals, colours, triangles, bone weights, bind poses and the poses), since the mod ships only source. Looked at in software renders
+and a browser viewer before it goes in; the owner sees it before the behaviour is built on it.
+
+- **Skeleton** (about 20 bones): hips, two spine bones, chest, two neck bones, head, ears, tail (two, for the flag), and each leg in
+  three bones and the hoof (the hind legs' hock bent the right way).
+- **Colours as regions, no texture** (the Claudeinoid look): reddish-brown summer coat or grey-brown winter coat, white belly, throat
+  patch, muzzle band, eye ring and tail underside, dark nose, eyes and hooves; a fawn with spots; a buck's antlers as rigid parts on
+  the head (they grow and drop with the season).
+- **Poses** (absolute bone rotations, blended in the game): stand, walk, trot, gallop (the bound), graze head down, alert head up,
+  stamp, tail flag, lie (the carcass).
+- **In the game:** a `Mesh` with bone weights built at load, a `SkinnedMeshRenderer` for each deer near the car, posed in code;
+  far deer cheaper or not drawn. A debug key (through `ctx.Keys`) puts a deer in front of the car to see it in the game before any
+  behaviour exists.
+
+### Checks
+
+- `meshcheck`: deer homes, walks, crossings and escapes never in deep water or over a drop, crossing places on the roads they cross,
+  homes on edges; the model's mesh (no flipped or broken faces, weights summing to one).
+- `tools/deersim` (like `eventsim`): owners handed over between pretend players, reactions and hits over a pretend network with
+  delays, every machine agreeing on which deer are dead and where.
+- `preview`: deer homes and crossing places drawn on the map.
+
+### Order of work
+
+1. The model and the pipeline: done (the owner dropped the debug key).
+2. Calm deer (grazing, wandering, the odd slow crossing; no reaction to cars yet), placed from the race's seed, the water and
+   drop rules, drawn in the world; `meshcheck` checks: **built for 0.28.0, waiting for the owner's test in game** (TESTING 42).
+3. Reactions, ownership and hits in a room; `deersim`. Hits and shots (with damage) built first, for 0.29.0 (below); reactions,
+   settled by the host, for 0.30.0 (below).
+
+### Calm deer as built (0.28.0)
+
+- **Where they could live** (`DeerSites`, fixed with the map, built in the background at load): every 110 units along each lane
+  (and a quarter of the secondary roads' spots), a crossing place where the cover 18, 40 and 75 units out either side is woods (or
+  a hedge) on one side and open ground beside the road; no bridge or junction near, no other road within a few units of the verges,
+  no house within 90 or mailbox within 45, not in a town or village, and passable verge to verge. 743 in the world.
+- **Each race** (`Herds`, from `Weather.Seed` salted, on a worker at the race's start, about a fifth of a second): the sites shuffled
+  by the seed and taken greedily at least 750 apart, up to 160 groups (about 540 deer); per group a cover spot in the woods 35 to
+  80 back from the road and 3 or 4 feeding spots on the verges (9 to 15 off the paving) or in the field, each dry and fairly flat
+  for 9 round, clear of every road (the main roads by 6 more), lot, course and house; the legs between them tested every 1.25
+  units on the drawn ground (the tiles' 5-unit triangles, which deer also stand on): no water deeper than half a unit, no rise over
+  1.1 a step, clear of roads but at the crossing. Spots no leg reaches from the cover are dropped. Groups: 15% a lone deer, 57% a
+  family of 2 to 5, 18% 2 to 4 bucks (no antlers yet: the doe's model, a little bigger), 10% a herd of 6 to 9.
+- **The day**: slots of 90 s; each slot a group stays (55%) or moves to a linked spot, out feeding with a chance of 0.28 at midday
+  rising to 0.93 at dawn (6:30) and dusk (18:50), 0.53 at night, otherwise to cover. A move: the leader leaves up to 8 s into the
+  slot, each follower 1.3 to 3.8 s after the one before (closer for a big group), in single file along the line between the spots'
+  middles (the line the legs were tested on); across the road through its crossing's verge points, a third of the time at a trot,
+  and a third of the time one follower turns back halfway, waits 4 to 10 s at the verge and crosses last. At a spot each deer has
+  its place in a ring, takes a small step every 11 s, grazes, and lifts its head now and then (lone deer more).
+- **Drawn**: the 40 nearest within 500 units (about 150 m) as skinned meshes posed in code (stand, alert, graze; walk and trot
+  swinging between `walk1` and its mirror); the coat the owner's painted texture (`OpenWorld/textures/deer.png`, from an image model on
+  the UV templates) on the scene's lit shader, tinted greyer when the race's snow line is under 390 (a cold day); if the file cannot
+  be read, the flat colour regions (a 4-texel palette) instead. The `Deer` config hides them. The overlay (ShowCoords) points to the nearest group.
+- **Checked**: `meshcheck deer` (the mesh; three seeds: spots, legs and every deer over half an hour never in water above the belly,
+  over a drop or on paving but at the crossing; deer on the drawn ground exactly), `preview` (sites, groups and a map of one race's
+  groups, `<out>-deer.ppm`; the same deer from one seed twice).
+- **Left for step 3 or later**: reactions to cars, colliders and hits, ownership in a room; antlers and fawns' spots; lying down.
+  Deer walk through trees in the woods (the trees are per tile, not in the generator's functions).
+
+The owner's answers (after 0.28.0): a hit damages the car; deer can be shot; how many is unclear and needs testing (so a setting).
+
+### Hits and shots (0.29.0, asked for by the owner)
+
+- **No colliders**: tested in code each frame, so nothing changes in the physics scene and nothing can trip the car.
+  - **The car**: its box from its solid colliders (made once per car, in its body's frame; a 6.4 x 4.5 x 14 box if they give nothing
+    sensible) against each live deer drawn within 30 units, as seven capsules from its bones (trunk, neck, head, four legs), at the
+    car's pose now, last frame's and between (so a fast car at a low frame rate does not pass through).
+  - **A gun**: a Harmony postfix on `Gun.FireRay` (each ray; a shotgun's pellets each), which only this player's guns fire (they aim
+    from its camera): the ray against the deer drawn, the nearest it meets before what it struck is killed and the ray made to end
+    there (the tracer stops at it), with the gun's hit puff and sound. One shot kills.
+- **Damage**: the game's own crash numbers (`CarControllerNew.crashMinImpactSpeed`, `crashFullDamageSpeed`, `maxCrashDamage`) scaled to
+  a deer: `max x 0.4 x weight x (v² - vmin²) / vfull²`, never more than `max x 0.7 x weight`, with v the car's speed (all of it head
+  on, down to 45% glancing) and weight the deer's size cubed. A doe at 55 on the speedometer about 9 HP (a wall there 24), at most
+  about 17; through `CarLink.TakeCrashDamage` (so god mode and the race's end count), with the game's shake and car thump. The car loses
+  5% of its speed per doe (head on). Slower than 3 units a second a car passes through a deer.
+- **The body** (`DeerKills`, pure, on fixed 1/60 s steps from the kill so it is the same however long the frames): thrown along the
+  car's way at 1.05 to 1.15 of its speed, a little aside and up, tumbling about its length toward the side it was pushed; carried
+  over rising ground; down hard it bounces once, then slides to a stop and rolls onto its side (legs stretched, going limp). Shot it
+  falls over sideways about its hooves, away from the shot. It lies there for the rest of the race; the rest of its group carries on.
+- **In a room**: each machine tests only its own car and gun; a kill is sent to everybody (first byte 0xD3 on the Open World's one
+  handler, beside the events' messages): the deer, how, where the body starts and its velocity, spin and side (at float precision,
+  which the killer also uses). Every machine starts the same body at its own race time when it comes. A deer is killed once: a second
+  claim is dropped where it comes second (a near tie could leave two players' bodies in slightly different places; the host does not
+  settle it yet). A late joiner does not get earlier kills.
+- **How many**: the `DeerAmount` setting (alone only; 1 in a room, so everybody has the same deer) scales the groups: the most drawn
+  and their spacing. Above 1 the 743 places limit it: 2 gives about 215 groups, 4 about 245.
+- **Checked**: `meshcheck deer` (bodies of every deer of a race thrown at up to 150 on the speedometer, and shot, all at rest within
+  20 s lying on the drawn ground and never under it on the way, the same on frames of other lengths; messages read back; a second
+  kill dropped; the amounts). The dead poses were looked at in software renders (lying, tumbling, falling over); the trunk lies 0.02
+  units over the ground.
+- **Left for later**: reactions (the group scatters from a kill; fleeing a car), the host settling claims, kills for late joiners
+  (all done in 0.30.0, below).
+
+### Reactions (0.30.0; the owner: "move on to reactions"; the host settles claims and late joiners get the kills)
+
+- **Who decides** (the owner, after 0.29.0: the room's host never changes, the room ends when it leaves, so the host can settle):
+  the machine whose car (or gun, or kill) startles a group decides the reaction from its own exact position, plays it at once and
+  claims it of the host as the group's next reaction (a number per group); the host takes the first claim for each number and sends
+  it to everybody, and a machine whose claim lost puts the winner in place of its own (`DeerRoom`, pure). Kills the same: the first
+  claim on a deer the host gets is the kill everywhere (a near tie no longer leaves bodies in two places). This replaces handing
+  groups to owners with hysteresis: that was for a host that could change; the decider is still the player whose car is there.
+  A machine says Hello once its deer are ready and the host sends it every reaction and kill so far (late joiners, late worlds).
+  Reactions and kills carry race times: Multiplayer 1.1.0 keeps every machine's race clock on the host's.
+- **Noticing** (`Deer.React`, this machine's car only): a group notices the car when its nearest live deer is `closing speed x 11.5 s`
+  away (45 to 200 units; 35 for a car not coming at it): an alert is claimed (heads up, facing the car; where they are does not change).
+  It flees at 40% of the distance it noticed the car at (the measured median), or when the car is under 14 units off or 1.6 s from
+  it. A shot of this player's within 250 units of a group, and a deer of the group killed, claim a flee from there.
+- **Which way** (`Herds.ChooseWay`, by chance from the group and the reaction's number): freeze 8% (25% at night) then away; across
+  30% (55% if the deer nearest the car stands on its road; never for a group with spots one side only, nor from a shot); else away.
+- **The flee** (`Reactions.cs`, pure, under the determinism rules, played the same on every machine from the reaction alone): the
+  refuge is the cover if it is on the side fled to, else the spot there furthest from the road. Deer go nearest first, then one
+  after another (0.35 to 1.15 s apart away, 0.8 to 2.5 s across, where a car meets the followers); each gallops (36 units a second
+  after 0.6 s getting up to speed, the bound posed from `gather` and `extend`, tail up) from where it is to its side's nearest spot
+  it can reach in a straight clear line (or is at, or is crossing to), then spot to spot along the tested legs and the crossing, to
+  its place at the refuge; there it watches 12 s, tail up, then settles. The calm day goes on from the refuge at the start of the
+  slot after (at least 30 s after the last gets there, never in the slot the flee started): the chain of spots is overridden there.
+  A road's side is read from the road itself near the crossing (a lane curves: a spot along it can be across the line through
+  the crossing, which sent deer straight over a lane in the first build).
+- **Checked**: `meshcheck deer` (every group of a race alerted then fleeing each way at three times of day, 480 flees: never in deep
+  water, never on paving away from its crossing, no jump through the run, the watch and the calm day after; the same twice);
+  `tools/deersim` (claims of the same group's next reaction and kills of the same deer from several machines at once, the host's
+  own claims, a late joiner whose Hello's answer races new claims, twenty players at random, stale and bad messages, alone: every
+  machine ends showing exactly the host's reactions and kills; breaking the host's first-claim rule makes it fail).
+- **0.30.1 (the owner: "increase the impact", a powerful metallic sound, the deer a bit too bouncy)**: a doe's share of a wall's damage
+  0.4 -> 0.55 and its most 0.7 -> 0.9 of the car's most crash damage (about 13 HP at 55 on the speedometer, at most about 22); the
+  screen's kick 1.6 times the damage's share plus a little; 8% of the speed lost per doe (was 5%) and the nose knocked up at the
+  contact. The sound: the game's heaviest wall crash, a car-on-car crunch and a `HitMetal` clip (found by name in memory), pitched
+  down for weight, over a strike made in code (`DeerSound`: a thump sweeping 105 to 42 Hz, a crunch of noise, a bonnet ringing at
+  five clashing pitches, a rattle; three variants, 0.9 s, softly clipped), all 2D through the game's mixer, louder the harder.
+  **0.30.2**: the owner found the made sound unrealistic ("like a pinball machine"): it and the `HitMetal` clip are gone; a strike
+  plays the game's own wall crash and car crunch together (pitch 0.9 to 1), louder the harder. Do not synthesize sounds again.
+  The body: thrown up at most 9 units a second (was 18; 1.5 + 0.09 x impact), less aside, tumbling slower; a bounce only when it comes
+  down faster than 9 (was 5), keeping 18% of its fall (was 35%) and 45% of its way along (was 55%).
+- **0.30.3 (the owner's first drive with reacting deer: "none of them reacted fast enough to actually be a road hazard, most of
+  them just ran away from the road"; and the shot's yellow sparks to be red)**: a dart over the road is no longer started at 40% of
+  the notice distance but timed on the car's machine: `Herds.CrossAfter` plays the dart it would claim (nothing kept) and finds when
+  its first deer would be on the paving at the crossing; the flee goes when the car, at its speed toward the crossing, would get
+  there `Deer.DartAhead` (1.4 s) after that, or at once if the car is within 1 s or 14 units. Darts are chosen half the time (was
+  30%), 70% when the nearest deer stands in the road (was 55%); freezes and shots as before. Away and freeze keep the 40% rule.
+  meshcheck `deer`: every timed dart's first deer is on the road when worked out (157 of 157 on seed 1; 0.3 to 7 s, half within
+  2.5 s). The shot's hit puff (the gun's own `BulletCollisionEffect`) is turned blood red on a deer: its particles' start, lifetime,
+  speed and trail colours, lights and materials' tints (property blocks) keep their brightness and alpha; the puff on walls is the
+  game's.
+- **Left for later**: reactions to other players' cars are decided on those players' machines (each decides for its own car); deer
+  walk through trees in the woods; antlers, fawns' spots, lying down.
+
+## A buck and a fawn (0.31.0)
+
+The owner's call when it came to it (after 0.30.3), simpler than the plan first drawn up here:
+- **One set of antlers for every buck**, "nothing too big but not too small, a classic set": no procedural antlers, no sizes by age,
+  no season. A typical eight-pointer (`tools/deer/antlers.py`): each main beam up from the pedicle, out and back over the ear, then
+  forward and in to the tip ahead of the face; a short brow tine and two long tines (G2, G3) standing up from it. About 42 cm across,
+  31 cm above the skull at the tines' tops; 756 triangles in 6-sided tubes.
+- **The buck's body is the doe's**, at the bucks' drawn size (1 to 1.12), so the frozen mesh and the owner's painted coat carry
+  over; the antlers are rigid on the `head` bone (no new bones, every pose shared). They are a second submesh with a material of
+  their own: a gradient generated in code along each tine (dark at the burr, ivory at the tips), so the coat's texture is untouched.
+- **A fawn is the doe's mesh shrunk**, no model or texture of its own (no spots): the owner has never seen a spotted fawn try to
+  cross a road, so they are rare. A family's last deer is a fawn with chance `Herds.FawnChance` (3.5%, about 3 a race), from a
+  hash of the group's salt, not a draw from its `Rng`, so no other deer, group or spot moves; its size is the young's drawn size
+  (0.72 to 1) mapped to 0.56 to 0.66. Its weight (size cubed) makes its hit about a quarter of a doe's, without any other change.
+
+Done: `export_cs.py` writes the antlers after the doe's arrays (the doe's unchanged); `DeerMesh.Buck()` and `AntlerTexture()`; a
+pooled deer swaps mesh and materials when it is taken for a buck or not; the drawn box made taller for the antlers; the log counts
+bucks and fawns; `meshcheck deer` checks the antlers' faces, that they are on the head bone, and in every pose clear of the ground
+(lowest 9 cm, grazing) and of the body not carried by the head (at least 0.5 cm, grazing), and the fawns over 20 race seeds (count,
+only a family's last deer, never a buck, sizes; every other deer's size in its old range); `render_herd.py` renders the doe, buck
+and fawn with the painted coat (`preview_herd.png`, `preview_buck.png`); the viewer has doe, buck and fawn and the painted coat.
+
+The antlers' painted texture: on the owner's request, a UV layout (each piece an upright strip, the seam on the inner side, both
+antlers on the same strips) and templates in `tools/deer/texture/antlers_uv_*.png` for the owner to have an image model paint; the
+game uses `OpenWorld/textures/antlers.png` if it is there, the gradient otherwise. The owner's painted texture is in (grain along
+the tines, a rough burr, pale tips); the renders and the viewer use it too.
+
+Not done (offer, do not build unasked): fawns' spots or a fawn's proportions (a bigger head on a fawn: one bone's scale); antlers by
+season or age; the antlers as a target for shots (`Deer.Shapes` leaves them out: a shot through the antlers misses); a buck's
+tucked tail; fawns keeping close to the doe when they run; a buck's heavier neck (a new sculpt, a new painted coat).
+
+## A road pass: buildings on roads, poorly joined junctions (0.31.1; the owner's report on 0.31.0)
+
+The owner saw some buildings on roads and some junctions poorly joined. No meshcheck check saw either: the buildings were tested
+only where `Buildings.Fits` tested them, and the junctions were ones `holes` measures as fine (the paving there is covered, by the
+wrong road). Found with a new `clear` check and jview's `measure` over every junction (it now lists a spot it cannot draw instead of
+stopping the run, and draws buildings' outlines in its pictures). Fixes:
+
+- **Buildings on roads.** `Fits` tested a footprint at its corners, its sides' middles and its middle: 15 to 26 apart on a barn or
+  a terrace, so a lane could run between them (a farm's barn 50 wide stood across one at (2465, -2964)). The corners and middles
+  are still tried first, then the whole footprint on a grid at most 3 apart. And off its own road a house kept only 1.5 from the
+  edge, so a terrace on a bend put its front corners on the sidewalk (15 places); now it keeps its setback less 0.3, up to the
+  sidewalk's width and a half unit. A few houses moved or went (2629 to 2606 houses, wings, towers and churches checked; 702 to
+  691 round Kingsbridge).
+- **Two roads ending near each other, overlapping** (`Network.Overlaps`, before `Joints`): two routes to one point found by different
+  ways, one ending on the other's centre line and the other running on 10 to 48 past it back along the first (Farm 92's lane, the
+  Brookfield and Northcote roads at Oakhurst, Millbrook's street and Farm 17's lane). `Joints` only takes ends within half a unit,
+  so the one running on was cut under the other and its square end or a wedge of ground showed in the bend. The one that runs on
+  (the smaller, if both do) is cut back to the other's end, and the two are drawn as one road round the bend. Only where no third
+  road ends within 48; never a bridge, a course's road or its access. 103 to 108 roads carrying on end to end.
+- **A hub refused for a street beside a main road** (Northcote's middle, (-1486, 5487), where a primary, a secondary and two
+  streets start): a 60-long street left at a few degrees to the secondary, their edges met 80 out, and the hub was refused for an
+  arm cut too far, so the primary stood square across the secondary. `MakeHub` now drops the smaller road of a corner whose cut is
+  too long, as it did for edges that never meet, and makes the plate of the rest (36 to 37 hubs).
+- **A paved dead end lying along another road** (that street): more than half its length cut out under the secondary, only its
+  rounded end and verge showed beside it. `DeadEnds` cuts such a road out whole (one in this world).
+- Found on the way: a deer caught on its crossing and frightened ran in one line to its spot, which could take it 20 along the
+  lane; it now steps off the paving square to the road first (`Reactions.Run`; the layout change moved the deer's places and showed
+  it). The same groups, places and reactions otherwise.
+
+Checks: new meshcheck `clear` (every house, wing, tower and church in the towns, villages, farms and drives' homes, sampled every unit
+half a unit inside its walls, against the drawn road meshes: none on a road's paving, a sidewalk's top or a track's ribbon); `holes`
+leaves out a road cut out whole. meshcheck all pass (`holes` 0.43% to 0.33%); preview repeatable, a country lane dead end fewer
+(5 to 4); deersim ok. `tools/check.sh` not run here (HalfGripTools.dll was not to hand). Not yet tested in game (TESTING.md 46).
+
+Left (looked at, not done): a few lanes meeting another at a shallow angle, a sliver of ground or verge in the narrow corner
+((9301, 9211), (-6569, -9954), (-7272, 1156)); preview's `square` lists two. Making them meet square means moving their ends: offer
+it, with the owner's screenshots of the junctions they saw, if these were not the ones.

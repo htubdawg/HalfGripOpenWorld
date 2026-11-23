@@ -104,8 +104,12 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Moves everything in the loaded scenes by (-dx, 0, -dz) and adds (dx, dz) to the offset.</summary>
-		internal static void Shift(float dx, float dz)
+		/// <summary>
+		/// Moves everything in the loaded scenes by (-dx, 0, -dz) and adds (dx, dz) to the offset. The roots in <paramref name="keep"/>
+		/// stay where they are in the scene, so they move by (dx, dz) in the world: the highway's wrap (<see cref="Wrap"/>) keeps the
+		/// car and the chase camera in place while the world round them goes from one edge to the other.
+		/// </summary>
+		internal static void Shift(float dx, float dz, HashSet<Transform> keep = null)
 		{
 			Vector3 delta = new Vector3(-dx, 0f, -dz);
 			float started = Time.realtimeSinceStartup;
@@ -135,7 +139,7 @@ namespace HalfGripOpenWorld
 				foreach (GameObject go in scene.GetRootGameObjects())
 				{
 					// A screen-space canvas is placed by Unity, not by its transform; a cockpit root stays.
-					if ((go.TryGetComponent(out Canvas canvas) && canvas.renderMode != RenderMode.WorldSpace) || go.layer == interior)
+					if ((go.TryGetComponent(out Canvas canvas) && canvas.renderMode != RenderMode.WorldSpace) || go.layer == interior || (keep != null && keep.Contains(go.transform)))
 					{
 						continue;
 					}
@@ -187,6 +191,20 @@ namespace HalfGripOpenWorld
 				n++;
 			}
 			return n;
+		}
+
+		/// <summary>
+		/// Moves the roots in <paramref name="roots"/> by <paramref name="delta"/> in the scene, leaving the cockpit under them where it is
+		/// (the leftover of the highway's wrap after its whole-tile shift).
+		/// </summary>
+		internal static void MoveKept(HashSet<Transform> roots, Vector3 delta)
+		{
+			foreach (Transform root in roots)
+			{
+				root.position += delta;
+			}
+			KeepInterior(delta, LayerMask.NameToLayer("INTERIOR"), roots);
+			Physics.SyncTransforms();
 		}
 
 		/// <summary>True if <paramref name="t"/> or anything above it is on the INTERIOR layer: part of the cockpit, which stays put.</summary>

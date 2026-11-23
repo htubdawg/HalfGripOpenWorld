@@ -30,6 +30,11 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<bool> ShowFarView;
 		internal static ConfigEntry<float> FarReach;
 		internal static ConfigEntry<bool> FarSkyline;
+		internal static ConfigEntry<bool> ShowDeer;
+		internal static ConfigEntry<float> DeerAmount;
+		internal static ConfigEntry<bool> ShowTraffic;
+		internal static ConfigEntry<int> TrafficPhysics;
+		internal static ConfigEntry<int> TrafficLoose;
 		internal static ConfigEntry<bool> Teleport;
 		internal static ModKey TeleportKey;
 		internal static ConfigEntry<bool> ShowCoords;
@@ -63,6 +68,11 @@ namespace HalfGripOpenWorld
 			ShowFarView = ctx.Config.Bind("World", "FarView", true, "Draw the whole world at low detail past the loaded tiles (mountains, coast, woods and towns to the horizon), and see as far as the weather lets you: far on a clear day, close in the rain. Off, the fog ends where the loaded tiles end, as before 0.19.0. Only changes your own view.");
 			FarReach = ctx.Config.Bind("World", "FarViewDistance", 14000f, new ConfigDescription("With FarView on, how far the low-detail world is drawn, in game units (the world is 32000 across). Past it, FarSkyline paints the land into the sky; with FarSkyline off, this is the furthest you can see on the clearest day. Less costs less frame time. Only changes your own view.", new AcceptableValueRange<float>(4000f, 20000f)));
 			FarSkyline = ctx.Config.Bind("World", "FarSkyline", true, "With FarView on, paint the land past FarViewDistance into the sky, so on a clear day you see across the whole world (mountains 9 km off as hazy shapes on the horizon) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. Only changes your own view.");
+			ShowDeer = ctx.Config.Bind("World", "Deer", true, "Draw the white-tailed deer: small groups on the edges of woods and fields by the country lanes, grazing on the verges and now and then crossing the road one at a time, most out at dawn and dusk. Where they are is drawn from the race's seed, so in a room everybody has them in the same places. They notice a car coming and bolt, into cover or over the road in front of it; a shot or one of them killed sends them off too. Hitting one damages the car (more the faster) and kills it, and a deer can be shot. In a room everybody sees the same deer do the same thing, and a deer killed by anybody lies dead for everybody. Off, you see none and cannot hit or startle any.");
+			DeerAmount = ctx.Config.Bind("World", "DeerAmount", 1f, new ConfigDescription("How many deer groups there are, for trying out what feels right: 1 is the standard (160 groups, about 540 deer, over the whole country), 0.5 half, 0 none; above 1 there are only so many places deer can live, so 2 gives about a third more (about 215 groups) and 4 about half more (about 245). Only alone: in a Multiplayer room it is always 1, so everybody has the same deer. Takes effect at the next race.", new AcceptableValueRange<float>(0f, 4f)));
+			ShowTraffic = ctx.Config.Bind("World", "Traffic", true, "Draw the traffic: the households' cars driving to work, the shops and friends and back on a day worked out from the race's seed, so in a room everybody sees the same cars in the same places, parked on their drives, at the kerb and in the car parks between trips. Busiest at the evening rush, quiet at night. Near you the moving cars are real cars (see TrafficPhysics), and a car you are about to hit, parked or moving, becomes a real car just before you touch it (see TrafficLoose). Only changes your own view.");
+			TrafficPhysics = ctx.Config.Bind("World", "TrafficPhysics", 24, new ConfigDescription("With Traffic on, at most how many traffic cars near you (within 300 units, about 90 m) are real cars with physics: they can be pushed, shot and wrecked, queue behind each other and give way at junctions, and go back on their timetable (late by what held them up) once you are 400 units (about 120 m) away. A wrecked one is gone for the rest of the race. 0: none, every traffic car is drawn on its timetable and hitting one is like hitting a wall. More costs more frame time. Only changes your own game.", new AcceptableValueRange<int>(0, 60)));
+			TrafficLoose = ctx.Config.Bind("World", "TrafficLoose", 6, new ConfigDescription("With Traffic on, at most how many traffic cars you are about to hit become real cars at that moment when they would otherwise be like walls: parked cars (on their brakes: a nudge barely moves one, a hard hit shoves and spins it) and moving cars that are not physics cars just then (pulling in or out, at a junction or near the end of their trip; they brake to a stop). One you leave untouched goes back to how it was once you are 60 units (about 18 m) away; one you knocked stays where it ended up until you are well away, then is gone for the rest of the race. Separate from TrafficPhysics, so it takes nothing from the cars driving near you. 0: none, parked cars are walls. Only changes your own game.", new AcceptableValueRange<int>(0, 20)));
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many game units (1000 is about 300 m) from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
 			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let the Teleport key (Settings > Controls, F7 unless rebound) jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
 			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset, the tile count and the sky (the time, the rain, cloud and wetness at the car, the grip, the nearest storm) in the top left corner.");
@@ -91,6 +101,15 @@ namespace HalfGripOpenWorld
 				catch (System.Exception e)
 				{
 					Log.LogError("The far view's world could not be built (the far view stays off): " + e);
+				}
+				try
+				{
+					// Where deer could live, from the layout, so the first race only draws its groups.
+					DeerSites.Ensure();
+				}
+				catch (System.Exception e)
+				{
+					Log.LogError("The deer's places could not be found (no deer): " + e);
 				}
 			});
 			ctx.OnSceneLoaded(scene =>

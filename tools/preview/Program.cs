@@ -330,13 +330,144 @@ internal static class Program
 		byte[] map = Draw(size, x0, z0, span);
 		Write(output, size, size, map, false);
 		Console.WriteLine("wrote " + output);
+		byte[] plain = (byte[])map.Clone();
 		string labelled = Path.ChangeExtension(output, null) + "-labels.ppm";
 		Garages(map, size, x0, z0, span);
 		Events(map, size, x0, z0, span);
 		Label(map, size, x0, z0, span);
 		Write(labelled, size, size, map, false);
 		Console.WriteLine("wrote " + labelled);
+
+		ok &= DeerReport(plain, size, x0, z0, span, Path.ChangeExtension(output, null) + "-deer.ppm");
 		return ok ? 0 : 1;
+	}
+
+	/// <summary>
+	/// The deer: how many places one could live (fixed with the map), the groups a few races draw there, repeatability, and a map of
+	/// one race's groups (<out>-deer.ppm): every possible site a small orange dot, each group's crossing place red, its feeding spots
+	/// white, its cover spot dark green, the legs between them yellow.
+	/// </summary>
+	private static bool DeerReport(byte[] map, int size, double x0, double z0, double span, string output)
+	{
+		bool ok = true;
+		DeerSites.Ensure();
+		Console.WriteLine("deer: " + DeerSites.All.Count + " places a group could live (crossings on quiet roads at the edges of woods and fields), " + DeerSites.BuildMs.ToString("0") + " ms");
+		Herds first = null;
+		for (int seed = 1; seed <= 5; seed++)
+		{
+			Herds h = new Herds(seed, 8.0, 2400.0);
+			first ??= h;
+			int crossing = h.Groups.Count(g => g.Crosses);
+			var kinds = h.Groups.GroupBy(g => g.Kind).Select(g => g.Count() + " " + g.Key);
+			Console.WriteLine("  race seed " + seed + ": " + h.Groups.Length + " groups, " + h.DeerCount + " deer (" + string.Join(", ", kinds) + "), " + crossing + " with spots both sides of their road, "
+				+ (h.Groups.Length > 0 ? h.Groups.Average(g => g.Spots.Length).ToString("0.0") : "0") + " spots each, " + h.BuildMs.ToString("0") + " ms");
+		}
+		// The same seed twice gives the same deer, and how much of the time they spend where.
+		Herds again = new Herds(1, 8.0, 2400.0);
+		Herds.Move mv = default, spare = default, mv2 = default, spare2 = default;
+		int moving = 0, samples = 0, crossingRoad = 0;
+		var watch = Stopwatch.StartNew();
+		for (int gi = 0; gi < first.Groups.Length; gi++)
+		{
+			for (int d = 0; d < first.Groups[gi].Members.Length; d++)
+			{
+				for (double t = 0.0; t < 3600.0; t += 7.3)
+				{
+					first.At(first.Groups[gi], d, t, ref mv, ref spare, out DeerState a);
+					again.At(again.Groups[gi], d, t, ref mv2, ref spare2, out DeerState b);
+					if (a.X != b.X || a.Z != b.Z || a.Yaw != b.Yaw || a.Motion != b.Motion)
+					{
+						if (ok)
+						{
+							Console.WriteLine("  FAIL: deer differ between two builds from one seed (group " + gi + ", deer " + d + ", t " + t.ToString("0.0") + ")");
+						}
+						ok = false;
+					}
+					samples++;
+					if (a.Motion == DeerMotion.Walk || a.Motion == DeerMotion.Trot)
+					{
+						moving++;
+					}
+					DeerSites.Site site = first.Groups[gi].Site;
+					double dx = a.X - site.X, dz = a.Z - site.Z;
+					if (Math.Abs(dx * site.Nx + dz * site.Nz) < site.Half && dx * dx + dz * dz < 30.0 * 30.0)
+					{
+						crossingRoad++;
+					}
+				}
+			}
+		}
+		Console.WriteLine("  over an hour: deer moving " + (100.0 * moving / Math.Max(1, samples)).ToString("0.0") + "% of the time, on their road " + (100.0 * crossingRoad / Math.Max(1, samples)).ToString("0.00")
+			+ "%; " + (watch.Elapsed.TotalMilliseconds * 1000.0 / Math.Max(1, samples * 2)).ToString("0.0") + " us a deer" + (ok ? ", the same from one seed twice" : ""));
+
+		// What drawing a deer on the ground costs: a height under it.
+		var heightWatch = Stopwatch.StartNew();
+		double sum = 0.0;
+		foreach (Herds.Group g in first.Groups)
+		{
+			for (int k = 0; k < 50; k++)
+			{
+				sum += Herds.Ground(g.Spots[0].X + k * 1.37, g.Spots[0].Z - k * 1.21);
+			}
+		}
+		Console.WriteLine("  the drawn ground under a deer: " + (heightWatch.Elapsed.TotalMilliseconds * 1000.0 / (first.Groups.Length * 50)).ToString("0.0") + " us");
+
+		double cell = span / size;
+		void Dot(double x, double z, double r, byte[] c)
+		{
+			double cp = (x - x0) / cell, cq = (z0 - z) / cell;
+			for (int q = (int)Math.Floor(cq - r); q <= (int)Math.Floor(cq + r); q++)
+			{
+				for (int p = (int)Math.Floor(cp - r); p <= (int)Math.Floor(cp + r); p++)
+				{
+					if ((p + 0.5 - cp) * (p + 0.5 - cp) + (q + 0.5 - cq) * (q + 0.5 - cq) <= r * r)
+					{
+						Pixel(map, size, p, q, c);
+					}
+				}
+			}
+		}
+		void Line(double ax, double az, double bx, double bz, byte[] c)
+		{
+			double len = Math.Sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+			int n = Math.Max(1, (int)(len / cell * 1.5));
+			for (int k = 0; k <= n; k++)
+			{
+				double f = (double)k / n;
+				Pixel(map, size, (int)Math.Floor((ax + (bx - ax) * f - x0) / cell), (int)Math.Floor((z0 - (az + (bz - az) * f)) / cell), c);
+			}
+		}
+		double dot = Math.Max(1.0, 4.0 / cell);
+		foreach (DeerSites.Site s in DeerSites.All)
+		{
+			Dot(s.X, s.Z, dot, new byte[] { 230, 150, 40 });
+		}
+		var legs = new List<(double x, double z)>();
+		foreach (Herds.Group g in first.Groups)
+		{
+			for (int a = 0; a < g.Spots.Length; a++)
+			{
+				for (int b = a + 1; b < g.Spots.Length; b++)
+				{
+					if (g.Links[a, b])
+					{
+						Herds.Legs(g, g.Spots[a], g.Spots[b], legs);
+						for (int k = 0; k + 1 < legs.Count; k++)
+						{
+							Line(legs[k].x, legs[k].z, legs[k + 1].x, legs[k + 1].z, new byte[] { 250, 230, 60 });
+						}
+					}
+				}
+			}
+			foreach (Herds.Spot s in g.Spots)
+			{
+				Dot(s.X, s.Z, Math.Max(1.5, 6.0 / cell), s.Cover ? new byte[] { 10, 70, 20 } : new byte[] { 255, 255, 255 });
+			}
+			Dot(g.Site.X, g.Site.Z, Math.Max(2.0, 7.0 / cell), new byte[] { 230, 30, 30 });
+		}
+		Write(output, size, size, map, false);
+		Console.WriteLine("wrote " + output + " (race seed 1)");
+		return ok;
 	}
 
 	/// <summary>Whether (x, z) is in a town or village.</summary>

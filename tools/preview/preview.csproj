@@ -17,6 +17,7 @@
     <Compile Include="../../OpenWorld/src/Rivers.cs" />
     <Compile Include="../../OpenWorld/src/Places.cs" />
     <Compile Include="../../OpenWorld/src/Network.cs" />
+    <Compile Include="../../OpenWorld/src/Wrap.cs" />
     <Compile Include="../../OpenWorld/src/TownPlan.cs" />
     <Compile Include="../../OpenWorld/src/LandUse.cs" />
     <Compile Include="../../OpenWorld/src/Town.cs" />
@@ -29,5 +30,9 @@
     <Compile Include="../../OpenWorld/src/Signs.cs" />
     <Compile Include="../../OpenWorld/src/GarageSites.cs" />
     <Compile Include="../../OpenWorld/src/Courses.cs" />
+    <Compile Include="../../OpenWorld/src/Herds.cs" />
+    <Compile Include="../../OpenWorld/src/Reactions.cs" />
+    <Compile Include="../../OpenWorld/src/DeerRoom.cs" />
+    <Compile Include="../../OpenWorld/src/DeerKills.cs" />
   </ItemGroup>
 </Project>

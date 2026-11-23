@@ -84,13 +84,15 @@ namespace HalfGripOpenWorld
 		private const double BayLength = 16.0;
 
 		/// <summary>How far from the main town's middle (as a share of its radius) its towers stand.</summary>
-		private const double TowerReach = 0.16;
+		private const double TowerReach = HalfGripOpenWorld.Plots.TowerReach;
 
 		internal sealed class Data
 		{
 			internal RoadMeshData Mesh;
 			/// <summary>World x, z and radius of every building, so trees and grass keep off them.</summary>
 			internal List<(double x, double z, double r)> Footprints = new List<(double, double, double)>();
+			/// <summary>The houses', wings', towers' and churches' footprints as drawn: middle, along (dx, dz), width along and depth across. For meshcheck (clear of the roads).</summary>
+			internal List<(double x, double z, double dx, double dz, double w, double d)> Boxes = new List<(double, double, double, double, double, double)>();
 		}
 
 		private static readonly ulong Salt = Noise.Mix(WorldGen.Seed + 601);
@@ -501,114 +503,65 @@ namespace HalfGripOpenWorld
 
 		// ---- where -------------------------------------------------------------------------------------------------
 
-		/// <summary>The plots along one piece of a road (between samples i and i + 1), both sides.</summary>
+		/// <summary>The houses on the plots along one piece of a road (between samples i and i + 1), both sides (<see cref="Plots.Along"/>).</summary>
 		private static void Plots(Builder b, Data data, int r, Network.Road road, int i)
 		{
-			double mx = (road.X[i] + road.X[i + 1]) * 0.5, mz = (road.Z[i] + road.Z[i + 1]) * 0.5;
-			Places.Place place = Places.At(mx, mz);
-			if (place == null || place.Kind == PlaceKind.Hamlet)
+			List<HalfGripOpenWorld.Plots.Plot> plots = plotsOfThread ??= new List<HalfGripOpenWorld.Plots.Plot>();
+			plots.Clear();
+			HalfGripOpenWorld.Plots.Along(r, road, i, plots);
+			foreach (HalfGripOpenWorld.Plots.Plot p in plots)
 			{
-				return;
-			}
-			bool town = place.Kind == PlaceKind.Town;
-			double from = Math.Sqrt((mx - place.X) * (mx - place.X) + (mz - place.Z) * (mz - place.Z)) / place.Radius;
-			bool core = town && from < 0.35;
-			// The main town's centre has its towers; the main roads through a town's core or a village's middle are its high street.
-			bool towers = town && place == Places.All[0] && from < TowerReach;
-			bool main = road.Kind == RoadKind.Primary || road.Kind == RoadKind.Secondary;
-			bool high = main && !towers && (core || (place.Kind == PlaceKind.Village && from < 0.3));
-			bool terrace = core || high;
-			double spacing = towers ? 52.0 : terrace ? 26.0 : town ? 36.0 : 44.0;
-			// A seafront has houses on its landward side only: the other looks over the beach.
-			int seaSide = 0;
-			if (road.Name.EndsWith(" seafront"))
-			{
-				double len0 = Math.Max(1e-6, road.S[i + 1] - road.S[i]);
-				double ex = -(road.Z[i + 1] - road.Z[i]) / len0, ez = (road.X[i + 1] - road.X[i]) / len0;
-				seaSide = WorldGen.Base(mx + ex * 60.0, mz + ez * 60.0) < WorldGen.Base(mx - ex * 60.0, mz - ez * 60.0) ? 1 : -1;
-			}
-			double s0 = road.S[i], s1 = road.S[i + 1];
-			for (long k = (long)Math.Ceiling(s0 / spacing); k * spacing < s1; k++)
-			{
-				double t = (k * spacing - s0) / Math.Max(1e-6, s1 - s0);
-				double px = road.X[i] + (road.X[i + 1] - road.X[i]) * t;
-				double pz = road.Z[i] + (road.Z[i + 1] - road.Z[i]) * t;
-				double len = Math.Max(1e-6, s1 - s0);
-				double dx = (road.X[i + 1] - road.X[i]) / len, dz = (road.Z[i + 1] - road.Z[i]) / len;
-				for (int side = -1; side <= 1; side += 2)
+				ulong h = p.Hash;
+				int side = p.Side;
+				double dx = p.Dx, dz = p.Dz;
+				if (p.Towers)
 				{
-					if (side == seaSide)
-					{
-						continue;
-					}
-					ulong h = Noise.Mix(Salt ^ (ulong)r * 0x9E3779B97F4A7C15UL ^ (ulong)k * 0xBF58476D1CE4E5B9UL ^ (ulong)(side + 2));
-					double chance = towers ? 0.9 : terrace ? 0.95 : town ? 0.35 + 0.5 * (1.0 - from) : 0.7 * (1.0 - from * 0.6);
-					if (Unit(h, 0) >= chance)
-					{
-						continue;
-					}
-					// Left of the road is (-dz, dx).
-					double nx = -dz * side, nz = dx * side;
-					if (towers)
-					{
-						Tower(b, data, r, px, pz, dx * side, dz * side, nx, nz, road.Half, from, h);
-						continue;
-					}
-					double width = terrace ? spacing - 0.5 : spacing * (0.55 + 0.25 * Unit(h, 1));
-					double depth = terrace ? 26.0 + 6.0 * Unit(h, 2) : 20.0 + 8.0 * Unit(h, 2);
-					int floors = core ? 2 + (int)(Unit(h, 3) * (from < 0.2 ? 4.0 : 3.0)) : 1 + (int)(Unit(h, 3) * 2.0);
-					if (high)
-					{
-						floors = Math.Max(2, floors);
-					}
-					bool village = place.Kind == PlaceKind.Village;
-					// A cottage now and then in a village: one storey under a deep thatch.
-					bool thatched = village && !terrace && Unit(h, 10) < 0.18;
-					if (thatched)
-					{
-						floors = 1;
-						depth = Math.Min(depth, 22.0);
-					}
-					// A terrace stands at the back of the sidewalk.
-					double setback = terrace ? Network.Verge + 0.5 : 6.0 + 8.0 * Unit(h, 4);
-					double off = road.Half + setback + depth * 0.5;
-					double cx = px + nx * off, cz = pz + nz * off;
-					Look look = Look.Of(WallFor(h, terrace, village), RoofFor(h, terrace, village), floors * Storey);
-					if (thatched)
-					{
-						look.Roof = Thatch;
-						look.Wall = Unit(h, 11) < 0.6 ? White : Stone;
-					}
-					if (floors >= 4)
-					{
-						look.Roof = Flat;
-					}
-					// Sashes in towns and terraces, casements more often out in the villages.
-					look.Style = Unit(h, 9) < (terrace ? 0.8 : village ? 0.35 : 0.55) ? Sash : Casement;
-					// A terrace's roofs stop short of the party walls; detached houses are hipped as often as gabled, more so when low.
-					look.EndOver = terrace ? 0.15f : 0.8f;
-					look.Hip = !terrace && !thatched && width > depth + 4.0 && Unit(h, 12) < (floors == 1 ? 0.6 : 0.4);
-					look.Chimneys = Unit(h, 13) < 0.25 ? 0 : Unit(h, 13) < 0.75 ? 1 : 2;
-					int bays = Math.Max(1, (int)Math.Round(width / Bay));
-					if (high)
-					{
-						// A shop on the ground floor of every high-street building: its front (the road side) a shopfront, in one of four colours.
-						look.Front = Shopfront;
-						look.Variant = (int)(Unit(h, 7) * 4.0);
-					}
-					else
-					{
-						// A terrace's door at one end of its front (they pair up along the row), a detached house's in its middle.
-						look.Door = terrace ? (Unit(h, 14) < 0.5 ? 0 : bays - 1) : bays / 2;
-					}
-					// The house's frame turned so its across axis points away from the road on this side.
-					if (House(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, out float floor) && !terrace && !thatched && Unit(h, 8) < 0.4)
-					{
-						Wing(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, floor, h);
-					}
+					Tower(b, data, r, p.Px, p.Pz, dx * side, dz * side, p.Nx, p.Nz, road.Half, p.From, h);
+					continue;
+				}
+				bool terrace = p.Terrace, high = p.High, village = p.Village, thatched = p.Thatched;
+				double width = p.Width, depth = p.Depth, setback = p.Setback, cx = p.Cx, cz = p.Cz;
+				int floors = p.Floors;
+				Look look = Look.Of(WallFor(h, terrace, village), RoofFor(h, terrace, village), floors * Storey);
+				if (thatched)
+				{
+					look.Roof = Thatch;
+					look.Wall = Unit(h, 11) < 0.6 ? White : Stone;
+				}
+				if (floors >= 4)
+				{
+					look.Roof = Flat;
+				}
+				// Sashes in towns and terraces, casements more often out in the villages.
+				look.Style = Unit(h, 9) < (terrace ? 0.8 : village ? 0.35 : 0.55) ? Sash : Casement;
+				// A terrace's roofs stop short of the party walls; detached houses are hipped as often as gabled, more so when low.
+				look.EndOver = terrace ? 0.15f : 0.8f;
+				look.Hip = !terrace && !thatched && width > depth + 4.0 && Unit(h, 12) < (floors == 1 ? 0.6 : 0.4);
+				look.Chimneys = Unit(h, 13) < 0.25 ? 0 : Unit(h, 13) < 0.75 ? 1 : 2;
+				int bays = Math.Max(1, (int)Math.Round(width / Bay));
+				if (high)
+				{
+					// A shop on the ground floor of every high-street building: its front (the road side) a shopfront, in one of four colours.
+					look.Front = Shopfront;
+					look.Variant = (int)(Unit(h, 7) * 4.0);
+				}
+				else
+				{
+					// A terrace's door at one end of its front (they pair up along the row), a detached house's in its middle.
+					look.Door = terrace ? (Unit(h, 14) < 0.5 ? 0 : bays - 1) : bays / 2;
+				}
+				// The house's frame turned so its across axis points away from the road on this side.
+				if (House(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, out float floor) && !terrace && !thatched && Unit(h, 8) < 0.4)
+				{
+					Wing(b, data, r, setback, cx, cz, dx * side, dz * side, width, depth, look, floor, h);
 				}
 			}
 		}
+
+		/// <summary>Each tile worker's own list of plots: tiles are built on several workers at once, and one shared list was filled by two
+		/// of them together ("Collection was modified", the tile lost).</summary>
+		[ThreadStatic]
+		private static List<HalfGripOpenWorld.Plots.Plot> plotsOfThread;
 
 		/// <summary>
 		/// The shops facing a market place from behind it: a terrace of three and four storeys with shopfronts, along its back, their fronts
@@ -664,7 +617,7 @@ namespace HalfGripOpenWorld
 			// Off to one side of the back, overlapping the house by 2 so the two read as one building.
 			double shift = (Unit(h, 17) < 0.5 ? -1.0 : 1.0) * (w - ww) * 0.5;
 			double wx = cx + dx * shift + nx * (d * 0.5 + wd * 0.5 - 2.0), wz = cz + dz * shift + nz * (d * 0.5 + wd * 0.5 - 2.0);
-			if (!Fits(own, front + d - 2.0, wx, wz, dx, dz, ww, wd, 1.5, out double lo, out double hi))
+			if (!HalfGripOpenWorld.Plots.Fits(own, front + d - 2.0, wx, wz, dx, dz, ww, wd, 1.5, out double lo, out double hi))
 			{
 				return;
 			}
@@ -684,6 +637,7 @@ namespace HalfGripOpenWorld
 			// Turned so its ridge runs back from the house: along it is away from the road, its across along the road.
 			b.Building(wx, wz, (float)(lo - 0.6), nx, nz, (float)wd, (float)ww, look);
 			data.Footprints.Add((wx, wz, Math.Sqrt(ww * ww + wd * wd) * 0.5));
+			data.Boxes.Add((wx, wz, dx, dz, ww, wd));
 		}
 
 		/// <summary>
@@ -696,7 +650,7 @@ namespace HalfGripOpenWorld
 			const double setback = Network.Verge + 1.0;
 			double off = half + setback + d * 0.5;
 			double cx = px + nx * off, cz = pz + nz * off;
-			if (!Fits(r, setback, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))
+			if (!HalfGripOpenWorld.Plots.Fits(r, setback, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))
 			{
 				return;
 			}
@@ -724,6 +678,7 @@ namespace HalfGripOpenWorld
 				b.Box(cx + dx * tw * 0.3 + nx * td * 0.25, cz + dz * tw * 0.3 + nz * td * 0.25, y, dx, dz, 1f, 1f, 14f, Metal, Flat);
 			}
 			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
+			data.Boxes.Add((cx, cz, dx, dz, w, d));
 		}
 
 		/// <summary>
@@ -743,7 +698,7 @@ namespace HalfGripOpenWorld
 					// Turned a little off east-west, as old churches are.
 					double turn = (Unit(h, 2) - 0.5) * 0.4;
 					double ax = DetMath.Cos(turn), az = DetMath.Sin(turn);
-					if (!Fits(-1, 0.0, cx, cz, ax, az, length, width, 4.0, out double lo, out double hi))
+					if (!HalfGripOpenWorld.Plots.Fits(-1, 0.0, cx, cz, ax, az, length, width, 4.0, out double lo, out double hi))
 					{
 						continue;
 					}
@@ -762,6 +717,7 @@ namespace HalfGripOpenWorld
 					b.Building(tx, tz, y, az, -ax, 12f, 12f, tower);
 					b.Spire(tx, tz, y + plinth + 30f + 1.4f, ax, az, 12.5f, 20f, Slate);
 					data.Footprints.Add((cx, cz, Math.Sqrt(length * length + width * width) * 0.5));
+					data.Boxes.Add((cx, cz, ax, az, length, width));
 					return;
 				}
 			}
@@ -846,54 +802,17 @@ namespace HalfGripOpenWorld
 		private static bool House(Builder b, Data data, int own, double front, double cx, double cz, double dx, double dz, double w, double d, Look look, out float floor)
 		{
 			floor = 0f;
-			if (!Fits(own, front, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))
+			if (!HalfGripOpenWorld.Plots.Fits(own, front, cx, cz, dx, dz, w, d, 1.5, out double lo, out double hi))
 			{
 				return false;
 			}
 			data.Footprints.Add((cx, cz, Math.Sqrt(w * w + d * d) * 0.5));
+			data.Boxes.Add((cx, cz, dx, dz, w, d));
 			float y = (float)(lo - 0.6);
 			floor = (float)hi + 0.6f;
 			look.Plinth = floor - y;
 			b.Building(cx, cz, y, dx, dz, (float)w, (float)d, look);
 			return true;
-		}
-
-		/// <summary>Where a footprint is tested, as shares of its width and depth: corners, middle, and the middles of its sides (a lot's corner can poke into a long building's side).</summary>
-		private static readonly double[] Us = { -0.5, 0.5, -0.5, 0.5, 0.0, -0.5, 0.5, 0.0, 0.0 };
-		private static readonly double[] Vs = { -0.5, -0.5, 0.5, 0.5, 0.0, 0.0, 0.0, -0.5, 0.5 };
-
-		/// <summary>
-		/// Whether a footprint <paramref name="w"/> along (dx, dz) by <paramref name="d"/> across fits (see <see cref="House"/>), keeping
-		/// <paramref name="margin"/> off every road; the lowest and highest ground (scene heights) under its corners and middle.
-		/// </summary>
-		private static bool Fits(int own, double front, double cx, double cz, double dx, double dz, double w, double d, double margin, out double lo, out double hi)
-		{
-			// Across the footprint, away from its road.
-			double nx = -dz, nz = dx;
-			lo = double.MaxValue;
-			hi = double.MinValue;
-			for (int c = 0; c < Us.Length; c++)
-			{
-				double u = Us[c] * w, v = Vs[c] * d;
-				double x = cx + dx * u + nx * v, z = cz + dz * u + nz * v;
-				// How far this point is from its own road's edge: the front corners the setback, the back ones the setback and depth.
-				if (!Network.Claims(x, z, own, front + (v > 0.0 ? d : (v < 0.0 ? 0.0 : d * 0.5)), margin))
-				{
-					return false;
-				}
-				if (Town.Taken(x, z, 2.0) || Parks.At(x, z) || (c == 4 && Signs.Near(cx, cz, Math.Sqrt(w * w + d * d) * 0.5 + 1.0)))
-				{
-					return false;
-				}
-				if (Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 1.0)
-				{
-					return false;
-				}
-				double gh = WorldGen.Height(x, z);
-				lo = Math.Min(lo, gh);
-				hi = Math.Max(hi, gh);
-			}
-			return hi - lo <= 6.0;
 		}
 
 		/// <summary>

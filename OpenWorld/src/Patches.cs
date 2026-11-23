@@ -277,4 +277,161 @@ namespace HalfGripOpenWorld
 			Garage.Forget();
 		}
 	}
+	/// <summary>
+	/// Deer hear a shot and flee, and can be shot: after each ray of the player's gun (a shotgun fires one per pellet), the deer it passed through before what it
+	/// struck, if any, is killed and the ray made to end at it (so the tracer stops there), with the gun's own hit puff (turned red) and sound. The
+	/// deer have no colliders (<see cref="Deer.Shoot"/> tests the ray against their bodies in code). Only this player's guns fire these
+	/// rays (they aim from its camera), so a deer is only ever shot here by this player.
+	/// </summary>
+	[HarmonyPatch(typeof(Gun), "FireRay")]
+	internal static class DeerShotPatch
+	{
+		private static void Postfix(Gun __instance, Vector3 origin, Vector3 direction, ref Vector3 __result)
+		{
+			Deer deer = Deer.Active;
+			if (deer == null)
+			{
+				return;
+			}
+			try
+			{
+				// Heard: every group near the gun flees (once for a shotgun's pellets).
+				deer.Gunshot(origin);
+				float reach = (__result - origin).magnitude;
+				if (!deer.Shoot(origin, direction, reach, out Vector3 at))
+				{
+					return;
+				}
+				__result = at;
+				if (__instance.bulletHitEffect != null)
+				{
+					Bloody(Object.Instantiate(__instance.bulletHitEffect, at - direction.normalized * 0.05f, Quaternion.LookRotation(-direction)));
+				}
+				SoundController.PlayRandomSoundAtPosition(__instance.bulletCollisionSounds, at, 0.6f, 25f, 500f);
+			}
+			catch (System.Exception e)
+			{
+				Mod.Log.LogWarning("Deer: a shot could not be tested against the deer: " + e.Message);
+			}
+		}
+
+		/// <summary>
+		/// The gun's hit puff, red: it is yellow sparks, made for a bullet on metal or stone, which look wrong on a deer. Each colour
+		/// in the copy's particles, trails, lights and materials keeps its brightness and alpha but turns red, so the puff's shape,
+		/// timing and fade are the game's. The materials are tinted through property blocks (shared materials untouched, nothing left
+		/// to free); the gun's own puff on walls is not changed.
+		/// </summary>
+		private static void Bloody(GameObject puff)
+		{
+			if (puff == null)
+			{
+				return;
+			}
+			try
+			{
+				foreach (ParticleSystem ps in puff.GetComponentsInChildren<ParticleSystem>(true))
+				{
+					ParticleSystem.MainModule main = ps.main;
+					main.startColor = Red(main.startColor);
+					ParticleSystem.ColorOverLifetimeModule life = ps.colorOverLifetime;
+					if (life.enabled)
+					{
+						life.color = Red(life.color);
+					}
+					ParticleSystem.ColorBySpeedModule bySpeed = ps.colorBySpeed;
+					if (bySpeed.enabled)
+					{
+						bySpeed.color = Red(bySpeed.color);
+					}
+					ParticleSystem.TrailModule trails = ps.trails;
+					if (trails.enabled)
+					{
+						trails.colorOverLifetime = Red(trails.colorOverLifetime);
+						trails.colorOverTrail = Red(trails.colorOverTrail);
+					}
+					ParticleSystem.LightsModule lights = ps.lights;
+					if (lights.enabled && lights.light != null)
+					{
+						lights.useParticleColor = true;
+					}
+				}
+				foreach (Light l in puff.GetComponentsInChildren<Light>(true))
+				{
+					l.color = Red(l.color);
+				}
+				foreach (TrailRenderer t in puff.GetComponentsInChildren<TrailRenderer>(true))
+				{
+					t.colorGradient = Red(t.colorGradient);
+				}
+				foreach (LineRenderer line in puff.GetComponentsInChildren<LineRenderer>(true))
+				{
+					line.colorGradient = Red(line.colorGradient);
+				}
+				MaterialPropertyBlock block = new MaterialPropertyBlock();
+				foreach (Renderer r in puff.GetComponentsInChildren<Renderer>(true))
+				{
+					Material m = r.sharedMaterial;
+					if (m == null)
+					{
+						continue;
+					}
+					r.GetPropertyBlock(block);
+					foreach (string name in TintNames)
+					{
+						if (m.HasProperty(name))
+						{
+							block.SetColor(name, Red(m.GetColor(name)));
+						}
+					}
+					r.SetPropertyBlock(block);
+					block.Clear();
+				}
+			}
+			catch (System.Exception e)
+			{
+				Mod.Log.LogWarning("Deer: the hit puff could not be turned red: " + e.Message);
+			}
+		}
+
+		private static readonly string[] TintNames = { "_Color", "_TintColor", "_BaseColor", "_EmissionColor" };
+
+		/// <summary>A colour turned blood red with its brightness (its brightest channel, so HDR glow stays bright) and alpha kept.</summary>
+		private static Color Red(Color c)
+		{
+			float v = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+			return new Color(v * 0.85f, v * 0.05f, v * 0.04f, c.a);
+		}
+
+		private static Gradient Red(Gradient g)
+		{
+			if (g == null)
+			{
+				return null;
+			}
+			GradientColorKey[] keys = g.colorKeys;
+			for (int i = 0; i < keys.Length; i++)
+			{
+				keys[i].color = Red(keys[i].color);
+			}
+			Gradient r = new Gradient { mode = g.mode };
+			r.SetKeys(keys, g.alphaKeys);
+			return r;
+		}
+
+		private static ParticleSystem.MinMaxGradient Red(ParticleSystem.MinMaxGradient m)
+		{
+			switch (m.mode)
+			{
+				case ParticleSystemGradientMode.Color:
+					return new ParticleSystem.MinMaxGradient(Red(m.color));
+				case ParticleSystemGradientMode.TwoColors:
+					return new ParticleSystem.MinMaxGradient(Red(m.colorMin), Red(m.colorMax));
+				case ParticleSystemGradientMode.TwoGradients:
+					return new ParticleSystem.MinMaxGradient(Red(m.gradientMin), Red(m.gradientMax));
+				default:
+					// Gradient, and RandomColor (a colour picked from the gradient).
+					return new ParticleSystem.MinMaxGradient(Red(m.gradient)) { mode = m.mode };
+			}
+		}
+	}
 }

@@ -1,0 +1,304 @@
+<title>Whitetail Deer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the deer fills the field; a narrow panel of controls rides over its left edge (below it on a phone). */
+:root {
+	--bg: #e7e9e1; --field: #cfd6c4; --panel: #f6f7f2; --fg: #22261f; --muted: #626a5c; --line: #c3c9b8;
+	--accent: #9a6b42; --accent-fg: #fffaf3; --chip: #e2e6d9;
+	--display: "Archivo", "Helvetica Neue", Arial, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+	--bg: #161a15; --field: #232a21; --panel: #1d221b; --fg: #e4e8dd; --muted: #98a28f; --line: #354032;
+	--accent: #c38c5a; --accent-fg: #1b130b; --chip: #2a3227; color-scheme: dark } }
+:root[data-theme="dark"] {
+	--bg: #161a15; --field: #232a21; --panel: #1d221b; --fg: #e4e8dd; --muted: #98a28f; --line: #354032;
+	--accent: #c38c5a; --accent-fg: #1b130b; --chip: #2a3227; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--display); overflow: hidden; }
+.app { position: relative; height: 100%; }
+#view { position: absolute; inset: 0; background: var(--field); }
+#view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.panel {
+	position: absolute; top: 12px; left: max(16px, env(safe-area-inset-left, 0px)); width: 236px; max-height: calc(100% - 24px); overflow-y: auto;
+	background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 14px;
+}
+h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: 0.01em; text-wrap: balance; }
+.sub { margin: 2px 0 0; font: 12px/1.4 var(--mono); color: var(--muted); }
+.group { display: flex; flex-direction: column; gap: 6px; }
+.label { font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chips button, .drop {
+	font: 500 12px var(--mono); color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 6px;
+	padding: 5px 8px; cursor: pointer;
+}
+.chips button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.chips button:focus-visible, .drop:focus-within, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 12px var(--mono); }
+input[type="range"] { width: 110px; accent-color: var(--accent); }
+.drop { display: block; text-align: center; border-style: dashed; padding: 10px 8px; line-height: 1.4; color: var(--muted); }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font: 12px var(--mono); }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+#msg { position: absolute; inset: 0; display: grid; place-items: center; font: 13px var(--mono); color: var(--muted); pointer-events: none; }
+@media (max-width: 560px) {
+	.panel { top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+		width: auto; max-height: 44%; }
+}
+</style>
+
+<div class="app">
+	<div id="view"><div id="msg">Loading the deer…</div></div>
+	<aside class="panel" aria-label="Viewer controls">
+		<div>
+			<h1>Whitetail deer</h1>
+			<p class="sub">Open World road hazard · doe, buck and fawn</p>
+		</div>
+		<div class="group">
+			<span class="label">Deer</span>
+			<div class="chips" id="kind">
+				<button data-k="doe" aria-pressed="true">doe</button>
+				<button data-k="buck">buck</button>
+				<button data-k="fawn">fawn</button>
+			</div>
+		</div>
+		<div class="group">
+			<span class="label">Motion</span>
+			<div class="chips" id="motion">
+				<button id="m-stand" data-m="stand" aria-pressed="true">stand</button>
+				<button id="m-alert" data-m="alert">alert</button>
+				<button id="m-graze" data-m="graze">graze</button>
+				<button id="m-flag" data-m="flag">flag</button>
+				<button id="m-walk" data-m="walk">walk</button>
+				<button id="m-gallop" data-m="gallop">gallop</button>
+			</div>
+		</div>
+		<div class="group">
+			<span class="label">Coat</span>
+			<div class="chips" id="coat">
+				<button id="c-painted" data-c="painted" aria-pressed="true">painted</button>
+				<button id="c-summer" data-c="summer">summer</button>
+				<button id="c-winter" data-c="winter">winter</button>
+				<button id="c-guide" data-c="guide">UV guide</button>
+				<button id="c-image" data-c="image" disabled>your texture</button>
+			</div>
+			<label class="drop" id="drop">Drop a painted texture here, or tap to choose one
+				<input type="file" id="file" accept="image/*">
+			</label>
+		</div>
+		<div class="group">
+			<span class="label">View</span>
+			<div class="row"><label for="wire">Wireframe</label><input type="checkbox" id="wire"></div>
+			<div class="row"><label for="pixel">Crunchy pixels</label><input type="checkbox" id="pixel"></div>
+			<div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="0" max="2" step="0.05" value="1"></div>
+			<div class="row"><label for="spin">Turntable</label><input type="checkbox" id="spin"></div>
+		</div>
+		<dl class="facts">
+			<dt>Shoulder</dt><dd id="f-shoulder">0.95 m · 3.1 units</dd>
+			<dt>Length</dt><dd id="f-length">1.8 m · 6 units</dd>
+			<dt>Bones</dt><dd id="f-bones">–</dd>
+			<dt>Triangles</dt><dd id="f-tris">–</dd>
+		</dl>
+	</aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(async function () {
+	const msg = document.getElementById('msg');
+	if (typeof THREE === 'undefined' || !THREE.OrbitControls) { msg.textContent = 'Three.js did not load, so the deer cannot be drawn.'; return; }
+	// the mesh and the UV guide are put in by build_viewer.py, so the page opens straight from disk
+	const D = __DATA__;
+	msg.remove();
+	THREE.ColorManagement.legacyMode = false;
+
+	const view = document.getElementById('view');
+	const renderer = new THREE.WebGLRenderer({ antialias: true });
+	renderer.outputEncoding = THREE.sRGBEncoding;
+	renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+	view.appendChild(renderer.domElement);
+	const scene = new THREE.Scene();
+	const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 50);
+	camera.position.set(-2.9, 1.45, 2.3);
+	const controls = new THREE.OrbitControls(camera, renderer.domElement);
+	controls.target.set(0, 0.72, 0); controls.enableDamping = true; controls.minDistance = 0.8; controls.maxDistance = 9;
+	controls.maxPolarAngle = Math.PI * 0.53;
+
+	scene.add(new THREE.HemisphereLight(0xe8efff, 0x5a5040, 0.75));
+	const sun = new THREE.DirectionalLight(0xfff4e2, 1.25); sun.position.set(-2, 4, 3); scene.add(sun);
+
+	// ground: a metre grid, so the scale reads
+	const groundColor = () => getComputedStyle(document.documentElement).getPropertyValue('--field').trim() || '#cfd6c4';
+	const grid = new THREE.GridHelper(8, 8, 0x000000, 0x000000);
+	grid.material.transparent = true; grid.material.opacity = 0.12; scene.add(grid);
+	const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 40), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.16 }));
+	shadow.rotation.x = -Math.PI / 2; shadow.scale.set(0.55, 1.25, 1); shadow.position.y = 0.002; scene.add(shadow);
+
+	// skeleton: bind rotations are zero, offsets from the parent
+	const bones = {}, list = [];
+	for (const b of D.bones) {
+		const bone = new THREE.Bone(); bone.name = b.n; bone.position.fromArray(b.o);
+		bones[b.n] = bone; list.push(bone);
+		if (b.p) bones[b.p].add(bone);
+	}
+	const root = bones[D.bones[0].n];
+
+	const n = D.pos.length / 3;
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(D.pos, 3));
+	geo.setAttribute('normal', new THREE.Float32BufferAttribute(D.nor, 3));
+	geo.setAttribute('uv', new THREE.Float32BufferAttribute(D.uv, 2));
+	geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(D.bi, 4));
+	geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(D.bw, 4));
+	geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3));
+	geo.setIndex(D.idx);
+	const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+	const mesh = new THREE.SkinnedMesh(geo, mat);
+	mesh.add(root); mesh.bind(new THREE.Skeleton(list));
+	const holder = new THREE.Group(); scene.add(holder); holder.add(mesh);
+
+	// the buck's antlers (antlers.py): rigid on the head bone, coloured along v from the burr (dark) to the tips (pale), as in the game
+	const A = D.antlers;
+	const ageo = new THREE.BufferGeometry();
+	ageo.setAttribute('position', new THREE.Float32BufferAttribute(A.pos, 3));
+	ageo.setAttribute('normal', new THREE.Float32BufferAttribute(A.nor, 3));
+	const an = A.v.length, head = list.findIndex(b => b.name === A.bone);
+	ageo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Uint16Array(an * 4).map((_, i) => i % 4 === 0 ? head : 0), 4));
+	ageo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(new Float32Array(an * 4).map((_, i) => i % 4 === 0 ? 1 : 0), 4));
+	const stops = [[0, 0x3b2e22], [0.06, 0x5a4632], [0.35, 0x86704f], [0.75, 0xb5a284], [1, 0xe6dcc6]];
+	const acol = new Float32Array(an * 3), c0 = new THREE.Color(), c1 = new THREE.Color();
+	for (let i = 0; i < an; i++) {
+		const v = A.v[i]; let k = 0; while (k < stops.length - 2 && v > stops[k + 1][0]) k++;
+		const t = Math.min(1, Math.max(0, (v - stops[k][0]) / (stops[k + 1][0] - stops[k][0])));
+		c0.setHex(stops[k][1]).lerp(c1.setHex(stops[k + 1][1]), t); acol.set([c0.r, c0.g, c0.b], i * 3);
+	}
+	ageo.setAttribute('color', new THREE.Float32BufferAttribute(acol, 3));
+	ageo.setIndex(A.idx);
+	// with the painted texture (textures/antlers.png) when the build has one, as the game does; the gradient otherwise
+	const amat = new THREE.MeshLambertMaterial({ vertexColors: true });
+	if ('__ANTLERS__'.startsWith('data:')) {
+		ageo.setAttribute('uv', new THREE.Float32BufferAttribute(A.uv, 2));
+		amat.vertexColors = false;
+		amat.map = new THREE.TextureLoader().load('__ANTLERS__', t => { t.encoding = THREE.sRGBEncoding; t.flipY = true; t.needsUpdate = true; amat.needsUpdate = true; });
+		amat.map.encoding = THREE.sRGBEncoding;
+	}
+	const antlers = new THREE.SkinnedMesh(ageo, amat);
+	antlers.bind(mesh.skeleton); antlers.visible = false; holder.add(antlers);
+	// a fawn is the doe drawn small (the game's sizes: a buck 1 to 1.12 of a doe, a fawn 0.56 to 0.66)
+	const SIZE = { doe: 1, buck: 1.06, fawn: 0.61 };
+	function setKind(k) {
+		for (const b of document.querySelectorAll('#kind button')) b.setAttribute('aria-pressed', String(b.dataset.k === k));
+		antlers.visible = k === 'buck';
+		holder.scale.setScalar(SIZE[k]);
+		shadow.scale.set(0.55 * SIZE[k], 1.25 * SIZE[k], 1);
+		document.getElementById('f-shoulder').textContent = (0.95 * SIZE[k]).toFixed(2) + ' m · ' + (3.1 * SIZE[k]).toFixed(1) + ' units';
+		document.getElementById('f-length').textContent = (1.8 * SIZE[k]).toFixed(1) + ' m · ' + (6 * SIZE[k]).toFixed(1) + ' units';
+		document.getElementById('f-tris').textContent = ((D.idx.length + (k === 'buck' ? A.idx.length : 0)) / 3).toLocaleString();
+	}
+	document.getElementById('kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setKind(b.dataset.k); });
+	document.getElementById('f-bones').textContent = list.length;
+	document.getElementById('f-tris').textContent = (D.idx.length / 3).toLocaleString();
+
+	const wire = new THREE.SkinnedMesh(geo, new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true, transparent: true, opacity: 0.35 }));
+	wire.bind(mesh.skeleton); wire.visible = false; holder.add(wire);
+
+	// colours
+	function paint(pal) {
+		const c = geo.attributes.color, col = new THREE.Color();
+		for (let i = 0; i < n; i++) { col.setHex(pal[D.regions[D.reg[i]]]); c.setXYZ(i, col.r, col.g, col.b); }
+		c.needsUpdate = true;
+	}
+	function white() { const c = geo.attributes.color; for (let i = 0; i < n; i++) c.setXYZ(i, 1, 1, 1); c.needsUpdate = true; }
+	const loader = new THREE.TextureLoader();
+	const textures = {};
+	function prep(t) { t.encoding = THREE.sRGBEncoding; t.flipY = true; filter(t); return t; }
+	function filter(t) {
+		const crunchy = document.getElementById('pixel').checked;
+		t.magFilter = crunchy ? THREE.NearestFilter : THREE.LinearFilter; t.needsUpdate = true;
+	}
+	function setCoat(c) {
+		for (const b of document.querySelectorAll('#coat button')) b.setAttribute('aria-pressed', String(b.dataset.c === c));
+		if (c === 'summer' || c === 'winter') { mat.map = null; paint(c === 'summer' ? D.palette : D.winter); }
+		else {
+			if (c === 'guide' && !textures.guide) textures.guide = prep(loader.load('__GUIDE__'));
+			if (c === 'painted' && !textures.painted) textures.painted = prep(loader.load('__COAT__'));
+			mat.map = textures[c]; white();
+		}
+		mat.needsUpdate = true;
+	}
+	document.getElementById('coat').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) setCoat(b.dataset.c); });
+	function useImage(file) {
+		if (!file || !file.type.startsWith('image/')) return;
+		const url = URL.createObjectURL(file);
+		loader.load(url, t => {
+			if (textures.image) textures.image.dispose();
+			textures.image = prep(t);
+			const b = document.getElementById('c-image'); b.disabled = false;
+			setCoat('image');
+		});
+	}
+	document.getElementById('file').addEventListener('change', e => useImage(e.target.files[0]));
+	for (const el of [document.getElementById('drop'), view]) {
+		el.addEventListener('dragover', e => e.preventDefault());
+		el.addEventListener('drop', e => { e.preventDefault(); useImage(e.dataTransfer.files[0]); });
+	}
+	document.getElementById('pixel').addEventListener('change', () => { for (const t of Object.values(textures)) filter(t); });
+	document.getElementById('wire').addEventListener('change', e => { wire.visible = e.target.checked; });
+
+	// poses: absolute local Euler rotations (XYZ); a bone a pose leaves out keeps the bind's zero
+	const Q = {};
+	const mirror = p => { const o = {}; for (const [k, v] of Object.entries(p)) o[k.replace(/L$/, '#').replace(/R$/, 'L').replace(/#$/, 'R')] = v; return o; };
+	const poses = Object.assign({}, D.poses, { walk2: mirror(D.poses.walk1) });
+	for (const [name, p] of Object.entries(poses)) {
+		Q[name] = {};
+		for (const b of list) { const e = p[b.name] || [0, 0, 0]; Q[name][b.name] = new THREE.Quaternion().setFromEuler(new THREE.Euler(e[0], e[1], e[2], 'XYZ')); }
+	}
+	const rootY = root.position.y;
+	let motion = 'stand', t = 0, blend = 1;
+	const from = {}; for (const b of list) from[b.name] = new THREE.Quaternion();
+	function target(m, time) {
+		// a gait is two key poses swung between; a still pose is itself
+		if (m === 'walk') { const k = 0.5 - 0.5 * Math.cos(time * 2 * Math.PI * 0.9); return { a: Q.walk1, b: Q.walk2, k, bob: 0.012 * Math.abs(Math.sin(time * 2 * Math.PI * 0.9)) }; }
+		if (m === 'gallop') { const ph = time * 2 * Math.PI * 1.9; const k = 0.5 - 0.5 * Math.cos(ph); return { a: Q.gather, b: Q.extend, k, bob: 0.07 * Math.max(0, Math.sin(ph - 0.6)) }; }
+		return { a: Q[m], b: Q[m], k: 0, bob: 0 };
+	}
+	function setMotion(m) {
+		for (const b of list) from[b.name].copy(b.quaternion);
+		motion = m; blend = 0;
+		for (const b of document.querySelectorAll('#motion button')) b.setAttribute('aria-pressed', String(b.dataset.m === m));
+	}
+	document.getElementById('motion').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMotion(b.dataset.m); });
+
+	const tmp = new THREE.Quaternion();
+	const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+	function resize() {
+		const w = view.clientWidth, h = view.clientHeight;
+		renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+	}
+	new ResizeObserver(resize).observe(view); resize();
+	scene.background = new THREE.Color(groundColor());
+	matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { scene.background = new THREE.Color(groundColor()); });
+	new MutationObserver(() => { scene.background = new THREE.Color(groundColor()); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+	setCoat('painted');
+	const clock = new THREE.Clock();
+	renderer.setAnimationLoop(() => {
+		const dt = Math.min(clock.getDelta(), 0.05);
+		const speed = parseFloat(document.getElementById('speed').value);
+		t += dt * speed * (reduce ? 0.5 : 1);
+		blend = Math.min(1, blend + dt * 3.5);
+		const g = target(motion, t);
+		for (const b of list) {
+			tmp.copy(g.a[b.name]).slerp(g.b[b.name], g.k);
+			b.quaternion.copy(from[b.name]).slerp(tmp, blend * blend * (3 - 2 * blend));
+		}
+		root.position.y = rootY + g.bob * blend;
+		if (document.getElementById('spin').checked) holder.rotation.y += dt * 0.5 * speed;
+		controls.update();
+		renderer.render(scene, camera);
+	});
+})();
+</script>

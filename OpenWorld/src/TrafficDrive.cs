@@ -1,0 +1,580 @@
+using System;
+using System.Collections.Generic;
+
+namespace HalfGripOpenWorld
+{
+	/// <summary>
+	/// The arithmetic of a physics traffic car's driver (stage 3 of the traffic plan), kept out of the game so trafficview can test it:
+	/// where on its leg a car is (<see cref="Project"/>), the line it steers along (its lane, through a junction on the same curve stage 2
+	/// draws it on), the speed it aims for (<see cref="Target"/>: the leg's speed profile, the car in front, a junction to give way at, the
+	/// end of its trip, and never ahead of its timetable by much), and how late it is when it goes back on its timetable
+	/// (<see cref="Lateness"/>).
+	///
+	/// The driver is local and simple: it does not have to match the day exactly, only never drive through anyone and never block a
+	/// junction. A physics car is driven by one machine only, so floats and its own order are fine here; the doubles are for the world's
+	/// coordinates. No Unity types.
+	/// </summary>
+	internal static class TrafficDrive
+	{
+		/// <summary>A car's length (units), centre to centre the least two cars one behind the other can be.</summary>
+		internal const double CarLength = 14.0;
+		/// <summary>How far ahead along its path a car looks for the car in front (as the day does).</summary>
+		internal const double LookAhead = 200.0;
+		/// <summary>The last stretch of a trip: there a physics car goes back on its timetable, which draws the pull into its space.</summary>
+		internal const double EndZone = 45.0;
+		/// <summary>No physics car within this of a tunnel along its path (the day drives the wrap and the road out).</summary>
+		internal const double TunnelKeep = 80.0;
+		/// <summary>Kept waiting this long at a junction, a car gives way only to cars in the box, not to cars still coming (no deadlock);
+		/// three times as long, not to a drawn car standing in the box either (the day holds it there for someone who is a physics car now).</summary>
+		internal const double HoldBreak = 8.0;
+		/// <summary>How far ahead of its timetable a car may get before it eases off (none on the last stretch: it waits to be on time).</summary>
+		internal const double EarlyMost = 40.0;
+		/// <summary>The time gap a car keeps to the car in front when working out a safe speed (seconds), and to a line it stops at.</summary>
+		private const double FollowGap = 1.0, StopGap = 0.5;
+
+		/// <summary>A car near a physics car: another physics car (where it is on its leg) or a drawn one (where the day has it).</summary>
+		internal struct Mover
+		{
+			public int Car, Leg;
+			public double P, V;
+			public double X, Z, Hx, Hz;
+			public bool Physical;
+			/// <summary>A drawn car pulling out of its space or into one: drawn off its lane (X, Z is where), so also in the way there.</summary>
+			public bool Pulling;
+			/// <summary>Filled by <see cref="Prepare"/>: the edge, way and road distance it is on (-1: none), and the junction ahead (its middle
+			/// not yet passed): the node (-1: none), where it is along the path, the arms in and out, and how far to the box's near edge
+			/// (negative: in the box's near half).</summary>
+			public int Edge, Dir;
+			public double S;
+			public int Node, InArm, OutArm;
+			public double NodeP, ToBox;
+			/// <summary>The junction whose box's far half it is in (-1: none), with its arms: two junctions can be closer than their boxes.</summary>
+			public int Back, BackIn, BackOut;
+		}
+
+		/// <summary>Something in the way with no path (the player's car, a wreck, a car knocked off its road): where it is and its velocity.</summary>
+		internal struct Obstacle
+		{
+			public double X, Z, Vx, Vz;
+		}
+
+		/// <summary>What a driver keeps from step to step.</summary>
+		internal struct State
+		{
+			/// <summary>Seconds it has been held at the junction it is waiting at, and which node.</summary>
+			public double Waited;
+			public int WaitNode;
+			/// <summary>Why it is going slower than its profile (for the overlay): 0 free, 1 a car in front, 2 a junction, 3 the trip's end, 4 early.</summary>
+			public int Why;
+		}
+
+		// ---- the line ------------------------------------------------------------------------------------------------------------
+
+		/// <summary>The line a car on leg <paramref name="leg"/> steers along at path distance <paramref name="p"/>: its lane, curved through junctions.</summary>
+		internal static void Line(TrafficDay.Leg leg, double p, out double x, out double z, out double hx, out double hz)
+		{
+			TrafficDay.Place at = default;
+			p = Math.Max(0.0, Math.Min(leg.Length, p));
+			TrafficDay.OnPath(leg, p, ref at);
+			x = at.X;
+			z = at.Z;
+			hx = at.Hx;
+			hz = at.Hz;
+			TrafficParking.Corner(leg, p, ref x, ref z, ref hx, ref hz);
+		}
+
+		/// <summary>
+		/// Where along leg <paramref name="leg"/> world point (x, z) is: the path distance of the nearest point of its line, searched from a
+		/// little behind <paramref name="from"/> (the last answer) to well ahead, so a car is never found on a part of its path it has passed
+		/// or not reached (a path can come back near itself). <paramref name="side"/> is how far off the line it is.
+		/// </summary>
+		internal static double Project(TrafficDay.Leg leg, double from, double x, double z, out double side, double back = 15.0, double ahead = 60.0)
+		{
+			double lo = Math.Max(0.0, from - back), hi = Math.Min(leg.Length, from + ahead);
+			double best = lo, bestD = double.MaxValue;
+			double stride = Math.Max(0.5, Math.Min(2.0, (hi - lo) / 16.0));
+			for (double p = lo; p <= hi + 1e-9; p += stride)
+			{
+				Line(leg, p, out double lx, out double lz, out double _, out double _);
+				double d = (lx - x) * (lx - x) + (lz - z) * (lz - z);
+				if (d < bestD)
+				{
+					bestD = d;
+					best = p;
+				}
+			}
+			// Refine to the line between the samples either side.
+			double step = stride * 0.5;
+			for (int i = 0; i < 5; i++)
+			{
+				for (int sign = -1; sign <= 1; sign += 2)
+				{
+					double p = best + sign * step;
+					if (p < 0.0 || p > leg.Length)
+					{
+						continue;
+					}
+					Line(leg, p, out double lx, out double lz, out double _, out double _);
+					double d = (lx - x) * (lx - x) + (lz - z) * (lz - z);
+					if (d < bestD)
+					{
+						bestD = d;
+						best = p;
+					}
+				}
+				step *= 0.5;
+			}
+			side = Math.Sqrt(bestD);
+			return best;
+		}
+
+		/// <summary>Whether a car at (x, z) facing (hx, hz) is on its leg's line at <paramref name="p"/>: within 8 units of it, heading within 45 degrees.</summary>
+		internal static bool OnLane(TrafficDay.Leg leg, double p, double x, double z, double hx, double hz)
+		{
+			Line(leg, p, out double lx, out double lz, out double lhx, out double lhz);
+			double d = Math.Sqrt((lx - x) * (lx - x) + (lz - z) * (lz - z));
+			double len = Math.Sqrt(hx * hx + hz * hz);
+			return d < 8.0 && len > 1e-6 && (hx * lhx + hz * lhz) / len > 0.7071;
+		}
+
+		/// <summary>
+		/// Whether two cars' bodies overlap: each a box <see cref="CarLength"/> by 5.2 at (x, z) facing (hx, hz) (unit), tested along both
+		/// cars' axes (two rectangles overlap unless one of their four axes separates them). <paramref name="margin"/> grows each box.
+		/// </summary>
+		internal static bool Overlap(double ax, double az, double ahx, double ahz, double bx, double bz, double bhx, double bhz, double margin = 0.0)
+		{
+			double dx = bx - ax, dz = bz - az;
+			if (dx * dx + dz * dz > 20.0 * 20.0)
+			{
+				return false;
+			}
+			double l = CarLength * 0.5 + margin, w = 2.6 + margin;
+			double cos = Math.Abs(ahx * bhx + ahz * bhz), sin = Math.Abs(ahx * bhz - ahz * bhx);
+			// Each box's reach along an axis of the other: its half length times the cosine, its half width times the sine (and so on).
+			double alongA = Math.Abs(dx * ahx + dz * ahz), sideA = Math.Abs(dx * ahz - dz * ahx);
+			double alongB = Math.Abs(dx * bhx + dz * bhz), sideB = Math.Abs(dx * bhz - dz * bhx);
+			return alongA < l + l * cos + w * sin && sideA < w + l * sin + w * cos && alongB < l + l * cos + w * sin && sideB < w + l * sin + w * cos;
+		}
+
+		/// <summary>
+		/// Contact physics: whether the player's car, a box <paramref name="pl"/> long by <paramref name="pw"/> wide (half sizes) at (px, pz)
+		/// facing (fx, fz) (unit), moving at (vx, vz), would meet another box (half sizes <paramref name="ol"/> by <paramref name="ow"/> at
+		/// (ox, oz) facing (hx, hz), unit) within <paramref name="ahead"/> seconds and <paramref name="extra"/> units more. The player's box
+		/// swept along its velocity is bounded by one box in its own frame (grown by the sweep's reach along each of its axes), and the two
+		/// boxes are tested on their four axes (two rectangles meet unless one of the axes separates them). <paramref name="margin"/> grows
+		/// both. Cheap: the traffic calls it each frame for the drawn cars near the player.
+		/// </summary>
+		internal static bool Sweeps(double px, double pz, double fx, double fz, double pl, double pw, double vx, double vz, double ahead, double extra,
+			double ox, double oz, double hx, double hz, double ol, double ow, double margin = 0.0)
+		{
+			double speed = Math.Sqrt(vx * vx + vz * vz);
+			double sx = vx * ahead, sz = vz * ahead;
+			if (speed > 0.1)
+			{
+				sx += vx / speed * extra;
+				sz += vz / speed * extra;
+			}
+			// The sweep's middle, and the player's box grown by half the sweep along its length and its width.
+			double cx = px + sx * 0.5, cz = pz + sz * 0.5;
+			double rx = fz, rz = -fx;
+			double l = pl + Math.Abs(sx * fx + sz * fz) * 0.5 + margin, w = pw + Math.Abs(sx * rx + sz * rz) * 0.5 + margin;
+			double hrx = hz, hrz = -hx;
+			double l2 = ol + margin, w2 = ow + margin;
+			double dx = ox - cx, dz = oz - cz;
+			if (dx * dx + dz * dz > (l + w + l2 + w2) * (l + w + l2 + w2))
+			{
+				return false;
+			}
+			// Each box's reach along an axis: its half length times the cosine to it plus its half width times the sine.
+			double ff = Math.Abs(fx * hx + fz * hz), fr = Math.Abs(fx * hrx + fz * hrz);
+			double rf = Math.Abs(rx * hx + rz * hz), rr = Math.Abs(rx * hrx + rz * hrz);
+			return Math.Abs(dx * fx + dz * fz) <= l + l2 * ff + w2 * fr
+				&& Math.Abs(dx * rx + dz * rz) <= w + l2 * rf + w2 * rr
+				&& Math.Abs(dx * hx + dz * hz) <= l2 + l * ff + w * rf
+				&& Math.Abs(dx * hrx + dz * hrz) <= w2 + l * fr + w * rr;
+		}
+
+		/// <summary>Whether a tunnel is on leg <paramref name="leg"/>'s path within <see cref="TunnelKeep"/> either side of <paramref name="p"/>.</summary>
+		internal static bool NearTunnel(TrafficDay.Leg leg, double p)
+		{
+			foreach (TrafficDay.Seg s in leg.Path)
+			{
+				if (s.Edge < 0 && s.P0 <= p + TunnelKeep && s.P0 + s.Len >= p - TunnelKeep)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// ---- the timetable -------------------------------------------------------------------------------------------------------
+
+		/// <summary>Sim time <paramref name="w"/> on leg <paramref name="leg"/>'s own clock (a leg that ran past the day's end runs on w + a day).</summary>
+		internal static double LegClock(TrafficDay.Leg leg, double w)
+		{
+			return leg.Start - w > Traffic.DaySeconds * 0.5 ? w + Traffic.DaySeconds : w;
+		}
+
+		/// <summary>When (on the leg's clock) the day had leg <paramref name="leg"/>'s car at path distance <paramref name="p"/>: the first time it got there.</summary>
+		internal static double TimeAt(TrafficDay.Leg leg, double p)
+		{
+			float[] rec = leg.Rec;
+			int n = rec.Length;
+			if (n == 0 || p <= rec[0])
+			{
+				return leg.Start;
+			}
+			if (p >= rec[n - 1])
+			{
+				return leg.End;
+			}
+			int lo = 0, hi = n - 1;
+			while (hi - lo > 1)
+			{
+				int mid = (lo + hi) / 2;
+				if (rec[mid] >= p)
+				{
+					hi = mid;
+				}
+				else
+				{
+					lo = mid;
+				}
+			}
+			// rec[lo] < p <= rec[hi]. Every record is RecordStep after the last but the final one, which is at End.
+			double t0 = leg.Start + lo * TrafficDay.RecordStep;
+			double t1 = hi == n - 1 ? leg.End : leg.Start + hi * TrafficDay.RecordStep;
+			double span = rec[hi] - rec[lo];
+			return span > 1e-9 ? t0 + (t1 - t0) * (p - rec[lo]) / span : t1;
+		}
+
+		/// <summary>How late (seconds) a car at path distance <paramref name="p"/> of its leg is at sim time <paramref name="w"/>: negative if it is early.</summary>
+		internal static double Lateness(TrafficDay.Leg leg, double p, double w)
+		{
+			return LegClock(leg, w) - TimeAt(leg, p);
+		}
+
+		/// <summary>Where the day has leg <paramref name="leg"/>'s car at sim time <paramref name="w"/> (path distance) and its speed there.</summary>
+		internal static double OnTime(TrafficDay.Leg leg, double w, out double speed)
+		{
+			double t = Math.Max(leg.Start, Math.Min(leg.End, LegClock(leg, w)));
+			double p = TrafficDay.DistanceAt(leg, t);
+			speed = (TrafficDay.DistanceAt(leg, Math.Min(leg.End, t + 0.25)) - p) / 0.25;
+			return p;
+		}
+
+		// ---- the speed -----------------------------------------------------------------------------------------------------------
+
+		/// <summary>Fills in where mover <paramref name="m"/> is on the graph and the junction it is at or coming to.</summary>
+		internal static void Prepare(TrafficDay day, ref Mover m)
+		{
+			m.Edge = -1;
+			m.Node = -1;
+			m.Back = -1;
+			if (m.Leg < 0)
+			{
+				return;
+			}
+			TrafficDay.Seg[] path = day.Legs[m.Leg].Path;
+			int k = SegAt(path, m.P);
+			TrafficDay.Seg s = path[k];
+			if (s.Edge >= 0)
+			{
+				m.Edge = s.Edge;
+				m.Dir = s.Dir;
+				m.S = s.S0 + s.Dir * Math.Max(0.0, Math.Min(s.Len, m.P - s.P0));
+			}
+			// In the box of the junction just passed; and the next one, wherever it is.
+			if (k > 0)
+			{
+				int back = TrafficDay.NodeAfter(path, k - 1);
+				if (back >= 0 && path[k - 1].Edge != s.Edge && m.P - s.P0 < Traffic.Nodes[back].Box)
+				{
+					m.Back = back;
+					m.BackIn = TrafficDay.LinkIndex(back, path[k - 1].Edge);
+					m.BackOut = TrafficDay.LinkIndex(back, s.Edge);
+				}
+			}
+			for (int j = k; j + 1 < path.Length; j++)
+			{
+				int node = TrafficDay.NodeAfter(path, j);
+				if (node >= 0 && path[j].Edge != path[j + 1].Edge)
+				{
+					SetNode(ref m, path, j, node);
+					return;
+				}
+				if (path[j].P0 + path[j].Len > m.P + LookAhead)
+				{
+					return;
+				}
+			}
+		}
+
+		private static void SetNode(ref Mover m, TrafficDay.Seg[] path, int j, int node)
+		{
+			m.Node = node;
+			m.NodeP = path[j].P0 + path[j].Len;
+			m.InArm = TrafficDay.LinkIndex(node, path[j].Edge);
+			m.OutArm = TrafficDay.LinkIndex(node, path[j + 1].Edge);
+			m.ToBox = m.NodeP - Traffic.Nodes[node].Box - m.P;
+		}
+
+		private static int SegAt(TrafficDay.Seg[] path, double p)
+		{
+			int lo = 0, hi = path.Length - 1;
+			while (lo < hi)
+			{
+				int mid = (lo + hi + 1) / 2;
+				if (path[mid].P0 <= p)
+				{
+					lo = mid;
+				}
+				else
+				{
+					hi = mid - 1;
+				}
+			}
+			return lo;
+		}
+
+		/// <summary>Lowers <paramref name="target"/> to a safe speed behind something at (x, z) going <paramref name="lead"/> if it is ahead of <paramref name="me"/> in its lane.</summary>
+		private static void InTheWay(in Mover me, double x, double z, double lead, ref double target, ref int why)
+		{
+			double dx = x - me.X, dz = z - me.Z;
+			double along = dx * me.Hx + dz * me.Hz, side = Math.Abs(dx * me.Hz - dz * me.Hx);
+			if (along <= 0.0 || along > 80.0 || side > 6.0)
+			{
+				return;
+			}
+			double safe = SafeSpeed(along - CarLength - TrafficDay.MinGap, lead, FollowGap);
+			if (safe < target)
+			{
+				target = safe;
+				why = 1;
+			}
+		}
+
+		/// <summary>The fastest a car can go and still stop <paramref name="gap"/> units on (behind something going <paramref name="lead"/>), keeping a time gap.</summary>
+		internal static double SafeSpeed(double gap, double lead, double timeGap)
+		{
+			double b = TrafficDay.Brake, bt = b * timeGap;
+			return -bt + Math.Sqrt(bt * bt + lead * lead + 2.0 * b * Math.Max(0.0, gap));
+		}
+
+		/// <summary>
+		/// The speed physics car <paramref name="me"/> (prepared) aims for now: the least of its leg's profile here and a little ahead; a
+		/// safe speed behind the car in front on its path (physics or drawn) and behind anything in its way with no path (the player);
+		/// stopping at a junction's box while a car whose way crosses its own is in the box, or is coming and goes first (the sooner there,
+		/// the car on the right within a second; a drawn car never gives way, so it always goes first), or while its way out has no room past
+		/// the box; stopping at its trip's end; and easing off when it gets well ahead of its timetable (<paramref name="onTimeP"/>,
+		/// <paramref name="onTimeV"/>: where and how fast the day has it). <paramref name="dt"/> moves the junction wait on.
+		/// </summary>
+		internal static double Target(TrafficDay day, in Mover me, float[] profile, List<Mover> others, List<Obstacle> obstacles, double onTimeP, double onTimeV, double dt, ref State st)
+		{
+			TrafficDay.Leg leg = day.Legs[me.Leg];
+			double v = Math.Max(0.0, me.V);
+			double target = Math.Min(TrafficDay.DesiredAt(profile, me.P), TrafficDay.DesiredAt(profile, me.P + v * 0.5));
+			int why = 0;
+			double free = target;
+
+			// The car in front along the path; and the nearest stopped one past the junction coming up (its way out must have room).
+			TrafficDay.Seg[] path = leg.Path;
+			int k0 = SegAt(path, me.P);
+			double nearestP = double.MaxValue, nearestV = 0.0;
+			bool blockedOut = false;
+			double boxOut = me.Node >= 0 ? me.NodeP + Traffic.Nodes[me.Node].Box + CarLength + 4.0 : double.MinValue;
+			foreach (Mover o in others)
+			{
+				if (o.Car == me.Car || o.Edge < 0)
+				{
+					continue;
+				}
+				for (int j = k0; j < path.Length && path[j].P0 <= me.P + LookAhead; j++)
+				{
+					TrafficDay.Seg s = path[j];
+					if (s.Edge != o.Edge || s.Dir != o.Dir)
+					{
+						continue;
+					}
+					double into = (o.S - s.S0) * s.Dir;
+					if (into < -0.01 || into > s.Len + 0.01)
+					{
+						continue;
+					}
+					double po = s.P0 + into;
+					if (po <= me.P + 0.5)
+					{
+						continue;
+					}
+					if (po < nearestP)
+					{
+						nearestP = po;
+						nearestV = Math.Max(0.0, o.V);
+					}
+					if (me.Node >= 0 && po < boxOut && po > me.NodeP && o.V < 2.0)
+					{
+						blockedOut = true;
+					}
+					break;
+				}
+			}
+			if (nearestP < double.MaxValue)
+			{
+				double safe = SafeSpeed(nearestP - me.P - CarLength - TrafficDay.MinGap, nearestV, FollowGap);
+				if (safe < target)
+				{
+					target = safe;
+					why = 1;
+				}
+			}
+			// Anything with no path in the way, and drawn cars pulling in or out where they are drawn: ahead along the car's heading,
+			// within its lane's width.
+			foreach (Obstacle ob in obstacles)
+			{
+				InTheWay(me, ob.X, ob.Z, Math.Max(0.0, ob.Vx * me.Hx + ob.Vz * me.Hz), ref target, ref why);
+			}
+			foreach (Mover o in others)
+			{
+				if (o.Pulling && o.Car != me.Car)
+				{
+					InTheWay(me, o.X, o.Z, 0.0, ref target, ref why);
+				}
+			}
+
+			// The junction coming up: stop at its box while someone crossing goes first, or while there is no room past it.
+			bool hold = false;
+			if (me.Node >= 0 && me.ToBox > 0.0)
+			{
+				double reach = v * v / (2.0 * TrafficDay.Brake) + 1.5 * v + 25.0;
+				if (me.ToBox < reach)
+				{
+					hold = blockedOut;
+					double etaMe = me.ToBox / Math.Max(v, 4.0);
+					bool patient = st.WaitNode != me.Node || st.Waited < HoldBreak;
+					// Past braking to a stop short of the box: committed, it goes whoever else is coming.
+					bool meCommitted = me.ToBox < v * v / (2.0 * TrafficDay.Brake) + 2.0;
+					foreach (Mover o in others)
+					{
+						if (hold)
+						{
+							break;
+						}
+						if (o.Car == me.Car)
+						{
+							continue;
+						}
+						if (o.Back == me.Node && o.Node != me.Node)
+						{
+							// In the box's far half, on its way out.
+							if (o.BackIn != me.InArm && TrafficDay.Crosses(me.Node, me.InArm, me.OutArm, o.BackIn, o.BackOut))
+							{
+								hold = true;
+								break;
+							}
+							continue;
+						}
+						if (o.Node != me.Node || o.InArm == me.InArm || !TrafficDay.Crosses(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
+						{
+							continue;
+						}
+						if (o.ToBox < -0.5 || (o.ToBox < CarLength * 0.5 && o.V > 2.0))
+						{
+							// In the box (or its front in it, going in). A drawn car standing there is the day's, waiting for a car it doesn't know is physical now: given up on in time.
+							if (o.Physical || o.V > 0.5 || st.WaitNode != me.Node || st.Waited < 3.0 * HoldBreak)
+							{
+								hold = true;
+								break;
+							}
+							continue;
+						}
+						double ov = Math.Max(0.0, o.V);
+						bool oCommitted = o.ToBox < ov * ov / (2.0 * TrafficDay.Brake) + 2.0 && ov > 2.0;
+						if (oCommitted && !meCommitted)
+						{
+							// It can't stop for this car any more (a car that set off late must not cut across a fast one): it goes first.
+							hold = true;
+							break;
+						}
+						if (!patient || meCommitted)
+						{
+							continue;
+						}
+						double oReach = ov * ov / (2.0 * TrafficDay.Brake) + 1.5 * ov + 25.0;
+						if (o.ToBox > oReach || (ov < 0.5 && o.ToBox > CarLength * 0.5 + 4.0))
+						{
+							// Not coming yet, or held up short of its line by something else (one waiting at its line, front at the box, counts).
+							continue;
+						}
+						double etaO = o.ToBox / Math.Max(ov, 4.0);
+						bool first;
+						if (!o.Physical)
+						{
+							// A drawn car follows its timetable and gives way to nobody.
+							first = etaO < etaMe + 1.0;
+						}
+						else if (Math.Abs(etaO - etaMe) > 1.0)
+						{
+							first = etaO < etaMe;
+						}
+						else
+						{
+							bool oRight = TrafficDay.RightOf(me.Node, o.InArm, me.InArm), meRight = TrafficDay.RightOf(me.Node, me.InArm, o.InArm);
+							first = oRight != meRight ? oRight : o.Car < me.Car;
+						}
+						hold = first;
+					}
+				}
+			}
+			if (hold)
+			{
+				// Its front at the box's edge (ToBox is to its middle).
+				double stop = SafeSpeed(me.ToBox - CarLength * 0.5 - 1.0, 0.0, StopGap);
+				if (stop < target)
+				{
+					target = stop;
+					why = 2;
+				}
+				if (st.WaitNode != me.Node)
+				{
+					st.WaitNode = me.Node;
+					st.Waited = 0.0;
+				}
+				if (v < 1.0)
+				{
+					st.Waited += dt;
+				}
+			}
+			else if (me.Node != st.WaitNode)
+			{
+				st.Waited = 0.0;
+			}
+
+			// The trip's end (it goes back on its timetable before it gets there, which pulls it in; this is in case it can't yet).
+			if (!leg.Vanishes)
+			{
+				double stop = SafeSpeed(leg.Length - me.P - 2.0, 0.0, StopGap);
+				if (stop < target)
+				{
+					target = stop;
+					why = 3;
+				}
+			}
+
+			// Never far ahead of its timetable (it could not go back on it without a jump); on the last stretch, not ahead at all. Easing
+			// off, not stopping (the day's car may be waiting at a junction this one has passed), and never in or just before a box.
+			bool last = me.P > leg.Length - EndZone - 30.0;
+			double early = last ? 0.0 : EarlyMost;
+			if (me.P > onTimeP + early - 30.0 && (me.Node < 0 || me.ToBox > 15.0))
+			{
+				double cap = Math.Max(last ? 0.0 : 4.0, Math.Max(0.0, onTimeV) + Math.Max(0.0, onTimeP + early - me.P) * 0.6);
+				if (cap < target)
+				{
+					target = cap;
+					why = 4;
+				}
+			}
+			st.Why = target < free - 0.5 ? why : 0;
+			return Math.Max(0.0, target);
+		}
+	}
+}

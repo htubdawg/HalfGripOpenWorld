@@ -9,6 +9,11 @@ namespace HalfGripOpenWorld
 
 		internal int Count => items.Count;
 
+		internal void Clear()
+		{
+			items.Clear();
+		}
+
 		private static bool Less((double p, int c) a, (double p, int c) b)
 		{
 			return a.p < b.p || (a.p == b.p && a.c < b.c);

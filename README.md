@@ -12,7 +12,7 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Roads:** a dual-carriageway trunk road along the coast, main roads between neighbouring places, a mountain pass, town streets,
   country lanes joined up into a web with hardly a dead end (through woods, over streams on covered timber bridges), farms and
   roadside houses on gravel drives with a mailbox at the road, farm tracks and footpaths, with bridges, verges, sidewalks and
-  tunnels at the world's edge.
+  tunnels at the world's edge. The trunk road wraps round: drive into its tunnel at one edge and you come out of the other's.
 - **Buildings:** houses along every street, high-street shops, a market place with its cross, stalls and shops round it in each
   town, glass towers in the town centre, village churches, farms, a retail
   park, and filling stations and workshops along the main roads. Houses in brick, stock brick, stone, whitewash and coloured
@@ -25,6 +25,33 @@ generated from a fixed seed (the same for every player) the way real country com
 - **Road signs:** name signs into every town and village, and fingerposts at junctions with the miles to the nearest places by road.
 - **Garages:** where the car can be refitted, repaired and refilled mid-race, and made the respawn point (see [Garages](#garages)).
 - **Trees and grass:** the Forest map's pines in the woods and hedges, grass and wheat near the car.
+- **Deer:** white-tailed deer in small groups (a doe and her young, a lone deer, a few bucks together, now and then a bigger herd)
+  where woods meet fields. Bucks carry one classic set of antlers (eight points: a brow tine and two long tines up from each beam, painted);
+  rarely, about three families a race, a doe has this year's fawn with her, about 0.6 of her size. They live beside the country lanes: grazing on the verges and in the fields, walking between their spots in single
+  file, and now and then crossing the lane one at a time (one sometimes turns back halfway). Most are out at dawn and dusk, fewer at
+  midday. They are somewhere else every race, and in a room everyone has the same deer in the same places. Hitting one damages
+  the car like a crash, more the faster (at 55 on the speedometer, where a wall does its full 24, a doe does about 13, a fawn far less, a big buck a little more; never more
+  than about 22) with a loud crash, jolts and slows it, and throws the deer over the bonnet and down the road, which lands and lies dead; a deer can be shot, and drops where it stands with a red puff.
+  They notice a car coming (heads up, watching it) and, closer, bolt with their tails up: away into cover, frozen in the headlights
+  for a moment first (more at night), or, about half the time, darting over the road in front of the car (more if they were standing in it), timed so the first
+  is in the road a moment before the car gets to their crossing and the others follow as it arrives; a shot near them or one of them killed sends them off too. In a room everybody sees the same deer do the same thing, and
+  a deer killed by anybody lies dead in the same place for everybody, also for a player who joins later.
+- **Traffic:** the households' cars drive to work, the shops, the market and friends and back on a
+  day worked out from the race's seed (busiest at the evening rush, quiet at night; a weekend day now and then), so in a room
+  everyone sees the same cars in the same places. Between trips they are parked: on the drive pad beside a house, at the kerb in
+  front of a terrace, by a cottage or in a farmyard, in the painted bays of the shops and the retail park, on the yards of the
+  workshops, filling stations and market places, and at the kerb of the town streets near the offices, the high streets and the
+  churches (never on the main roads or the narrow lanes; a household's second car is round the back, out of sight). They drive along
+  the lane to their space and pull in nose first, and out again. They are the game's own enemy car, in everyday colours (the same
+  car the same colour every race), their lamps off when parked, and at night the nearest few light the road. Near you (within about 90 m) the moving cars are real
+  cars: they follow their lanes, queue behind each other and give way at junctions, and can be pushed, shot and wrecked (a wreck burns,
+  explodes and is gone for the rest of the race; it does not count as a kill). A car you held up carries on late once you are past.
+  The cars further off are drawn on their timetables, but any car you are about to hit, parked or moving, becomes a real car just
+  before you touch it (contact physics): a parked one on its brakes, standing on its wheels with its lamps dark, barely moved by a
+  nudge and shoved and spun by a hard hit; one you knock out of its space is gone for the rest of the race once you are well away,
+  one you leave untouched goes back to how it was. In a room each real car is driven by the player nearest to it
+  and the others see it where that player has it: hold one up, push it or wreck it, and everybody sees the same, and a car is handed
+  from one player to another as they pass. Traffic cars never carry modded items or bodies.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
   painted into the sky, so on the clearest days you see across the whole world, the far mountains hazy on the horizon.
@@ -34,7 +61,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.27.1**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.32.0**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -55,7 +82,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.27.1` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.32.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -177,9 +204,14 @@ the same ground.
 | World | `FarView` | true | Draws the whole world at low detail past the loaded tiles, and lets you see as far as the weather allows. Off, the fog ends where the tiles end, as before 0.19.0. |
 | World | `FarViewDistance` | 14000 | With `FarView` on, how far the low-detail world is drawn, in game units (4000 to 20000; the world is 32000 across). Past it `FarSkyline` paints the land into the sky; with that off, the furthest you see on the clearest day. Less costs less frame time. |
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
+| World | `Deer` | true | Draws the deer (within about 150 m of the car, the nearest 40). Off, none are drawn and none can be hit or shot; where they are does not change. |
+| World | `DeerAmount` | 1 | How many deer groups there are, to find what feels right: 1 is 160 groups (about 540 deer), 0.5 half, 0 none; above 1 there are only so many places deer can live, so 2 gives about 215 groups and 4 about 245. Only alone: in a room it is always 1. From the next race. |
+| World | `Traffic` | true | Draws the traffic: moving cars within about 270 m, parked ones within about 140 m, the nearest 72. Off, none are drawn; where they are does not change. Only changes your own view. |
+| World | `TrafficPhysics` | 24 | With `Traffic` on, at most how many moving traffic cars near you (within 300 units, about 90 m) are real cars with physics (pushed, shot, wrecked, queueing, giving way); they go back on their timetable 400 units (about 120 m) away. 0: none, every traffic car is a wall. More costs more frame time. Only changes your own game. |
+| World | `TrafficLoose` | 6 | With `Traffic` on, at most how many traffic cars you are about to hit become real cars at that moment when they would otherwise be walls: parked cars (on their brakes) and moving cars that are not physics cars just then (pulling in or out, at a junction, near their trip's end; they brake to a stop). Untouched, one goes back to how it was 60 units (about 18 m) away; one you knocked is gone for the rest of the race once you are well away. Separate from `TrafficPhysics`. 0: parked cars are walls. Only changes your own game. |
 | World | `ShiftDistance` | 1000 | Game units (1000 is about 300 m) from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. If another car stands on the place, the car lands a little along the road or beside it, and nothing can hurt it for 2 seconds. |
-| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws. |
+| Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws; and the deer: how many are drawn, the nearest group's crossing place (how far and which way) how likely groups are to be out feeding at this hour, and how many deer have been killed (by this car, shot here) and how many groups near are reacting; and the traffic: how many cars are drawn (moving, parked, lit) and the traffic's hour. |
 | Debug | `WeatherSkip` | false | The Weather skip key (F5, rebind it in Settings > Controls) moves your own sky 5 minutes on (Shift with it back), and the Weather fast key (F2) turns a 10x speed for it on and off: the time of day and the storms. Only your view; in a room you are out of step with the others until the next race. |
 | Debug | `VerboseLog` | false | Logs every origin shift and tile timings. |
 

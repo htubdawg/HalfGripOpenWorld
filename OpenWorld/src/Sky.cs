@@ -47,6 +47,8 @@ namespace HalfGripOpenWorld
 		private Storms storms;
 		private float startHour;
 		private float skip;
+		/// <summary>The debug skip (seconds this machine's sky is moved on from the race's clock), so the traffic can follow it.</summary>
+		internal static float Skipped;
 		/// <summary>The debug fast key's toggle: while on, the sky runs <see cref="FastFactor"/> times as fast, by adding to <see cref="skip"/>
 		/// each frame, so turning it off leaves the sky where it got to.</summary>
 		private bool fast;
@@ -88,6 +90,14 @@ namespace HalfGripOpenWorld
 		private AudioSource rainSound;
 		private readonly List<GameObject> headlights = new List<GameObject>();
 		private int headlightsOn = -1;
+
+		/// <summary>The game's headlights already known (the player's, the grid's), and when the scene is next looked over for new ones:
+		/// other players' stand-ins in a room are made after the race starts, and stayed dark when they were gathered only once.</summary>
+		private readonly HashSet<GameObject> knownHeadlights = new HashSet<GameObject>();
+		private float nextHeadlightLook;
+
+		/// <summary>Whether cars have their headlights on now (dusk to dawn, or under a black sky): read by the traffic.</summary>
+		internal static bool LightsOn;
 		/// <summary>The falling particles' collision planes, how far round the rain the ground under them is looked at, on how many points a side.</summary>
 		private readonly List<Transform> planes = new List<Transform>();
 		private const double PlaneReach = 60.0;
@@ -138,17 +148,26 @@ namespace HalfGripOpenWorld
 			paved = pavedMaterials;
 			unpaved = unpavedMaterials;
 			storms = new Storms(Weather.Seed);
-			// Most races start in the day; a quarter start at any hour.
+			startHour = (float)StartHourOf(Weather.Seed);
 			ulong h = Noise.Mix((ulong)(uint)Weather.Seed ^ 0x0E7A_7140UL);
-			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
-			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
-			startHour = (float)(u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v);
 			// Some days are clearer than others: the haziest see two thirds as far as the clearest.
 			double w = (double)(Noise.Mix(h ^ 0xC1EA2UL) >> 11) * (1.0 / 9007199254740992.0);
 			clearness = (float)(0.65 + 0.35 * w);
 			Mod.Log.LogInfo("Sky: the race starts at " + Clock(startHour) + ", a day lasts " + (DaySeconds / 60f).ToString("0") + " minutes; storms: a "
 				+ (storms.Raininess < 0.35 ? "dry" : storms.Raininess < 0.7 ? "showery" : "wet") + " day (" + storms.Raininess.ToString("0.00") + "), wind "
 				+ storms.WindSpeed.ToString("0.0") + " from " + Compass(-DetMath.Cos(storms.WindAngle), -DetMath.Sin(storms.WindAngle)) + ", snow above " + storms.SnowLine.ToString("0"));
+		}
+
+		/// <summary>
+		/// The hour a race from <paramref name="seed"/> starts at: most races in the day, a quarter at any hour. Plain arithmetic, so the
+		/// deer (<see cref="Herds"/>) work out the same hour on every machine.
+		/// </summary>
+		internal static double StartHourOf(int seed)
+		{
+			ulong h = Noise.Mix((ulong)(uint)seed ^ 0x0E7A_7140UL);
+			double u = (double)(h >> 11) * (1.0 / 9007199254740992.0);
+			double v = (double)(Noise.Mix(h) >> 11) * (1.0 / 9007199254740992.0);
+			return u < 0.75 ? 7.0 + 10.0 * v : 24.0 * v;
 		}
 
 		private void Start()
@@ -251,6 +270,7 @@ namespace HalfGripOpenWorld
 				if (lights.spotlight != null)
 				{
 					headlights.Add(lights.spotlight);
+					knownHeadlights.Add(lights.spotlight);
 				}
 			}
 
@@ -535,6 +555,7 @@ namespace HalfGripOpenWorld
 		private void Step()
 		{
 			float dt = Time.deltaTime;
+			Skipped = skip;
 			double t = tm.TimeSinceRaceStart + (double)skip;
 			float hour = Mathf.Repeat(startHour + (float)(t / DaySeconds * 24.0), 24f);
 
@@ -748,6 +769,27 @@ namespace HalfGripOpenWorld
 
 			// ---- the headlights: on from dusk to dawn, and under a black sky ----
 			int on = daylight < 0.4f || cloud > 0.8f ? 1 : 0;
+			LightsOn = on == 1;
+			if (Time.unscaledTime >= nextHeadlightLook)
+			{
+				nextHeadlightLook = Time.unscaledTime + 2f;
+				foreach (HeadLightsController lights in FindObjectsByType<HeadLightsController>(FindObjectsSortMode.None))
+				{
+					if (lights.spotlight != null && knownHeadlights.Add(lights.spotlight))
+					{
+						headlights.Add(lights.spotlight);
+					}
+				}
+				// The game's own HeadLightsController sets its light once in its Start, from the race's weather, which can come after the
+				// look that found it: put every light back to the hour's.
+				foreach (GameObject spot in headlights)
+				{
+					if (spot != null && headlightsOn >= 0 && spot.activeSelf != (headlightsOn == 1))
+					{
+						spot.SetActive(headlightsOn == 1);
+					}
+				}
+			}
 			if (on != headlightsOn)
 			{
 				headlightsOn = on;
@@ -1026,6 +1068,8 @@ namespace HalfGripOpenWorld
 		private void OnDestroy()
 		{
 			Status = null;
+			LightsOn = false;
+			Skipped = 0f;
 			WeatherView.Clear();
 			FarView.DrawnReach = 0f;
 			if (live != null)
@@ -1075,7 +1119,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The compass point of the direction (dx east, dz north).</summary>
-		private static string Compass(double dx, double dz)
+		internal static string Compass(double dx, double dz)
 		{
 			string[] points = { "E", "NE", "N", "NW", "W", "SW", "S", "SE" };
 			double angle = Math.Atan2(dz, dx) / (2.0 * Math.PI) * 8.0;
