@@ -1,4 +1,4 @@
-# Makes a release, only when run by hand (Actions > Release > Run workflow, on main): tag v<version> and a release
+# Makes a release, only when started on purpose (by Claude when the owner asks for a release, or Actions > Release > Run workflow, on main): tag v<version> and a release
 # "Version <version>" with OpenWorld.zip (the OpenWorld/ folder as it is installed to <game>\BepInEx\HalfGripMods\OpenWorld\), as the
 # releases up to 0.27.1 were made by hand. The version is mod.json's; bump it (and the README's) in the pull request, merge it, then
 # run this. It fails if that version is already tagged or the README gives another.
