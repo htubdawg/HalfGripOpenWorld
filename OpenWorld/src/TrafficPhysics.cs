@@ -421,7 +421,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			b.Place(v.Root.position + Vector3.up * 0.15f, v.Root.rotation);
+			b.Place(RestPlace(v.Root.position, b.LookIndex, 0.15f), v.Root.rotation);
 			Vector3 velocity = Vector3.zero;
 			bool pulling = false;
 			double legT = 0.0;
@@ -449,6 +449,61 @@ namespace HalfGripOpenWorld
 			}
 			v.Go.SetActive(false);
 			return true;
+		}
+
+		/// <summary>How high each body model stands over the ground at rest on its springs (its root over the ground under it): a sum and a count, from the physics cars seen standing or crawling.</summary>
+		private readonly Dictionary<int, (double sum, int n)> restHeight = new Dictionary<int, (double, int)>();
+		/// <summary>A model's rest height is used once this many standing cars have given it (until then a small drop).</summary>
+		private const int RestKnown = 3, RestMost = 40;
+
+		/// <summary>
+		/// Learns each model's rest height (every 0.4 s, at the choice): a physics car of this machine's standing or crawling upright on the
+		/// ground, a second or more after it was placed, gives its root's height over the ground under it. A body put down at that height
+		/// (<see cref="RestPlace"/>) doesn't drop onto its springs and bounce, which a parked car turning loose did (the owner, 2026-11-23).
+		/// </summary>
+		private void LearnRest()
+		{
+			foreach (TrafficBody b in physical.Values)
+			{
+				if (b == null || !b.Alive || b.Remote || b.Age < 1.2f || b.Rb.linearVelocity.sqrMagnitude > 9f || b.Rb.angularVelocity.sqrMagnitude > 0.04f || b.transform.up.y < 0.97f)
+				{
+					continue;
+				}
+				Vector3 p = b.Rb.position;
+				if (!Ground(p, p.y + 3f, out float gy))
+				{
+					continue;
+				}
+				double h = p.y - gy;
+				if (h < -3.0 || h > 6.0)
+				{
+					continue;
+				}
+				restHeight.TryGetValue(b.LookIndex, out (double sum, int n) r);
+				if (r.n >= RestMost)
+				{
+					// A running mean of the last few dozen.
+					r.sum -= r.sum / r.n;
+					r.n--;
+				}
+				r.sum += h;
+				r.n++;
+				restHeight[b.LookIndex] = r;
+				if (r.n == RestKnown)
+				{
+					Mod.Info("Traffic: body model " + b.LookIndex + " stands " + (r.sum / r.n).ToString("0.00") + " over the ground on its springs (cars are put down there from now on)");
+				}
+			}
+		}
+
+		/// <summary>Where to put a body of model <paramref name="look"/> standing in for a drawn car at <paramref name="drawn"/>: over the ground at its rest height once that is known, else <paramref name="drop"/> up.</summary>
+		private Vector3 RestPlace(Vector3 drawn, int look, float drop)
+		{
+			if (restHeight.TryGetValue(look, out (double sum, int n) r) && r.n >= RestKnown && Ground(drawn, drawn.y + 3f, out float gy))
+			{
+				return new Vector3(drawn.x, gy + (float)(r.sum / r.n), drawn.z);
+			}
+			return drawn + Vector3.up * drop;
 		}
 
 		/// <summary>
@@ -572,7 +627,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
-			b.Place(v.Root.position + Vector3.up * 0.4f, v.Root.rotation);
+			b.Place(RestPlace(v.Root.position, b.LookIndex, 0.4f), v.Root.rotation);
 			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
 			physical[c] = b;
 			madePhysical++;
@@ -822,6 +877,7 @@ namespace HalfGripOpenWorld
 				{
 					b.Skin.ApplySkin(SkinFor(look, paint));
 				}
+				b.LookIndex = look;
 			}
 			catch (Exception e)
 			{
@@ -1093,6 +1149,9 @@ namespace HalfGripOpenWorld
 		internal double P;
 		private float[] profile;
 
+		/// <summary>The body model it wears (its look), and how long since it was last started (seconds of physics).</summary>
+		internal int LookIndex;
+		internal float Age;
 		internal float Health = 100f;
 		internal bool Alive = true, Hurt, GaveUp;
 		/// <summary>Told by the bubble to stop and wait (it can't go back on its timetable where it is).</summary>
@@ -1141,8 +1200,26 @@ namespace HalfGripOpenWorld
 			}
 			Rb.position = pos;
 			Rb.rotation = turn;
+			if (!Rb.isKinematic)
+			{
+				// Still where it is put (a moving car is given its speed after); a stand-in is kinematic and has none to set.
+				Rb.linearVelocity = Vector3.zero;
+				Rb.angularVelocity = Vector3.zero;
+			}
+			if (!interpHeld && Rb.interpolation != RigidbodyInterpolation.None)
+			{
+				// As Origin does over a shift: an interpolated body would be drawn from its old pose for a frame, sliding (and drawing its
+				// tyre marks) the whole way. Off until the physics has stepped here.
+				interpHeld = true;
+				interpMode = Rb.interpolation;
+				Rb.interpolation = RigidbodyInterpolation.None;
+			}
 			ClearTrails();
 		}
+
+		private bool interpHeld;
+		private RigidbodyInterpolation interpMode;
+		private ParticleSystem[] particles;
 
 		/// <summary>
 		/// The tyre marks (the game's <c>TireTrails</c>: trail renderers on the wheels, which its <c>EnemyCarEffectController</c> keeps emitting
@@ -1166,6 +1243,23 @@ namespace HalfGripOpenWorld
 				}
 			}
 			trailsOffFor = TrailsOff;
+			ClearParticles();
+		}
+
+		/// <summary>The body's particles (the tyres' smoke, the exhaust) emptied: anything emitted along a move would hang in a line across the country.</summary>
+		private void ClearParticles()
+		{
+			if (particles == null)
+			{
+				particles = GetComponentsInChildren<ParticleSystem>(true);
+			}
+			foreach (ParticleSystem ps in particles)
+			{
+				if (ps != null)
+				{
+					ps.Clear(false);
+				}
+			}
 		}
 
 		/// <summary>The lamps (renderers with a glowing material that take no paint: head and tail lights), their glowing slots and colours.</summary>
@@ -1261,6 +1355,12 @@ namespace HalfGripOpenWorld
 			}
 			trailsOffFor -= Time.deltaTime;
 			bool back = trailsOffFor <= 0f;
+			ClearParticles();
+			if (back && interpHeld)
+			{
+				interpHeld = false;
+				Rb.interpolation = interpMode;
+			}
 			foreach (TrailRenderer t in trails)
 			{
 				if (t == null)
@@ -1320,6 +1420,7 @@ namespace HalfGripOpenWorld
 			Loose = Touched = settled = false;
 			LooseLeg = -1;
 			looseAge = 0f;
+			Age = 0f;
 			Lamps(true);
 			Rb.isKinematic = false;
 			Owner = owner;
@@ -1473,6 +1574,7 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			Age += Time.fixedDeltaTime;
 			if (Remote)
 			{
 				StandIn();

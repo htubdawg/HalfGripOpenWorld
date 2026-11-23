@@ -423,8 +423,14 @@ They said three things:
    rigidbody's old pose (the scene's origin for a new body), and the marks drew a new line from there. Now every placement goes
    through `TrafficBody.Place` (the transform and the rigidbody both moved: a teleport), and `ClearTrails` turns the trails off and
    keeps them empty for 0.3 s (`LateUpdate`), then back on as the game has them (on unless airborne). A stand-in whose playback
-   snaps more than 10 units also jumps and clears instead of being swept there. If streaks still show, ask for a screenshot and
-   whether they start at a car that just turned physical, a stand-in, or a loose car.
+   snaps more than 10 units also jumps and clears instead of being swept there. **Still seen after that (the owner, 2026-11-23,
+   with a log showing loose cars and three origin shifts; no traffic warnings).** Third fix (not yet tried): `Origin.cs` already
+   switches rigidbody interpolation off over a shift because "an interpolated body would be drawn sliding the whole way for a frame",
+   so the game's cars do interpolate, and `Place` had not done the same: it now holds interpolation off until the 0.3 s are up, zeroes
+   a dynamic body's velocities, and keeps the body's particle systems empty over the same window. Not checked: the enemy car's
+   particle modules (whether any emit by distance) and its rigidbody's interpolation mode, which the scene dumps don't list; reading
+   them from the game's asset files needs a tool (UnityPy) that this session was not allowed to install. If streaks still show, a
+   screenshot is needed: where a streak starts and ends, and what kind of car it leads to.
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 
@@ -459,6 +465,13 @@ build: `TrafficRoom.Version` is 2 (the state's flags gained `FlagLoose` 8 and `F
   made. One that stopped off its lane can't be drawn there, so it counts as touched. Touched: stays until the player is 500 away
   (`LooseGone`, past the parked cars' drawn reach), then `Retire` (a hurt one destroyed, its smoke can't be stopped; a wreck burns
   and goes as the driven ones do). Never handed to another player.
+- **Rest height** (the owner, 2026-11-23: "parked cars bounce a bit when they activate due to the physics based suspension"): a body
+  was put down 0.15 (loose) or 0.4 (driven) over the drawn car's pose, which has the wheels' bottoms on the ground, and dropped onto
+  its springs. `LearnRest` (every 0.4 s, at the choice) measures each body model's root height over the ground from this machine's
+  physics cars standing or crawling (under 3 units/s, upright, 1.2 s after placing), a running mean of up to 40; once 3 are in,
+  `RestPlace` puts bodies of that model at that height over the ground under the drawn car (logged once a model: `body model N
+  stands ... over the ground`). Until then the old small drop. Not done: the suspension's own state on a pooled body (the game's
+  wheel data keeps its last spring length), in case a jolt remains on the first step.
 - **Lamps** (the owner, 2026-11-23: "parked cars should not turn their lights on when their physics get switched on"): the game's
   `CarControllerNew.Update` lights the tail lamps (`becSpate`, the `_EMISSION` keyword) whenever `brakeAccel > 0`, and a loose car
   holds its brake, so it showed brake lights; the head lamps glowed too. `TrafficBody.FindLamps` (in `MakeBody`) keeps each lamp's

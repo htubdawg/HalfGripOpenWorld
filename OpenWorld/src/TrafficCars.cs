@@ -619,6 +619,7 @@ namespace HalfGripOpenWorld
 			System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 			// Physics cars out of reach (or at their trip's end) go back on their timetables first, so they are chosen as drawn cars now.
 			Bubble(w, cx, cz);
+			LearnRest();
 			near.Clear();
 			int n = day.Cars.Count;
 			for (int c = 0; c < n; c++)
