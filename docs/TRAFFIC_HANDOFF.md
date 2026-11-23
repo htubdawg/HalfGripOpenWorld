@@ -454,6 +454,11 @@ They said three things:
    tried): the guard also reads each trail's own points every frame: a segment at either end longer than a car goes in a frame, or the
    head far from both ends while emitting, empties it (`Traffic: car N's tyre mark emptied (...)`, once a body); and the trails are
    emptied again right after they are turned back on.
+   **The owner's next log (2026-11-23, "looks better") showed where they came from:** every trail emptied was at an origin shift, five
+   with a segment exactly as long as the shift (1118 at (-500, -1000), 1031 at (-250, -1000)). `Origin.Shift` paused interpolation for
+   2 frames, which at a high frame rate pass with no physics step, so an interpolated body was drawn for a frame from its pose before
+   the shift and its trail kept a point there. Seventh fix (not yet tried): interpolation comes back only after two physics steps since
+   the shift as well (`Origin.RestoreInterpolation`). The guard stays as a net. Parked cars are "still a little jiggly, tolerable".
    **Parked cars' wheel height (the owner, after 0.32.0: "a physics enabled car wouldn't have its suspension fully out or in, we need
    to calculate where it should be so the transition is seamless").** Built (not yet tried): `TrafficRest.cs` works out the game's car
    at rest from `CarControllerNew.FixedUpdate` (read from the decompile): per wheel a ray from one unit above its place along

@@ -465,7 +465,7 @@ namespace HalfGripOpenWorld
 		{
 			foreach (TrafficBody b in physical.Values)
 			{
-				if (b == null || !b.Alive || b.Remote || b.Age < 1.2f || b.Rb.linearVelocity.sqrMagnitude > 9f || b.Rb.angularVelocity.sqrMagnitude > 0.04f || b.transform.up.y < 0.97f)
+				if (b == null || !b.Alive || b.Remote || b.Loose || b.Hurt || b.Age < 1.2f || b.Rb.linearVelocity.sqrMagnitude > 9f || b.Rb.angularVelocity.sqrMagnitude > 0.04f || b.transform.up.y < 0.97f)
 				{
 					continue;
 				}
