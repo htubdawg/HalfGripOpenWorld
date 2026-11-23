@@ -359,7 +359,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      Brookfield and Northcote roads meet, Farm 92's lane at about (9896, 13158), Millbrook's street and Farm 17's lane at about
      (-6847, 3797).
    - Say where a junction still looks badly joined (`ShowCoords` and a screenshot), and send `LogOutput.log`.
-47. The highway wraps round, and Westhaven joined up (not released yet; on `traffic-test-branch`; in a room everyone needs the same
+47. The highway wraps round, and Westhaven joined up (0.32.0; in a room everyone needs the same
    build: the roads changed a little).
    - Drive west along the trunk road to the end of the world: the tunnel mouth is open now, a dark tunnel with a floor, walls and a
      roof. Drive in at speed: a moment after the dark closes round you, you come out of the east edge's tunnel at the same speed, in
@@ -371,7 +371,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Westhaven (teleport to it): its main road now runs north out of the town to a T-junction on the trunk road (before, it stopped in
      the fields). Millbrook's main road north now reaches the road from Northcote, about (-2885, 5832) with `ShowCoords`.
    - Send `LogOutput.log` and say how the jump feels.
-48. Traffic drawn in the game (not released yet; on `traffic-test-branch`; a preview: the cars cannot be pushed or wrecked yet; set
+48. Traffic drawn in the game (0.32.0; a preview: the cars cannot be pushed or wrecked yet; set
    `TrafficPhysics` to 0 for this test now that stage 3 is in).
    The log says `Traffic: ... cars, ... trips on a weekday (or weekend day) from the race's seed, built in ... ms` a second or two
    after the start (the day is made on a worker; no hitch). With `ShowCoords` on, the overlay's `traffic:` line counts the cars drawn
@@ -402,7 +402,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - In a room: both players see the same cars in the same places.
    - Send `LogOutput.log` (with `VerboseLog` on it also says how each car body was made) and screenshots: a town street, a car park,
      a junction with a queue, a car pulling out, night.
-49. Physics traffic near you (not released yet; on `traffic-test-branch`; stage 3 of the traffic). New config `World` /
+49. Physics traffic near you (0.32.0; stage 3 of the traffic). New config `World` /
    `TrafficPhysics` (default 24). With `ShowCoords` on, the overlay's `traffic:` line adds `physics N/24 (... giving way, ... stopped),
    made ..., back ... on time and ... late, wrecked ..., retired ..., hidden ..., held back ...`. With `VerboseLog`, the log says
    `Traffic: a physics car made`, `Traffic: car N back on its timetable ... s late (out of reach)`, `... wrecked`, `... retired`.
@@ -428,7 +428,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Send `LogOutput.log` and screenshots of a queue behind your car, a junction, a wreck.
    - Owner's first report (2026-11-23, alone in a room): "everything seems fine". The log shows cars made physical, one wrecked, one
      retired as damaged, one off its road, ten back on time out of reach, five origin shifts. Frame time not measured yet.
-50. Traffic in a room (not released yet; on `traffic-test-branch`; stage 4 of the traffic; everyone in the room needs the same build).
+50. Traffic in a room (0.32.0; stage 4 of the traffic; everyone in the room needs the same build).
    Two players (A, the room's host, and B), `ShowCoords` and `VerboseLog` on. The overlay's `traffic:` line adds `room: host` (on A) or
    `room: clock +0.00 s` (on B: what B adds to its race clock to have A's), `N players heard, stand-ins N, claims N (granted N, lost
    N), handed in N and out N, states in N (N stale)`. The log: `Traffic: the room's host, settling who drives each car` (A) or `in a
@@ -454,7 +454,7 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Owner's first try (2026-11-23, alone in a room): fine as in 49; some cars run into had no physics (the ones pulling in or out, at
      a trip's end or in a junction: walls by design until contact physics, item 51); tyre marks streaked from the scene's origin to
      a car as it turned physical (fixed: the trails are cleared when a body is placed). Check no streaks now.
-51. Contact physics (not released yet; on `traffic-test-branch`; built 2026-11-23, not yet tried; see `docs/TRAFFIC_HANDOFF.md`,
+51. Contact physics (0.32.0; the owner, 2026-11-23: works (tyre marks, lamps and the parked cars' wheels fixed); see `docs/TRAFFIC_HANDOFF.md`,
    "Contact physics: as built"). New config `World` / `TrafficLoose` (default 6). Everyone in a room needs the same build (the traffic's
    messages changed). With `ShowCoords` on, the overlay's `traffic:` line adds `loose N/6 (made N, back N, retired N)` after the
    physics part. With `VerboseLog`, the log says `Traffic: car N loose (parked)` / `(moving at N km/h)`, `loose car N back as it was

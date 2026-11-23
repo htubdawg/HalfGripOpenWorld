@@ -6,8 +6,9 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 
 ## Start here
 
-0. **New agent: start with "Contact physics: as built" below** (built 2026-11-23 with the defaults of the owner's three decisions,
-   not yet tried in the game: test 51), then "The owner's report on the stage 4 build" (what the owner saw, the tyre-mark fix).
+0. **Released as 0.32.0 (PR to `main`, 2026-11-23).** The owner tried contact physics: "looks like we got it" (the tyre marks, the
+   parked cars' lamps and their wheels fixed on the way). **New agent: start with "Contact physics: as built" below** (the owner's
+   three decisions still at their defaults: ask), then "The owner's report on the stage 4 build" (what the owner saw, the tyre-mark fix).
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
 2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo
    (the tools need `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for
