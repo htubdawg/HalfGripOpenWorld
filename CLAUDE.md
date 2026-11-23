@@ -94,9 +94,13 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - **Origin.** Anything that keeps a world position outside a transform must be moved on `Origin.Shifted` (or listed in `GameCaches`).
   Positions sent over the network are world coordinates. Only x and z shift; heights never change.
 - Bump `version` in `mod.json` with each release and keep `README.md` in step (its `Version **x.y.z**` and `Loaded Open World x.y.z`
-  lines). Merging a new version to `main` releases it: `.github/workflows/release.yml` tags `v<version>` and makes the release
-  "Version <version>" with `OpenWorld.zip` (it fails if the README's version differs; a version already tagged is skipped). It does
-  not compile the mod (no game DLLs there): run `tools/check.sh` before merging.
+  lines).
+- **Releases.** When the owner asks for a release, the agent makes it: bump `version` in `mod.json` and the README in the pull
+  request (if not already), and once the owner has merged it to `main`, start `.github/workflows/release.yml` with the GitHub tool
+  (`actions_run_trigger`, method `run_workflow`, workflow `release.yml`, ref `main`), then check the run finished and the release is
+  there. It tags `v<version>` and makes the release "Version <version>" with `OpenWorld.zip`; it fails if that version is already
+  tagged or the README's differs. It never runs by itself. It does not compile the mod (no game DLLs there): run `tools/check.sh`
+  before the pull request.
 - C# 10 and netstandard2.1 APIs only.
 - Units: game units, about 3.3 to a real metre (a car is about 14 long, a lane 11). Size things at real scale through that.
   Text a player reads (README, `mod.json`, config descriptions, log lines, the overlay) gives real distances (units / 3.3) or

@@ -1,14 +1,11 @@
-# Makes a release when a new version reaches main: tag v<version> and a release "Version <version>" with OpenWorld.zip (the
-# OpenWorld/ folder as it is installed to <game>\BepInEx\HalfGripMods\OpenWorld\), as the releases up to 0.27.1 were made by hand.
-# The version is mod.json's; bump it (and the README's) in the pull request. A version already tagged is skipped, so merging other
-# changes to main makes no release. Run it from the Actions tab (workflow_dispatch) to release main's version by hand.
+# Makes a release, only when started on purpose (by Claude when the owner asks for a release, or Actions > Release > Run workflow, on main): tag v<version> and a release
+# "Version <version>" with OpenWorld.zip (the OpenWorld/ folder as it is installed to <game>\BepInEx\HalfGripMods\OpenWorld\), as the
+# releases up to 0.27.1 were made by hand. The version is mod.json's; bump it (and the README's) in the pull request, merge it, then
+# run this. It fails if that version is already tagged or the README gives another.
 # The mod is not compiled here: that needs the game's DLLs (the private HalfGripRefs repo); run tools/check.sh before merging.
 name: Release
 
 on:
-  push:
-    branches: [main]
-    paths: [OpenWorld/mod.json]
   workflow_dispatch:
 
 permissions:
@@ -36,14 +33,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
-            echo "v$version is already tagged: nothing to release."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::error file=OpenWorld/mod.json::v$version is already released: bump the version in mod.json and the README first"
+            exit 1
           fi
 
       - name: Check the README states the version
-        if: steps.version.outputs.skip == 'false'
         run: |
           version='${{ steps.version.outputs.version }}'
           if ! grep -qF "Version **$version**" README.md || ! grep -qF "Loaded Open World $version" README.md; then
@@ -52,13 +46,11 @@ jobs:
           fi
 
       - name: Zip OpenWorld/
-        if: steps.version.outputs.skip == 'false'
         run: |
           zip -r -X -q OpenWorld.zip OpenWorld -x '*.DS_Store'
           unzip -l OpenWorld.zip | tail -1
 
       - name: Tag and release
-        if: steps.version.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
