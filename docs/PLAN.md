@@ -1380,6 +1380,10 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
      asked for physics on parked cars and on the cars the bubble leaves drawn (pulling in or out, at a trip's end, in a junction):
      **next, "contact physics"** (a loose, driverless physics car made just before the player touches a drawn car, its own small cap),
      planned in `docs/TRAFFIC_HANDOFF.md` with three decisions for the owner.
+   - **Contact physics built (2026-11-23, not yet tried: test 51):** config `TrafficLoose` (6). A drawn car the player's car, swept
+     0.3 s ahead, would touch becomes a loose car through the room; untouched it is drawn again 60 units away (a moving one late by
+     the time it stood), knocked it is retired 500 away. Built with the three decisions' defaults (still to be answered). The
+     messages' version is 2. See `docs/TRAFFIC_HANDOFF.md`, "Contact physics: as built".
 
 Superseded in the research below: "copied" (the game's gear and throttle logic is written afresh from the idea, not pasted) and
 "`RemoteCar`'s smoothing as the model" (decision 1); "No solo traffic first" is open again (question 1).

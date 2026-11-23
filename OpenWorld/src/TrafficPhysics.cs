@@ -45,6 +45,43 @@ namespace HalfGripOpenWorld
 
 		private int MostPhysics => physicsFailed ? 0 : Math.Max(0, Mod.TrafficPhysics.Value);
 
+		/// <summary>Contact physics: at most this many loose cars (drawn cars made real a moment before the player touches them), apart from <see cref="MostPhysics"/>.</summary>
+		private int MostLoose => physicsFailed ? 0 : Math.Max(0, Mod.TrafficLoose.Value);
+
+		/// <summary>An untouched loose car goes back to being drawn once the player is this far (units, about 18 m); a touched one is retired once the player is this far (about 150 m, past where parked cars are drawn).</summary>
+		private const double LooseLeave = 60.0, LooseGone = 500.0;
+
+		/// <summary>The player's car as a box for the touch test (half length and half width, units: the game's cars are about 14 by 5.3).</summary>
+		private const double PlayerHalfLength = 7.5, PlayerHalfWidth = 2.7;
+
+		/// <summary>
+		/// The touch test's margin (units). Small: a car driving down a narrow street passes the cars at its kerb about half a unit off
+		/// (lane middle to a kerb car's 5.8), and must not make each one loose; the sweep along the velocity gives the warning ahead.
+		/// </summary>
+		private const double TouchMargin = 0.2;
+
+		/// <summary>Cars claimed to be loose, not yet granted (on a room's client the grant is a round trip away).</summary>
+		private readonly HashSet<int> looseWanted = new HashSet<int>();
+		private readonly List<int> looseDrop = new List<int>();
+		/// <summary>Counts for the overlay: loose cars made, gone back untouched, retired touched.</summary>
+		private int madeLoose, looseBack, looseRetired;
+		/// <summary>The frame a physics car's body was last made (at most one a frame: each is an Instantiate and the game's Awakes).</summary>
+		private int madeFrame = -1;
+
+		/// <summary>How many of the physics cars here are loose.</summary>
+		private int LooseCount
+		{
+			get
+			{
+				int n = 0;
+				foreach (TrafficBody b in physical.Values)
+				{
+					n += b != null && b.Loose ? 1 : 0;
+				}
+				return n;
+			}
+		}
+
 		/// <summary>Whether car <paramref name="c"/> is a physics car now, here or another machine's stand-in (not drawn by stage 2).</summary>
 		private bool IsPhysical(int c) => physical.ContainsKey(c) || (remote.TryGetValue(c, out TrafficBody s) && s != null && s.gameObject.activeSelf);
 
@@ -77,6 +114,11 @@ namespace HalfGripOpenWorld
 				if (b == null)
 				{
 					acts.Add((kv.Key, null, Leave.Back, default, 0UL));
+					continue;
+				}
+				if (b.Loose)
+				{
+					LooseBubble(kv.Key, b, w, cx, cz);
 					continue;
 				}
 				TrafficDay.Leg leg = day.Legs[b.Leg];
@@ -171,6 +213,251 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// The bubble for a loose car: untouched with the player <see cref="LooseLeave"/> away (or loose cars switched off), back to being
+		/// drawn (a parked one as it was; a moving one late by the time it stood); touched, it stays where it was knocked until the player is
+		/// <see cref="LooseGone"/> away, then is retired (owner decision 1's default: its household goes without it for the rest of the race).
+		/// Never handed to another player (it is the one who touched it that has it, and it is gone soon).
+		/// </summary>
+		private void LooseBubble(int car, TrafficBody b, double w, double cx, double cz)
+		{
+			Origin.World(b.Rb.position, out double x, out double z);
+			double dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
+			if (!b.Touched && !b.Hurt && b.Alive)
+			{
+				if (d2 < LooseLeave * LooseLeave && MostLoose > 0)
+				{
+					return;
+				}
+				if (LooseBack(car, b, x, z, w, out TrafficRoom.Op op))
+				{
+					looseBack++;
+					Mod.Info("Traffic: loose car " + car + " back as it was (" + (op.Kind == TrafficRoom.OpKind.Late ? op.D.ToString("0.0") + " s late" : "untouched") + ")");
+					acts.Add((car, b, Leave.Back, op, 0UL));
+					return;
+				}
+				// Stood still off its lane (it braked across a junction, say): it can't be drawn from here, so it is treated as knocked.
+				b.Touched = true;
+			}
+			if (d2 < LooseGone * LooseGone)
+			{
+				return;
+			}
+			looseRetired++;
+			Mod.Info("Traffic: loose car " + car + " retired (" + (!b.Alive ? "wrecked" : b.Hurt ? "damaged" : "knocked") + ")");
+			acts.Add((car, b, Leave.Retire, new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = w }, 0UL));
+		}
+
+		/// <summary>
+		/// The entry an untouched loose car goes back to being drawn with. Parked: none, it is still in its space, unless the day had it set
+		/// off meanwhile (then it sets off now, late by that). Moving: late by the time it stood; along its lane by where it stopped, or,
+		/// pulling in or out (off its lane), from where on its leg it was made. False if it stopped where it can't be drawn.
+		/// </summary>
+		private bool LooseBack(int car, TrafficBody b, double x, double z, double w, out TrafficRoom.Op op)
+		{
+			op = default;
+			if (b.LooseLeg < 0)
+			{
+				TrafficDay.Place now = late.At(car, w, out bool _);
+				if (now.State == TrafficDay.State.Driving && now.Leg >= 0)
+				{
+					TrafficDay.Leg l = day.Legs[now.Leg];
+					op = new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Late, Leg = now.Leg, W = w, D = TrafficDrive.LegClock(l, w) - l.Start };
+				}
+				return true;
+			}
+			TrafficDay.Leg leg = day.Legs[b.LooseLeg];
+			if (b.LoosePulling)
+			{
+				op = new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Late, Leg = b.LooseLeg, W = w, D = TrafficDrive.LegClock(leg, w) - b.LooseT };
+				return true;
+			}
+			double p = TrafficDrive.Project(leg, b.P, x, z, out double side, 15.0, 40.0);
+			Vector3 f = b.transform.forward;
+			if (side > 8.0 || b.transform.up.y < 0.7f || !TrafficDrive.OnLane(leg, p, x, z, f.x, f.z))
+			{
+				return false;
+			}
+			op = LateOp(b.LooseLeg, p, w);
+			return true;
+		}
+
+		/// <summary>
+		/// Contact physics, each frame after the drawing: a drawn car (parked, or moving and not a physics car just then) that the player's
+		/// car, swept along its velocity for a moment, would meet becomes a loose car (claimed through the room like any physics car; alone
+		/// or on the host at once). On a room's client the sweep looks further ahead, for the grant's round trip.
+		/// </summary>
+		private void Contact(double w)
+		{
+			if (looseWanted.Count > 0)
+			{
+				looseDrop.Clear();
+				foreach (int c in looseWanted)
+				{
+					if (!room.Claiming(c) && !physical.ContainsKey(c))
+					{
+						looseDrop.Add(c);
+					}
+				}
+				foreach (int c in looseDrop)
+				{
+					looseWanted.Remove(c);
+				}
+			}
+			int most = MostLoose;
+			if (most == 0 || tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
+			{
+				return;
+			}
+			CarControllerNew player = tm.playerCarController;
+			Rigidbody prb = player != null ? player.GetComponent<Rigidbody>() : null;
+			if (prb == null)
+			{
+				return;
+			}
+			int count = LooseCount + looseWanted.Count;
+			if (count >= most)
+			{
+				return;
+			}
+			Vector3 pp = prb.position, pv = prb.linearVelocity, pf = player.transform.forward;
+			float pfl = Mathf.Sqrt(pf.x * pf.x + pf.z * pf.z);
+			if (pfl < 1e-3f)
+			{
+				return;
+			}
+			Origin.World(pp, out double px, out double pz);
+			double ahead = EventLink.InRoom && !room.IsHost ? 0.5 : 0.3;
+			double speed = Math.Sqrt(pv.x * pv.x + pv.z * pv.z);
+			double near = 30.0 + speed * ahead;
+			double now = EventLink.Clock();
+			// A grant on the host comes back before Claim returns (BecomeLoose): the chosen list is put right after the walk.
+			choosing = true;
+			try
+			{
+				TouchWalk(px, pz, pp, pv, pf.x / pfl, pf.z / pfl, ahead, near, now, count, most);
+			}
+			finally
+			{
+				choosing = false;
+			}
+			for (int k = chosen.Count - 1; k >= 0; k--)
+			{
+				if (physical.ContainsKey(chosen[k]))
+				{
+					chosenMoving.Remove(chosen[k]);
+					chosen.RemoveAt(k);
+				}
+			}
+		}
+
+		private void TouchWalk(double px, double pz, Vector3 pp, Vector3 pv, double fx, double fz, double ahead, double near, double now, int count, int most)
+		{
+			foreach (int c in chosen)
+			{
+				if (!live.TryGetValue(c, out View v) || !v.Go.activeSelf || IsPhysical(c) || looseWanted.Contains(c))
+				{
+					continue;
+				}
+				Vector3 at = v.Root.position;
+				if (Mathf.Abs(at.y - pp.y) > 8f)
+				{
+					continue;
+				}
+				Origin.World(at, out double vx, out double vz);
+				double dx = vx - px, dz = vz - pz;
+				if (dx * dx + dz * dz > near * near)
+				{
+					continue;
+				}
+				// The drawn car's box (its body's, as its collider), in the world.
+				Vector3 h = v.Root.forward;
+				float hl = Mathf.Sqrt(h.x * h.x + h.z * h.z);
+				if (hl < 1e-3f)
+				{
+					continue;
+				}
+				Vector3 mid = v.Root.TransformPoint(v.Look.Box.center);
+				Origin.World(mid, out double mx, out double mz);
+				Vector3 e = Vector3.Scale(v.Look.Box.extents, v.Root.lossyScale);
+				if (!TrafficDrive.Sweeps(px, pz, fx, fz, PlayerHalfLength, PlayerHalfWidth, pv.x, pv.z, ahead, 2.0, mx, mz, h.x / hl, h.z / hl, e.z, e.x, TouchMargin))
+				{
+					continue;
+				}
+				if (room.DriverOf(c) != 0UL || room.Claiming(c) || room.Handing(c))
+				{
+					continue;
+				}
+				looseWanted.Add(c);
+				if (!room.Claim(c, now))
+				{
+					looseWanted.Remove(c);
+					continue;
+				}
+				if (physicsFailed || ++count >= most || madeFrame == Time.frameCount)
+				{
+					return;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Car <paramref name="c"/>, granted to this machine as a loose car, becomes one exactly where and as it is drawn: parked at rest on its
+		/// brakes, or moving at its drawn speed and braking to a stop. False if it can't be (not drawn here now, hidden, away).
+		/// </summary>
+		private bool BecomeLoose(int c, double w)
+		{
+			if (MostLoose == 0 || tm.enemyCarPrefab == null || !live.TryGetValue(c, out View v) || !v.Go.activeSelf)
+			{
+				return false;
+			}
+			TrafficDay.Place at = late.At(c, w, out bool hidden);
+			bool moving = at.State == TrafficDay.State.Driving && at.Leg >= 0;
+			if (hidden || (moving && at.InTunnel) || (!moving && at.State != TrafficDay.State.Parked))
+			{
+				return false;
+			}
+			TrafficBody b = TakeBody(c);
+			if (b == null)
+			{
+				return false;
+			}
+			Transform t = b.transform;
+			t.SetPositionAndRotation(v.Root.position + Vector3.up * 0.15f, v.Root.rotation);
+			if (!b.gameObject.activeSelf)
+			{
+				b.gameObject.SetActive(true);
+			}
+			b.ClearTrails();
+			Vector3 velocity = Vector3.zero;
+			bool pulling = false;
+			double legT = 0.0;
+			if (moving)
+			{
+				TrafficDay.Leg leg = day.Legs[at.Leg];
+				pulling = (!leg.Appears && at.T < leg.PullOut) || (!leg.Vanishes && leg.End - leg.Start - at.T < leg.PullIn);
+				legT = leg.Start + at.T;
+				Vector3 f = v.Root.forward;
+				f.y = 0f;
+				velocity = f.normalized * (float)Math.Max(0.0, at.Speed);
+			}
+			b.BeginLoose(this, c, moving ? at.Leg : -1, moving ? at.P : 0.0, legT, pulling, w, velocity);
+			physical[c] = b;
+			madeLoose++;
+			Mod.Info("Traffic: car " + c + " loose (" + (moving ? "moving at " + (at.Speed / 3.3 * 3.6).ToString("0") + " km/h" : "parked") + "), the player about to touch it");
+			int k = chosen.IndexOf(c);
+			if (k >= 0 && !choosing)
+			{
+				chosen.RemoveAt(k);
+			}
+			if (!choosing)
+			{
+				chosenMoving.Remove(c);
+			}
+			v.Go.SetActive(false);
+			return true;
+		}
+
+		/// <summary>
 		/// The bubble's making, after the choice: the nearest drawn driving cars within reach become physics cars, up to
 		/// <see cref="MostPhysics"/>, each where and as fast as it is drawn. A car the day puts on top of (or right behind) a physics car is
 		/// hidden instead, until it is out of sight. Not while it pulls out or in (the day draws that), in a junction's box, near a tunnel or on
@@ -198,7 +485,7 @@ namespace HalfGripOpenWorld
 			double now = EventLink.Clock();
 			for (int k = 0; k < chosen.Count; k++)
 			{
-				if (physical.Count + room.Claims >= MostPhysics)
+				if (physical.Count - LooseCount + room.Claims - looseWanted.Count >= MostPhysics)
 				{
 					return;
 				}
@@ -341,8 +628,8 @@ namespace HalfGripOpenWorld
 				Vector3 f = b.transform.forward;
 				float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
 				// In its lane close behind or ahead, or in it whichever way either faces (a car pulling in across the road, one passing the
-				// nose of a physics car stopped in a junction).
-				if ((side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, 0.5))
+				// nose of a physics car stopped in a junction). A loose car still in its space only if in it (cars drive past parked ones).
+				if ((!b.InSpace && side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, 0.5))
 				{
 					return true;
 				}
@@ -407,7 +694,15 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				if (b.Alive && !b.GaveUp)
+				if (b.Loose)
+				{
+					// A loose car in the road (stopped there, or knocked out of its space) is in the way; one still in its space is not.
+					if (!b.InSpace)
+					{
+						Obstacles.Add(ObstacleOf(b.Rb));
+					}
+				}
+				else if (b.Alive && !b.GaveUp)
 				{
 					Movers.Add(b.Me);
 				}
@@ -423,6 +718,10 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				// Another machine's physics car: a mover where its driver has it (its leg and place sent), a wall once stopped or wrecked.
+				if (b.InSpace)
+				{
+					continue;
+				}
 				if (b.Alive && !b.Stopped && b.Me.Leg >= 0)
 				{
 					Movers.Add(b.Me);
@@ -481,7 +780,7 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				bool on = lights && b.Alive && lit < MostLit;
+				bool on = lights && b.Alive && !b.Loose && lit < MostLit;
 				if (on)
 				{
 					lit++;
@@ -545,6 +844,52 @@ namespace HalfGripOpenWorld
 			return b;
 		}
 
+		/// <summary>Bodies made and woken ahead of need at the start of the race, and the one awake now (for one frame).</summary>
+		private const int WarmBodies = 3;
+		private int warmed;
+		private TrafficBody warming;
+
+		/// <summary>
+		/// At the start of the race, one frame at a time, the first few physics cars' bodies made and woken once far under the world (the
+		/// Instantiate and the game's Awakes, other mods' too, paid for now), then put in the pool asleep: the first loose car, made the frame
+		/// before the player touches it, then costs no more than a body taken from the pool.
+		/// </summary>
+		private void WarmPool()
+		{
+			if (warming != null)
+			{
+				warming.gameObject.SetActive(false);
+				warming.Rb.isKinematic = false;
+				if (warming.Ec.audioSource != null)
+				{
+					warming.Ec.audioSource.Stop();
+				}
+				bodySpare.Push(warming);
+				warming = null;
+				return;
+			}
+			if (warmed >= WarmBodies || (MostLoose == 0 && MostPhysics == 0) || tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
+			{
+				return;
+			}
+			warmed++;
+			TrafficBody b;
+			try
+			{
+				b = MakeBody(0, 0);
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("The traffic's physics cars could not be made (drawn cars only from now on): " + e);
+				physicsFailed = true;
+				return;
+			}
+			b.Rb.isKinematic = true;
+			b.transform.SetPositionAndRotation(new Vector3(0f, -5000f, 0f), Quaternion.identity);
+			b.gameObject.SetActive(true);
+			warming = b;
+		}
+
 		/// <summary>
 		/// A new physics car: an instance of the enemy car prefab made under an inactive holder, so nothing on it has woken yet, and
 		/// prepared before it first wakes: the racing AI off (its Start would fit guns and look for a lap; with it off Start never runs), the
@@ -559,6 +904,7 @@ namespace HalfGripOpenWorld
 				bodyHolder.SetActive(false);
 				bodyHolder.transform.SetParent(transform, false);
 			}
+			madeFrame = Time.frameCount;
 			GameObject go = Instantiate(tm.enemyCarPrefab, bodyHolder.transform);
 			go.name = "Traffic physics car";
 			EnemyController ec = go.GetComponent<EnemyController>();
@@ -652,13 +998,29 @@ namespace HalfGripOpenWorld
 		/// <summary>Every physics car back on its timetable through the room (the traffic switched off, or stopped), and every stand-in gone.</summary>
 		private void ClearPhysics()
 		{
+			if (warming != null)
+			{
+				// The body woken for the pool this frame: put to sleep in it.
+				WarmPool();
+			}
 			double w = day != null ? SimNow() : 0.0;
 			acts.Clear();
 			foreach (KeyValuePair<int, TrafficBody> kv in physical)
 			{
 				TrafficBody b = kv.Value;
 				bool back = day != null && b != null && b.Alive && !b.Hurt;
-				acts.Add((kv.Key, b, back ? Leave.Back : Leave.Retire, back ? LateOp(b.Leg, b.P, w) : new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = w }, 0UL));
+				TrafficRoom.Op op = default;
+				if (back && b.Loose)
+				{
+					// A loose car: as it was if untouched, retired if knocked.
+					Origin.World(b.Rb.position, out double x, out double z);
+					back = !b.Touched && LooseBack(kv.Key, b, x, z, w, out op);
+				}
+				else if (back)
+				{
+					op = LateOp(b.Leg, b.P, w);
+				}
+				acts.Add((kv.Key, b, back ? Leave.Back : Leave.Retire, back ? op : new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = w }, 0UL));
 			}
 			physical.Clear();
 			foreach ((int car, TrafficBody b, Leave what, TrafficRoom.Op op, ulong _) in acts)
@@ -689,7 +1051,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The overlay's physics part.</summary>
 		private string PhysicsStatus()
 		{
-			if (MostPhysics == 0 && madePhysical == 0)
+			if (MostPhysics == 0 && madePhysical == 0 && MostLoose == 0 && madeLoose == 0)
 			{
 				return physicsFailed ? "; physics cars failed" : "";
 			}
@@ -705,8 +1067,10 @@ namespace HalfGripOpenWorld
 					waiting++;
 				}
 			}
-			return "; physics " + physical.Count + "/" + MostPhysics + " (" + waiting + " giving way, " + holding + " stopped), made " + madePhysical + ", back " + backOnTime + " on time and " + backLate + " late, wrecked "
-				+ retiredWrecked + ", retired " + retiredOff + ", hidden " + hiddenByPhysics + ", held back " + heldBack + RoomStatus();
+			int loose = LooseCount;
+			return "; physics " + (physical.Count - loose) + "/" + MostPhysics + " (" + waiting + " giving way, " + holding + " stopped), made " + madePhysical + ", back " + backOnTime + " on time and " + backLate + " late, wrecked "
+				+ retiredWrecked + ", retired " + retiredOff + ", hidden " + hiddenByPhysics + ", held back " + heldBack
+				+ "; loose " + loose + "/" + MostLoose + " (made " + madeLoose + ", back " + looseBack + ", retired " + looseRetired + ")" + RoomStatus();
 		}
 
 	}
@@ -748,6 +1112,23 @@ namespace HalfGripOpenWorld
 		internal bool Remote;
 		/// <summary>A stand-in whose driver has it stopped (held, or given up): a wall to the drivers here, not a mover.</summary>
 		internal bool Stopped;
+		/// <summary>
+		/// A loose car (contact physics): no driver, on its brakes, made where a drawn car stood a moment before the player touched it.
+		/// <see cref="Touched"/> once anything with a body has hit it, it has been damaged, or it has moved or turned since it settled.
+		/// </summary>
+		internal bool Loose, Touched;
+		/// <summary>A loose car's leg if it was driving when it was made (-1: parked), the leg's clock then, whether it was pulling in or out, and the sim time.</summary>
+		internal int LooseLeg = -1;
+		internal double LooseT, LooseW;
+		internal bool LoosePulling;
+
+		/// <summary>A loose car still standing untouched in its parking space (a stand-in's: parked, its leg sent as -1): not in anybody's way on the road.</summary>
+		internal bool InSpace => Loose && !Touched && Alive && (Remote ? Leg < 0 : LooseLeg < 0);
+		/// <summary>Where a loose car settled (world x, z, scene y, its turn), the moment it first stood still: moved from there, it was touched.</summary>
+		private bool settled;
+		private double restX, restZ;
+		private float restY, looseAge;
+		private Quaternion restTurn;
 		internal readonly TrafficRoom.Playback Play = new TrafficRoom.Playback();
 		/// <summary>A car just handed on carries on as it was going until its new driver's states come (at most the playback's coast).</summary>
 		private Vector3 coastVelocity;
@@ -784,14 +1165,45 @@ namespace HalfGripOpenWorld
 		/// <summary>Starts driving car <paramref name="car"/> on leg <paramref name="leg"/> at <paramref name="p"/>, moving at <paramref name="velocity"/>.</summary>
 		internal void Begin(TrafficCars owner, int car, int leg, double p, Vector3 velocity)
 		{
+			Wake(owner, car, leg, p, velocity);
+			profile = TrafficDay.Profile(owner.Day.Legs[leg]);
+			Engine(car);
+		}
+
+		/// <summary>
+		/// Starts as a loose car for car <paramref name="car"/> (contact physics): no driver, braking (to a stop if it was moving at
+		/// <paramref name="velocity"/>), its engine and light off. <paramref name="leg"/> (-1: parked), <paramref name="t"/> (the leg's clock
+		/// where it was drawn), <paramref name="pulling"/> and <paramref name="w"/> are for going back on its timetable untouched.
+		/// </summary>
+		internal void BeginLoose(TrafficCars owner, int car, int leg, double p, double t, bool pulling, double w, Vector3 velocity)
+		{
+			Wake(owner, car, leg, p, velocity);
+			profile = null;
+			Loose = true;
+			LooseLeg = leg;
+			LooseT = t;
+			LooseW = w;
+			LoosePulling = pulling;
+			Cc.brakeAccel = Cc.carStats.brakeDeccel;
+			if (Ec.audioSource != null)
+			{
+				Ec.audioSource.Stop();
+			}
+		}
+
+		/// <summary>What starting to drive and starting loose share: a body of its own (not a stand-in), health full, everything still.</summary>
+		private void Wake(TrafficCars owner, int car, int leg, double p, Vector3 velocity)
+		{
 			Remote = false;
 			Stopped = false;
+			Loose = Touched = settled = false;
+			LooseLeg = -1;
+			looseAge = 0f;
 			Rb.isKinematic = false;
 			Owner = owner;
 			Car = car;
 			Leg = leg;
 			P = p;
-			profile = TrafficDay.Profile(owner.Day.Legs[leg]);
 			if (!woken)
 			{
 				// Its first waking ran the game's Awakes: the enemy AI set the player's stats on the controller. A plain car's instead.
@@ -814,7 +1226,6 @@ namespace HalfGripOpenWorld
 			Cc.brakeAccel = 0f;
 			Cc.steeringAngleDeg = 0f;
 			Me = new TrafficDrive.Mover { Car = car, Leg = leg, P = p, V = velocity.magnitude, Physical = true, Edge = -1, Node = -1 };
-			Engine(car);
 		}
 
 		/// <summary>The game's enemy cars play one engine loop each; so do these.</summary>
@@ -845,6 +1256,8 @@ namespace HalfGripOpenWorld
 			P = 0.0;
 			Remote = true;
 			Stopped = false;
+			Loose = Touched = false;
+			LooseLeg = -1;
 			Rb.isKinematic = true;
 			Health = 100f;
 			Alive = true;
@@ -910,6 +1323,8 @@ namespace HalfGripOpenWorld
 		internal void End()
 		{
 			Car = -1;
+			Loose = Touched = false;
+			LooseLeg = -1;
 			if (Remote)
 			{
 				Remote = false;
@@ -938,6 +1353,11 @@ namespace HalfGripOpenWorld
 			if (Remote)
 			{
 				StandIn();
+				return;
+			}
+			if (Loose)
+			{
+				LooseStep();
 				return;
 			}
 			if (!Alive)
@@ -978,6 +1398,51 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// A loose car's physics step: the brakes full on, no engine, wheels straight. Once it first stands still (a moving one braked to a
+		/// stop, a parked one settled on its springs) where it stands is kept, and moved half a unit or turned three degrees from there it
+		/// has been touched.
+		/// </summary>
+		private void LooseStep()
+		{
+			Cc.engineAccel = 0f;
+			Cc.brakeAccel = Alive ? Cc.carStats.brakeDeccel : 0f;
+			Cc.steeringAngleDeg = 0f;
+			looseAge += Time.fixedDeltaTime;
+			if (Touched)
+			{
+				return;
+			}
+			Vector3 pos = Rb.position;
+			Origin.World(pos, out double x, out double z);
+			if (!settled)
+			{
+				if (looseAge >= 0.75f && Rb.linearVelocity.sqrMagnitude < 0.09f && Rb.angularVelocity.sqrMagnitude < 0.01f)
+				{
+					settled = true;
+					restX = x;
+					restZ = z;
+					restY = pos.y;
+					restTurn = Rb.rotation;
+				}
+				return;
+			}
+			double dx = x - restX, dz = z - restZ, dy = pos.y - restY;
+			if (dx * dx + dz * dz + dy * dy > 0.25 || Quaternion.Angle(restTurn, Rb.rotation) > 3f)
+			{
+				Touched = true;
+			}
+		}
+
+		/// <summary>A loose car hit by anything with a body (the player's car, another car, a drawn car's box) has been touched.</summary>
+		private void OnCollisionEnter(Collision c)
+		{
+			if (Loose && !Remote && c.rigidbody != null)
+			{
+				Touched = true;
+			}
+		}
+
+		/// <summary>
 		/// A stand-in's physics step: moved (kinematic, so it pushes and is a wall as another player's car is) to its driver's states played
 		/// back; its place on its leg kept for the drivers here; its smoke and wreck shown as its driver has them.
 		/// </summary>
@@ -1007,6 +1472,13 @@ namespace HalfGripOpenWorld
 			Leg = s.Leg;
 			P = s.P;
 			Stopped = s.Stopped;
+			Loose = s.Loose;
+			Touched = s.Touched;
+			if (Loose && Ec.audioSource != null && Ec.audioSource.isPlaying)
+			{
+				// Another machine's loose car: parked or stopped, its engine off.
+				Ec.audioSource.Stop();
+			}
 			Me = new TrafficDrive.Mover { Car = Car, Leg = s.Leg, P = s.P, V = Mathf.Sqrt(s.Vx * s.Vx + s.Vz * s.Vz), X = s.X, Z = s.Z, Hx = f.x / fl, Hz = f.z / fl, Physical = true };
 			if (s.Leg >= 0 && s.Leg < Owner.Day.Legs.Count)
 			{
@@ -1139,6 +1611,7 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Hurt = true;
+			Touched |= Loose;
 			Health -= amount;
 			if (Health > 0f)
 			{

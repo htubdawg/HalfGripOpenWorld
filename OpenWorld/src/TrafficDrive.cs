@@ -156,6 +156,44 @@ namespace HalfGripOpenWorld
 			return alongA < l + l * cos + w * sin && sideA < w + l * sin + w * cos && alongB < l + l * cos + w * sin && sideB < w + l * sin + w * cos;
 		}
 
+		/// <summary>
+		/// Contact physics: whether the player's car, a box <paramref name="pl"/> long by <paramref name="pw"/> wide (half sizes) at (px, pz)
+		/// facing (fx, fz) (unit), moving at (vx, vz), would meet another box (half sizes <paramref name="ol"/> by <paramref name="ow"/> at
+		/// (ox, oz) facing (hx, hz), unit) within <paramref name="ahead"/> seconds and <paramref name="extra"/> units more. The player's box
+		/// swept along its velocity is bounded by one box in its own frame (grown by the sweep's reach along each of its axes), and the two
+		/// boxes are tested on their four axes (two rectangles meet unless one of the axes separates them). <paramref name="margin"/> grows
+		/// both. Cheap: the traffic calls it each frame for the drawn cars near the player.
+		/// </summary>
+		internal static bool Sweeps(double px, double pz, double fx, double fz, double pl, double pw, double vx, double vz, double ahead, double extra,
+			double ox, double oz, double hx, double hz, double ol, double ow, double margin = 0.0)
+		{
+			double speed = Math.Sqrt(vx * vx + vz * vz);
+			double sx = vx * ahead, sz = vz * ahead;
+			if (speed > 0.1)
+			{
+				sx += vx / speed * extra;
+				sz += vz / speed * extra;
+			}
+			// The sweep's middle, and the player's box grown by half the sweep along its length and its width.
+			double cx = px + sx * 0.5, cz = pz + sz * 0.5;
+			double rx = fz, rz = -fx;
+			double l = pl + Math.Abs(sx * fx + sz * fz) * 0.5 + margin, w = pw + Math.Abs(sx * rx + sz * rz) * 0.5 + margin;
+			double hrx = hz, hrz = -hx;
+			double l2 = ol + margin, w2 = ow + margin;
+			double dx = ox - cx, dz = oz - cz;
+			if (dx * dx + dz * dz > (l + w + l2 + w2) * (l + w + l2 + w2))
+			{
+				return false;
+			}
+			// Each box's reach along an axis: its half length times the cosine to it plus its half width times the sine.
+			double ff = Math.Abs(fx * hx + fz * hz), fr = Math.Abs(fx * hrx + fz * hrz);
+			double rf = Math.Abs(rx * hx + rz * hz), rr = Math.Abs(rx * hrx + rz * hrz);
+			return Math.Abs(dx * fx + dz * fz) <= l + l2 * ff + w2 * fr
+				&& Math.Abs(dx * rx + dz * rz) <= w + l2 * rf + w2 * rr
+				&& Math.Abs(dx * hx + dz * hz) <= l2 + l * ff + w * rf
+				&& Math.Abs(dx * hrx + dz * hrz) <= w2 + l * fr + w * rr;
+		}
+
 		/// <summary>Whether a tunnel is on leg <paramref name="leg"/>'s path within <see cref="TunnelKeep"/> either side of <paramref name="p"/>.</summary>
 		internal static bool NearTunnel(TrafficDay.Leg leg, double p)
 		{

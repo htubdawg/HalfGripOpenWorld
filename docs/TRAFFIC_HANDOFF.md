@@ -6,8 +6,8 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 
 ## Start here
 
-0. **New agent: start with "The owner's report on the stage 4 build" below** (what the owner saw, the tyre-mark fix, and the plan for
-   physics on parked cars, "contact physics", which is the next job).
+0. **New agent: start with "Contact physics: as built" below** (built 2026-11-23 with the defaults of the owner's three decisions,
+   not yet tried in the game: test 51), then "The owner's report on the stage 4 build" (what the owner saw, the tyre-mark fix).
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
 2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo
    (the tools need `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for
@@ -422,7 +422,55 @@ They said three things:
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 
-### Contact physics: the plan (prepared 2026-11-23, not built)
+### Contact physics: as built (2026-11-23; not yet tried in the game, test 51)
+
+Built as the plan below says, with the defaults of the three decisions (a knocked parked car retired once out of sight; the full brake;
+`TrafficLoose` 6). **The decisions are still the owner's: ask** (they are a few lines each to change). Everyone in a room needs this
+build: `TrafficRoom.Version` is 2 (the state's flags gained `FlagLoose` 8 and `FlagTouched` 16).
+
+- **A loose car is a physics car with `TrafficBody.Loose` set**, kept in `physical` like the driven ones, so the room's code (states
+  sent, hits, wrecks, `DriverChanged`, `ClearPhysics`) carries it with no second list. `LooseCount` counts them; `ClaimNearest`'s cap
+  leaves them (and `looseWanted`) out, so `TrafficPhysics` keeps its 24 for the driven cars.
+- **The touch test** (`TrafficCars.Contact`, each frame after the drawing, `TrafficPhysics.cs`): for each drawn car (`chosen`, its view
+  active, not physical) within 30 + speed x sweep of the player and within 8 in height, `TrafficDrive.Sweeps` (pure): the player's box
+  (half 7.5 by 2.7) swept along its velocity for 0.3 s (0.5 s on a room's client, for the grant's round trip) plus 2 units, bounded
+  by one box in its own frame, tested on four axes against the drawn car's box (its look's `Box`, as its collider), margin 0.2. **The
+  margin is small on purpose:** trafficview found every lane car in the town's narrow streets passes kerb cars 5.8 apart middle to
+  middle (half a unit between bodies), so a margin of 0.5 with half-width 3 made a loose car of each one passed (2.4% of the rush's
+  lane cars). A hit claims the car through the room (`room.Claim`, its id in `looseWanted`); `DriverChanged` makes it loose
+  (`BecomeLoose`) instead of driven when it was wanted loose. Alone or on the host that is the same frame. At most one body is made a
+  frame (`madeFrame`); `Contact` walks `chosen` with `choosing` set and takes the new loose cars off it after the walk.
+- **`BecomeLoose`**: the pooled enemy car (`TakeBody`) at the drawn view's pose (0.15 up), trails cleared; parked at rest, moving at its
+  drawn speed. `TrafficBody.BeginLoose` (shares `Wake` with `Begin`): no driver, no engine sound, brakes full (`LooseStep`), wheels
+  straight. It keeps its leg (-1 parked), the leg's clock where it was drawn (`LooseT`), whether it was pulling in or out, the sim time.
+- **Touched** (`TrafficBody.Touched`): hit by anything with a rigidbody (`OnCollisionEnter`: the player, a car, a drawn car's kinematic
+  box), damaged, or, once it first stood still (0.75 s on, at rest: a parked one settled on its springs, a moving one braked to a stop),
+  moved over half a unit or turned over 3 degrees from there (kept in world coordinates, so origin shifts don't count).
+- **Going back** (`LooseBubble`, in the bubble's pass every 0.4 s): untouched with the player 60 away (`LooseLeave`), or `TrafficLoose`
+  set to 0: back to being drawn (`LooseBack`): parked, no ledger entry unless the day had it set off meanwhile (then late on that leg
+  by `LegClock - Start`, so it sets off now from its space); moving on its lane, `LateOp` by where it stopped (its place projected on
+  the leg), so it is drawn where the body was; pulling in or out (off its lane), late by `LegClock - LooseT`, drawn from where it was
+  made. One that stopped off its lane can't be drawn there, so it counts as touched. Touched: stays until the player is 500 away
+  (`LooseGone`, past the parked cars' drawn reach), then `Retire` (a hurt one destroyed, its smoke can't be stopped; a wreck burns
+  and goes as the driven ones do). Never handed to another player.
+- **What the others make of it:** in `OnABody` (hiding drawn cars, holding them back in their spaces) and `BuildMovers` (the drivers'
+  obstacles) a loose car still in its space (`TrafficBody.InSpace`: untouched, parked; a stand-in's: its leg sent as -1) counts only
+  if a drawn car would be in it: the cars driving past parked cars never stopped for them. In the road (stopped there, or knocked
+  out of its space) it is an obstacle and hides drawn cars coming up behind it, as a held physics car does. No headlight when loose.
+- **In a room:** states carry `FlagStopped | FlagLoose` (and `FlagTouched`), leg -1 when parked; the stand-ins elsewhere are walls,
+  engine off, headlight off. A host whose player left with loose cars (`LastOp`): untouched ones drawn as the day has them, the rest
+  retired.
+- **The pool warmed** (`WarmPool`, from `Step`): the first 3 bodies made one a frame at the start of the race, each woken for one
+  frame kinematic 5000 under the world (the Instantiate and the Awakes, Dacia Body's log lines too, paid then), then put to sleep in
+  the pool. (`TrafficPhysics` or `TrafficLoose` above 0.)
+- **Checked:** `tools/check.sh`; trafficview seed 7 in full (the day unchanged: `039684c31fa89f51`) and the other 15 seeds with
+  `TV_DRIVE_ONLY=1`, with a new check (`tools/trafficview/Contact.cs`): `Sweeps` on nine cases worked out by hand, and every car
+  driving its lane at 17:00 swept past the parked cars (0.3 s and 0.5 s): at most 2% may touch one (seed 7: 0 and 1 of 288).
+  `TV_CONTACT_LIST=1` lists each touch (how far ahead and to the side). trafficsim 16 seeds (the messages' version only).
+- **Not measured:** the frame cost (test 51). The fallback if it costs too much is in the plan below (kinematic with its scripts off
+  until its first contact).
+
+### Contact physics: the plan (prepared 2026-11-23, built as above)
 
 **The idea:** keep everything as it is, and add a second, small kind of physics car, made only where the player is about to touch a
 drawn car: a **loose car**, the same pooled enemy car (`TakeBody`), with no driver. It stands exactly where the drawn car was, in its
@@ -475,10 +523,9 @@ the first contact is then a wall for one physics step.
 
 ### Order of work for the next agent
 1. Read `CLAUDE.md`, this file's "Start here", this section, then "Stage 4: the traffic in a room as built".
-2. Ask the owner the three decisions above (and whether test 50 was done with a second player; its report comes first if so).
-3. Build contact physics with the defaults; `tools/check.sh`; trafficview seed 7 (unchanged); trafficsim (16 seeds) if `TrafficRoom`
-   changes; write test 51; commit and push to `traffic-test-branch`.
-4. Still open from before: test 50 (two players), test 49's frame time with `TrafficPhysics` 0, 20, 30, test 48 and test 47, the
+2. Contact physics is built (above). Wait for test 51's report (and test 50's, if the owner had a second player); fix what they show
+   first. Ask the owner the three decisions above if not yet answered.
+3. Still open from before: test 50 (two players), test 49's frame time with `TrafficPhysics` 0, 20, 30, test 48 and test 47, the
    eight cut-off town streets (a world change: ask), the owner's four stage 3 decisions (built with defaults).
 
 ## Stage 4: the traffic in a room as built (2026-11-23; not yet tried in the game)

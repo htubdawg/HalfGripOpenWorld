@@ -597,6 +597,7 @@ internal static partial class Program
 			ok &= Lateness(day);
 		}
 		ok &= Drive(day);
+		ok &= Contact(day);
 		if (picture != null)
 		{
 			Pictures.Draw(day, passes, picture);

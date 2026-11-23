@@ -543,6 +543,7 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			double w = SimNow();
+			WarmPool();
 			Origin.World(car.transform.position, out double cx, out double cz);
 			double mx = cx - chosenX, mz = cz - chosenZ;
 			if (Time.unscaledTime >= nextChoose || mx * mx + mz * mz > 150.0 * 150.0)
@@ -598,6 +599,8 @@ namespace HalfGripOpenWorld
 				Give(live[c]);
 				live.Remove(c);
 			}
+			// Contact physics: a drawn car the player is about to touch becomes a loose car.
+			Contact(w);
 			BuildMovers();
 			if (Mod.ShowCoords.Value)
 			{

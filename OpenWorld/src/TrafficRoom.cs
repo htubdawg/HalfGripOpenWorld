@@ -35,7 +35,7 @@ namespace HalfGripOpenWorld
 		internal const byte Tag = 0x7A;
 
 		/// <summary>The messages' layout. Raise it with any change to what they carry.</summary>
-		internal const byte Version = 1;
+		internal const byte Version = 2;
 
 		/// <summary>A claim not answered in this long (seconds) is given up (the host refused it by saying nothing: another drives the car).</summary>
 		internal const double ClaimWait = 2.0;
@@ -123,9 +123,13 @@ namespace HalfGripOpenWorld
 			internal bool Hurt => (Flags & 2) != 0;
 			/// <summary>Stopped by its driver (held, or given up): a wall, not a mover.</summary>
 			internal bool Stopped => (Flags & 4) != 0;
+			/// <summary>A loose car (contact physics: no driver, on its brakes where it was drawn), and whether it has been knocked since.</summary>
+			internal bool Loose => (Flags & 8) != 0;
+			internal bool Touched => (Flags & 16) != 0;
 		}
 
-		internal const byte FlagAlive = 1, FlagHurt = 2, FlagStopped = 4;
+		/// <summary>The state's flags. Loose and touched came with layout <see cref="Version"/> 2.</summary>
+		internal const byte FlagAlive = 1, FlagHurt = 2, FlagStopped = 4, FlagLoose = 8, FlagTouched = 16;
 
 		/// <summary>How the room's messages go (the game's network, or a pretend one).</summary>
 		internal interface ILink

@@ -174,7 +174,9 @@ namespace HalfGripOpenWorld
 					Vz = v.z,
 					P = (float)b.P,
 					Health = Mathf.Clamp(b.Health, 0f, 100f),
-					Flags = (byte)((b.Alive ? TrafficRoom.FlagAlive : 0) | (b.Hurt ? TrafficRoom.FlagHurt : 0) | (b.Hold || b.GaveUp ? TrafficRoom.FlagStopped : 0)),
+					// A loose car is stopped (a wall, not a mover), with its leg -1 when parked.
+					Flags = (byte)((b.Alive ? TrafficRoom.FlagAlive : 0) | (b.Hurt ? TrafficRoom.FlagHurt : 0) | (b.Hold || b.GaveUp || b.Loose ? TrafficRoom.FlagStopped : 0)
+						| (b.Loose ? TrafficRoom.FlagLoose : 0) | (b.Touched ? TrafficRoom.FlagTouched : 0)),
 				});
 			}
 			return outStates;
@@ -199,7 +201,7 @@ namespace HalfGripOpenWorld
 				}
 				if (remote.TryGetValue(car, out TrafficBody s))
 				{
-					if (s == null || !s.Alive || !s.gameObject.activeSelf || s.Me.Leg < 0 || MostPhysics == 0)
+					if (s == null || !s.Alive || !s.gameObject.activeSelf || s.Me.Leg < 0 || s.Loose || MostPhysics == 0)
 					{
 						// Can't take it over here: back on its timetable from where its stand-in is.
 						TrafficRoom.Op back = LastOp(car);
@@ -216,7 +218,9 @@ namespace HalfGripOpenWorld
 					Mod.Info("Traffic: car " + car + " handed here by " + EventLink.Name(was) + " (" + physical.Count + " driven here)");
 					return;
 				}
-				if (!Become(car, SimNow()))
+				// Claimed to be loose (the player about to touch it), or to drive.
+				bool asLoose = looseWanted.Remove(car);
+				if (!(asLoose ? BecomeLoose(car, SimNow()) : Become(car, SimNow())))
 				{
 					room.Release(car, default);
 				}
@@ -320,6 +324,11 @@ namespace HalfGripOpenWorld
 				return default;
 			}
 			TrafficRoom.State s = b.Play.Newest;
+			if (s.Loose && s.Alive && !s.Hurt && !s.Touched)
+			{
+				// An untouched loose car: drawn as the day has it again.
+				return default;
+			}
 			if (!s.Alive || s.Hurt || s.Leg < 0 || s.Leg >= day.Legs.Count)
 			{
 				return new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = w };

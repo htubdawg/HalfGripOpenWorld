@@ -12,6 +12,7 @@
     <Compile Include="Pictures.cs" />
     <Compile Include="Lateness.cs" />
     <Compile Include="Drive.cs" />
+    <Compile Include="Contact.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />

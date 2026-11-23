@@ -454,7 +454,27 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Owner's first try (2026-11-23, alone in a room): fine as in 49; some cars run into had no physics (the ones pulling in or out, at
      a trip's end or in a junction: walls by design until contact physics, item 51); tyre marks streaked from the scene's origin to
      a car as it turned physical (fixed: the trails are cleared when a body is placed). Check no streaks now.
-51. Contact physics (not built yet; see `docs/TRAFFIC_HANDOFF.md`, "Contact physics"): parked cars, and moving cars pulling in or out
-   or at a junction, become real cars just before you hit them. Drive gently into a parked car: it is barely moved; hard: it slides
-   and spins, and is gone from the day once you are out of sight. Drive past without touching: nothing changes. Frame time in a busy
-   town street with `TrafficLoose` 0 and 6.
+51. Contact physics (not released yet; on `traffic-test-branch`; built 2026-11-23, not yet tried; see `docs/TRAFFIC_HANDOFF.md`,
+   "Contact physics: as built"). New config `World` / `TrafficLoose` (default 6). Everyone in a room needs the same build (the traffic's
+   messages changed). With `ShowCoords` on, the overlay's `traffic:` line adds `loose N/6 (made N, back N, retired N)` after the
+   physics part. With `VerboseLog`, the log says `Traffic: car N loose (parked)` / `(moving at N km/h)`, `loose car N back as it was
+   (untouched)` / `(N s late)`, `loose car N retired (knocked)` / `(damaged)` / `(wrecked)`, and at the start three `a physics car's
+   body made` lines (the pool woken ahead of need, one a frame).
+   - Drive gently into a parked car (a drive, the kerb, a car park): it is a real car, barely moved (its brakes are on); it is not a
+     wall. Hit one hard: it slides and spins. Shoot one: it smokes, then is wrecked (no kill counted).
+   - Drive away from one you knocked: it stays where it ended up while you are near, and is gone once you are about 150 m away; drive
+     back: it is not there (its household goes without it for the rest of the race), and nothing else stands in its space wrongly.
+   - Drive slowly past parked cars along a narrow town street without touching them: the overlay's `made` should not go up for each
+     car you pass (a few is fine). Stop next to one without touching it, drive off: after about 18 m it is drawn again where it was
+     (`back as it was (untouched)`), no jump.
+   - Drive into a car pulling out of its space, or pulling in, or one turning at a junction near you: it brakes to a stop where it was
+     and is a real car (before, these were walls). Leave it untouched and drive away: it carries on later from where it stopped
+     (`N s late`), no jump; the cars behind it waited or were not drawn (none drove through it).
+   - Physics cars driving near a parked loose car (still in its space) pass it as before; one knocked into the road, they stop for.
+   - No tyre-mark streaks when a car turns loose.
+   - Frame time in a busy town street (Kingsbridge at about 5 pm) with `TrafficLoose` 0 and 6, nudging parked cars: please send the
+     numbers. Any hitch the moment a car turns loose (the first few, most of all) is worth a note.
+   - In a room (A host, B): B nudging a parked car near A: on both screens it is a real car, B's (A sees it as a stand-in, its headlight off at night).
+     A car B knocked is gone for both once B is well away. On B the first touch may still be a wall for a moment (the room's grant is
+     a round trip; B's sweep looks 0.5 s ahead to cover it); say if it is often.
+   - Send `LogOutput.log` and a screenshot of a car you knocked out of its space.
