@@ -7,21 +7,23 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 ## Start here
 
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
-2. Check out `traffic-test-branch` (the second round of stage 2 is the last commit; see "Stage 2: second round" below) and clone
-   `htubdawg/HalfGripRefs` next to the repo (the tools need
-   `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for `tools/check.sh`.
+2. Check out `traffic-test-branch` (last commit `4af27c4`, the lateness ledger) and clone `htubdawg/HalfGripRefs` next to the repo
+   (the tools need `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for
+   `tools/check.sh`.
 3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span
-   hour]]`. It builds the map, then race N's day twice, checks the day and the parking and exits 0. About 25 s. 16 seeds (1 to 15,
-   20261122) pass after the second round.
-4. **The owner answered (2026-11-23) the late-car question:** hide a late car in danger of overlapping and let it catch up in the
-   background once its tile is unloaded. Built as the lateness ledger (`TrafficLate.cs`), see "The ledger as built" under stage 3.
-   The physics cars themselves are next.
-5. **The owner chose (2026-11-23) to go ahead to stage 3 without waiting for their second try of stage 2.** Start with "Stage 3: the
-   plan" below. Test 48 (`docs/TESTING.md`) is still open: when its report comes (screenshots, `LogOutput.log`), fix what it shows
-   first, since stage 3 swaps stage 2's bodies for physics cars and shares their paint, poses and lamps. Before that report, stage 3
-   was planned on stage 2 never yet confirmed in the game. What changed since their first try is under "The owner's first report" and "Stage 2:
-   second round" below. The second round was done without a report from the owner (none had come): it changes how cars pull in and
-   out and turn at junctions, which test 48 now asks them to watch.
+   hour]]`. It builds the map, then race N's day twice, checks the day, the parking and the lateness ledger, and exits 0. About 30 s a
+   seed. 16 seeds (1 to 15, 20261122) pass at `4af27c4`. For all 16, run the built dll in a background loop (see "This session's
+   environment").
+4. **Stage 3 is under way.** Done: the lateness ledger (`TrafficLate.cs`) with the owner's rule for late cars (2026-11-23: *hide a late
+   car in danger of overlapping, let it catch up in the background once its tile is unloaded*), wired into `TrafficCars` and checked
+   in trafficview. See "The ledger as built" under stage 3. **Next: the physics cars**, from step 1 of "Order of work" under stage 3
+   (one enemy-prefab instance prepared as a traffic car, no driver; then `TrafficDriver`; then the bubble). When a physics car goes back
+   on its timetable it calls `TrafficCars.Late.Late(car, leg, w, D)` with D measured from where it is on its leg (so it does not jump);
+   a wreck calls `Retire(car, w)`. The owner's four decisions under stage 3 are still unanswered: build with the defaults and ask.
+5. **Test 48** (`docs/TESTING.md`, stage 2's second try) is still open. The owner chose (2026-11-23) to go ahead with stage 3 without
+   waiting. When its report comes (screenshots, `LogOutput.log`), fix what it shows first: stage 3's physics cars share stage 2's
+   paint, poses and lamps. What changed since their first try is under "The owner's first report" and "Stage 2: second round" below.
+   Nothing in the ledger changes what the game shows until something makes a car late, so test 48 is unaffected by it.
 
 **Where to look first in their next log:**
 - `Tile ... could not be worked out: Collection was modified`: there should be none now (fixed in `Buildings`, see below). If there
@@ -48,15 +50,16 @@ Open with the owner:
 - **The day of traffic** (`TrafficDay.cs`, below): the choices the design did not settle (trips beyond the map go by the road north
   only; through traffic circles the trunk; stays counted from leaving home; see "Decided while building").
 
-**Next: stage 3** (the owner's call, 2026-11-23, ahead of test 48's report): a real car near the player (our own driver on the game's
-car physics, within about 300 units), back on its timetable out of reach, late by what held it up; wrecks retired. The owner measures
-what 20 to 30 physics cars cost. Planned in "Stage 3: the plan" below.
+**Next: stage 3's physics cars** (the owner's call, 2026-11-23, ahead of test 48's report): a real car near the player (our own
+driver on the game's car physics, within about 300 units), back on its timetable out of reach through the ledger (built), late by
+what held it up; wrecks retired. The owner measures what 20 to 30 physics cars cost. Planned in "Stage 3: the plan" below.
 
 ## Where things stand
 
 Stage 1 (timetables, no game code): the traffic's map and each race's day of trips (`TrafficDay.cs`) are done and checked. Stage 2 (cars
 drawn in the game): built, tried once by the owner, three things fixed from that try (lamps, kerb parking, pulling in and out) and a
-tile bug from stage 1; waiting for the second try. Nothing is released and `mod.json` is unchanged (0.31.1). The branch also carries
+tile bug from stage 1; waiting for the second try. Stage 3 (physics cars near the player): the lateness ledger built and checked
+(`TrafficLate.cs`, `tools/trafficview/Lateness.cs`); the physics cars not started. Nothing is released and `mod.json` is unchanged (0.31.1). The branch also carries
 two world changes (the road fix and the wrap), so everyone in a room needs the build that has them. Bump the version and the README
 when the owner releases it.
 
@@ -520,7 +523,13 @@ made late, 106 hidden (37 within 300 of the player, which in stage 3 are physics
 farther), 117 caught up, 0 overlaps, 0 jumps, 0.04 ms a choice. Its first run found two faults, both fixed: the overlap test
 measured "beside" by one car's heading only (so a pair could pass one way round and fail the other), and the guard placed a car
 pulling out of a lot's bay on its lane rather than where it is drawn (`TrafficParking.Drawn`). The lateness here is harsh (up to two minutes, everyone leaving the bubble); measure again with
-the real lateness once the physics cars give it.
+the real lateness once the physics cars give it. Over the 16 seeds, standing: 10 to 92 made late, 7 to 140 hidden (4 to 48 of them
+within 300 of the player), 0 overlaps and 0 jumps in every seed.
+
+**Left in the ledger for later:** a hidden car stays hidden until neither of its places can be seen, so in a jam beside the player a
+hidden car can stay gone for a while; a hidden on-time car (the farther of a pair) is hidden the same way. If the owner notices cars
+vanishing near them, the first thing to try is hiding only cars beyond the bubble (300), since inside it stage 3's physics cars
+queue for real.
 
 ### Decisions for the owner (each has a default to build with if there is no answer yet)
 
@@ -537,7 +546,8 @@ the real lateness once the physics cars give it.
 
 - trafficview (no Unity): the driver's pure parts (the point ahead on a leg at any P, through a junction's curve; the speed target:
   profile, IDM, junction hold), the ledger (a late car's place, its stay shortened, the overlap count after applying random
-  lateness), the bubble's choice (which cars, held back where they would overlap).
+  lateness), the bubble's choice (which cars, held back where they would overlap). **The ledger's part is done**
+  (`tools/trafficview/Lateness.cs`); the driver's and the bubble's are to come with them.
 - In the game (write test 49 in `docs/TESTING.md`): cars near you are physics cars (bump one: it is pushed, not a wall; shoot one: it
   smokes, then wrecks); they follow their lanes, queue, wait at junctions, pull in and out as before; nothing drives through a car
   you stopped; far cars carry on; frame time with `TrafficPhysics` 0, 20, 30 at the evening rush in Kingsbridge; the log line counts
