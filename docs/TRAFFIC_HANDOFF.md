@@ -429,8 +429,11 @@ They said three things:
    so the game's cars do interpolate, and `Place` had not done the same: it now holds interpolation off until the 0.3 s are up, zeroes
    a dynamic body's velocities, and keeps the body's particle systems empty over the same window. Not checked: the enemy car's
    particle modules (whether any emit by distance) and its rigidbody's interpolation mode, which the scene dumps don't list; reading
-   them from the game's asset files needs a tool (UnityPy) that this session was not allowed to install. If streaks still show, a
-   screenshot is needed: where a streak starts and ends, and what kind of car it leads to.
+   them from the game's asset files needs a tool (UnityPy) that this session was not allowed to install. **Still seen (the owner,
+   2026-11-23, log with `body model N stands`, so that build): "the tires are just painting a decal from where they were to where
+   they are. Turn that crap off BEFORE you swap".** Fourth fix (not yet tried): `Place` now turns the trails off and clears them
+   before the body is moved at all (it moved first and cleared after), forces `emitting` off every frame of the 0.3 s window (the
+   game's effect controller turns them on when the wheels land), and `End` puts a body into the pool with its trails off and empty.
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 
@@ -470,8 +473,14 @@ build: `TrafficRoom.Version` is 2 (the state's flags gained `FlagLoose` 8 and `F
   its springs. `LearnRest` (every 0.4 s, at the choice) measures each body model's root height over the ground from this machine's
   physics cars standing or crawling (under 3 units/s, upright, 1.2 s after placing), a running mean of up to 40; once 3 are in,
   `RestPlace` puts bodies of that model at that height over the ground under the drawn car (logged once a model: `body model N
-  stands ... over the ground`). Until then the old small drop. Not done: the suspension's own state on a pooled body (the game's
-  wheel data keeps its last spring length), in case a jolt remains on the first step.
+  stands ... over the ground`). Until then the old small drop. **The springs themselves** (the owner: "the tires start at their maximum
+  compressed amount and drop down when enabled"): the game's `CarControllerNew` keeps each wheel's last spring length
+  (`WheelData.lastLength`, public); a new body's is 0 (its wheels are made in `Start`) and a pooled body's is whatever it last had, so
+  the first physics step's damper saw a jump, cancelled the spring, and the car dropped; and the drawn wheels follow `lastLength`
+  eased at 10% a frame. `TrafficBody.SettleWheels` works out each spring's length where the body stands (the controller's own ray:
+  from over the wheel down the car's up, distance less radius and 1, at most the rest length) and sets it and the drawn wheel's
+  place: in `Place` for a pooled body, and from `TrafficWheelsPatch` (a postfix on `CarControllerNew.Start`) for a new one, before
+  its first physics step.
 - **Lamps** (the owner, 2026-11-23: "parked cars should not turn their lights on when their physics get switched on"): the game's
   `CarControllerNew.Update` lights the tail lamps (`becSpate`, the `_EMISSION` keyword) whenever `brakeAccel > 0`, and a loose car
   holds its brake, so it showed brake lights; the head lamps glowed too. `TrafficBody.FindLamps` (in `MakeBody`) keeps each lamp's
