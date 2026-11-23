@@ -347,7 +347,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether a material glows (a lamp): emission on and brighter than a trace.</summary>
-		private static bool Glows(Material m)
+		internal static bool Glows(Material m)
 		{
 			if (m == null || !m.HasProperty("_EmissionColor"))
 			{

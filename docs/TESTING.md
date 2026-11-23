@@ -471,7 +471,10 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      and is a real car (before, these were walls). Leave it untouched and drive away: it carries on later from where it stopped
      (`N s late`), no jump; the cars behind it waited or were not drawn (none drove through it).
    - Physics cars driving near a parked loose car (still in its space) pass it as before; one knocked into the road, they stop for.
-   - No tyre-mark streaks when a car turns loose.
+   - No tyre-mark streaks when a car turns loose, turns physical, or a stand-in appears or jumps (second fix: the body is teleported
+     and its marks kept off for 0.3 s after any move).
+   - A parked car that turns loose keeps its lamps dark (no brake lights, no glowing head lamps), in a room on both screens. A moving
+     car that brakes to a stop keeps its lights.
    - Frame time in a busy town street (Kingsbridge at about 5 pm) with `TrafficLoose` 0 and 6, nudging parked cars: please send the
      numbers. Any hitch the moment a car turns loose (the first few, most of all) is worth a note.
    - In a room (A host, B): B nudging a parked car near A: on both screens it is a real car, B's (A sees it as a stand-in, its headlight off at night).

@@ -421,13 +421,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			Transform t = b.transform;
-			t.SetPositionAndRotation(v.Root.position + Vector3.up * 0.15f, v.Root.rotation);
-			if (!b.gameObject.activeSelf)
-			{
-				b.gameObject.SetActive(true);
-			}
-			b.ClearTrails();
+			b.Place(v.Root.position + Vector3.up * 0.15f, v.Root.rotation);
 			Vector3 velocity = Vector3.zero;
 			bool pulling = false;
 			double legT = 0.0;
@@ -578,13 +572,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
-			Transform t = b.transform;
-			t.SetPositionAndRotation(v.Root.position + Vector3.up * 0.4f, v.Root.rotation);
-			if (!b.gameObject.activeSelf)
-			{
-				b.gameObject.SetActive(true);
-			}
-			b.ClearTrails();
+			b.Place(v.Root.position + Vector3.up * 0.4f, v.Root.rotation);
 			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
 			physical[c] = b;
 			madePhysical++;
@@ -961,6 +949,7 @@ namespace HalfGripOpenWorld
 			b.Ec = ec;
 			b.Skin = skin;
 			b.Headlight = headlight;
+			b.FindLamps();
 			go.SetActive(false);
 			go.transform.SetParent(transform, false);
 			Mod.Info("Traffic: a physics car's body made (" + (physical.Count + remote.Count + bodySpare.Count + 1) + " in use or spare)");
@@ -1135,11 +1124,32 @@ namespace HalfGripOpenWorld
 		private float coastLeft;
 		private bool smoking;
 		private TrailRenderer[] trails;
+		/// <summary>How long the tyre marks stay off and empty after the body was put somewhere new (seconds).</summary>
+		private float trailsOffFor;
+		private const float TrailsOff = 0.3f;
 
 		/// <summary>
-		/// The tyre marks (the game's <c>TireTrails</c>: trail renderers on the wheels) forgotten after the body is put somewhere new (taken from
-		/// the pool, made, a stand-in shown at its first state): otherwise each draws a mark from where it last was (for a new body, the
-		/// scene's origin) across the country to here.
+		/// Puts the body at scene <paramref name="pos"/> turned <paramref name="turn"/>, awake, its rigidbody moved there too (a teleport, so
+		/// neither physics nor its interpolation starts from where it last was), and its tyre marks put out for a moment.
+		/// </summary>
+		internal void Place(Vector3 pos, Quaternion turn)
+		{
+			transform.SetPositionAndRotation(pos, turn);
+			if (!gameObject.activeSelf)
+			{
+				gameObject.SetActive(true);
+			}
+			Rb.position = pos;
+			Rb.rotation = turn;
+			ClearTrails();
+		}
+
+		/// <summary>
+		/// The tyre marks (the game's <c>TireTrails</c>: trail renderers on the wheels, which its <c>EnemyCarEffectController</c> keeps emitting
+		/// whenever the wheels are on the ground) forgotten after the body is put somewhere new (taken from the pool, made, a stand-in shown
+		/// at its first state), and kept off and empty for <see cref="TrailsOff"/>. Clearing once was not enough (the owner still saw streaks
+		/// from the scene's origin): for a frame or two after the move the body can still be drawn from the rigidbody's old pose, and the
+		/// marks drew a new line from there across the country to here.
 		/// </summary>
 		internal void ClearTrails()
 		{
@@ -1151,7 +1161,116 @@ namespace HalfGripOpenWorld
 			{
 				if (t != null)
 				{
+					t.emitting = false;
 					t.Clear();
+				}
+			}
+			trailsOffFor = TrailsOff;
+		}
+
+		/// <summary>The lamps (renderers with a glowing material that take no paint: head and tail lights), their glowing slots and colours.</summary>
+		private Renderer[] lamps;
+		private int[][] lampSlots;
+		private Color[][] lampColours;
+		private bool lampsDark;
+
+		/// <summary>Finds the lamps, while the body is still the prefab's (before the controller first lights its brake lights).</summary>
+		internal void FindLamps()
+		{
+			List<Renderer> found = new List<Renderer>();
+			List<int[]> slots = new List<int[]>();
+			List<Color[]> colours = new List<Color[]>();
+			HashSet<Renderer> paint = new HashSet<Renderer>();
+			if (Skin != null)
+			{
+				foreach (MeshRenderer r in Skin.carMeshRenderers ?? new MeshRenderer[0])
+				{
+					paint.Add(r);
+				}
+				foreach (MeshRenderer r in Skin.hoodsRenderers ?? new MeshRenderer[0])
+				{
+					paint.Add(r);
+				}
+			}
+			foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+			{
+				if (r is TrailRenderer || r is ParticleSystemRenderer || paint.Contains(r))
+				{
+					continue;
+				}
+				Material[] mats = r.sharedMaterials;
+				List<int> at = new List<int>();
+				List<Color> cs = new List<Color>();
+				for (int m = 0; m < mats.Length; m++)
+				{
+					if (TrafficCars.Glows(mats[m]))
+					{
+						at.Add(m);
+						cs.Add(mats[m].GetColor("_EmissionColor"));
+					}
+				}
+				if (at.Count > 0)
+				{
+					found.Add(r);
+					slots.Add(at.ToArray());
+					colours.Add(cs.ToArray());
+				}
+			}
+			lamps = found.ToArray();
+			lampSlots = slots.ToArray();
+			lampColours = colours.ToArray();
+		}
+
+		/// <summary>
+		/// Darkens (a parked car) or lights the lamps. The game's car controller lights the tail lamps whenever the brake is on (it turns their
+		/// material's emission keyword on and off), and a parked loose car holds its brake: its lamps' emission colour is made black instead,
+		/// which the controller never touches, so they stay dark whatever it does with the keyword; lit again, the colours come back.
+		/// </summary>
+		internal void Lamps(bool on)
+		{
+			if (lamps == null || lampsDark == !on)
+			{
+				return;
+			}
+			lampsDark = !on;
+			for (int i = 0; i < lamps.Length; i++)
+			{
+				if (lamps[i] == null)
+				{
+					continue;
+				}
+				// This body's own copies (the controller makes them for the tail lamps anyway).
+				Material[] mats = lamps[i].materials;
+				for (int k = 0; k < lampSlots[i].Length; k++)
+				{
+					int m = lampSlots[i][k];
+					if (m < mats.Length && mats[m] != null)
+					{
+						mats[m].SetColor("_EmissionColor", on ? lampColours[i][k] : Color.black);
+					}
+				}
+			}
+		}
+
+		/// <summary>After the body was placed: its tyre marks kept empty, then back on (as the game has them: on unless airborne).</summary>
+		private void LateUpdate()
+		{
+			if (trailsOffFor <= 0f || trails == null)
+			{
+				return;
+			}
+			trailsOffFor -= Time.deltaTime;
+			bool back = trailsOffFor <= 0f;
+			foreach (TrailRenderer t in trails)
+			{
+				if (t == null)
+				{
+					continue;
+				}
+				t.Clear();
+				if (back)
+				{
+					t.emitting = !Cc.isAirborne;
 				}
 			}
 		}
@@ -1184,6 +1303,8 @@ namespace HalfGripOpenWorld
 			LooseT = t;
 			LooseW = w;
 			LoosePulling = pulling;
+			// A parked car's lamps are dark (it holds its brake, which would light the brake lights); a car braked to a stop keeps them.
+			Lamps(leg >= 0);
 			Cc.brakeAccel = Cc.carStats.brakeDeccel;
 			if (Ec.audioSource != null)
 			{
@@ -1199,6 +1320,7 @@ namespace HalfGripOpenWorld
 			Loose = Touched = settled = false;
 			LooseLeg = -1;
 			looseAge = 0f;
+			Lamps(true);
 			Rb.isKinematic = false;
 			Owner = owner;
 			Car = car;
@@ -1258,6 +1380,7 @@ namespace HalfGripOpenWorld
 			Stopped = false;
 			Loose = Touched = false;
 			LooseLeg = -1;
+			Lamps(true);
 			Rb.isKinematic = true;
 			Health = 100f;
 			Alive = true;
@@ -1464,9 +1587,21 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			Rb.MovePosition(Origin.Local(s.X, s.Y, s.Z));
+			Vector3 to = Origin.Local(s.X, s.Y, s.Z);
 			Quaternion q = new Quaternion(s.Qx, s.Qy, s.Qz, s.Qw);
-			Rb.MoveRotation(q);
+			if ((to - Rb.position).sqrMagnitude > 10f * 10f)
+			{
+				// A snap (states missed for a while): a jump, not a drive there, with no tyre marks drawn along it.
+				Rb.position = to;
+				Rb.rotation = q;
+				transform.SetPositionAndRotation(to, q);
+				ClearTrails();
+			}
+			else
+			{
+				Rb.MovePosition(to);
+				Rb.MoveRotation(q);
+			}
 			Vector3 f = q * Vector3.forward;
 			float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
 			Leg = s.Leg;
@@ -1474,6 +1609,8 @@ namespace HalfGripOpenWorld
 			Stopped = s.Stopped;
 			Loose = s.Loose;
 			Touched = s.Touched;
+			// Another machine's parked loose car: dark, as there.
+			Lamps(!(s.Loose && s.Leg < 0));
 			if (Loose && Ec.audioSource != null && Ec.audioSource.isPlaying)
 			{
 				// Another machine's loose car: parked or stopped, its engine off.

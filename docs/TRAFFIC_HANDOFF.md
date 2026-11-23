@@ -417,8 +417,14 @@ They said three things:
    off into the distance."** Fixed (not yet tried in the game): the enemy car's wheels carry `TrailRenderer`s (the game's
    `TireTrails`, which turns `emitting` on while the tyres skid), and a body made at the prefab's place (the scene's origin) or
    taken from the pool where it last was, then moved into place, drew a mark along the move. `TrafficBody.ClearTrails()` clears
-   them after `Become` places a body and after a stand-in is shown at its first state. If streaks still show: look for any other
-   place a body is moved without physics (a playback snap of over a second, `Playback.PlayAt`'s jump), and clear there too.
+   them after `Become` places a body and after a stand-in is shown at its first state. **The owner still saw the streaks after that
+   (2026-11-23).** Second fix (not yet tried): the game's `EnemyCarEffectController.Update` keeps the trails emitting whenever the
+   wheels are on the ground, and one clear was not enough: for a frame or two after the move the body could still be drawn from the
+   rigidbody's old pose (the scene's origin for a new body), and the marks drew a new line from there. Now every placement goes
+   through `TrafficBody.Place` (the transform and the rigidbody both moved: a teleport), and `ClearTrails` turns the trails off and
+   keeps them empty for 0.3 s (`LateUpdate`), then back on as the game has them (on unless airborne). A stand-in whose playback
+   snaps more than 10 units also jumps and clears instead of being swept there. If streaks still show, ask for a screenshot and
+   whether they start at a car that just turned physical, a stand-in, or a loose car.
 3. **"I'd really appreciate physics when you hit parked cars, could we accomplish that without a massive performance hit or limiting
    traffic physics?"** Yes, planned below; not started. Answer the owner's decisions first if they have replied.
 
@@ -453,6 +459,12 @@ build: `TrafficRoom.Version` is 2 (the state's flags gained `FlagLoose` 8 and `F
   made. One that stopped off its lane can't be drawn there, so it counts as touched. Touched: stays until the player is 500 away
   (`LooseGone`, past the parked cars' drawn reach), then `Retire` (a hurt one destroyed, its smoke can't be stopped; a wreck burns
   and goes as the driven ones do). Never handed to another player.
+- **Lamps** (the owner, 2026-11-23: "parked cars should not turn their lights on when their physics get switched on"): the game's
+  `CarControllerNew.Update` lights the tail lamps (`becSpate`, the `_EMISSION` keyword) whenever `brakeAccel > 0`, and a loose car
+  holds its brake, so it showed brake lights; the head lamps glowed too. `TrafficBody.FindLamps` (in `MakeBody`) keeps each lamp's
+  glowing slots and emission colours; `Lamps(false)` sets this body's copies' `_EmissionColor` black, which the controller never
+  touches, so they stay dark whatever it does with the keyword. Dark for a parked loose car and for another machine's (state loose
+  with leg -1); lit again in `Wake` and `BeginRemote`. A moving car braked to a stop keeps its lamps.
 - **What the others make of it:** in `OnABody` (hiding drawn cars, holding them back in their spaces) and `BuildMovers` (the drivers'
   obstacles) a loose car still in its space (`TrafficBody.InSpace`: untouched, parked; a stand-in's: its leg sent as -1) counts only
   if a drawn car would be in it: the cars driving past parked cars never stopped for them. In the road (stopped there, or knocked
