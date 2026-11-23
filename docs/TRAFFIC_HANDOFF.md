@@ -459,6 +459,10 @@ They said three things:
    2 frames, which at a high frame rate pass with no physics step, so an interpolated body was drawn for a frame from its pose before
    the shift and its trail kept a point there. Seventh fix (not yet tried): interpolation comes back only after two physics steps since
    the shift as well (`Origin.RestoreInterpolation`). The guard stays as a net. Parked cars are "still a little jiggly, tolerable".
+   **The owner's log over 9 shifts:** no more shift-long segments, but the guard still emptied 5 marks after 3 of the shifts with the
+   wheel 104 to 146 from them (a tenth of the shift): the body still drawn part of the way back for a frame, so holding interpolation
+   off does not clear Unity's history of the old pose. Eighth fix (not yet tried): each traffic body keeps its marks off for
+   `ShiftHold` (0.3 s) from an origin shift, then empties them and turns them back on.
    **Parked cars' wheel height (the owner, after 0.32.0: "a physics enabled car wouldn't have its suspension fully out or in, we need
    to calculate where it should be so the transition is seamless").** Built (not yet tried): `TrafficRest.cs` works out the game's car
    at rest from `CarControllerNew.FixedUpdate` (read from the decompile): per wheel a ray from one unit above its place along

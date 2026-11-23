@@ -1507,6 +1507,14 @@ namespace HalfGripOpenWorld
 				trailShifts = -1;
 			}
 			bool shifted = trailShifts != Origin.Shifts;
+			if (shifted && trailShifts >= 0 && trailsOffFor <= 0f)
+			{
+				// An origin shift: for a few frames after it an interpolated body can still be drawn part of the way back toward where it was
+				// before (the owner's log, 2026-11-23: marks emptied with the wheel 104 to 146 from them, a tenth of the shift, even with
+				// interpolation held off over the shift). The marks are kept off over that time instead, and emptied as they come back.
+				TrailsOffNow();
+				trailsSettle = Mathf.Max(trailsSettle, ShiftHold);
+			}
 			trailShifts = Origin.Shifts;
 			// One physics step's travel is the most interpolation lags by; this is many times that.
 			bool stale = !Rb.isKinematic && (transform.position - Rb.position).sqrMagnitude > JumpSlack * JumpSlack;
@@ -1592,6 +1600,9 @@ namespace HalfGripOpenWorld
 			}
 			return null;
 		}
+
+		/// <summary>How long the marks stay off after an origin shift (seconds): past the frames and physics steps the shift's interpolation pause lasts.</summary>
+		private const float ShiftHold = 0.3f;
 
 		/// <summary>Distance (units) past which a move in one frame, or the drawn body from its rigidbody, is a jump.</summary>
 		private const float JumpSlack = 4f;
