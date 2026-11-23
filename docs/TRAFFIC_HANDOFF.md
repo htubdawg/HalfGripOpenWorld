@@ -7,19 +7,18 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
 ## Start here
 
 1. Read `CLAUDE.md`, then the traffic sections of `docs/PLAN.md` (see above), then this file.
-2. Check out `traffic-test-branch` (last commit `4af27c4`, the lateness ledger) and clone `htubdawg/HalfGripRefs` next to the repo
+2. Check out `traffic-test-branch` and clone `htubdawg/HalfGripRefs` next to the repo
    (the tools need `-p:GameDir=/home/user/HalfGripRefs/game`). Build the stub HalfGripTools.dll (bottom of this file) for
    `tools/check.sh`.
 3. Run `dotnet run -c Release --project tools/trafficview -p:GameDir=... [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span
-   hour]]`. It builds the map, then race N's day twice, checks the day, the parking and the lateness ledger, and exits 0. About 30 s a
-   seed. 16 seeds (1 to 15, 20261122) pass at `4af27c4`. For all 16, run the built dll in a background loop (see "This session's
-   environment").
-4. **Stage 3 is under way.** Done: the lateness ledger (`TrafficLate.cs`) with the owner's rule for late cars (2026-11-23: *hide a late
-   car in danger of overlapping, let it catch up in the background once its tile is unloaded*), wired into `TrafficCars` and checked
-   in trafficview. See "The ledger as built" under stage 3. **Next: the physics cars**, from step 1 of "Order of work" under stage 3
-   (one enemy-prefab instance prepared as a traffic car, no driver; then `TrafficDriver`; then the bubble). When a physics car goes back
-   on its timetable it calls `TrafficCars.Late.Late(car, leg, w, D)` with D measured from where it is on its leg (so it does not jump);
-   a wreck calls `Retire(car, w)`. The owner's four decisions under stage 3 are still unanswered: build with the defaults and ask.
+   hour]]`. It builds the map, then race N's day twice, checks the day, the parking, the lateness ledger and the physics cars, and
+   exits 0. About 45 s a seed (`TV_DRIVE_ONLY=1`: only the day's and the physics cars' checks, about 18 s). 16 seeds (1 to 15,
+   20261122) pass. For all 16, run the built dll in a background loop (see "This session's environment").
+4. **Stage 3 is built, not yet tried in the game.** The lateness ledger (`TrafficLate.cs`), and the physics cars: the driver's
+   arithmetic (`TrafficDrive.cs`), the game side (`TrafficPhysics.cs`: the bubble, the prepared enemy car, `TrafficBody`, the
+   `TakeDamage` patch), checked in trafficview (`tools/trafficview/Drive.cs`). See "Stage 3: the physics cars as built". Built with the
+   defaults of the owner's four decisions (still unanswered: ask). **Next: test 49** (`docs/TESTING.md`), then fix what it shows;
+   then stage 4 (rooms).
 5. **Test 48** (`docs/TESTING.md`, stage 2's second try) is still open. The owner chose (2026-11-23) to go ahead with stage 3 without
    waiting. When its report comes (screenshots, `LogOutput.log`), fix what it shows first: stage 3's physics cars share stage 2's
    paint, poses and lamps. What changed since their first try is under "The owner's first report" and "Stage 2: second round" below.
@@ -50,16 +49,17 @@ Open with the owner:
 - **The day of traffic** (`TrafficDay.cs`, below): the choices the design did not settle (trips beyond the map go by the road north
   only; through traffic circles the trunk; stays counted from leaving home; see "Decided while building").
 
-**Next: stage 3's physics cars** (the owner's call, 2026-11-23, ahead of test 48's report): a real car near the player (our own
-driver on the game's car physics, within about 300 units), back on its timetable out of reach through the ledger (built), late by
-what held it up; wrecks retired. The owner measures what 20 to 30 physics cars cost. Planned in "Stage 3: the plan" below.
+**Stage 3's physics cars are built** (the owner's call, 2026-11-23, ahead of test 48's report): a real car near the player (our own
+driver on the game's car physics, within 300 units), back on its timetable out of reach through the ledger, late by what held it up;
+wrecks retired. The owner measures what 20 to 30 physics cars cost (`TrafficPhysics`, test 49).
 
 ## Where things stand
 
 Stage 1 (timetables, no game code): the traffic's map and each race's day of trips (`TrafficDay.cs`) are done and checked. Stage 2 (cars
 drawn in the game): built, tried once by the owner, three things fixed from that try (lamps, kerb parking, pulling in and out) and a
-tile bug from stage 1; waiting for the second try. Stage 3 (physics cars near the player): the lateness ledger built and checked
-(`TrafficLate.cs`, `tools/trafficview/Lateness.cs`); the physics cars not started. Nothing is released and `mod.json` is unchanged (0.31.1). The branch also carries
+tile bug from stage 1; waiting for the second try. Stage 3 (physics cars near the player): the lateness ledger and the physics cars
+built and checked in trafficview (`TrafficLate.cs`, `TrafficDrive.cs`, `TrafficPhysics.cs`; `tools/trafficview/Lateness.cs`,
+`Drive.cs`); not yet tried in the game (test 49). Nothing is released and `mod.json` is unchanged (0.31.1). The branch also carries
 two world changes (the road fix and the wrap), so everyone in a room needs the build that has them. Bump the version and the README
 when the owner releases it.
 
@@ -387,7 +387,90 @@ the 5 pm peak are unchanged within a few percent; cars out of sight ("round the 
 - **The diagnostics** in trafficview (`TV_MEET`) and `TrafficDay` (`FarSide`, `FarEnd`, `HeldSince`) are cheap; keep them until the
   owner's report on this round.
 
-## Stage 3: the plan (prepared 2026-11-23; the lateness ledger built, the physics cars not yet)
+## Stage 3: the physics cars as built (2026-11-23; not yet tried in the game)
+
+What was built, against the plan below (read the plan for the why; this is what differs and what to know).
+
+**`OpenWorld/src/TrafficDrive.cs` (pure, no Unity types):**
+- `Line(leg, p)`: the line a car steers along, its lane through `TrafficParking.Corner` (made internal), the curve stage 2 draws on.
+- `Project(leg, from, x, z)`: where a car is along its leg, searched a little either side of the last answer (6 behind, 6 + v/10
+  ahead per physics step; 15 and 60 once it is off its line). trafficview: 4,000 points project back exactly (worst 0.07).
+- `TimeAt(leg, p)` (inverts `DistanceAt`), `LegClock`, `Lateness(leg, p, w)` (negative when early), `OnTime(leg, w)`.
+- `Prepare(day, ref mover)`: the edge it is on, the junction ahead (node, arms, `ToBox` to its middle) and the junction whose box's far
+  half it is in (`Back`): two junctions can be closer than their boxes (Kingsbridge), and a car leaving one is already coming to the
+  next. Missing this was the last big source of crossings.
+- `Target(...)`: the least of the leg's profile (`TrafficDay.Profile`, made internal, built once when the car turns physical) here and
+  half a second on; a safe speed (Gipps-like, braking 8.25, 1 s gap, the day's 7 standstill) behind the nearest car on its path
+  (physics or drawn, matched by edge, way and road distance) and behind anything in its lane with no path (the player's car, wrecks,
+  a car knocked off, a drawn car pulling in or out, where it is drawn); stopping its **front** at the box's edge while a car whose way
+  crosses its own (the day's `Crosses`) is in the box, is committed (can't stop short of it any more: always first), or is coming and
+  goes first (sooner by over a second, else the car on the right, else the lower index; a drawn car always first, it gives way to
+  nobody), or while its way out has no room past the box; stopping at its trip's end; and easing off (never below 4, never in or just
+  before a box) once more than 40 ahead of its timetable (none on the last stretch). Waiting 8 s, it no longer gives way to cars still
+  coming (only to those in the box or committed); 24 s, not to a drawn car standing in the box (the day holds it there for a car that
+  is physical now). About 0.5 to 1 µs a call.
+- `Overlap(...)`: two cars' bodies (14 by 5.2) overlapping, shared by the game's hiding and trafficview's check.
+
+**`OpenWorld/src/TrafficPhysics.cs` (part of `TrafficCars`, and `TrafficBody`, and the patch):**
+- **The bubble**, every choice (0.4 s): `Bubble` first (going back), then the choice, then `MakePhysical` from the chosen drawn moving
+  cars, nearest first, within 300 (`PhysicsReach`), up to `World` / `TrafficPhysics` (new config, default 24, 0 to 60). Not while it
+  pulls out or in, in a junction's box, within 80 of a tunnel on its path, or within `EndZone` (45) + 25 of its trip's end. Placed at its
+  drawn body's pose (0.4 up), velocity heading × the day's speed.
+- **Going back**: past 400 (`PhysicsLeave`), on the last 45 of its trip or near a tunnel, if alive, unhurt, upright and on its lane
+  (8 units, 45 degrees): `late.Late(car, leg, w, D, 0.05)` with D = `Lateness` where it is (early too: kept, so no jump), back to the
+  pool. On the last stretch it waits until D ≥ -1 (it eases off to be on time there). Otherwise it stops (`Hold`) until the player is
+  400 away, then is retired (`late.Retire`); a hurt one destroyed, an unhurt one pooled.
+- **Drawn cars near physics cars** (the day doesn't know one is held up): a drawn car in a physics car, or about to run into one (in
+  its lane within 18 + 1.5 s of travel behind it, or bodies overlapping whichever way they face), is hidden (`late.Hide`, back once out
+  of sight, the ledger's rule); a car about to pull out (or waiting at its trip's start, P ≤ 1) where a physics car stands or is coming
+  (25 ahead, 45 + 18 behind) is **held back in its space** (`TrafficLate.HoldBack`: late by however long until its start, and a second),
+  checked every frame it is drawn as well as at the choice (a car sets off between choices). The drivers see the drawn moving cars and
+  the physics cars, prepared, every frame (`BuildMovers`).
+- **The car** (`MakeBody`): `Instantiate(tm.enemyCarPrefab)` under an inactive holder; before its first waking: `EnemyController`
+  off (`Start` never runs: no guns fitted, no lap looked for, no engine sound), every `EnemyModule` and `EnemyGun` off, `PitGuard` off,
+  the `HeadLightsController` destroyed (its light ours: the sky's 2 s look would turn every one on), `CarSkinController.carName =
+  "Traffic"` (no name taken from the race's pool) and `carSkin` our paint as a `CarSkin` (model, colours as stage 2's), `isPlayer`
+  false, `tm` set. Its first activation runs the game's `Awake`s (damage visuals, tyre damage, the skin equipped), then `carStats =
+  new CarStats()` (a plain car: the enemy AI's `Awake` had set the player's). A pooled car is re-skinned with `ApplySkin`.
+- **`TrafficBody.FixedUpdate`**: `Project`, `Prepare`, `Target`, then steering (a point 10 to 45 ahead on `Line`, the signed angle times
+  0.7 to 1, clamped to 45 degrees, smoothed) and pedals (brake in proportion over the target, the gear that pulls hardest with a 0.2 s
+  gap in neutral and 0.6 s hold, the pedal in proportion under it, held on the brake when stopped). Off its line over 8 for 10 s: gives
+  up and stands.
+- **Damage (owner decision 1's default):** `TrafficDamagePatch`, a prefix on `EnemyController.TakeDamage(float, bool)`, which every
+  hit reaches: for a car with a `TrafficBody`, `Damage(amount)`: its own health (the car's 100), smoke while it lasts; at 0 the game's
+  wreck look (`damageVisuals.SetWrecked`, flames, the destroy sound) without `EnemyKilled`, `RaceStats`, lifesteal, combo or text;
+  explodes after 5 s and is destroyed (decision 2's default); retired from the day.
+- Engine: one of `EnemyController.engineSounds` looped (the game's enemies do the same, no pitch). Headlights: the physics cars first
+  out of `MostLit` (6). Overlay: `physics N/24 (... giving way, ... stopped), made, back on time / late, wrecked, retired, hidden, held
+  back`. Log (`VerboseLog`): each car made, back, wrecked, retired.
+
+**`TrafficLate` changes:** `Late(..., least)` keeps any lateness over `least` (default 1.5 s as before), negative too; `HoldBack`; a
+late car before its leg's start is drawn parked where its last trip left it (`Before`), not on the road at its start.
+
+**trafficview's physics check** (`tools/trafficview/Drive.cs`, after the ledger's): the line and `TimeAt` round trips; then 10 minutes
+from 17:00 standing where the most cars drive within 300, every step 0.05 s: the bubble as the game runs it (made, going back, held
+back, hidden), the physics cars as points on their lanes with the game car's pull (6) and brakes (30) driven by the real `Target`; and
+again with the player's car stopped across a lane. FAIL: more than 6 pairs of cars' bodies in each other (`MostMeetings`) or 3
+crossing in a junction box, any step in the player's car, a jump over 3 going back, a car still physical stopped over 90 s (not with the
+player's car in the road: they queue behind it for good). The 16 seeds: 0 to 5 pairs a run (most 0 to 2), 0 to 2 crossings, jumps
+under 2 units, no long stops; about 120 cars made physical, a third of them going back late (mean 15 to 50 s). `TV_DRIVE_NOTES=1`
+prints each meeting and crossing; `TV_DRIVE_CAR=N` follows car N through its junctions.
+
+**What is left (known):**
+- **Junction meetings**: cars that both commit at once to a turn or a merge still meet in the box (0 to 5 in 10 minutes at the busiest
+  spot). With physics they bump rather than pass through.
+- **Drawn cars are not physics cars' equals**: a drawn car never gives way, and with the cap reached (the busiest spots have 25 to 40
+  cars driving within 300) cars coming up behind a physics queue are hidden. Raise the cap if the owner's frame time allows.
+- A car held back in its space past its time keeps its space, but the day gave that space to the next car 17.5 s after the day's
+  departure: rarely two cars in one space.
+- A physics car that the game itself destroys (or that falls under the map) leaves no ledger entry: it is back on the day where the day
+  has it.
+- **Not in the game yet**: whether the prepared enemy car behaves (wakes without errors, stands on the road, the paint), the steering
+  gain and the pedals on the real physics (they were written from the game's code, not tuned), the cost. A traffic car's own crash
+  into another physics car does no damage (as the game's enemies, only the player's touch counts).
+- Rooms (stage 4): every machine makes its own physics cars now.
+
+## Stage 3: the plan (prepared 2026-11-23; built, see above)
 
 The agreed stage (`docs/PLAN.md`, "Traffic: the agreed plan", stage 3): **within about 300 units (90 m) of the player a timetabled
 car becomes a game car with our own driver** (follows the car in front, waits at junctions, can be bumped, shot and wrecked); out of
@@ -544,11 +627,9 @@ queue for real.
 
 ### Checks
 
-- trafficview (no Unity): the driver's pure parts (the point ahead on a leg at any P, through a junction's curve; the speed target:
-  profile, IDM, junction hold), the ledger (a late car's place, its stay shortened, the overlap count after applying random
-  lateness), the bubble's choice (which cars, held back where they would overlap). **The ledger's part is done**
-  (`tools/trafficview/Lateness.cs`); the driver's and the bubble's are to come with them.
-- In the game (write test 49 in `docs/TESTING.md`): cars near you are physics cars (bump one: it is pushed, not a wall; shoot one: it
+- trafficview (no Unity): the driver's pure parts, the ledger, the bubble's choice. **Done** (`tools/trafficview/Lateness.cs`,
+  `Drive.cs`).
+- In the game (test 49 in `docs/TESTING.md`, written): cars near you are physics cars (bump one: it is pushed, not a wall; shoot one: it
   smokes, then wrecks); they follow their lanes, queue, wait at junctions, pull in and out as before; nothing drives through a car
   you stopped; far cars carry on; frame time with `TrafficPhysics` 0, 20, 30 at the evening rush in Kingsbridge; the log line counts
   physics cars made, gone back late, retired.

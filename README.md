@@ -43,8 +43,10 @@ generated from a fixed seed (the same for every player) the way real country com
   workshops, filling stations and market places, and at the kerb of the town streets near the offices, the high streets and the
   churches (never on the main roads or the narrow lanes; a household's second car is round the back, out of sight). They drive along
   the lane to their space and pull in nose first, and out again. They are the game's own enemy car, in everyday colours (the same
-  car the same colour every race), their lamps off when parked, and at night the nearest few light the road. For now a traffic car cannot be pushed or wrecked: hitting
-  one is like hitting a wall.
+  car the same colour every race), their lamps off when parked, and at night the nearest few light the road. Near you (within about 90 m) the moving cars are real
+  cars: they follow their lanes, queue behind each other and give way at junctions, and can be pushed, shot and wrecked (a wreck burns,
+  explodes and is gone for the rest of the race; it does not count as a kill). A car you held up carries on late once you are past.
+  Parked cars, and the cars further off, are still like walls to hit.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
   painted into the sky, so on the clearest days you see across the whole world, the far mountains hazy on the horizon.
@@ -200,6 +202,7 @@ the same ground.
 | World | `Deer` | true | Draws the deer (within about 150 m of the car, the nearest 40). Off, none are drawn and none can be hit or shot; where they are does not change. |
 | World | `DeerAmount` | 1 | How many deer groups there are, to find what feels right: 1 is 160 groups (about 540 deer), 0.5 half, 0 none; above 1 there are only so many places deer can live, so 2 gives about 215 groups and 4 about 245. Only alone: in a room it is always 1. From the next race. |
 | World | `Traffic` | true | Draws the traffic (a preview): moving cars within about 270 m, parked ones within about 140 m, the nearest 72. Off, none are drawn; where they are does not change. Only changes your own view. |
+| World | `TrafficPhysics` | 24 | With `Traffic` on, at most how many moving traffic cars near you (within 300 units, about 90 m) are real cars with physics (pushed, shot, wrecked, queueing, giving way); they go back on their timetable 400 units (about 120 m) away. 0: none, every traffic car is a wall. More costs more frame time. Only changes your own game. |
 | World | `ShiftDistance` | 1000 | Game units (1000 is about 300 m) from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. If another car stands on the place, the car lands a little along the road or beside it, and nothing can hurt it for 2 seconds. |
 | Debug | `ShowCoords` | false | Shows the world position, origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws; and the deer: how many are drawn, the nearest group's crossing place (how far and which way) how likely groups are to be out feeding at this hour, and how many deer have been killed (by this car, shot here) and how many groups near are reacting; and the traffic: how many cars are drawn (moving, parked, lit) and the traffic's hour. |

@@ -48,8 +48,10 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Traffic.cs` | The traffic's map, fixed with the world: the driving graph (drives in, no junction where a road passes over another), speed limits and lanes (right-hand), households and their cars, the places that draw trips and their parking, routes. No Unity types (`tools/trafficview` builds it) |
 | `TrafficDay.cs` | One race's day of traffic from its seed: the households' tours thinned to the survey's driving time, through traffic circling the trunk, every car driven on fixed steps (speed profiles, IDM, uncontrolled junctions by reservation, pulling out and being let in), recorded; any car's place at any time (`At`). No Unity types (`tools/trafficview` checks it). See `docs/TRAFFIC_HANDOFF.md` |
 | `TrafficParking.cs` | Where each parked car of a day stands and faces: drive pads, cottages, farmyards, the lots' painted bays and yards, kerb spaces cut along each stretch and shared (terraces keep theirs all day, the rest take the nearest free one as they arrive), all clear of other roads, the water, buildings and each other. No Unity types (`tools/trafficview` checks it) |
-| `TrafficLate.cs` | The lateness ledger (stage 3): cars behind their timetable (drawn where the day had them that long ago, the stay at the next stop cut short), gone (wrecked) or hidden; a late car that would overlap another hidden (the farther from the player), and late and hidden cars caught up once neither place can be seen. No Unity types (`tools/trafficview` checks it) |
+| `TrafficLate.cs` | The lateness ledger (stage 3): cars behind their timetable (drawn where the day had them that long ago, the stay at the next stop cut short) or held back in their space, gone (wrecked) or hidden; a late car that would overlap another hidden (the farther from the player), and late and hidden cars caught up once neither place can be seen. No Unity types (`tools/trafficview` checks it) |
 | `TrafficCars.cs` | The traffic in the game (stage 2): the day built on a worker at the start, the nearest cars drawn from a pool as copies of the enemy car's bodies (painted, wheels turning), pulled between their space and their lane, stood on the ground by raycasts, a box on the Enemy layer (a wall to hit), headlights on the nearest few at night |
+| `TrafficDrive.cs` | Stage 3's driver as arithmetic: where a car is on its leg and the line it steers along, the speed it aims for (profile, the car in front, junctions given way at, the trip's end, never early), how late it is. No Unity types (`tools/trafficview` drives it) |
+| `TrafficPhysics.cs` | Part of `TrafficCars` (stage 3): the moving cars near the player made the game's enemy car with our driver (`TrafficBody`), pushed, shot and wrecked (a wreck no kill: the `TakeDamage` patch), back on their timetable through the ledger out of reach; drawn cars held back or hidden where a physics car is |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
@@ -142,8 +144,10 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   traffic's map and reports it (households, cars, places, routes found and joined), then race N's day of traffic twice and checks it
   (the same twice, gaps, junction boxes, speeds, counts by road class against PennDOT, the hours against TPG 9, the wrap; the parking:
   no two parked cars overlapping, no space on another road's paving, in water or in a building, the cost of choosing the cars near
-  the player) and can draw it, and a close look at the parked cars; run it after any change to
-  `Traffic`, `TrafficDay`, `TrafficParking`, `TrafficLate`, `Plots` or the roads.
+  the player; the lateness ledger; stage 3's physics cars driven by `TrafficDrive` round a pretend player: none in another, in the
+  player's car or crossing in a junction box beyond a few, no jump going back on the timetable, nobody waiting for ever) and can draw
+  it, and a close look at the parked cars (`TV_DRIVE_ONLY=1` runs only the day's and the physics cars' checks); run it after any
+  change to `Traffic`, `TrafficDay`, `TrafficParking`, `TrafficLate`, `TrafficDrive`, `Plots` or the roads.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,
   repeatability, cost) and draws the world at six times; look at it after any change to `Storms`.
 - `dotnet run -c Release --project tools/skyview -- out.ppm [room seed]` checks the painted sky (the sun's disc where its light comes

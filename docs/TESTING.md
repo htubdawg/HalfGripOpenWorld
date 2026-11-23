@@ -371,7 +371,8 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Westhaven (teleport to it): its main road now runs north out of the town to a T-junction on the trunk road (before, it stopped in
      the fields). Millbrook's main road north now reaches the road from Northcote, about (-2885, 5832) with `ShowCoords`.
    - Send `LogOutput.log` and say how the jump feels.
-48. Traffic drawn in the game (not released yet; on `traffic-test-branch`; a preview: the cars cannot be pushed or wrecked yet).
+48. Traffic drawn in the game (not released yet; on `traffic-test-branch`; a preview: the cars cannot be pushed or wrecked yet; set
+   `TrafficPhysics` to 0 for this test now that stage 3 is in).
    The log says `Traffic: ... cars, ... trips on a weekday (or weekend day) from the race's seed, built in ... ms` a second or two
    after the start (the day is made on a worker; no hitch). With `ShowCoords` on, the overlay's `traffic:` line counts the cars drawn
    (moving and parked), the lit ones and the day's hour; with `WeatherSkip` on, the skip key moves the traffic's hour with the sky.
@@ -401,3 +402,27 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - In a room: both players see the same cars in the same places.
    - Send `LogOutput.log` (with `VerboseLog` on it also says how each car body was made) and screenshots: a town street, a car park,
      a junction with a queue, a car pulling out, night.
+49. Physics traffic near you (not released yet; on `traffic-test-branch`; stage 3 of the traffic). New config `World` /
+   `TrafficPhysics` (default 24). With `ShowCoords` on, the overlay's `traffic:` line adds `physics N/24 (... giving way, ... stopped),
+   made ..., back ... on time and ... late, wrecked ..., retired ..., hidden ..., held back ...`. With `VerboseLog`, the log says
+   `Traffic: a physics car made`, `Traffic: car N back on its timetable ... s late (out of reach)`, `... wrecked`, `... retired`.
+   - Moving cars within about 90 m are real cars: drive into the side of one gently and it is pushed (it is no longer a wall);
+     parked cars and cars further off are still walls.
+   - They drive in their lane, slow for bends, queue behind each other and wait their turn at junctions (the first there goes first,
+     the car on the right if two arrive together). Watch a busy junction in Kingsbridge at the evening rush (about 5 pm, the skip
+     key): nobody drives through anybody, nobody stops in the middle of a junction and blocks it, nothing waits for ever.
+   - Stop your car across a lane: the cars behind stop behind you and wait (they do not drive round you); others carry on. Drive on and
+     look back: the queue moves off.
+   - Cars that come up behind a queue you made from further off either join it or are not drawn (a car must never drive through
+     another). A car about to pull out of its space next to a stopped physics car waits in its space.
+   - Shoot one: it smokes; keep shooting and it is wrecked (flames, but no "WRECKED" text, no heal, no ammo, no kill counted), then
+     it explodes and is gone. Ram one hard: the same. Shots and rams push it.
+   - Drive away from a car you held up: at about 120 m it goes back to being drawn, with no jump, and carries on late (the overlay's
+     `back ... late`). A car that reaches the end of its trip near you pulls into its space as before.
+   - Knock one off the road (onto its roof, into a field): it stays where it is while you are near, then is gone once you are about
+     120 m away.
+   - Engine sound: each physics car plays one engine loop, as the game's enemy cars do.
+   - At night the nearest few have their headlights on (no more than the drawn cars had).
+   - Frame time with `TrafficPhysics` 0, 20 and 30 at the evening rush in Kingsbridge: please measure and send the numbers.
+   - Alone only for now: in a room, everybody's physics cars are their own (stage 4 will share them). Say what you see there.
+   - Send `LogOutput.log` and screenshots of a queue behind your car, a junction, a wreck.

@@ -36,10 +36,10 @@ namespace HalfGripOpenWorld
 		internal const double Step = 0.25;
 		internal const double RecordStep = 0.5;
 		/// <summary>The Intelligent Driver Model's figures: comfortable acceleration and braking (2.5 m/s²), time gap, standstill gap.</summary>
-		private const double Accel = 5.0;
+		internal const double Accel = 5.0;
 		internal const double Brake = 8.25;
-		private const double Headway = 1.5;
-		private const double MinGap = 7.0;
+		internal const double Headway = 1.5;
+		internal const double MinGap = 7.0;
 		/// <summary>How far ahead along its own path a car looks for the car in front.</summary>
 		private const double Ahead = 200.0;
 		/// <summary>The speed profile's spacing along a path.</summary>
@@ -1019,7 +1019,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The node a path's seg k ends at, or -1 (its last seg, or a tunnel at either side).</summary>
-		private static int NodeAfter(Seg[] path, int k)
+		internal static int NodeAfter(Seg[] path, int k)
 		{
 			if (k + 1 >= path.Length || path[k].Edge < 0 || path[k + 1].Edge < 0)
 			{
@@ -1029,7 +1029,7 @@ namespace HalfGripOpenWorld
 			return path[k].Dir > 0 ? e.B : e.A;
 		}
 
-		private static int LinkIndex(int node, int edge)
+		internal static int LinkIndex(int node, int edge)
 		{
 			return Traffic.Links[node].IndexOf(edge);
 		}
@@ -1039,7 +1039,7 @@ namespace HalfGripOpenWorld
 		/// does (they merge), otherwise their chords round the junction cross. Round a junction each arm has its lane out before its lane
 		/// in (right-hand traffic), so the four points' order says it with integers only.
 		/// </summary>
-		private static bool Crosses(int node, int inA, int outA, int inB, int outB)
+		internal static bool Crosses(int node, int inA, int outA, int inB, int outB)
 		{
 			if (inA == inB)
 			{
@@ -1058,13 +1058,13 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether a car coming in along arm <paramref name="a"/> is on the right of one coming in along arm <paramref name="b"/>.</summary>
-		private static bool RightOf(int node, int a, int b)
+		internal static bool RightOf(int node, int a, int b)
 		{
 			// b travels in along -u_b; its right is (-u_b.z, u_b.x).
 			return armX[node][a] * -armZ[node][b] + armZ[node][a] * armX[node][b] > 0.3;
 		}
 
-		private static float[] Profile(Leg leg)
+		internal static float[] Profile(Leg leg)
 		{
 			Seg[] path = leg.Path;
 			int n = (int)Math.Ceiling(leg.Length / Sample) + 2;
@@ -1133,7 +1133,7 @@ namespace HalfGripOpenWorld
 			return v;
 		}
 
-		private static double DesiredAt(float[] profile, double p)
+		internal static double DesiredAt(float[] profile, double p)
 		{
 			int i = (int)Math.Floor(p / Sample);
 			i = Math.Max(0, Math.Min(profile.Length - 2, i));

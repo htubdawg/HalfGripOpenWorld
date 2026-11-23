@@ -590,8 +590,13 @@ internal static partial class Program
 		ok &= wrongJumps == 0 && worstJump < 3.0;
 		Console.WriteLine("  cars stopped in a tunnel's mouth or within 60 of it: " + day.StoppedAtMouth + " steps" + (day.StoppedAtMouth == 0 ? "  ok" : "  FAIL"));
 		ok &= day.StoppedAtMouth == 0;
-		ok &= Parking(day, closeup);
-		ok &= Lateness(day);
+		// TV_DRIVE_ONLY: only the physics cars' check after the day's (the parking and the ledger take most of a run).
+		if (Environment.GetEnvironmentVariable("TV_DRIVE_ONLY") == null)
+		{
+			ok &= Parking(day, closeup);
+			ok &= Lateness(day);
+		}
+		ok &= Drive(day);
 		if (picture != null)
 		{
 			Pictures.Draw(day, passes, picture);

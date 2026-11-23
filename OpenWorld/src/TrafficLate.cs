@@ -66,14 +66,16 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Car <paramref name="car"/>, driving leg <paramref name="leg"/>, is <paramref name="d"/> seconds behind its timetable from sim time
 		/// <paramref name="w"/> (stage 3: a physics car going back on its timetable). Replaces any entry it had (a car is late once).
+		/// Lateness under <paramref name="least"/> is not kept (the car is put back on time). A physics car going back passes a small one:
+		/// at speed even half a second is a jump to see. It may be negative: a car a little ahead of its timetable, drawn that far on.
 		/// </summary>
-		internal void Late(int car, int leg, double w, double d)
+		internal void Late(int car, int leg, double w, double d, double least = Least)
 		{
 			if (ledger.TryGetValue(car, out Entry old) && old.Gone)
 			{
 				return;
 			}
-			if (d < Least || leg < 0)
+			if (Math.Abs(d) < least || leg < 0)
 			{
 				ledger.Remove(car);
 				return;
@@ -143,6 +145,11 @@ namespace HalfGripOpenWorld
 				TrafficDay.Leg leg = day.Legs[e.Leg];
 				double now = e.FromT + Since(e.FromW, w);
 				double t = now - e.D;
+				if (t < leg.Start)
+				{
+					// Held back before it set off (TrafficCars: a physics car where it would pull out): still parked where it was.
+					return Before(car, e.Leg);
+				}
 				if (t < leg.End)
 				{
 					return day.Driving(e.Leg, t);
@@ -309,6 +316,53 @@ namespace HalfGripOpenWorld
 				d -= Traffic.DaySeconds;
 			}
 			return d;
+		}
+
+		/// <summary>Car <paramref name="car"/> parked before it set off on leg <paramref name="leg"/>: where its last trip left it (at home before its first).</summary>
+		private TrafficDay.Place Before(int car, int leg)
+		{
+			TrafficDay.Leg l = day.Legs[leg];
+			if (l.Appears)
+			{
+				return new TrafficDay.Place { State = TrafficDay.State.Away, Leg = -1 };
+			}
+			int prev = -1;
+			foreach (int li in day.Cars[car].Legs)
+			{
+				TrafficDay.Leg o = day.Legs[li];
+				if (li != leg && o.Start >= 0.0 && o.Start < l.Start && (prev < 0 || o.Start > day.Legs[prev].Start))
+				{
+					prev = li;
+				}
+			}
+			TrafficDay.Car c = day.Cars[car];
+			if (prev < 0)
+			{
+				return new TrafficDay.Place { State = TrafficDay.State.Parked, X = c.Home.X, Z = c.Home.Z, Leg = -1 };
+			}
+			TrafficDay.Leg p = day.Legs[prev];
+			return new TrafficDay.Place { State = p.Vanishes ? TrafficDay.State.Away : TrafficDay.State.Parked, X = p.To.X, Z = p.To.Z, Leg = prev };
+		}
+
+		/// <summary>
+		/// Holds car <paramref name="car"/> back in its space before it sets off on leg <paramref name="leg"/> (it would pull out where a physics
+		/// car stands): late from sim time <paramref name="w"/> by however long until the leg's start, and <paramref name="more"/>.
+		/// </summary>
+		internal void HoldBack(int car, int leg, double w, double more)
+		{
+			TrafficDay.Leg l = day.Legs[leg];
+			double t = w;
+			if (l.Start - t > Traffic.DaySeconds * 0.5)
+			{
+				t += Traffic.DaySeconds;
+			}
+			bool had = ledger.ContainsKey(car);
+			Late(car, leg, w, t - l.Start + more, 0.0);
+			if (had)
+			{
+				// One car held back counts once, however long it is kept waiting.
+				MadeLate--;
+			}
 		}
 
 		/// <summary>The car's next leg that ran after <paramref name="leg"/> (-1: none).</summary>

@@ -17,7 +17,7 @@ namespace HalfGripOpenWorld
 	/// Drawn from a pool, the nearest cars only (moving ones count as nearer). World positions are kept as doubles and turned into the
 	/// scene's on every frame, so an origin shift needs nothing here.
 	/// </summary>
-	internal sealed class TrafficCars : MonoBehaviour
+	internal sealed partial class TrafficCars : MonoBehaviour
 	{
 		/// <summary>One line for the debug overlay (ShowCoords).</summary>
 		internal static string Status;
@@ -498,7 +498,7 @@ namespace HalfGripOpenWorld
 					legs += leg.Start >= 0.0 ? 1 : 0;
 				}
 				Mod.Log.LogInfo("Traffic: " + day.Cars.Count + " cars, " + legs + " trips on a " + (day.Weekend ? "weekend day" : "weekday") + " from the race's seed, built in " + day.BuildMs.ToString("0") + " ms (the map "
-					+ Traffic.BuildMs.ToString("0") + " ms: " + Traffic.Report + "); parking: at most " + parking.Busiest + " cars at one place, " + parking.Overflow + " stays at the kerb past a place's spaces");
+					+ Traffic.BuildMs.ToString("0") + " ms: " + Traffic.Report + "); parking: at most " + parking.Busiest + " cars at one place, " + parking.Overflow + " stays at the kerb past a place's spaces; up to " + MostPhysics + " physics cars within " + (PhysicsReach / 3.3f).ToString("0") + " m");
 			}
 			if (!Mod.ShowTraffic.Value)
 			{
@@ -548,6 +548,8 @@ namespace HalfGripOpenWorld
 			drawnMoving = drawnParked = lit = 0;
 			float dt = Time.deltaTime;
 			bool lights = Sky.LightsOn;
+			// The physics cars are the nearest: theirs are the first headlights.
+			PhysicsLights(lights);
 			foreach (int c in chosen)
 			{
 				if (!live.TryGetValue(c, out View v))
@@ -585,13 +587,15 @@ namespace HalfGripOpenWorld
 				Give(live[c]);
 				live.Remove(c);
 			}
+			BuildMovers();
 			if (Mod.ShowCoords.Value)
 			{
 				double hour = 3.0 + w / 100.0;
 				hour -= Math.Floor(hour / 24.0) * 24.0;
 				Status = "traffic: " + drawnMoving + " moving and " + drawnParked + " parked drawn, " + lit + " lit, chosen in " + chooseMs.ToString("0.0") + " ms (" + (day.Weekend ? "a weekend" : "a weekday") + ", "
 					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
-					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "");
+					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "")
+					+ PhysicsStatus();
 			}
 		}
 
@@ -599,6 +603,8 @@ namespace HalfGripOpenWorld
 		private void Choose(double w, double cx, double cz)
 		{
 			System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+			// Physics cars out of reach (or at their trip's end) go back on their timetables first, so they are chosen as drawn cars now.
+			Bubble(w, cx, cz);
 			near.Clear();
 			int n = day.Cars.Count;
 			for (int c = 0; c < n; c++)
@@ -610,10 +616,23 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
+				if (IsPhysical(c))
+				{
+					continue;
+				}
 				TrafficDay.Place at = late.At(c, w, out bool hidden);
 				if (hidden)
 				{
 					continue;
+				}
+				if (at.State == TrafficDay.State.Driving && physical.Count > 0 && HoldBackFromPhysics(c, at, w))
+				{
+					// It stays in its space while a physics car stands where it would pull out.
+					at = late.At(c, w, out hidden);
+					if (hidden)
+					{
+						continue;
+					}
 				}
 				double x, z;
 				float reach;
@@ -647,6 +666,15 @@ namespace HalfGripOpenWorld
 				double d2 = dx * dx + dz * dz;
 				if (d2 < (double)reach * reach)
 				{
+					if (moving && physical.Count > 0)
+					{
+						// The day doesn't know a physics car is held up: a drawn car where one is is hidden until out of sight.
+						parking.Drawn(c, at, out double px, out double pz, out double _, out double _);
+						if (HideUnderPhysics(c, px, pz, at.Hx, at.Hz, Math.Min(40.0, Math.Max(0.0, at.Speed) * 1.5), w))
+						{
+							continue;
+						}
+					}
 					near.Add(((float)Math.Sqrt(d2) * (moving ? MovingWeight : 1f), c, moving));
 					if (late.Count > 0)
 					{
@@ -684,6 +712,8 @@ namespace HalfGripOpenWorld
 					chosenMoving.Add(near[k].car);
 				}
 			}
+			// The nearest driving cars within reach become physics cars.
+			MakePhysical(w, cx, cz);
 			chooseMs = (float)watch.Elapsed.TotalMilliseconds;
 		}
 
@@ -719,6 +749,15 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
+			if (at.State == TrafficDay.State.Driving && physical.Count > 0 && HoldBackFromPhysics(c, at, w))
+			{
+				// Checked every frame as well as at the choice: a car sets off between choices.
+				at = late.At(c, w, out hidden);
+				if (hidden)
+				{
+					return false;
+				}
+			}
 			if (at.State == TrafficDay.State.Driving)
 			{
 				if (at.InTunnel)
@@ -747,6 +786,7 @@ namespace HalfGripOpenWorld
 				float roll = (float)(mx * hx + mz * hz >= 0.0 ? moved : -moved);
 				v.Spin = Mathf.Repeat(v.Spin + roll / v.Look.WheelRadius * Mathf.Rad2Deg, 360f);
 				Spin(v);
+				DrawnMover(c, at, x, z, hx, hz);
 				drawnMoving++;
 				return true;
 			}
@@ -891,6 +931,7 @@ namespace HalfGripOpenWorld
 
 		private void Clear()
 		{
+			ClearPhysics();
 			foreach (View v in live.Values)
 			{
 				Give(v);

@@ -616,7 +616,7 @@ namespace HalfGripOpenWorld
 		/// round at the middle). The day's junctions reckon movements by these same chords, so cars it lets through together are drawn
 		/// clear of each other. Drawing only.
 		/// </summary>
-		private static void Corner(TrafficDay.Leg leg, double p, ref double x, ref double z, ref double hx, ref double hz)
+		internal static void Corner(TrafficDay.Leg leg, double p, ref double x, ref double z, ref double hx, ref double hz)
 		{
 			TrafficDay.Seg[] path = leg.Path;
 			// The nearest junction along the path: between seg j - 1 and seg j.
