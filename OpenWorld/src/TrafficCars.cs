@@ -109,6 +109,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The race's lateness ledger (null until the day is built): stage 3's physics cars put a car back on its timetable through it.</summary>
 		internal TrafficLate Late => late;
 		private double startHour;
+		private int raceSeed;
 		private bool failed;
 		private Look[] looks;
 		private Light lightTemplate;
@@ -137,6 +138,7 @@ namespace HalfGripOpenWorld
 			int floor = LayerMask.NameToLayer("Floor");
 			groundMask = (1 << 0) | (floor >= 0 ? 1 << floor : 0);
 			int seed = Weather.Seed;
+			raceSeed = seed;
 			startHour = Sky.StartHourOf(seed);
 			try
 			{
@@ -491,6 +493,7 @@ namespace HalfGripOpenWorld
 				day = building.Result.day;
 				parking = building.Result.parking;
 				late = new TrafficLate(day);
+				MakeRoom(raceSeed);
 				building = null;
 				int legs = 0;
 				foreach (TrafficDay.Leg leg in day.Legs)
@@ -508,6 +511,7 @@ namespace HalfGripOpenWorld
 			}
 			try
 			{
+				Pump();
 				Step();
 			}
 			catch (Exception e)
@@ -518,8 +522,15 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The day's clock now: the race's, from the hour it started, moved on with the sky's debug skip.</summary>
+		/// <summary>The day's clock now: the room's (the host's race clock; alone, this machine's), from the hour the race started.</summary>
 		private double SimNow()
+		{
+			double local = LocalSim();
+			return room != null ? room.ClockOf(local) : local;
+		}
+
+		/// <summary>This machine's own day clock: its race's, from the hour it started, moved on with the sky's debug skip.</summary>
+		private double LocalSim()
 		{
 			return TrafficDay.SimTime(startHour, tm.TimeSinceRaceStart + Sky.Skipped);
 		}
@@ -625,7 +636,7 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				if (at.State == TrafficDay.State.Driving && physical.Count > 0 && HoldBackFromPhysics(c, at, w))
+				if (at.State == TrafficDay.State.Driving && AnyBodies && HoldBackFromPhysics(c, at, w))
 				{
 					// It stays in its space while a physics car stands where it would pull out.
 					at = late.At(c, w, out hidden);
@@ -666,7 +677,7 @@ namespace HalfGripOpenWorld
 				double d2 = dx * dx + dz * dz;
 				if (d2 < (double)reach * reach)
 				{
-					if (moving && physical.Count > 0)
+					if (moving && AnyBodies)
 					{
 						// The day doesn't know a physics car is held up: a drawn car where one is is hidden until out of sight.
 						parking.Drawn(c, at, out double px, out double pz, out double _, out double _);
@@ -696,10 +707,11 @@ namespace HalfGripOpenWorld
 					near.RemoveAll(e => late.TryGet(e.car, out TrafficLate.Entry le) && le.Hidden);
 				}
 				nearCars.Clear();
-				// Late and hidden cars that can't be seen, where they are drawn or where the day has them, catch up in the background.
+				// Late and hidden cars that can't be seen, where they are drawn or where the day has them, catch up in the background (in a
+				// room late cars only on the host, out of every player's sight, and sent to everybody; hidden ones here).
 				playerX = cx;
 				playerZ = cz;
-				late.Settle(w, Seen);
+				SendCaughtUp(late.Settle(w, Seen, room.IsHost), w);
 			}
 			near.Sort((a, b) => a.d != b.d ? a.d.CompareTo(b.d) : a.car.CompareTo(b.car));
 			chosen.Clear();
@@ -717,7 +729,10 @@ namespace HalfGripOpenWorld
 			chooseMs = (float)watch.Elapsed.TotalMilliseconds;
 		}
 
-		/// <summary>Whether car <paramref name="c"/> at <paramref name="at"/> could be seen: within the drawn reach of the player, on a loaded tile.</summary>
+		/// <summary>
+		/// Whether car <paramref name="c"/> at <paramref name="at"/> could be seen: within the drawn reach of the player, on a loaded tile; on
+		/// a room's host, also within it of any other player (whose tiles it doesn't know).
+		/// </summary>
 		private bool Seen(int c, TrafficDay.Place at)
 		{
 			double x = at.X, z = at.Z;
@@ -732,6 +747,10 @@ namespace HalfGripOpenWorld
 				x = spot.X;
 				z = spot.Z;
 				reach = ParkedReach;
+			}
+			if (OthersNear(x, z, reach))
+			{
+				return true;
 			}
 			double dx = x - playerX, dz = z - playerZ;
 			if (dx * dx + dz * dz > (double)reach * reach)
@@ -749,7 +768,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			if (at.State == TrafficDay.State.Driving && physical.Count > 0 && HoldBackFromPhysics(c, at, w))
+			if (at.State == TrafficDay.State.Driving && AnyBodies && HoldBackFromPhysics(c, at, w))
 			{
 				// Checked every frame as well as at the choice: a car sets off between choices.
 				at = late.At(c, w, out hidden);
@@ -1000,6 +1019,8 @@ namespace HalfGripOpenWorld
 		private void OnDestroy()
 		{
 			Status = null;
+			// What came for this race and was not read is of no use to the next.
+			TrafficRoom.Take();
 		}
 	}
 }

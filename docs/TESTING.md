@@ -426,3 +426,28 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Frame time with `TrafficPhysics` 0, 20 and 30 at the evening rush in Kingsbridge: please measure and send the numbers.
    - Alone only for now: in a room, everybody's physics cars are their own (stage 4 will share them). Say what you see there.
    - Send `LogOutput.log` and screenshots of a queue behind your car, a junction, a wreck.
+   - Owner's first report (2026-11-23, alone in a room): "everything seems fine". The log shows cars made physical, one wrecked, one
+     retired as damaged, one off its road, ten back on time out of reach, five origin shifts. Frame time not measured yet.
+50. Traffic in a room (not released yet; on `traffic-test-branch`; stage 4 of the traffic; everyone in the room needs the same build).
+   Two players (A, the room's host, and B), `ShowCoords` and `VerboseLog` on. The overlay's `traffic:` line adds `room: host` (on A) or
+   `room: clock +0.00 s` (on B: what B adds to its race clock to have A's), `N players heard, stand-ins N, claims N (granted N, lost
+   N), handed in N and out N, states in N (N stale)`. The log: `Traffic: the room's host, settling who drives each car` (A) or `in a
+   room, the host settles who drives each car` (B); `Traffic: car N driven by <name>: a stand-in here`; `car N handed to <name>`;
+   `car N handed here by <name>`; `<name> left: their cars go back on their timetables`.
+   - Alone in a room (A only): everything as in 49 (A drives every car); the overlay says `room: host`, `1 players heard`.
+   - A and B far apart (different towns): each drives the cars near them; nothing changes for either (no stand-ins, no hand-overs).
+   - B drives up behind A in traffic: the moving cars near A are A's (B sees them as stand-ins: they move smoothly, a little behind
+     where A has them, no jumps or stutter). Push one with B's car: it is a wall, as another player's car is (pushing it is A's).
+   - B shoots a car A drives: it smokes for both, then is wrecked for both (flames, explodes, gone) where it is, no kill for anybody.
+   - A stops across a lane: the queue behind A is the same on both screens; B drives to the back of the queue and looks.
+   - A and B drive apart along a road with traffic between them: the cars near B are handed to B as A goes (the log's `handed to` on A
+     and `handed here` on B); the cars carry on, with no jump, stop or flicker, on both screens.
+   - B joins the room after A has driven about (late joiner): B sees A's cars as stand-ins at once, and cars A held up late where A
+     left them.
+   - B leaves while driving cars near A: on A they go back to being drawn (late, from where they were), with no jump.
+   - The clock: B's overlay `clock` should settle within a second of the start and stay within a few hundredths afterwards; tiles
+     building or a teleport on B (a long frame) moves it a little, eased, never a jump of the drawn cars.
+   - A parked car about to pull out next to a car A drives waits in its space on both screens.
+   - Traffic cars never carry modded items or bodies (Dacia Body's logging of their lamps and paint is only that mod reading the
+     materials).
+   - Send both machines' `LogOutput.log` and screenshots from both of the same queue, a hand-over and a wreck.

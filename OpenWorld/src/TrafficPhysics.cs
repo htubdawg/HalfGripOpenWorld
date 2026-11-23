@@ -14,8 +14,9 @@ namespace HalfGripOpenWorld
 	/// on its timetable through the lateness ledger (<see cref="TrafficLate"/>), late by what held it up, so no traffic is used up; a
 	/// wreck, or a car knocked off its road, is retired from the day.
 	///
-	/// Alone (solo, or alone in a room) this machine drives every car. Rooms (who drives which car, the states sent) are stage 4: what a
-	/// room will need to agree on is in the ledger already, as small records.
+	/// In a room (stage 4, the room's part of this class in <c>TrafficShared.cs</c>, and <see cref="TrafficRoom"/>) a car is made physical only once the
+	/// room's host grants it to this machine (alone, at once), goes back through the room (its entry sent), and is handed to another
+	/// player who is clearly nearer to it; cars other machines drive are stand-ins here.
 	/// </summary>
 	internal sealed partial class TrafficCars
 	{
@@ -44,8 +45,16 @@ namespace HalfGripOpenWorld
 
 		private int MostPhysics => physicsFailed ? 0 : Math.Max(0, Mod.TrafficPhysics.Value);
 
-		/// <summary>Whether car <paramref name="c"/> is a physics car now (not drawn by stage 2).</summary>
-		private bool IsPhysical(int c) => physical.ContainsKey(c);
+		/// <summary>Whether car <paramref name="c"/> is a physics car now, here or another machine's stand-in (not drawn by stage 2).</summary>
+		private bool IsPhysical(int c) => physical.ContainsKey(c) || (remote.TryGetValue(c, out TrafficBody s) && s != null && s.gameObject.activeSelf);
+
+		/// <summary>Whether any physics car (here or a stand-in) is about.</summary>
+		private bool AnyBodies => physical.Count > 0 || remote.Count > 0;
+
+		/// <summary>What the bubble does with a physics car after looking at them all (the room is told after the car has left the list).</summary>
+		private enum Leave : byte { Back, Retire, Hand }
+
+		private readonly List<(int car, TrafficBody body, Leave what, TrafficRoom.Op op, ulong to)> acts = new List<(int, TrafficBody, Leave, TrafficRoom.Op, ulong)>();
 
 		/// <summary>
 		/// The bubble's going back, done before the choice: each physics car that is out of reach, on the last stretch of its trip or near a
@@ -59,13 +68,15 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			leaving.Clear();
+			acts.Clear();
+			double now = EventLink.Clock();
+			bool others = EventLink.InRoom && room.PlayersKnown > 1;
 			foreach (KeyValuePair<int, TrafficBody> kv in physical)
 			{
 				TrafficBody b = kv.Value;
 				if (b == null)
 				{
-					leaving.Add(kv.Key);
+					acts.Add((kv.Key, null, Leave.Back, default, 0UL));
 					continue;
 				}
 				TrafficDay.Leg leg = day.Legs[b.Leg];
@@ -74,6 +85,17 @@ namespace HalfGripOpenWorld
 				bool far = dx * dx + dz * dz > (double)PhysicsLeave * PhysicsLeave || MostPhysics == 0;
 				bool end = !leg.Vanishes && b.P > leg.Length - TrafficDrive.EndZone;
 				bool tunnel = TrafficDrive.NearTunnel(leg, b.P + 20.0);
+				if (others && b.Alive && !end && !tunnel && MostPhysics > 0)
+				{
+					// Another player clearly nearer (or within reach when this one is past it) drives it from here on: only they have the
+					// ground under it.
+					ulong to = room.HandTo(x, z, now, PhysicsReach, HandClose);
+					if (to != 0UL)
+					{
+						acts.Add((kv.Key, b, Leave.Hand, default, to));
+						continue;
+					}
+				}
 				if (!far && !end && !tunnel)
 				{
 					b.Hold = false;
@@ -89,8 +111,6 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					// Even a little lateness (or earliness) is kept: at speed half a second is a jump to see.
-					late.Late(kv.Key, b.Leg, w, d, 0.05);
 					if (d >= TrafficLate.Least)
 					{
 						backLate++;
@@ -100,8 +120,7 @@ namespace HalfGripOpenWorld
 						backOnTime++;
 					}
 					Mod.Info("Traffic: car " + kv.Key + " back on its timetable " + (d >= TrafficLate.Least ? d.ToString("0.0") + " s late" : "on time") + (far ? " (out of reach)" : end ? " (its trip's end)" : " (a tunnel ahead)"));
-					leaving.Add(kv.Key);
-					Release(b);
+					acts.Add((kv.Key, b, Leave.Back, LateOp(b.Leg, b.P, w), 0UL));
 					continue;
 				}
 				if (!far)
@@ -110,22 +129,44 @@ namespace HalfGripOpenWorld
 					b.Hold = true;
 					continue;
 				}
-				late.Retire(kv.Key, w);
 				retiredOff++;
 				Mod.Info("Traffic: car " + kv.Key + " retired (" + (!b.Alive ? "wrecked" : b.Hurt ? "damaged" : "off its road") + ")");
-				leaving.Add(kv.Key);
-				if (b.Hurt)
-				{
-					Destroy(b.gameObject);
-				}
-				else
-				{
-					Release(b);
-				}
+				acts.Add((kv.Key, b, Leave.Retire, new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = w }, 0UL));
 			}
-			foreach (int c in leaving)
+			// Off the list first, then the room told (its word comes back to DriverChanged, which must not find them).
+			foreach ((int car, TrafficBody b, Leave what, TrafficRoom.Op op, ulong to) in acts)
 			{
-				physical.Remove(c);
+				physical.Remove(car);
+				if (b == null)
+				{
+					room.Release(car, default);
+					continue;
+				}
+				switch (what)
+				{
+					case Leave.Hand:
+						b.ToRemote();
+						remote[car] = b;
+						handedOut++;
+						Mod.Info("Traffic: car " + car + " handed to " + EventLink.Name(to) + " (nearer to it)");
+						room.Hand(car, to);
+						break;
+					case Leave.Retire:
+						if (b.Hurt)
+						{
+							Destroy(b.gameObject);
+						}
+						else
+						{
+							Release(b);
+						}
+						room.Release(car, op);
+						break;
+					default:
+						Release(b);
+						room.Release(car, op);
+						break;
+				}
 			}
 		}
 
@@ -141,9 +182,23 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			choosing = true;
+			try
+			{
+				ClaimNearest(w, cx, cz);
+			}
+			finally
+			{
+				choosing = false;
+			}
+		}
+
+		private void ClaimNearest(double w, double cx, double cz)
+		{
+			double now = EventLink.Clock();
 			for (int k = 0; k < chosen.Count; k++)
 			{
-				if (physical.Count >= MostPhysics)
+				if (physical.Count + room.Claims >= MostPhysics)
 				{
 					return;
 				}
@@ -152,25 +207,16 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				TrafficDay.Place at = late.At(c, w, out bool hidden);
-				if (hidden || at.State != TrafficDay.State.Driving || at.InTunnel || at.Leg < 0)
+				if (room.DriverOf(c) != 0UL || room.Claiming(c) || room.Handing(c))
 				{
 					continue;
 				}
-				TrafficDay.Leg leg = day.Legs[at.Leg];
-				if ((!leg.Appears && at.T < leg.PullOut + 0.5) || (!leg.Vanishes && (leg.End - leg.Start - at.T < leg.PullIn + 3.0 || at.P > leg.Length - TrafficDrive.EndZone - 25.0)) || TrafficDrive.NearTunnel(leg, at.P))
+				if (!Drivable(c, w, out TrafficDay.Place at))
 				{
 					continue;
 				}
 				double dx = v.LastX - cx, dz = v.LastZ - cz;
 				if (dx * dx + dz * dz > (double)PhysicsReach * PhysicsReach)
-				{
-					continue;
-				}
-				// Not in a junction's box (the day let it in; the drivers didn't, and might send another physics car across it).
-				TrafficDrive.Mover m = new TrafficDrive.Mover { Car = c, Leg = at.Leg, P = at.P };
-				TrafficDrive.Prepare(day, ref m);
-				if ((m.Node >= 0 && m.ToBox < TrafficDrive.CarLength * 0.5) || m.Back >= 0)
 				{
 					continue;
 				}
@@ -183,33 +229,108 @@ namespace HalfGripOpenWorld
 					k--;
 					continue;
 				}
-				TrafficBody b = TakeBody(c);
-				if (b == null)
+				// In a room the player nearest the car drives it (only they have the ground under it): the host grants the first claim
+				// (alone, at once: DriverChanged makes it physical before Claim returns).
+				if (!room.Nearest(v.LastX, v.LastZ, now))
+				{
+					continue;
+				}
+				room.Claim(c, now);
+				if (physicsFailed)
 				{
 					return;
 				}
-				Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
-				Transform t = b.transform;
-				t.SetPositionAndRotation(v.Root.position + Vector3.up * 0.4f, v.Root.rotation);
-				if (!b.gameObject.activeSelf)
+				if (physical.ContainsKey(c))
 				{
-					b.gameObject.SetActive(true);
+					chosen.RemoveAt(k);
+					chosenMoving.Remove(c);
+					k--;
 				}
-				b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
-				physical[c] = b;
-				madePhysical++;
-				chosen.RemoveAt(k);
-				chosenMoving.Remove(c);
-				k--;
 			}
 		}
+
+		/// <summary>
+		/// Whether drawn car <paramref name="c"/> may become a physics car now: driving, not hidden or in a tunnel, not pulling out or in (the
+		/// day draws that), not on its last stretch, not near a tunnel, not in a junction's box (the day let it in; the drivers didn't, and
+		/// might send another physics car across it).
+		/// </summary>
+		private bool Drivable(int c, double w, out TrafficDay.Place at)
+		{
+			at = late.At(c, w, out bool hidden);
+			if (hidden || at.State != TrafficDay.State.Driving || at.InTunnel || at.Leg < 0)
+			{
+				return false;
+			}
+			TrafficDay.Leg leg = day.Legs[at.Leg];
+			if ((!leg.Appears && at.T < leg.PullOut + 0.5) || (!leg.Vanishes && (leg.End - leg.Start - at.T < leg.PullIn + 3.0 || at.P > leg.Length - TrafficDrive.EndZone - 25.0)) || TrafficDrive.NearTunnel(leg, at.P))
+			{
+				return false;
+			}
+			TrafficDrive.Mover m = new TrafficDrive.Mover { Car = c, Leg = at.Leg, P = at.P };
+			TrafficDrive.Prepare(day, ref m);
+			return !((m.Node >= 0 && m.ToBox < TrafficDrive.CarLength * 0.5) || m.Back >= 0);
+		}
+
+		/// <summary>
+		/// Car <paramref name="c"/>, granted to this machine, becomes a physics car where and as fast as it is drawn. False if it can't be
+		/// (not drawn here now, or not drivable any more: the grant came a moment late), and the caller gives it back.
+		/// </summary>
+		private bool Become(int c, double w)
+		{
+			if (MostPhysics == 0 || tm.enemyCarPrefab == null || !live.TryGetValue(c, out View v) || !v.Go.activeSelf || double.IsNaN(v.LastX))
+			{
+				return false;
+			}
+			if (!Drivable(c, w, out TrafficDay.Place at))
+			{
+				return false;
+			}
+			TrafficBody b = TakeBody(c);
+			if (b == null)
+			{
+				return false;
+			}
+			Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
+			Transform t = b.transform;
+			t.SetPositionAndRotation(v.Root.position + Vector3.up * 0.4f, v.Root.rotation);
+			if (!b.gameObject.activeSelf)
+			{
+				b.gameObject.SetActive(true);
+			}
+			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
+			physical[c] = b;
+			madePhysical++;
+			// Not drawn by stage 2 from now on (a grant that came between choices: off the chosen list too).
+			int k = chosen.IndexOf(c);
+			if (k >= 0 && !choosing)
+			{
+				chosen.RemoveAt(k);
+			}
+			if (!choosing)
+			{
+				chosenMoving.Remove(c);
+			}
+			if (live.TryGetValue(c, out View drawn))
+			{
+				drawn.Go.SetActive(false);
+			}
+			return true;
+		}
+
+		/// <summary>True while <see cref="MakePhysical"/> walks the chosen list (it takes a car off itself).</summary>
+		private bool choosing;
 
 		/// <summary>Whether a car drawn at (x, z) facing (hx, hz) would be on top of a physics car, within <paramref name="behind"/> behind one or <paramref name="before"/> in front of one.</summary>
 		private bool OnAPhysicsCar(double x, double z, double hx, double hz, double behind, double before = 0.0)
 		{
-			foreach (TrafficBody b in physical.Values)
+			return OnABody(physical, x, z, hx, hz, behind, before) || OnABody(remote, x, z, hx, hz, behind, before);
+		}
+
+		private static bool OnABody(Dictionary<int, TrafficBody> bodies, double x, double z, double hx, double hz, double behind, double before)
+		{
+			foreach (TrafficBody b in bodies.Values)
 			{
-				if (b == null)
+				if (b == null || !b.gameObject.activeSelf)
 				{
 					continue;
 				}
@@ -234,7 +355,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool HideUnderPhysics(int c, double x, double z, double hx, double hz, double behind, double w)
 		{
-			if (physical.Count == 0 || !OnAPhysicsCar(x, z, hx, hz, behind))
+			if (!AnyBodies || !OnAPhysicsCar(x, z, hx, hz, behind))
 			{
 				return false;
 			}
@@ -249,7 +370,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal bool HoldBackFromPhysics(int c, TrafficDay.Place at, double w)
 		{
-			if (at.Leg < 0 || physical.Count == 0 || at.State != TrafficDay.State.Driving)
+			if (at.Leg < 0 || !AnyBodies || at.State != TrafficDay.State.Driving)
 			{
 				return false;
 			}
@@ -258,7 +379,8 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			late.HoldBack(c, at.Leg, w, 1.0);
+			double d = late.HoldBack(c, at.Leg, w, 1.0);
+			SendHold(c, at.Leg, w, d);
 			heldBack++;
 			return true;
 		}
@@ -293,6 +415,22 @@ namespace HalfGripOpenWorld
 					Obstacles.Add(ObstacleOf(b.Rb));
 				}
 			}
+			foreach (TrafficBody b in remote.Values)
+			{
+				if (b == null || !b.gameObject.activeSelf)
+				{
+					continue;
+				}
+				// Another machine's physics car: a mover where its driver has it (its leg and place sent), a wall once stopped or wrecked.
+				if (b.Alive && !b.Stopped && b.Me.Leg >= 0)
+				{
+					Movers.Add(b.Me);
+				}
+				else
+				{
+					Obstacles.Add(b.Obstacle());
+				}
+			}
 			foreach (TrafficBody b in wrecks)
 			{
 				if (b != null)
@@ -321,7 +459,7 @@ namespace HalfGripOpenWorld
 		/// <summary>A drawn moving car, for the drivers.</summary>
 		private void DrawnMover(int c, TrafficDay.Place at, double x, double z, double hx, double hz)
 		{
-			if (physical.Count == 0)
+			if (!AnyBodies)
 			{
 				return;
 			}
@@ -335,6 +473,7 @@ namespace HalfGripOpenWorld
 		{
 			bodyList.Clear();
 			bodyList.AddRange(physical.Values);
+			bodyList.AddRange(remote.Values);
 			foreach (TrafficBody b in bodyList)
 			{
 				if (b == null || b.Headlight == null)
@@ -359,14 +498,19 @@ namespace HalfGripOpenWorld
 			if (b.Car >= 0 && physical.TryGetValue(b.Car, out TrafficBody found) && found == b)
 			{
 				physical.Remove(b.Car);
+				wrecks.Add(b);
 				if (day != null)
 				{
-					late.Retire(b.Car, SimNow());
+					room.Release(b.Car, new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = SimNow(), D = TrafficRoom.Wrecked });
 				}
 				retiredWrecked++;
 				Mod.Info("Traffic: car " + b.Car + " wrecked");
+				return;
 			}
-			wrecks.Add(b);
+			if (!wrecks.Contains(b))
+			{
+				wrecks.Add(b);
+			}
 		}
 
 		// ---- the bodies ---------------------------------------------------------------------------------------------------------
@@ -472,7 +616,7 @@ namespace HalfGripOpenWorld
 			b.Headlight = headlight;
 			go.SetActive(false);
 			go.transform.SetParent(transform, false);
-			Mod.Info("Traffic: a physics car made (" + (physical.Count + bodySpare.Count + 1) + " so far)");
+			Mod.Info("Traffic: a physics car's body made (" + (physical.Count + remote.Count + bodySpare.Count + 1) + " in use or spare)");
 			return b;
 		}
 
@@ -504,32 +648,41 @@ namespace HalfGripOpenWorld
 			bodySpare.Push(b);
 		}
 
-		/// <summary>Every physics car back on its timetable (the traffic switched off, or stopped).</summary>
+		/// <summary>Every physics car back on its timetable through the room (the traffic switched off, or stopped), and every stand-in gone.</summary>
 		private void ClearPhysics()
 		{
 			double w = day != null ? SimNow() : 0.0;
+			acts.Clear();
 			foreach (KeyValuePair<int, TrafficBody> kv in physical)
 			{
 				TrafficBody b = kv.Value;
-				if (b == null)
-				{
-					continue;
-				}
-				if (day != null && b.Alive && !b.Hurt)
-				{
-					late.Late(kv.Key, b.Leg, w, TrafficDrive.Lateness(day.Legs[b.Leg], b.P, w), 0.05);
-					Release(b);
-				}
-				else
-				{
-					if (day != null)
-					{
-						late.Retire(kv.Key, w);
-					}
-					Destroy(b.gameObject);
-				}
+				bool back = day != null && b != null && b.Alive && !b.Hurt;
+				acts.Add((kv.Key, b, back ? Leave.Back : Leave.Retire, back ? LateOp(b.Leg, b.P, w) : new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Retire, Leg = -1, W = w }, 0UL));
 			}
 			physical.Clear();
+			foreach ((int car, TrafficBody b, Leave what, TrafficRoom.Op op, ulong _) in acts)
+			{
+				if (b != null)
+				{
+					if (what == Leave.Back)
+					{
+						Release(b);
+					}
+					else
+					{
+						Destroy(b.gameObject);
+					}
+				}
+				if (room != null)
+				{
+					room.Release(car, op);
+				}
+				else if (late != null)
+				{
+					late.Apply(car, op);
+				}
+			}
+			ClearStandIns();
 		}
 
 		/// <summary>The overlay's physics part.</summary>
@@ -552,7 +705,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return "; physics " + physical.Count + "/" + MostPhysics + " (" + waiting + " giving way, " + holding + " stopped), made " + madePhysical + ", back " + backOnTime + " on time and " + backLate + " late, wrecked "
-				+ retiredWrecked + ", retired " + retiredOff + ", hidden " + hiddenByPhysics + ", held back " + heldBack;
+				+ retiredWrecked + ", retired " + retiredOff + ", hidden " + hiddenByPhysics + ", held back " + heldBack + RoomStatus();
 		}
 
 	}
@@ -562,6 +715,10 @@ namespace HalfGripOpenWorld
 	/// speed to aim for (<see cref="TrafficDrive.Target"/>) and steers for a point ahead on its lane, through the game's car controller
 	/// (steering angle, engine and brake: the controller does the rest). Its health is its own (the game's enemy health is private), and a
 	/// wreck is the game's wreck without a kill: no heal, ammo, kill count or combo (owner decision 1's default, see the handoff).
+	///
+	/// In a room the same object is also a stand-in (<see cref="Remote"/>) for a car another machine drives: kinematic, moved each physics
+	/// step to its driver's states played back (<see cref="TrafficRoom.Playback"/>), its smoke and wreck shown from them, hits sent to the
+	/// driver. A car handed between machines turns from one into the other in place, so it never vanishes or jumps.
 	/// </summary>
 	internal sealed class TrafficBody : MonoBehaviour
 	{
@@ -586,6 +743,15 @@ namespace HalfGripOpenWorld
 		internal bool Alive = true, Hurt, GaveUp;
 		/// <summary>Told by the bubble to stop and wait (it can't go back on its timetable where it is).</summary>
 		internal bool Hold;
+		/// <summary>A stand-in for a car another machine drives (kinematic, played back from its states).</summary>
+		internal bool Remote;
+		/// <summary>A stand-in whose driver has it stopped (held, or given up): a wall to the drivers here, not a mover.</summary>
+		internal bool Stopped;
+		internal readonly TrafficRoom.Playback Play = new TrafficRoom.Playback();
+		/// <summary>A car just handed on carries on as it was going until its new driver's states come (at most the playback's coast).</summary>
+		private Vector3 coastVelocity;
+		private float coastLeft;
+		private bool smoking;
 		internal TrafficDrive.State Drive;
 		internal TrafficDrive.Mover Me;
 		private float offFor, steer;
@@ -596,6 +762,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Starts driving car <paramref name="car"/> on leg <paramref name="leg"/> at <paramref name="p"/>, moving at <paramref name="velocity"/>.</summary>
 		internal void Begin(TrafficCars owner, int car, int leg, double p, Vector3 velocity)
 		{
+			Remote = false;
+			Stopped = false;
+			Rb.isKinematic = false;
 			Owner = owner;
 			Car = car;
 			Leg = leg;
@@ -623,18 +792,109 @@ namespace HalfGripOpenWorld
 			Cc.brakeAccel = 0f;
 			Cc.steeringAngleDeg = 0f;
 			Me = new TrafficDrive.Mover { Car = car, Leg = leg, P = p, V = velocity.magnitude, Physical = true, Edge = -1, Node = -1 };
+			Engine(car);
+		}
+
+		/// <summary>The game's enemy cars play one engine loop each; so do these.</summary>
+		private void Engine(int car)
+		{
 			if (Ec.audioSource != null && Ec.engineSounds != null && Ec.engineSounds.Length > 0)
 			{
-				// The game's enemy cars play one engine loop each; so do these.
-				Ec.audioSource.clip = Ec.engineSounds[(car & 0x7fffffff) % Ec.engineSounds.Length];
-				Ec.audioSource.Play();
+				AudioClip clip = Ec.engineSounds[(car & 0x7fffffff) % Ec.engineSounds.Length];
+				if (Ec.audioSource.clip != clip || !Ec.audioSource.isPlaying)
+				{
+					Ec.audioSource.clip = clip;
+					Ec.audioSource.Play();
+				}
 			}
+		}
+
+		/// <summary>Starts as a stand-in for car <paramref name="car"/>, which another machine drives (inactive until its first state comes).</summary>
+		internal void BeginRemote(TrafficCars owner, int car)
+		{
+			if (!woken)
+			{
+				woken = true;
+				Cc.carStats = new CarStats();
+			}
+			Owner = owner;
+			Car = car;
+			Leg = -1;
+			P = 0.0;
+			Remote = true;
+			Stopped = false;
+			Rb.isKinematic = true;
+			Health = 100f;
+			Alive = true;
+			Hurt = GaveUp = Hold = smoking = false;
+			Ec.alive = true;
+			Play.Clear();
+			coastLeft = 0f;
+			Cc.engineAccel = 0f;
+			Cc.brakeAccel = 0f;
+			Cc.steeringAngleDeg = 0f;
+			Me = new TrafficDrive.Mover { Car = car, Leg = -1, Physical = true, Edge = -1, Node = -1 };
+			if (gameObject.activeSelf)
+			{
+				Engine(car);
+			}
+		}
+
+		/// <summary>This machine handed the car on: a stand-in from here, carrying on as it was going until its new driver's states come.</summary>
+		internal void ToRemote()
+		{
+			coastVelocity = Rb.linearVelocity;
+			coastLeft = (float)TrafficRoom.Playback.Coast;
+			Rb.isKinematic = true;
+			Remote = true;
+			Stopped = false;
+			Hold = false;
+			Play.Clear();
+			Cc.engineAccel = 0f;
+			Cc.brakeAccel = 0f;
+		}
+
+		/// <summary>The car was handed to this machine: its stand-in drives from here, from its newest state (leg, place, health, speed).</summary>
+		internal void FromRemote(int leg, double p)
+		{
+			Vector3 velocity = Vector3.zero;
+			float health = Health;
+			bool hurt = Hurt;
+			if (Play.Count > 0)
+			{
+				TrafficRoom.State s = Play.Newest;
+				velocity = new Vector3(s.Vx, s.Vy, s.Vz);
+				health = s.Health;
+				hurt = s.Hurt;
+			}
+			else if (coastLeft > 0f)
+			{
+				velocity = coastVelocity;
+			}
+			Begin(Owner, Car, leg, p, velocity);
+			Health = Mathf.Max(1f, health);
+			Hurt = hurt;
+			smoking = hurt;
+		}
+
+		/// <summary>A stand-in as something in the way (stopped, or wrecked): where it is, moving as its driver had it.</summary>
+		internal TrafficDrive.Obstacle Obstacle()
+		{
+			Origin.World(Rb.position, out double x, out double z);
+			return new TrafficDrive.Obstacle { X = x, Z = z, Vx = Stopped || !Alive ? 0.0 : Me.V * Me.Hx, Vz = Stopped || !Alive ? 0.0 : Me.V * Me.Hz };
 		}
 
 		/// <summary>Stops driving (back to the pool).</summary>
 		internal void End()
 		{
 			Car = -1;
+			if (Remote)
+			{
+				Remote = false;
+				Play.Clear();
+				coastLeft = 0f;
+				Rb.isKinematic = false;
+			}
 			Rb.linearVelocity = Vector3.zero;
 			Rb.angularVelocity = Vector3.zero;
 			if (Ec.audioSource != null)
@@ -651,6 +911,11 @@ namespace HalfGripOpenWorld
 		{
 			if (Car < 0 || Owner == null || Owner.Day == null)
 			{
+				return;
+			}
+			if (Remote)
+			{
+				StandIn();
 				return;
 			}
 			if (!Alive)
@@ -688,6 +953,61 @@ namespace HalfGripOpenWorld
 			double target = TrafficDrive.Target(day, Me, profile, Owner.Movers, Owner.Obstacles, onP, onV, dt, ref Drive);
 			Steer(leg, pos, v, dt);
 			Pedals(target, v, dt);
+		}
+
+		/// <summary>
+		/// A stand-in's physics step: moved (kinematic, so it pushes and is a wall as another player's car is) to its driver's states played
+		/// back; its place on its leg kept for the drivers here; its smoke and wreck shown as its driver has them.
+		/// </summary>
+		private void StandIn()
+		{
+			Cc.engineAccel = 0f;
+			Cc.brakeAccel = 0f;
+			float dt = Time.fixedDeltaTime;
+			if (Play.Count == 0)
+			{
+				if (coastLeft > 0f)
+				{
+					coastLeft -= dt;
+					Rb.MovePosition(Rb.position + coastVelocity * dt);
+				}
+				return;
+			}
+			if (!Play.Sample(Owner.FixedClock, out TrafficRoom.State s))
+			{
+				return;
+			}
+			Rb.MovePosition(Origin.Local(s.X, s.Y, s.Z));
+			Quaternion q = new Quaternion(s.Qx, s.Qy, s.Qz, s.Qw);
+			Rb.MoveRotation(q);
+			Vector3 f = q * Vector3.forward;
+			float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
+			Leg = s.Leg;
+			P = s.P;
+			Stopped = s.Stopped;
+			Me = new TrafficDrive.Mover { Car = Car, Leg = s.Leg, P = s.P, V = Mathf.Sqrt(s.Vx * s.Vx + s.Vz * s.Vz), X = s.X, Z = s.Z, Hx = f.x / fl, Hz = f.z / fl, Physical = true };
+			if (s.Leg >= 0 && s.Leg < Owner.Day.Legs.Count)
+			{
+				TrafficDrive.Prepare(Owner.Day, ref Me);
+			}
+			else
+			{
+				Me.Leg = -1;
+			}
+			Health = s.Health;
+			if (s.Hurt && !smoking && Alive)
+			{
+				smoking = true;
+				Hurt = true;
+				if (Ec.effectsController != null)
+				{
+					Ec.effectsController.StartSmokeEmission();
+				}
+			}
+			if (!s.Alive && Alive)
+			{
+				Wreck(false);
+			}
 		}
 
 		/// <summary>For a point ahead on its lane, further the faster it goes: the signed angle to it times a gain (more for small angles), smoothed.</summary>
@@ -806,6 +1126,21 @@ namespace HalfGripOpenWorld
 				}
 				return;
 			}
+			Wreck(true);
+		}
+
+		/// <summary>A stand-in whose driver wrecked the car: the wreck shown here, where the stand-in is.</summary>
+		internal void ShowWreck()
+		{
+			if (Alive)
+			{
+				Wreck(false);
+			}
+		}
+
+		/// <summary>The game's wreck look (flames, the destroy sound), exploding and gone after <see cref="ExplodeAfter"/>; retired from the day if this machine drove it (<paramref name="own"/>).</summary>
+		private void Wreck(bool own)
+		{
 			Alive = false;
 			Ec.alive = false;
 			Cc.engineAccel = 0f;
@@ -827,7 +1162,10 @@ namespace HalfGripOpenWorld
 				Headlight.enabled = false;
 			}
 			SoundController.PlaySoundAtPosition(Ec.destroySound, transform.position, 1f, 25f, 500f);
-			Owner?.Wrecked(this);
+			if (own)
+			{
+				Owner?.Wrecked(this);
+			}
 			StartCoroutine(Explode());
 		}
 
@@ -853,7 +1191,8 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// Every hit on an enemy car reaches it through <see cref="EnemyController.TakeDamage(float, bool)"/> (the guns, rockets, rams,
 	/// spikes, blasts, the player's crashes). A traffic car takes it as its own (<see cref="TrafficBody.Damage"/>): it wrecks without
-	/// counting as a kill (no <c>EnemyKilled</c> signal, so no heal, ammo, kill stats or feats; no lifesteal, combo or "WRECKED").
+	/// counting as a kill (no <c>EnemyKilled</c> signal, so no heal, ammo, kill stats or feats; no lifesteal, combo or "WRECKED"). A hit on
+	/// a stand-in goes to the machine that drives the car (in a room), which shows the smoke and the wreck to everybody through its states.
 	/// </summary>
 	[HarmonyPatch(typeof(EnemyController), nameof(EnemyController.TakeDamage), new[] { typeof(float), typeof(bool) })]
 	internal static class TrafficDamagePatch
@@ -864,7 +1203,14 @@ namespace HalfGripOpenWorld
 			{
 				return true;
 			}
-			body.Damage(amount);
+			if (body.Remote)
+			{
+				body.Owner?.RemoteHit(body.Car, amount);
+			}
+			else
+			{
+				body.Damage(amount);
+			}
 			return false;
 		}
 	}

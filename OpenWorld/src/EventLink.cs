@@ -116,10 +116,12 @@ namespace HalfGripOpenWorld
 				{
 					// Before this machine's world is built nothing is lost: the joiner asks with Hello until it has every lobby.
 					Room?.PlayerJoined(p.Id, Clock());
+					TrafficRoom.PlayerEvent(p.Id, true);
 				};
 				HalfGripTools.Net.PlayerLeft += p =>
 				{
 					Room?.PlayerLeft(p.Id, Clock());
+					TrafficRoom.PlayerEvent(p.Id, false);
 				};
 				Mod.Info("Events: linked to the room's messages (" + (HalfGripTools.Net.Available ? "Multiplayer found" : "no Multiplayer: solo only") + ")");
 			}
@@ -158,6 +160,34 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// The traffic's messages (<see cref="TrafficRoom"/>), in a room only. The states go unreliably (15 a second: a lost one is made up
+		/// by the next); everything else reliably. They share the one handler, told apart by their first byte (<see cref="TrafficRoom.Tag"/>).
+		/// </summary>
+		internal static void TrafficToHost(byte[] data)
+		{
+			if (InRoom && ctx != null && !ctx.Net.SendToHost(data))
+			{
+				Mod.Log.LogWarning("Traffic: a message could not be sent to the room's host");
+			}
+		}
+
+		internal static void TrafficToAll(byte[] data, bool reliable)
+		{
+			if (InRoom && ctx != null)
+			{
+				ctx.Net.Send(data, HalfGripTools.Net.Everyone, reliable);
+			}
+		}
+
+		internal static void TrafficToOne(ulong to, byte[] data)
+		{
+			if (InRoom && ctx != null)
+			{
+				ctx.Net.Send(data, to);
+			}
+		}
+
 		private static void Received(ulong from, byte[] data)
 		{
 			try
@@ -165,6 +195,11 @@ namespace HalfGripOpenWorld
 				if (data != null && data.Length > 0 && data[0] == DeerRoom.Tag)
 				{
 					DeerRoom.Received(from, data);
+					return;
+				}
+				if (data != null && data.Length > 0 && data[0] == TrafficRoom.Tag)
+				{
+					TrafficRoom.Received(from, data);
 					return;
 				}
 				bool sync = EventRoom.IsSync(data);

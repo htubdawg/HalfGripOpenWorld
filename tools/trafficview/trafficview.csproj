@@ -37,6 +37,7 @@
     <Compile Include="../../OpenWorld/src/TrafficDay.cs" />
     <Compile Include="../../OpenWorld/src/TrafficParking.cs" />
     <Compile Include="../../OpenWorld/src/TrafficLate.cs" />
+    <Compile Include="../../OpenWorld/src/TrafficRoom.cs" />
     <Compile Include="../../OpenWorld/src/TrafficDrive.cs" />
   </ItemGroup>
 </Project>

@@ -18,7 +18,9 @@ namespace HalfGripOpenWorld
 	/// the same way, so it never pops back in where the player is looking.
 	///
 	/// What "seen" is belongs to the machine (which tiles it has loaded), so <see cref="Settle"/> is told; the records themselves are
-	/// the same on every machine that applies the same calls. No Unity types (trafficview checks it).
+	/// the same on every machine that applies the same calls. In a room (stage 4, <see cref="TrafficRoom"/>) the entries are the room's:
+	/// made by one machine, settled by the host and applied everywhere (<see cref="Apply"/>), and only the host catches cars up. Hiding is
+	/// what one machine draws, kept apart from the entries (<see cref="hidden"/>) and never sent. No Unity types (trafficview checks it).
 	/// </summary>
 	internal sealed class TrafficLate
 	{
@@ -38,7 +40,7 @@ namespace HalfGripOpenWorld
 			public double D;
 			/// <summary>The sim time it was made, and the same moment on the leg's clock (a leg past the day's end runs on w + a day).</summary>
 			public double FromW, FromT;
-			/// <summary>Not drawn until it catches up.</summary>
+			/// <summary>Not drawn until it is out of sight (this machine's own: filled in by <see cref="TryGet"/>, not kept in the entry).</summary>
 			public bool Hidden;
 			/// <summary>Wrecked: gone for the rest of the race.</summary>
 			public bool Gone;
@@ -46,7 +48,10 @@ namespace HalfGripOpenWorld
 
 		private readonly TrafficDay day;
 		private readonly Dictionary<int, Entry> ledger = new Dictionary<int, Entry>();
+		/// <summary>Cars this machine doesn't draw until neither of their places can be seen (an overlap, a physics car where they are).</summary>
+		private readonly HashSet<int> hidden = new HashSet<int>();
 		private readonly List<int> keys = new List<int>();
+		private readonly List<int> caught = new List<int>();
 
 		/// <summary>Counts for the log and the overlay: made late, caught up in the background, hidden for an overlap, retired.</summary>
 		internal int MadeLate, CaughtUp, HiddenCount, Retired;
@@ -56,12 +61,58 @@ namespace HalfGripOpenWorld
 			this.day = day;
 		}
 
-		/// <summary>How many cars have an entry now.</summary>
-		internal int Count => ledger.Count;
+		/// <summary>How many cars have an entry or are hidden now.</summary>
+		internal int Count
+		{
+			get
+			{
+				int n = ledger.Count;
+				foreach (int car in hidden)
+				{
+					n += ledger.ContainsKey(car) ? 0 : 1;
+				}
+				return n;
+			}
+		}
 
-		internal bool Has(int car) => ledger.ContainsKey(car);
+		internal bool Has(int car) => ledger.ContainsKey(car) || hidden.Contains(car);
 
-		internal bool TryGet(int car, out Entry e) => ledger.TryGetValue(car, out e);
+		internal bool IsHidden(int car) => hidden.Contains(car);
+
+		/// <summary>Car <paramref name="car"/>'s entry (a hidden car with none: leg -1), with whether it is hidden here.</summary>
+		internal bool TryGet(int car, out Entry e)
+		{
+			bool had = ledger.TryGetValue(car, out e);
+			if (!had)
+			{
+				e = new Entry { Leg = -1 };
+			}
+			e.Hidden = hidden.Contains(car);
+			return had || e.Hidden;
+		}
+
+		/// <summary>
+		/// A change to car <paramref name="car"/>'s entry from the room (<see cref="TrafficRoom.Op"/>): late (taken as it is, however small:
+		/// the sender kept it), retired, or back on time. A retired car stays retired.
+		/// </summary>
+		internal void Apply(int car, TrafficRoom.Op op)
+		{
+			switch (op.Kind)
+			{
+				case TrafficRoom.OpKind.Late:
+					Late(car, op.Leg, op.W, op.D, 0.0);
+					break;
+				case TrafficRoom.OpKind.Retire:
+					Retire(car, op.W);
+					break;
+				case TrafficRoom.OpKind.OnTime:
+					if (ledger.TryGetValue(car, out Entry e) && !e.Gone)
+					{
+						ledger.Remove(car);
+					}
+					break;
+			}
+		}
 
 		/// <summary>
 		/// Car <paramref name="car"/>, driving leg <paramref name="leg"/>, is <paramref name="d"/> seconds behind its timetable from sim time
@@ -75,7 +126,9 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			if (Math.Abs(d) < least || leg < 0)
+			// A new entry shows the car again (as a physics car going back is: it was where it is drawn).
+			hidden.Remove(car);
+			if (Math.Abs(d) < least || leg < 0 || (d == 0.0 && least == 0.0))
 			{
 				ledger.Remove(car);
 				return;
@@ -102,21 +155,12 @@ namespace HalfGripOpenWorld
 			Retired++;
 		}
 
-		/// <summary>Car <paramref name="car"/> is not to be drawn until it catches up (it would overlap another car).</summary>
+		/// <summary>Car <paramref name="car"/> is not to be drawn here until neither of its places can be seen (it would overlap another car).</summary>
 		internal void Hide(int car, double w)
 		{
-			if (ledger.TryGetValue(car, out Entry e))
+			if ((ledger.TryGetValue(car, out Entry e) && e.Gone) || !hidden.Add(car))
 			{
-				if (e.Gone || e.Hidden)
-				{
-					return;
-				}
-				e.Hidden = true;
-				ledger[car] = e;
-			}
-			else
-			{
-				ledger[car] = new Entry { Leg = -1, FromW = w, Hidden = true };
+				return;
 			}
 			HiddenCount++;
 		}
@@ -128,7 +172,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal TrafficDay.Place At(int car, double w, out bool hidden)
 		{
-			hidden = false;
+			hidden = this.hidden.Contains(car);
 			if (!ledger.TryGetValue(car, out Entry e))
 			{
 				return day.At(car, w);
@@ -138,7 +182,6 @@ namespace HalfGripOpenWorld
 				hidden = true;
 				return new TrafficDay.Place { State = TrafficDay.State.Away, Leg = -1 };
 			}
-			hidden = e.Hidden;
 			// At most a few legs on (each pass moves the entry to the next leg).
 			for (int guard = 0; guard < 8 && e.Leg >= 0; guard++)
 			{
@@ -161,13 +204,6 @@ namespace HalfGripOpenWorld
 				if (next < 0 || day.Legs[next].Start >= arrive + TrafficDay.MinStay)
 				{
 					// Made up in full: back on the day (still hidden if it was, until it is out of sight).
-					if (e.Hidden)
-					{
-						e.Leg = -1;
-						e.D = 0.0;
-						ledger[car] = e;
-						break;
-					}
 					ledger.Remove(car);
 					return day.At(car, w);
 				}
@@ -188,11 +224,36 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Catching up in the background: every late or hidden car neither of whose places (where it is drawn now, and where the day has it)
-		/// can be seen is put back on the day. <paramref name="seen"/> says whether a car at a place could be seen from this machine (its
-		/// tile is loaded and it is within reach), and is given the car so a parked car's space can be found.
+		/// can be seen is put back on the day (a hidden one shown again). <paramref name="seen"/> says whether a car at a place could be seen
+		/// (from this machine: its tile is loaded and it is within reach; on a room's host, by any player), and is given the car so a parked
+		/// car's space can be found. With <paramref name="catchUp"/> false (in a room, not the host) late cars are left to the host; hidden
+		/// ones are always this machine's. Returns the cars caught up (the host sends them), in order.
 		/// </summary>
-		internal void Settle(double w, Func<int, TrafficDay.Place, bool> seen)
+		internal List<int> Settle(double w, Func<int, TrafficDay.Place, bool> seen, bool catchUp = true)
 		{
+			caught.Clear();
+			keys.Clear();
+			keys.AddRange(hidden);
+			keys.Sort();
+			foreach (int car in keys)
+			{
+				if (!ledger.ContainsKey(car) || !catchUp)
+				{
+					TrafficDay.Place drawn = At(car, w, out bool _);
+					if (!Visible(car, drawn, seen) && !Visible(car, day.At(car, w), seen))
+					{
+						hidden.Remove(car);
+						if (catchUp)
+						{
+							CaughtUp++;
+						}
+					}
+				}
+			}
+			if (!catchUp)
+			{
+				return caught;
+			}
 			keys.Clear();
 			keys.AddRange(ledger.Keys);
 			keys.Sort();
@@ -211,9 +272,12 @@ namespace HalfGripOpenWorld
 				if (!Visible(car, drawn, seen) && !Visible(car, onTime, seen))
 				{
 					ledger.Remove(car);
+					hidden.Remove(car);
+					caught.Add(car);
 					CaughtUp++;
 				}
 			}
+			return caught;
 		}
 
 		/// <summary>A drawn car near the player, for <see cref="Guard"/>.</summary>
@@ -241,7 +305,7 @@ namespace HalfGripOpenWorld
 			for (int i = 0; i < n; i++)
 			{
 				Near a = near[i];
-				if (!ledger.TryGetValue(a.Car, out Entry ea) || ea.Hidden || ea.Gone || ea.Leg < 0)
+				if (!ledger.TryGetValue(a.Car, out Entry ea) || hidden.Contains(a.Car) || ea.Gone || ea.Leg < 0)
 				{
 					continue;
 				}
@@ -252,7 +316,7 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					Near b = near[j];
-					if (ledger.TryGetValue(b.Car, out Entry eb) && (eb.Hidden || eb.Gone))
+					if (hidden.Contains(b.Car) || (ledger.TryGetValue(b.Car, out Entry eb) && eb.Gone))
 					{
 						continue;
 					}
@@ -346,9 +410,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Holds car <paramref name="car"/> back in its space before it sets off on leg <paramref name="leg"/> (it would pull out where a physics
-		/// car stands): late from sim time <paramref name="w"/> by however long until the leg's start, and <paramref name="more"/>.
+		/// car stands): late from sim time <paramref name="w"/> by however long until the leg's start, and <paramref name="more"/>. Returns the
+		/// lateness (a room sends it).
 		/// </summary>
-		internal void HoldBack(int car, int leg, double w, double more)
+		internal double HoldBack(int car, int leg, double w, double more)
 		{
 			TrafficDay.Leg l = day.Legs[leg];
 			double t = w;
@@ -357,12 +422,14 @@ namespace HalfGripOpenWorld
 				t += Traffic.DaySeconds;
 			}
 			bool had = ledger.ContainsKey(car);
-			Late(car, leg, w, t - l.Start + more, 0.0);
+			double d = t - l.Start + more;
+			Late(car, leg, w, d, 0.0);
 			if (had)
 			{
 				// One car held back counts once, however long it is kept waiting.
 				MadeLate--;
 			}
+			return d;
 		}
 
 		/// <summary>The car's next leg that ran after <paramref name="leg"/> (-1: none).</summary>

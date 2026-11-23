@@ -52,6 +52,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `TrafficCars.cs` | The traffic in the game (stage 2): the day built on a worker at the start, the nearest cars drawn from a pool as copies of the enemy car's bodies (painted, wheels turning), pulled between their space and their lane, stood on the ground by raycasts, a box on the Enemy layer (a wall to hit), headlights on the nearest few at night |
 | `TrafficDrive.cs` | Stage 3's driver as arithmetic: where a car is on its leg and the line it steers along, the speed it aims for (profile, the car in front, junctions given way at, the trip's end, never early), how late it is. No Unity types (`tools/trafficview` drives it) |
 | `TrafficPhysics.cs` | Part of `TrafficCars` (stage 3): the moving cars near the player made the game's enemy car with our driver (`TrafficBody`), pushed, shot and wrecked (a wreck no kill: the `TakeDamage` patch), back on their timetable through the ledger out of reach; drawn cars held back or hidden where a physics car is |
+| `TrafficRoom.cs` | Stage 4, the traffic in a room: who drives each physics car (claimed by the nearest player, granted by the room's host, given back with its ledger entry or handed to a nearer player, a leaver's cars given back), the ledger's entries settled by the host, the host's clock, the states sent and the stand-ins' playback; the messages. No Unity types (`tools/trafficsim` drives it) |
+| `TrafficShared.cs` | Part of `TrafficCars` (stage 4): the room read each frame, this machine's physics cars' states sent, stand-ins (`TrafficBody` kinematic) for the cars other machines drive, hits on them sent to the driver, a car handed over turned from one into the other in place. Traffic cars never get modded items or bodies (a plain `CarStats`, our own skin) |
 | `Foliage.cs` | The Forest's pines (captured from the main menu), grass tufts, per-tile scatter, instanced drawing |
 | `Names.cs` | Every name the world shows (towns, villages, courses): change them here and the signs follow |
 | `Signs.cs`, `Lettering.cs` | Road signs: the junction graph and shortest ways, name signs and fingerposts, the lettering atlas; the pixel font |
@@ -140,6 +142,11 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 - `dotnet run -c Release --project tools/deersim -- [seed]` drives `DeerRoom` on pretend machines over a pretend network (claims of
   one group's reaction and kills of one deer from several machines at once, a late joiner, twenty players, stale messages, alone)
   and checks every machine ends with the host's reactions and kills; run it after any change to `DeerRoom`.
+- `dotnet run -c Release --project tools/trafficsim -- [seed]` drives `TrafficRoom` on pretend machines over a pretend network (claims of
+  one car from several machines at once with releases and hand-overs, checking no car is ever driven on two machines; a late joiner; a
+  player leaving with cars; ledger changes from everybody; hits and states after a hand-over; the clock with machines 30 s apart and
+  stalling; the stand-ins' playback over a lossy network; who is nearest; twenty players; bad messages; alone) and checks every machine
+  ends with the host's drivers and ledger; run it after any change to `TrafficRoom`.
 - `dotnet run -c Release --project tools/trafficview [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span hour]]` builds the
   traffic's map and reports it (households, cars, places, routes found and joined), then race N's day of traffic twice and checks it
   (the same twice, gaps, junction boxes, speeds, counts by road class against PennDOT, the hours against TPG 9, the wrap; the parking:

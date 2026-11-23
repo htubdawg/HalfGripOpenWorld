@@ -1371,6 +1371,11 @@ near the car from a pool, moved on an origin shift) and on the game's own cars a
      states on the race clock; if states stop coming, it carries on along its lane on its route. Hits feel as they do against the
      Multiplayer mod's AI cars.
    - **Checks:** a `tools/trafficsim` like `deersim` (claims, hand-overs, delays, late joiners, twenty players).
+   - **Built (2026-11-23; not yet tried in the game, test 50):** `TrafficRoom.cs` (pure) and `TrafficShared.cs`, as above, with: the
+     host's clock taken by every machine (the race clocks drift), the ledger's entries settled by the host (catching up the host's
+     alone, out of every player's sight; hiding each machine's own), a car handed over turned from a physics car into a stand-in and
+     back in place, hits on a stand-in sent to its driver, a leaver's cars given back from their last states. trafficsim: 16 seeds
+     pass. See `docs/TRAFFIC_HANDOFF.md`, "Stage 4". The owner's rule: traffic cars never carry modded or custom items (checked).
 
 Superseded in the research below: "copied" (the game's gear and throttle logic is written afresh from the idea, not pasted) and
 "`RemoteCar`'s smoothing as the model" (decision 1); "No solo traffic first" is open again (question 1).

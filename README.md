@@ -46,7 +46,9 @@ generated from a fixed seed (the same for every player) the way real country com
   car the same colour every race), their lamps off when parked, and at night the nearest few light the road. Near you (within about 90 m) the moving cars are real
   cars: they follow their lanes, queue behind each other and give way at junctions, and can be pushed, shot and wrecked (a wreck burns,
   explodes and is gone for the rest of the race; it does not count as a kill). A car you held up carries on late once you are past.
-  Parked cars, and the cars further off, are still like walls to hit.
+  Parked cars, and the cars further off, are still like walls to hit. In a room each real car is driven by the player nearest to it
+  and the others see it where that player has it: hold one up, push it or wreck it, and everybody sees the same, and a car is handed
+  from one player to another as they pass. Traffic cars never carry modded items or bodies.
 - **Far view:** past the loaded ground the whole country is drawn at low detail (its land use, water, woods standing up, the main
   roads), so the mountains, the coast and the towns are seen to the horizon on a clear day; past where it is drawn, the land is
   painted into the sky, so on the clearest days you see across the whole world, the far mountains hazy on the horizon.

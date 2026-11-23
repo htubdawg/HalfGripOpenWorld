@@ -68,11 +68,14 @@ namespace HalfGripOpenWorld
 			None = 0,
 			/// <summary>Late by D seconds on leg Leg from sim time W (negative: a little early). Also a car held back in its space.</summary>
 			Late = 1,
-			/// <summary>Gone for the rest of the race (wrecked, or knocked off its road).</summary>
+			/// <summary>Gone for the rest of the race (wrecked, or knocked off its road). D is <see cref="Wrecked"/> for a wreck (its stand-ins burn where they are).</summary>
 			Retire = 2,
 			/// <summary>Back on the day (caught up in the background, or late by too little to keep).</summary>
 			OnTime = 3,
 		}
+
+		/// <summary>A retirement's D for a wreck: the stand-ins elsewhere burn and explode where they are rather than go.</summary>
+		internal const double Wrecked = 1.0;
 
 		/// <summary>One change to a car's ledger entry.</summary>
 		internal struct Op
@@ -90,7 +93,7 @@ namespace HalfGripOpenWorld
 					case OpKind.Late:
 						return (D >= 0.0 ? D.ToString("0.0") + " s late" : (-D).ToString("0.0") + " s early") + " on leg " + Leg;
 					case OpKind.Retire:
-						return "retired";
+						return D == Wrecked ? "wrecked" : "retired";
 					case OpKind.OnTime:
 						return "on time";
 					default:
@@ -196,6 +199,9 @@ namespace HalfGripOpenWorld
 		internal int GenOf(int car) => cars.TryGetValue(car, out Car c) ? c.Gen : 0;
 
 		internal bool Claiming(int car) => claims.ContainsKey(car);
+
+		/// <summary>This machine handed car <paramref name="car"/> on and waits to hear it settled (its stand-in carries on meanwhile).</summary>
+		internal bool Handing(int car) => handing.Contains(car);
 
 		internal int Claims => claims.Count;
 
@@ -1014,7 +1020,65 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>The room's host's id, set by the game (the sim: machine 0's), for reading the host's clock.</summary>
+		// ---- the network's thread ----------------------------------------------------------------------------------
+
+		/// <summary>Traffic messages and players coming and going, held until the traffic reads them each frame (they may come on the network's own thread).</summary>
+		private static readonly List<(ulong from, byte[] data, int player)> inbox = new List<(ulong, byte[], int)>();
+
+		/// <summary>The most held unread (a world not built yet reads none): the oldest go, and a Hello makes up for them.</summary>
+		private const int InboxMost = 4096;
+
+		/// <summary>A traffic message came (from any thread).</summary>
+		internal static void Received(ulong from, byte[] data)
+		{
+			Hold(from, data, 0);
+		}
+
+		/// <summary>A player joined (<paramref name="joined"/>) or left the room (from any thread).</summary>
+		internal static void PlayerEvent(ulong id, bool joined)
+		{
+			Hold(id, null, joined ? 1 : -1);
+		}
+
+		private static void Hold(ulong from, byte[] data, int player)
+		{
+			lock (inbox)
+			{
+				if (inbox.Count >= InboxMost)
+				{
+					inbox.RemoveAt(0);
+				}
+				inbox.Add((from, data, player));
+			}
+		}
+
+		/// <summary>
+		/// What came since the last call, in order (null if nothing): a message (player 0), or a player who joined (1) or left (-1).
+		/// </summary>
+		internal static List<(ulong from, byte[] data, int player)> Take()
+		{
+			lock (inbox)
+			{
+				if (inbox.Count == 0)
+				{
+					return null;
+				}
+				List<(ulong, byte[], int)> list = new List<(ulong, byte[], int)>(inbox);
+				inbox.Clear();
+				return list;
+			}
+		}
+
+		/// <summary>Drops the states held (between races, or before the day is built), keeping the rest for the room to read.</summary>
+		internal static void DropStates()
+		{
+			lock (inbox)
+			{
+				inbox.RemoveAll(e => e.data != null && e.data.Length > 2 && e.data[2] == (byte)Msg.States);
+			}
+		}
+
+		/// <summary>The room's host's id, set by the game (the sim: machine 1's), for reading the host's clock.</summary>
 		internal ulong HostId;
 
 		private static short Pack(float q) => (short)Math.Max(-32767, Math.Min(32767, (int)Math.Round(q * 32767f)));

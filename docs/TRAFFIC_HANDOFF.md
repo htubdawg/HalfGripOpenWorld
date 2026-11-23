@@ -14,17 +14,27 @@ For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` t
    hour]]`. It builds the map, then race N's day twice, checks the day, the parking, the lateness ledger and the physics cars, and
    exits 0. About 45 s a seed (`TV_DRIVE_ONLY=1`: only the day's and the physics cars' checks, about 18 s). 16 seeds (1 to 15,
    20261122) pass. For all 16, run the built dll in a background loop (see "This session's environment").
-4. **Stage 3 is built, not yet tried in the game.** The lateness ledger (`TrafficLate.cs`), and the physics cars: the driver's
+4. **Stage 4 (rooms) is built, not yet tried in the game:** `TrafficRoom.cs` (pure, `tools/trafficsim`) and `TrafficShared.cs`. See
+   "Stage 4: the traffic in a room as built". **Next: test 50** (`docs/TESTING.md`, two players), then fix what it shows. Stage 3 was
+   tried once (test 49, the owner alone in a room, 2026-11-23: "everything seems fine"; frame time not measured yet).
+   **Traffic cars never get modded or custom items or bodies** (the owner, 2026-11-23): see the stage 4 section.
+5. **Stage 3 was built before the owner's try:** The lateness ledger (`TrafficLate.cs`), and the physics cars: the driver's
    arithmetic (`TrafficDrive.cs`), the game side (`TrafficPhysics.cs`: the bubble, the prepared enemy car, `TrafficBody`, the
    `TakeDamage` patch), checked in trafficview (`tools/trafficview/Drive.cs`). See "Stage 3: the physics cars as built". Built with the
-   defaults of the owner's four decisions (still unanswered: ask). **Next: test 49** (`docs/TESTING.md`), then fix what it shows;
-   then stage 4 (rooms).
-5. **Test 48** (`docs/TESTING.md`, stage 2's second try) is still open. The owner chose (2026-11-23) to go ahead with stage 3 without
+   defaults of the owner's four decisions (still unanswered: ask). Test 49's first report found nothing to fix; frame time with
+   `TrafficPhysics` 0, 20 and 30 is still to be measured.
+6. **Test 48** (`docs/TESTING.md`, stage 2's second try) is still open. The owner chose (2026-11-23) to go ahead with stage 3 without
    waiting. When its report comes (screenshots, `LogOutput.log`), fix what it shows first: stage 3's physics cars share stage 2's
    paint, poses and lamps. What changed since their first try is under "The owner's first report" and "Stage 2: second round" below.
    Nothing in the ledger changes what the game shows until something makes a car late, so test 48 is unaffected by it.
 
-**Where to look first in their next log:**
+**Where to look first in their next log (test 50, both machines'):**
+- `Traffic: the room's host, settling who drives each car` / `in a room, the host settles who drives each car`; `a stand-in here`;
+  `handed to` / `handed here by`; `Traffic: a message could not be sent to the room's host`; `The traffic stopped` (an exception in
+  the new code would show there).
+- The overlay's `room:` part: `states in N (N stale)` (stale should be a small share), `claims ... lost` (a few), the client's clock.
+
+**Where looked first in the stage 2 logs:**
 - `Tile ... could not be worked out: Collection was modified`: there should be none now (fixed in `Buildings`, see below). If there
   are, another static list is shared by the tile workers.
 - `Traffic: ... cars, ... trips ..., built in ... ms` (about 1.9 s on the owner's machine, on a worker, no hitch seen), `The traffic's
@@ -387,7 +397,90 @@ the 5 pm peak are unchanged within a few percent; cars out of sight ("round the 
 - **The diagnostics** in trafficview (`TV_MEET`) and `TrafficDay` (`FarSide`, `FarEnd`, `HeldSince`) are cheap; keep them until the
   owner's report on this round.
 
-## Stage 3: the physics cars as built (2026-11-23; not yet tried in the game)
+## Stage 4: the traffic in a room as built (2026-11-23; not yet tried in the game)
+
+The owner's word (2026-11-23), after test 49's first report ("everything seems fine"): go on to stage 4. Also: **traffic cars never get
+modded or custom items** (the Dacia Body is a mod). Checked: they don't. Dacia Body gives its shape only to a skin whose name starts
+with its own skin's; ours are "Traffic skin N/N", so it puts the stock meshes back and only logs the materials it reads (the
+`Paint material ... _Cull`, `Lamp material bFata/becuri` lines, four for each new body). The physics cars get a plain `new CarStats()`,
+no items, guns and modules off; the drawn cars are copies of the prefab asset, which no mod touches. Keep it so: never equip anything
+on a traffic car, never take its look from the race's or the player's skins.
+
+**`OpenWorld/src/TrafficRoom.cs` (pure, no Unity types; `tools/trafficsim` drives it):**
+- Per car: driver (0 nobody: on its timetable), a generation (each change of driver), its ledger entry (`Op`: Late leg/W/D, Retire,
+  OnTime). The host (never changes) settles; reliable messages come in order from each sender.
+- **Claim** (to the host, with the gen seen): granted to the first claim on a car nobody drives at that gen (and not retired, and not
+  from a player who left); `Grant` to everybody. A machine never drives a car before the grant reaches it (alone: at once, before
+  `Claim` returns), so no car is ever driven on two machines (trafficsim checks it after every delivery). A refused claim gets no
+  answer; the grant to the other clears it, or it is given up after 2 s.
+- **Release** (the driver, with the entry): applied at once there, settled by the host, `Released` to everybody. **Hand** (the
+  driver, to a player): the driver's car turns into a stand-in at once (`Handing`), the host grants it to the other (if that player
+  is still there; else gives it back from its last state). **PlayerLeft** on the host: every car they drove given back with
+  `LastOp` (the game: from its stand-in's newest state: late by where it is, or retired if hurt or off its lane).
+- **Ledger** (any machine, for cars nobody drives: a car held back in its space; on the host, cars caught up): applied at once, settled
+  by the host, `LedgerSet` to everybody; one the host can't take (the car is driven, or retired) is answered to the sender alone with
+  the host's entry, so a provisional one is put right.
+- **Hello** (a late joiner) → `Snapshot` (every car's gen, driver, entry, in parts).
+- **The clock**: every machine's states carry its sim time as the room has it; a client takes the host's, the least delayed reading
+  of the last 8 s (a reading is late, never early), eased at 0.2 s a second (snapped once at first, or if over 5 s off). The traffic's
+  `SimNow()` is the room's clock everywhere (`LocalSim()` is the machine's own race clock).
+- **States** (unreliable, ≤1100 bytes, 21 cars each): the sender's real clock, sim time and player's place, then per car: car, gen,
+  leg, world x y z, rotation (4 shorts), velocity, P, health, flags (alive, hurt, stopped). Taken only from the car's driver at its
+  present gen (a state from before a hand-over is dropped). Sent 15 a second while driving cars, 5 while not (the others still need
+  this player's place, and the host's clock).
+- **Damage** (a hit on a stand-in) to the driver, dropped if the gen moved on.
+- **`Nearest`** (claim only if this player is the nearest heard from lately; same distance: the lower id) and **`HandTo`** (another
+  player within 300 when this one is past it, or one under half as far when this one is over 120 away: loose, so no back and forth).
+- **`Playback`**: the stand-in's states played back behind the newest by 0.12 s plus however unevenly they come (at most 0.45 s), on
+  the driver's clock mapped by the least delay seen, its own clock eased (8%) never stepped; interpolated (rotation the shorter way),
+  coasting 0.6 s past the newest, then held; before the first state, the first moved back along its velocity.
+- A retirement's D = `Wrecked` (1) marks a wreck, so stand-ins elsewhere burn where they are rather than go (the driver's car leaves its
+  list the frame it is wrecked, so no "wrecked" state is ever sent).
+- Message tag 0x7A, layout version 1, the race's seed in every message (another race's are dropped). Shared handler in `EventLink`.
+
+**The game side (`TrafficShared.cs`, edits in `TrafficPhysics.cs`, `TrafficCars.cs`, `TrafficLate.cs`, `EventLink.cs`):**
+- The room is made with the day. `Pump()` each frame before the step: messages and players coming and going read (held in
+  `TrafficRoom`'s inbox from the network's thread; states held while the day was built dropped), Hello once, this player's place,
+  states sent, `Tick`.
+- `MakePhysical` claims instead of making (`Drivable` holds the old tests; the cap counts claims waiting); `DriverChanged` makes the car
+  physical on the grant (`Become`, from where it is drawn; if it can't be any more, it is given straight back). Alone this is
+  synchronous, so stage 3 runs as before (`choosing` guards the chosen list).
+- `Bubble` collects what to do and tells the room after the car is off the list (the room's word comes back to `DriverChanged`):
+  back (`LateOp`: late, early, or on time under 0.05 s), retired, or **handed** (in a room with others: `HandTo` before the far/end
+  tests, alive cars only, not at a trip's end or near a tunnel).
+- **Stand-ins**: `TrafficBody` with `Remote`: kinematic, `MovePosition`/`MoveRotation` to `Play.Sample(FixedClock)` (a clock run on
+  fixed steps, kept within 0.25 s of real time), its leg and place kept as a `Mover` for the drivers here (a wall when stopped or
+  wrecked), smoke and wreck from the flags; made inactive on the grant to another and shown at its first state. A hand-over turns a
+  physics car into a stand-in in place (`ToRemote`: it coasts at its last velocity until the new driver's states come) and a stand-in
+  into a physics car (`FromRemote`: from its newest state, health and hurt kept). Hits on a stand-in go to the driver
+  (`TrafficDamagePatch` → `RemoteHit`).
+- Drawn cars treat stand-ins as physics cars (`IsPhysical` once shown, `OnAPhysicsCar`, held back, hidden, `BuildMovers`, headlights).
+- **The ledger**: hiding is now this machine's own (`TrafficLate.hidden`, never sent; `TryGet` still reports it, so trafficview is
+  unchanged: seed 7's report is the same line for line as before the change); `Apply(op)` takes the room's entries; `Settle(w, seen,
+  catchUp)` catches late cars up only on the host (in a room, `seen` also counts any other player within reach), returns them, and
+  the host sends them; hidden cars are shown again by each machine for itself. A car held back in its space is sent at most every 0.5
+  s (each send holds it a second more). `HoldBack` returns its lateness.
+- Overlay: `; room: host` or `clock +0.00 s`, players heard, stand-ins, claims (granted, lost), handed in and out, states in (stale).
+  Log (`VerboseLog`): the room's part at the start, stand-ins made, hand-overs both ways, a player leaving, entries received.
+- `EventLink.TrafficToHost/ToAll/ToOne` (`ctx.Net.Send(data, Net.Everyone, reliable)`). The stub HalfGripTools.dll (bottom of this
+  file) now needs `Send(byte[] d, ulong to = Net.Everyone, bool reliable = true)`, `SendToHost(byte[] d, bool reliable = true)` and
+  `Net.Everyone`.
+
+**Checks:** `tools/trafficsim` (16 seeds pass, 639 checks each); trafficview seed 7 unchanged; `tools/check.sh` builds it. Test 50 in
+`docs/TESTING.md` (two players).
+
+**Known, left:**
+- Pushing a car another machine drives is like pushing another player's car (a wall), as the plan agreed; shots and rams are sent.
+- A car retired off its road (not wrecked) by a driver who drove away vanishes for another player between 300 and 400 from it (the
+  hand-over only goes to a player within 300).
+- Two machines can both think they are nearest for a moment (each knows the other's place a little late): the host takes the first
+  claim, the other's is dropped; the car stays drawn on the loser.
+- The bandwidth: 24 cars × 50 bytes × 15 a second ≈ 18 KB/s from each driving player to each other player. Fine for a few players;
+  with many, send fewer states for cars nobody else is near.
+- HalfGripTools 2.0: the static `Net` becomes `NetRoom` (`ctx.Net` unchanged); the traffic uses `HalfGripTools.Net` in `EventLink`
+  and `TrafficShared` (`InRoom`, `IsHost`, `LocalId`, `HostId`, `Everyone`).
+
+## Stage 3: the physics cars as built (2026-11-23; tried once, see test 49)
 
 What was built, against the plan below (read the plan for the why; this is what differs and what to know).
 
@@ -468,7 +561,7 @@ prints each meeting and crossing; `TV_DRIVE_CAR=N` follows car N through its jun
 - **Not in the game yet**: whether the prepared enemy car behaves (wakes without errors, stands on the road, the paint), the steering
   gain and the pedals on the real physics (they were written from the game's code, not tuned), the cost. A traffic car's own crash
   into another physics car does no damage (as the game's enemies, only the player's touch counts).
-- Rooms (stage 4): every machine makes its own physics cars now.
+- Rooms (stage 4): built, see above.
 
 ## Stage 3: the plan (prepared 2026-11-23; built, see above)
 
@@ -676,8 +769,8 @@ queue for real.
   	public class ModKey { public bool Down => false; public bool Held => false; }
   	public class KeyRegistry { public ModKey Add(KeyCode key, string label, Controls.Section section, Func<bool> shown) => null; }
   	public class NetPlayer { public ulong Id; public string Name; }
-  	public class ModNet { public bool Send(byte[] d) => false; public bool Send(byte[] d, ulong to) => false; public bool SendToHost(byte[] d) => false; public void OnReceive(Action<ulong, byte[]> a) { } }
-  	public static class Net { public static bool Available, InRoom, IsHost; public static ulong LocalId, HostId; public static IReadOnlyList<NetPlayer> Players => new List<NetPlayer>(); public static event Action<NetPlayer> PlayerJoined, PlayerLeft; }
+  	public class ModNet { public bool Send(byte[] d, ulong to = Net.Everyone, bool reliable = true) => false; public bool SendToHost(byte[] d, bool reliable = true) => false; public void OnReceive(Action<ulong, byte[]> a) { } }
+  	public static class Net { public const ulong Everyone = 0UL; public static bool Available, InRoom, IsHost; public static ulong LocalId, HostId; public static IReadOnlyList<NetPlayer> Players => new List<NetPlayer>(); public static event Action<NetPlayer> PlayerJoined, PlayerLeft; }
   	public class ModContext { public ManualLogSource Log; public ConfigFile Config; public HarmonyLib.Harmony Harmony; public KeyRegistry Keys; public ModNet Net; public string Folder = ""; public void PatchAll() { } public void OnSceneLoaded(Action<Scene> a) { } public void OnUnload(Action a) { } }
   }
   ```
