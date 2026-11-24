@@ -1,145 +1,178 @@
-# Traffic against the real world: the highway-fixes branch reviewed (2026-11-24)
+# Traffic against PA's rules of the road: the highway-fixes branch reviewed (2026-11-24)
 
 The owner's complaint: the traffic sucks because the roads aren't up to the job and the NPCs don't understand right of way. This
-compares `traffic-highway-crossing-fixes` (0.33.0 plus the unfinished fixes in `2c14c4f`) with how real roads are built and how
-Pennsylvania drivers are told to behave, and says what to do.
+compares `traffic-highway-crossing-fixes` (0.33.0 plus the unfinished fixes in `2c14c4f`) with the **Pennsylvania Driver's Manual**,
+and lays out the owner's road design: **on and off ramps along the side of the trunk, and left-turn lanes in its median**. No
+interchanges: it's a small rural area.
 
-**Handy fact:** a game unit is 1/3.3 m and a foot is 0.3048 m, so **1 ft ≈ 1.0 unit**. Engineering figures in feet can be used as
-units directly. 55 mph is about 81 units/s.
+## Sources
 
-## Sources and how much to trust them
-
-- **FHWA, *Alternative Intersections/Interchanges: Informational Report* (FHWA-HRT-09-060)**, chapters 3 (median U-turn) and 4
-  (restricted crossing U-turn / J-turn): https://www.fhwa.dot.gov/publications/research/safety/09060/003.cfm and `004.cfm`. Read
-  this session.
-- **PA Driver's Manual (PUB 95) and the Vehicle Code (75 Pa.C.S.)**: the PennDOT hosts were added to the environment, but the fetch
-  tool still could not reach them and a direct download was refused. The rules below are the well-known ones from the manual and the
-  code, **written from memory, not quoted**. Check the section numbers against the manual before quoting them to anyone.
-- **HCM gap-acceptance figures and AASHTO lane lengths**: standard textbook values, **from memory** (the FHWA pages read don't give
-  them). They're good enough to size things in a game. They aren't citations.
+- **PennDOT, *Pennsylvania Driver's Manual*, PUB 95 (4-21)**:
+  https://www.pa.gov/content/dam/copapwp-pagov/en/penndot/documents/public/dvspubsforms/bdl/bdl-manuals/pa-drivers-manual-non-commercial/english/pub%2095.pdf
+  (linked from https://www.pa.gov/agencies/dmv/driver-services/pennsylvania-drivers-manual). Page numbers below are the manual's
+  printed ones (Chapter 3). Quotes are verbatim.
 - **The branch's own numbers**: `trafficview --seed 1` (`TV_DRIVE_ONLY=1`) run on the branch this session.
+- Lane lengths are worked out from the traffic's own `Accel` and `Brake`, not taken from a design manual (PUB 95 gives none).
 
-## What the branch does now (seed 1)
+**Handy:** 1 ft ≈ 1.0 game unit (0.3048 m × 3.3). 55 mph ≈ 81 units/s, so 9 s at 55 mph ≈ 730 units.
 
-| | Branch | Real road at this design |
+## What the manual says, and what the traffic does
+
+### Who must yield (p. 48, "Negotiating Intersections")
+
+> 2. Drivers turning left must yield to oncoming vehicles going straight ahead.
+> 4. When two vehicles approach or enter an intersection from different roadways at or about the same time, drivers coming from the
+>    left must yield to vehicles coming from the right.
+> 5. A vehicle entering a public highway from an alley, private road or driveway must wait until the main road is clear.
+
+Stop and yield signs (Ch. 2): stop or slow down, and give the right-of-way to cross traffic.
+
+| Rule | Branch | Verdict |
 |---|---|---|
-| Trunk volume (AADT-equivalent) | 27,000 to 31,000 (local traffic alone 3,800; the rest is the 100 circling cars) | PennDOT principal arterials: median 5,400 |
-| Trunk through cars stopped | **134.9 min/day** (going on along it) | ≈ 0 at a junction with turn bays; never on an expressway |
-| Trunk cars stopped waiting to turn off | 100.2 min/day | They wait in a turn bay, out of the through lanes |
-| Worst stretch | Trunk edge 15, between node 33 (a secondary) and node 3 (the Kingsbridge link), 1,313 apart: 178 min | Junctions on a 55 mph arterial are spaced ¼ mile (1,320 ft) or more apart between median openings |
-| Cars stopped across a carriageway | 0 (the new check passes) | 0 |
-| Stop lines on another road's paving | 7 of 2,244 arms (**FAIL**) | 0 |
-| Left turns off non-trunk main roads | **First come first served**: they still cut in front of oncoming cars | Yield to oncoming traffic, always |
-| Gap a side-road car takes | Out of the box 1.0 s before the main-line car arrives (0.6 s after 20 s of waiting) | HCM critical gaps: 6.2 to 7.5 s headway (below) |
+| Left turn yields to oncoming going straight | Only where the main line is the trunk (`twoLaneMain`). Elsewhere `MainTurnsGiveWay` is false, so left-turners off primaries and secondaries go first come first served and **stop oncoming cars**. Node 233 on the Westhaven link: 58 min of main-line cars waiting a day. | **Breaks rule 2.** Make it unconditional. |
+| Side road gives way to the through road | Per-junction main line; side arms give way. | Right. The gap taken is too short (below). |
+| Same time, from different roads: yield to the right | Junctions with no main line: first come first served, the car on the right first within 1 s. | Right. |
+| Driveway: wait until the main road is clear | Waits for 40 units and 3 s clear, **then after 20 s the car behind stops to let it in** (`LetInAfter`). | **Breaks rule 5** on any road with a speed limit; the manual's only courtesy is moving over for a car on an on-ramp (p. 52). Keep the let-in on 25 mph streets at most. |
 
-## Right of way: PA rules against the code
+### Gaps (p. 49, "Moving Into and Through Intersections Safely")
 
-| PA rule (manual / 75 Pa.C.S., from memory) | Branch | Verdict |
-|---|---|---|
-| **Left turns yield to oncoming traffic** (§3322) | Only where the main line is the trunk (`twoLaneMain`). Everywhere else `MainTurnsGiveWay` is false, so a left-turner off a primary or secondary road goes first come first served and **stops oncoming cars**. That's why node 233 on the Westhaven link has 58 min of *main-line* cars waiting. | **Wrong**, and it's the owner's complaint. Make it unconditional. |
-| **Side road / stop / yield: yield to traffic on the through road** (§3323) | The main line is worked out per junction, and side arms give way to it. | Right idea. The gap they accept is far too small (below). |
-| **Uncontrolled junction: the first to arrive goes first; at the same time, yield to the car on the right** (§3321) | Junctions with no main line work this way. | Right. |
-| **Entering from a driveway, alley or parking: yield to everyone on the road** (§3324) | Pulling out waits for 40 units clear and 3 s, and after 20 s the car behind lets it in. | Roughly right. Being let in after 20 s is a courtesy, not a rule. Fine on streets, but it should never happen on a 45 mph+ road. |
-| **Turn right from the right lane, left from the leftmost lane** (§3331) | On the trunk, the branch moves left-turners into the inner lane within 700 units (`ExitReady`). Elsewhere roads have one lane each way. | Right on the branch. Not true in 0.33.0. |
-| **Keep right except to pass** on multi-lane roads (§3313 / §3301) | Keeps right (`KeepRightLoss`), overtakes on the left. | Right. |
-| **Don't enter a junction unless there's room to clear it** (manual) | Room checked by distance only, plus the branch's stricter check for carriageway crossings. | Mostly right. The distance-only room check still let a car stall in a box on seed 7. |
-| **Merging onto a highway: yield to its traffic, match its speed in the acceleration lane; highway drivers move over if it's safe** (manual) | There are no acceleration lanes. A car joins the trunk from a standstill at the T and needs "room for that car to slow, braking firmly". The trunk moves over for joiners (190 a day). | The behaviour is fine. **The road is missing the acceleration lane**, so every join makes a 55 mph car brake. |
-| **Following distance: at least 4 s** (manual) | IDM headway 1.5 s, gap 7 units. | Typical real highway headways are 1.5 to 2 s, so this is fine for a simulation. The 4 s rule is advice. |
+> To travel across an intersection with a two-way stop sign - You need about a 6-second gap in both directions to cross a 30 mph
+> street ... To turn right - ... Allow a gap of about eight (8) seconds between you and any vehicle approaching from the left. ...
+> To turn left - Make sure you have a clear gap to turn in front of oncoming traffic ... If you are turning from a minor onto a major
+> street, allow a 9-second gap between you and any vehicle approaching from the right. ... Never start a left turn until you can see
+> all the lanes you need to cross are clear, and you can safely make the turn.
 
-### Gap acceptance (HCM two-way stop control, from memory)
+The branch lets a side-road car go if it's **out of the box 1 s before** the main-line car gets there (0.6 s after 20 s of waiting,
+`GiveWayMargin`/`GiveWayLeast`). Crossing the trunk from a standstill (a box of about 40 plus a car of 14, at `Accel` 5) takes about
+4.6 s, so the gap it takes is about **5.2 to 5.6 s**. The manual says **8 s turning right and 9 s turning left**. At 55 mph that's
+650 and 730 units of clear road, against the 420 to 450 the branch accepts. This is why trunk cars brake for joiners.
 
-Critical headway in the main-line flow that a driver accepts (two-lane / four-lane major road), and the follow-up headway for the
-next car in the queue:
+**Fix:** a side-road car goes only when the nearest main-line car whose way it crosses or joins is at least 8 s (right turn), 9 s
+(left turn) or 6 s (across) from the junction, at that car's speed. Patience doesn't shrink it (the manual has no such thing). On the
+trunk, the ramps and median lanes below take most of these movements out of the gap-taking altogether.
 
-| Movement | Critical gap | Follow-up |
-|---|---|---|
-| Left turn off the major road | 4.1 s | 2.2 s |
-| Right turn from the side road | 6.2 / 6.9 s | 3.3 s |
-| Straight across from the side road | 6.5 s | 4.0 s |
-| Left turn from the side road | 7.1 / 7.5 s | 3.5 s |
+### Turning lanes and position (p. 45)
 
-At 55 mph a 7.5 s gap is about 600 units of empty road. The branch lets a car go if it is **out of the box 1 s before** the main-line car
-arrives. Crossing 4 lanes from a standstill (a box of about 40 plus a car of 14, at `Accel` 5 u/s²) takes about 4.6 s, so the branch's
-effective gap is about 5.6 s, falling to 5.2 s with patience. That is shorter than any real driver takes across a four-lane highway, and
-it is why the trunk's cars brake for joiners.
+> To turn left on multi-lane streets and highways, start from the left lane. If you are turning right, start from the right lane. If
+> you are turning onto a highway, which has more than one (1) lane in the direction you wish to travel, turn into the closest lane
+> going in that direction. ... If you want to change to another lane, wait until after you have safely completed your turn.
 
-**What that costs, by HCM capacity:** with about 850 veh/h on both carriageways (the circling cars in real time), a side-road left
-turn across the trunk can serve about **250 veh/h**. A left turn off the trunk (4.1 s against about 425 veh/h oncoming) can serve about
-**1,100 veh/h**, but only if it has somewhere to wait that isn't a through lane.
+> [Center turn lane] When you enter the center turn lane, enter it completely. Do not leave the back end of your vehicle sticking
+> into the normal travel lane, blocking traffic.
 
-## The roads: what's wrong with the trunk's junctions
+Signal at least 300 ft before turning at 35 mph or more (p. 44). Do not pass within 100 ft of an intersection (p. 47).
 
-The trunk (`Network.Classes[0]`) is a 55 mph dual carriageway, two lanes each way, with a **flat median 10 units wide (about 3 m)**.
-Every road meets it in a plain at-grade T or crossroads (boxes of 36 to 41 units). It has:
-- **no left-turn bays** (the median can't hold a car, which is 14 long and needs at least 47 ft of median to wait in: FHWA ch. 4);
-- **no median refuge**, so crossing or turning left onto it is one movement across all four lanes, needing gaps in both directions at
-  once;
-- **no deceleration lanes**, so a car turning right slows from 81 u/s in the through lane;
-- **no acceleration lanes**, so a car joining from a standstill takes about 16 s and 650 units to reach 55 mph (AASHTO wants about
-  960 ft of acceleration lane for 55 mph from a stop, from memory);
-- **junctions close together**: nodes 33 and 3 are 1,313 apart, and node 10's arms are 164 and 181 long.
+Branch: on the trunk, left-turners move to the inner lane and right-turners to the outer lane within 700 units (`ExitReady`). Through
+cars keep to the outer lane for 400 units before a trunk junction (`PocketAhead`), so a left-turner waits **in the inner through lane**.
+That's what the manual says not to do: stop with your car in a travel lane. The trunk has no turn lane for it to wait in. That's
+the road problem, not a rule problem.
 
-**No real road carrying this traffic is built like this.** PennDOT puts a road of about 30,000 a day at 55 mph on interchanges (US 22,
-US 322, US 15 are the models). Where at-grade junctions stay on a four-lane divided highway, FHWA's answers are:
-- **Turn bays in a wide median**: 47 to 71 ft desirable, 250 ft or more of bay. Each car turning left waits off the through lanes.
-- **RCUT / J-turn** (FHWA ch. 4): side roads may only turn right. A car wanting left, or across, turns right, then makes a U-turn at a
-  one-way median opening 400 to 1,000 ft downstream (Maryland's unsignalized J-turns on US 301: about 1,400 ft; NCDOT minimum 800 ft).
-  This removes the crossing-four-lanes movement entirely. Crashes fell 31% (US 23/74) and 90% (US 301 at MD 313). It suits junctions
-  where the side road carries under about 20% of the total. That holds here at every trunk junction outside the peak.
-- **Signals**: a car game's highway shouldn't have them.
+### Not blocking, and stopping halfway (p. 46)
 
-**The 3 m median is the root of the owner's screenshot.** The branch's workaround (left-turners wait in the inner lane, through cars
-keep to the outer one for 400 units) is how a four-lane *undivided* road with no turn lane behaves. It's legal, but it's exactly why
-real engineers add turn lanes: through cars still stopped for 135 min a day on seed 1.
+> Stopping halfway across a street is safe only when there is a turning lane provided in the center median large enough to hold your
+> entire vehicle. ... Even if you have a green light, do not enter an intersection if there are vehicles blocking your way. Wait until
+> you are sure you can clear the intersection before starting to cross it.
 
-## The traffic itself
+Branch: room past the box is checked by distance. A carriageway crossing on the trunk now also needs its way out moving or clear well
+past the box (`CrossesCarriageway`). There were 0 cars stopped across a carriageway on seed 1. **Right.** The plain room check still let one
+car stall in a box on seed 7. Apply the carriageway rule (way out clear for the whole car) at every junction.
 
-- **The circling cars are 88% of the trunk.** That volume was chosen for the drive (the owner wants more, step C of the perf plan:
-  300 or 1,000), not from counts. More through traffic only works if the junctions stop needing gaps across it, which is the road fix
-  below. At 300 circling cars, the side roads could hardly join (3,606 min of junction waiting).
-- **The day runs at 36x**, so each town's whole peak hour arrives at its trunk junction in under two real minutes. Real junctions
-  never see that rate, which is one more reason the trunk's joins must be free-flowing (merges and grade separation), not gap-taking.
+### Divided highways (p. 49)
 
-## Verdict on the branch
+> Making a right turn onto a divided highway is no different from making a right turn at any other intersection. ... To correctly
+> turn left onto a divided highway, you need to cross the "first" roadway when there is a safe gap in traffic approaching from your
+> left, and then turn left on the other side of the barrier, when there is a safe gap in traffic approaching from the right on the
+> "second" roadway.
 
-**Keep (it matches the rules):** left turns off the trunk yield; left-turners move to the inner lane and right-turners to the outer;
-the room check for carriageway crossings (no car stops across the highway); wider boxes for slanted roads (`ObliqueBox`); the new
-trafficview checks.
+A **two-stage** left: one carriageway at a time, waiting in the median between. The trunk's median (10 units, 14 with its shoulders)
+can't hold a 14-long car crosswise, so by p. 46 a car may not stop there. Today it must find 9 s both ways at once.
 
-**Not good enough:**
-1. **Left turns yield only on the trunk.** Every other main road still lets left-turners cut across oncoming cars. Fix: make
-   `MainTurnYields` unconditional (drop `MainTurnsGiveWay`). On two-lane roads the oncoming flow is light, so queues behind
-   left-turners will be short. Measure it.
-2. **Gaps are about half of real.** Fix: the side car's test becomes "the main-line car is at least *critical gap* seconds from the
-   conflict point" (7.5 s left / 6.5 s across / 6.9 s right on the trunk; 7.1 / 6.5 / 6.2 on two-lane roads), with a small cut for
-   patience, instead of "out 1 s before it arrives". Joining a lane, it should also never need the main-line car to brake harder than
-   about 2 to 3 m/s² (the branch allows firm braking).
-3. **Through cars on the trunk still stop** (135 min), because the road has nowhere for turning cars to be. No driving rule fixes
-   that.
-4. **Stop lines still fail** on 7 arms (slanted lanes at the 75 cap), and the branch was never run over the 16 seeds.
-5. **Physics cars** keep the lane they had when made physical (`HoldLane`), so near the player a left-turner may be in the outer lane
-   and cut across the inner one. Check `TrafficDrive` against the new lane rule.
+### Entering and leaving a highway (pp. 46, 52)
 
-## What to do (recommended order)
+> Entrance ramps for highways often have acceleration lanes. These lanes run beside main traffic lanes and should be long enough to
+> allow you to accelerate to the speed of traffic before you enter the highway itself. ... It is illegal to pass a vehicle ahead of
+> you in an acceleration lane. ... 1. Put your turn signal on, and look for an opening in traffic. 2. Accelerate up to the speed of
+> traffic. 3. Merge into the opening in traffic.
 
-**1. Driving rules (no world change; the day changes, so a version bump):** 1 and 2 above, finish 4, check 5. Then run the 16 seeds.
-This alone fixes the owner's "doesn't understand right of way" on every road but the trunk's junctions.
+> Get in the proper lane for exiting well in advance. Do not slow down until after you have moved into the exit lane. ... Do not
+> swerve across several lanes to try to make the exit at the last second. Do not cross over the median to try to turn around.
 
-**2. The trunk's junctions rebuilt (a world change, so everyone in a room needs the new version):**
-- **Recommended: grade-separated junctions where the town links meet the trunk** (Kingsbridge node 3, Westhaven node 5, node 10,
-  node 33, and whichever others carry a town). Use a simple diamond: the side road bridges the trunk (the network already does bridges,
-  and the traffic graph already makes no junction where roads cross more than 4 apart), with four one-way ramps. Each ramp is a merge
-  with an acceleration lane of about 1,000 units, or a diverge with a deceleration lane of about 500. Through traffic never stops.
-  This is what a PA road carrying this traffic looks like, and it's the only layout that takes 300 or 1,000 circling cars.
-- **Cheaper alternative: RCUT / J-turns everywhere else on the trunk** (farm lanes, minor roads). Side roads become right-in,
-  right-out with a short acceleration lane. One-way median U-turn openings about 1,000 to 1,400 units each side, with a bay. That
-  needs the median widened locally (a loon or bulb-out, about 50 units) only at the U-turn openings.
-- Space junctions at least 1,320 units apart along the trunk (FHWA's access-management figure for principal arterials). Merge or
-  drop the ones closer than that (node 33 next to node 3).
+> If you see a vehicle about to enter the highway from an on-ramp, a common courtesy is to change lanes ... Even though the entering
+> driver is required to yield the right-of-way to you ...
 
-**3. Then raise the circling cars** (the perf plan's step C), and re-measure frame time.
+> If you are the driver entering the highway, you must yield to the exiting driver. [in a shared weaving lane]
 
-**Owner decisions needed:**
-- The trunk's junctions: **interchanges** at the town links plus J-turns elsewhere (recommended), J-turns only, or turn bays only?
-- Can junctions on the trunk closer than 1,320 units apart be merged or cut?
-- Are you OK with the day changing (a version bump; everyone in a room updates)?
+Branch: there are no ramps. Joiners start from a standstill at the T and need the trunk car to brake "firmly". Leavers slow in the
+outer through lane. The trunk moving over for joiners (190 a day) matches the courtesy. **The roads are missing what the manual
+assumes a highway has.**
+
+### Following distance (p. 35)
+
+> A 4-second following distance ... will allow you to steer or brake to avoid a hazard safely on the highway, if the pavement is dry.
+> ... If you pass the marking or object in less than four (4) seconds, you are following too closely.
+
+Branch: IDM time headway 1.5 s (`Headway`) plus 7 units. That's half the manual's 4 s. **Owner's call:** 4 s is the law-abiding
+driver. It also halves what a lane carries (about 900 cars an hour instead of about 2,000), so queues get longer behind every
+stop. 2 to 4 s is the sensible range; 4 s on the trunk is easy to try.
+
+### Passing and keeping right (pp. 46 to 47)
+
+Pass on the left, or on the right where there are two or more marked lanes each way; not within 100 ft of an intersection, bridge or
+tunnel. If tailgated, "move over to the right lane, if possible" (p. 36). Branch: overtakes on the left and keeps right
+(`KeepRightLoss`); lane changes clear of junctions. **Right.** Check that the 100-unit no-pass zone covers bridges and the wrap's tunnels.
+
+## What the branch's day looks like (seed 1)
+
+- Trunk through cars **stopped 134.9 min a day**; cars waiting to turn off 100.2 min. Worst: trunk edge 15 between node 33
+  (secondary) and node 3 (Kingsbridge link), 1,313 apart, 178 min.
+- 0 cars stopped across a carriageway (the new check passes). Stop lines on another road's paving: **7 of 2,244 arms (FAIL)**. Not run
+  over the 16 seeds.
+- The trunk carries 27,000 to 31,000 a day equivalent. Local traffic alone is 3,800; the rest is the 100 circling cars.
+
+## The roads: the owner's design
+
+**Off ramps (deceleration lanes)** on the right of each carriageway before every junction where cars turn right off the trunk. A car
+moves into it first, then slows, as p. 52 says. Length from the traffic's own `Brake` (8.25 u/s², about 2.5 m/s², comfortable):
+81 → 13 u/s takes (81² − 13²) / (2 × 8.25) ≈ **390 units**, plus a taper of about 100 to move over in.
+
+**On ramps (acceleration lanes)** on the right after every junction where cars turn right onto the trunk (and where the left-turners
+from the median come out, below). A car accelerates to the traffic's speed, then merges into a gap. It may not pass in it, and must
+yield to the trunk (p. 46). From a standstill at `Accel` 5: 0 → 75 u/s takes 75² / 10 ≈ **560 units**, plus a taper of about 100.
+Where an on ramp and the next off ramp would overlap, it's a weaving lane: entering yields to exiting (p. 52).
+
+**Left-turn lanes in the median** at every junction where cars turn left off the trunk. The car moves in completely (p. 45: no tail in
+the travel lane) and waits there for a gap in the oncoming carriageway, out of the through lanes. Storage of about 5 cars
+(5 × (14 + 7) ≈ 105 units) plus a taper. The median and its shoulders are 14 units between the inner lanes, which already takes an
+11-unit lane. Most junctions need only paint and a cut through the median, a little widening at most.
+
+**Left onto the trunk from a side road (two-stage, p. 49):** the car crosses the near carriageway on a gap from its left, then waits in
+the median before joining the far one. Two ways to give it that place:
+- (a) widen the median at the junction to about 30 units so a car fits crosswise, and it waits for a 9 s gap from its right; or
+- (b) a median acceleration lane: it turns into a lane on the left of the far carriageway and merges right into the inner lane
+  (common on rural four-lane roads, but a merge into the fast lane).
+
+**Spacing:** nodes 33 and 3 (1,313 apart), and node 10 with arms of 164 and 181, would have ramps and turn lanes overlapping. Where that
+happens, either one continuous auxiliary lane between them (a weaving lane) or merge the junctions.
+
+All of this is a world change: everyone in a room needs the new version.
+
+## What to do
+
+1. **Driving rules** (no world change; the day changes, so a version bump):
+   - left turns yield to oncoming traffic everywhere (drop `MainTurnsGiveWay`);
+   - the manual's gaps: 8 s right, 9 s left, 6 s across, no shrinking with patience;
+   - no let-in for driveways off roads above 25 mph;
+   - the full-clearance room rule at every junction;
+   - following distance per the owner's call;
+   - finish the branch: the 7 stop lines, the 16 seeds, physics cars (`HoldLane`) following the lane rule.
+2. **The trunk's junctions** (world change): off ramps, on ramps and median left-turn lanes as above, built in `Network`/`RoadMesh`,
+   with the traffic driving them as lanes of their own (the trunk's lane keys already do two lanes). Add checks: no car decelerates
+   in a through lane for a turn, no car stops in a through lane to turn left, no trunk car brakes harder than about 2.5 m/s² for a
+   joiner.
+3. **Then** more circling cars and frame time.
+
+## Owner decisions needed
+
+- **Following distance:** the manual's 4 s, or something between (real traffic runs at about 1.5 to 2 s)?
+- **Left onto the trunk from a side road:** (a) a wider median to wait in crosswise, or (b) a median acceleration lane?
+- **Junctions too close for their lanes** (nodes 33/3, node 10): one weaving lane between them, or merge them?
