@@ -529,3 +529,18 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
 
 56. The ground's shadows back (0.32.6). A low sun (early morning or evening; `WeatherSkip` to get there): hills shadow the land behind
    them as before 0.32.5. The frame rate driving as in test 55 (about 135 on 0.32.5): say if it is lower.
+
+57. Right of way, the highway's two lanes, cheaper far traffic (0.33.0; everyone in a room needs it: the day of traffic changed).
+   - On the trunk at the evening rush (about 17:00): the highway's cars use both lanes, overtaking in the inner one and back in the
+     outer one after; they move over at a junction where a car waits to join. No car on the trunk stops for a car from a side road
+     (nor at the Westhaven link, node 5, at 11.316, -9.288, where they queued before). Cars from the side roads wait at the line for a
+     gap and then go. Say if the queues on the Westhaven link or the Kingsbridge link at the peak look too long.
+   - A junction of a main road with a side street in a town (Kingsbridge's centre): main-road cars go straight on without stopping
+     for side-street cars.
+   - Physics cars near you on the trunk keep their lane while you are near (they don't overtake each other), and never brake for a
+     car in the other lane. Overtake one: it does not swerve.
+   - Far traffic (past about 75 m): looks the same as before from a distance, with no shadow; it turns into the full car with turning
+     wheels and its shadow as it comes nearer (within about 45 m), with no visible pop. If far cars are missing or all drawn in one
+     place, set `TrafficInstanced` off and say so (the game's car shader may not take GPU instancing).
+   - `ShowCoords` on: the traffic line says `(N far)`; send `LogOutput.log` from a drive along the trunk and from Kingsbridge's centre:
+     its `Frame timings` lines (draw calls and shadow casters with traffic about, against 0.32.6's).

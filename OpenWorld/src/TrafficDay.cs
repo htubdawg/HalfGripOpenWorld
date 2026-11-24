@@ -115,6 +115,8 @@ namespace HalfGripOpenWorld
 		/// began it.
 		/// </summary>
 		private const int Circling = 100;
+		/// <summary>trafficview only: another number of circling cars to measure (0: <see cref="Circling"/>).</summary>
+		internal static int CirclingTry { get; set; }
 
 		/// <summary>Straight-line distance at which a place draws a quarter as strongly as one next door... half: weight / (1 + (d / Reach)²).</summary>
 		private const double Reach = 3000.0;
@@ -160,6 +162,18 @@ namespace HalfGripOpenWorld
 			public double Ready, Start = -1.0, End = -1.0;
 			/// <summary>Distance along the path every <see cref="RecordStep"/> from <see cref="Start"/>; at <see cref="End"/> it is <see cref="Length"/>.</summary>
 			public float[] Rec;
+			/// <summary>
+			/// Its lane changes on the trunk, by path distance, three numbers each: where it starts moving over, where it is in the new lane,
+			/// and that lane (1 the inner, 0 the outer); null if it kept to the outer lane. Read by <see cref="InnerAt"/>.
+			/// </summary>
+			public float[] Lanes;
+			/// <summary>
+			/// The lane its car keeps to as a physics car (-1: none): the one it was in when it became one, whatever the day did after (it
+			/// drives among cars the day doesn't know of). From <see cref="HoldEnd"/> on (given back), over <see cref="HoldGlide"/>, back to
+			/// the day's lane. Set and cleared on the main thread only.
+			/// </summary>
+			internal float HoldLane = -1f;
+			internal double HoldEnd = double.MaxValue;
 			internal double Dwell;
 			internal int Host = -1;
 			internal float[] Profile;
@@ -229,7 +243,15 @@ namespace HalfGripOpenWorld
 		internal readonly List<string> Stuck = new List<string>(), OverlapNotes = new List<string>(), ConflictNotes = new List<string>();
 		/// <summary>Diagnostics: seconds cars stood waiting at each node, and why requests were refused (behind a refused one, crossing a grant, no room).</summary>
 		internal readonly Dictionary<int, double> WaitAt = new Dictionary<int, double>();
+		/// <summary>Seconds waited per node and kind (node * 4 + kind: 0 from a side arm, 1 on along the main line, 2 turning off it, 3 no main line). For trafficview.</summary>
+		internal readonly Dictionary<int, double> WaitKind = new Dictionary<int, double>();
 		internal int RefusedOrder, RefusedCross, RefusedRoom;
+		/// <summary>Requests refused for a gap: a car giving way to a main-line car coming.</summary>
+		internal int RefusedGap;
+		internal readonly List<string> MainHeldNotes = new List<string>();
+		/// <summary>Main-line cars (or others with the right of way) refused at a junction for a car that gives way to them, once per car and junction: should be none.</summary>
+		internal int MainHeld => mainHeld.Count;
+		private readonly HashSet<long> mainHeld = new HashSet<long>();
 		internal double ProfileSeconds;
 		internal readonly Dictionary<int, double> StoppedOn = new Dictionary<int, double>();
 		internal readonly int[] ActiveBy = new int[48], StartsBy = new int[48];
@@ -280,6 +302,8 @@ namespace HalfGripOpenWorld
 		private static bool prepared;
 		/// <summary>Per road, per sample: the speed its bend allows there.</summary>
 		private static double[][] bend;
+		/// <summary>Per edge, whether it is the trunk's (two lanes each way); per portal, whether its road is.</summary>
+		private static bool[] twoLaneEdge, twoLanePortal;
 		/// <summary>Per node, per link (as <see cref="Traffic.Links"/>): its place round the junction (0 the first by angle) and the way out along it (unit).</summary>
 		private static int[][] armRank;
 		private static double[][] armX, armZ;
@@ -361,6 +385,22 @@ namespace HalfGripOpenWorld
 					armRank[node] = rank;
 					armX[node] = ax;
 					armZ[node] = az;
+				}
+				twoLaneEdge = new bool[Traffic.Edges.Count];
+				for (int e = 0; e < Traffic.Edges.Count; e++)
+				{
+					twoLaneEdge[e] = Network.Roads[Traffic.Edges[e].Road].Kind == RoadKind.Trunk;
+				}
+				twoLanePortal = new bool[Network.Portals.Count];
+				for (int q = 0; q < Network.Portals.Count; q++)
+				{
+					twoLanePortal[q] = Network.Roads[Network.Portals[q].Road].Kind == RoadKind.Trunk;
+				}
+				mainA = new int[n];
+				mainB = new int[n];
+				for (int node = 0; node < n; node++)
+				{
+					MainLine(node);
 				}
 				portalDest = new int[Network.Portals.Count];
 				north = -1;
@@ -919,10 +959,11 @@ namespace HalfGripOpenWorld
 				}
 				int ti = 0;
 				double before = 0.0;
-				for (int i = 0; i < Circling && trunk.Count > 0; i++)
+				int circling = CirclingTry > 0 ? CirclingTry : Circling;
+				for (int i = 0; i < circling && trunk.Count > 0; i++)
 				{
 					int into = i % 2 == 0 ? Wrap.A : Wrap.B, other = Wrap.Other(into);
-					double want = (i + 0.5) * trunkLength / Circling;
+					double want = (i + 0.5) * trunkLength / circling;
 					while (ti + 1 < trunk.Count && before + Traffic.Edges[trunk[ti]].Length <= want)
 					{
 						before += Traffic.Edges[trunk[ti]].Length;
@@ -987,6 +1028,10 @@ namespace HalfGripOpenWorld
 			public double LaneU;
 			/// <summary>The car just ahead on the same lane this step (null if none).</summary>
 			public Mover Ahead;
+			/// <summary>On the trunk's inner lane (its outer lane otherwise, and on every other road); when it last changed lanes; its changes (as <see cref="Leg.Lanes"/>).</summary>
+			public bool Inner;
+			public double Changed = -1e9;
+			public List<float> LaneRec;
 		}
 
 		private sealed class Grant
@@ -1017,6 +1062,33 @@ namespace HalfGripOpenWorld
 		private readonly Dictionary<int, List<Grant>> nodeGrants = new Dictionary<int, List<Grant>>();
 		private readonly List<int> grantNodes = new List<int>();
 		private readonly HashSet<long> overlapPairs = new HashSet<long>(), conflictPairs = new HashSet<long>();
+
+		/// <summary>Added to a lane's key for the trunk's inner lane beside it.</summary>
+		private const long InnerKey = 1L << 40;
+
+		/// <summary>The lane mover <paramref name="m"/> is in (or keeps to) on seg <paramref name="s"/>: the inner one there if it is on the trunk's inner lane and <paramref name="s"/> has one.</summary>
+		private static long LaneOf(Mover m, Seg s)
+		{
+			return LaneOf(s) + (m.Inner && TwoLane(s) ? InnerKey : 0L);
+		}
+
+		/// <summary>
+		/// Whether two movements through a node, each with the lanes it comes in and leaves by, cross: as <see cref="Crosses"/>, but two
+		/// that leave by the same arm in different lanes (one joining the trunk's outer lane, one going on in its inner lane) do not, and
+		/// two from the trunk's two lanes of one arm do if they leave by the same lane (both turning off into one road).
+		/// </summary>
+		private static bool Conflict(int node, int inA, int outA, long inLaneA, long outLaneA, int inB, int outB, long inLaneB, long outLaneB)
+		{
+			if (inA == inB)
+			{
+				return inLaneA != inLaneB && outLaneA == outLaneB;
+			}
+			if (outA == outB && outLaneA != outLaneB)
+			{
+				return false;
+			}
+			return Crosses(node, inA, outA, inB, outB);
+		}
 
 		private static long LaneOf(Seg s)
 		{
@@ -1072,6 +1144,195 @@ namespace HalfGripOpenWorld
 			int span = (b1 - a1 + m) % m;
 			bool x = (a2 - a1 + m) % m < span, y = (b2 - a1 + m) % m < span;
 			return x != y;
+		}
+
+		/// <summary>Per node, the two arms (indices in <see cref="Traffic.Links"/>) of its main line, or -1 for both where it has none.</summary>
+		private static int[] mainA, mainB;
+
+		/// <summary>
+		/// The main line of a junction, worked out once with the map: drivers know which road is the through road without a sign. Among
+		/// the arms of the highest class (if only one arm is of it, that arm and those of the next class): the two arms of one road that
+		/// carries on through the node; else the pair nearest a straight line, if it is clearly straighter than the next pair (a T has
+		/// one, a fork of two equal branches or a crossroads of equal roads does not). None at a dead end, a bend (two arms) or a hub of
+		/// five arms or more: there every junction stays first come first served.
+		/// </summary>
+		private static void MainLine(int node)
+		{
+			mainA[node] = mainB[node] = -1;
+			List<int> links = Traffic.Links[node];
+			int m = links.Count;
+			if (m < 3 || m > 4)
+			{
+				return;
+			}
+			int[] kind = new int[m];
+			int best = int.MaxValue;
+			for (int k = 0; k < m; k++)
+			{
+				kind[k] = (int)Network.Roads[Traffic.Edges[links[k]].Road].Kind;
+				best = Math.Min(best, kind[k]);
+			}
+			int top = 0, only = -1, next = int.MaxValue;
+			for (int k = 0; k < m; k++)
+			{
+				if (kind[k] == best)
+				{
+					top++;
+					only = k;
+				}
+				else
+				{
+					next = Math.Min(next, kind[k]);
+				}
+			}
+			if (top == 2)
+			{
+				// Two arms of a higher class than the rest: they are the main line, however they bend.
+				for (int k = 0; k < m; k++)
+				{
+					if (kind[k] == best)
+					{
+						if (mainA[node] < 0)
+						{
+							mainA[node] = k;
+						}
+						else
+						{
+							mainB[node] = k;
+						}
+					}
+				}
+				return;
+			}
+			int pa = -1, pb = -1, qa = -1, qb = -1;
+			double pd = double.MaxValue, qd = double.MaxValue;
+			bool same = false;
+			for (int i = 0; i < m; i++)
+			{
+				for (int j = i + 1; j < m; j++)
+				{
+					bool ok = top >= 3 ? kind[i] == best && kind[j] == best : (i == only && kind[j] == next) || (j == only && kind[i] == next);
+					if (!ok)
+					{
+						continue;
+					}
+					bool carries = Traffic.Edges[links[i]].Road == Traffic.Edges[links[j]].Road;
+					double d = armX[node][i] * armX[node][j] + armZ[node][i] * armZ[node][j];
+					if (carries && !same)
+					{
+						// A road carrying on through beats any pair that does not.
+						same = true;
+						pa = pb = qa = qb = -1;
+						pd = qd = double.MaxValue;
+					}
+					else if (same && !carries)
+					{
+						continue;
+					}
+					if (d < pd)
+					{
+						qa = pa;
+						qb = pb;
+						qd = pd;
+						pa = i;
+						pb = j;
+						pd = d;
+					}
+					else if (d < qd)
+					{
+						qa = i;
+						qb = j;
+						qd = d;
+					}
+				}
+			}
+			if (pa < 0)
+			{
+				return;
+			}
+			if (!same && (pd > -0.7 || (qa >= 0 && qd - pd < 0.15)))
+			{
+				// No pair near enough straight, or two about as straight as each other: no clear main line.
+				return;
+			}
+			mainA[node] = pa;
+			mainB[node] = pb;
+		}
+
+		/// <summary>The arms of node <paramref name="node"/>'s main line (-1, -1: none). For trafficview's picture.</summary>
+		internal static void MainArms(int node, out int a, out int b)
+		{
+			Prepare();
+			a = mainA[node];
+			b = mainB[node];
+		}
+
+		/// <summary>Whether the way in along arm <paramref name="inA"/> and out along <paramref name="outA"/> turns left (across the oncoming lane: traffic keeps right).</summary>
+		private static bool LeftTurn(int node, int inA, int outA)
+		{
+			double tx = -armX[node][inA], tz = -armZ[node][inA];
+			return tx * armZ[node][outA] - tz * armX[node][outA] > 0.0;
+		}
+
+		/// <summary>
+		/// Whether movement A (in along arm <paramref name="inA"/>, out along <paramref name="outA"/>) gives way to movement B at node
+		/// <paramref name="node"/>, their ways crossing: a car from a side arm gives way to every car from the main line; on the main
+		/// line, a car turning off gives way to the oncoming car going on along it, and of two turning off from opposite ways into the
+		/// same arm the one turning left gives way. False both ways where the node has no main line or both come from side arms: first
+		/// come first served there, as before.
+		/// </summary>
+		internal static bool Yields(int node, int inA, int outA, int inB, int outB)
+		{
+			return !NoRightOfWay && MainYields(node, inA, outA, inB, outB);
+		}
+
+		/// <summary>trafficview only: every junction first come first served, as before 0.33.0 (to compare with).</summary>
+		internal static bool NoRightOfWay { get; set; }
+
+		private static bool MainYields(int node, int inA, int outA, int inB, int outB)
+		{
+			int a0 = mainA[node], a1 = mainB[node];
+			if (a0 < 0 || inA == inB)
+			{
+				return false;
+			}
+			bool aMain = inA == a0 || inA == a1, bMain = inB == a0 || inB == a1;
+			if (!aMain)
+			{
+				return bMain;
+			}
+			if (!bMain)
+			{
+				return false;
+			}
+			return MainTurnsGiveWay && MainTurnYields(node, inA, outA, inB, outB, a0, a1);
+		}
+
+		/// <summary>
+		/// Whether a car turning off the main line across the oncoming lane gives way to the oncoming main-line car. Off: tried in
+		/// trafficview (seed 1, 100 circling cars), the cars turning left off the trunk waited in its one lane for a gap and the trunk's
+		/// cars stood behind them for three times as long as with the turn first come first served, where one oncoming car stops now and then.
+		/// There is no turning lane for them to wait in.
+		/// </summary>
+		internal static bool MainTurnsGiveWay { get; set; }
+
+		private static bool MainTurnYields(int node, int inA, int outA, int inB, int outB, int a0, int a1)
+		{
+			bool aOff = outA != a0 && outA != a1, bOff = outB != a0 && outB != a1;
+			if (aOff && !bOff)
+			{
+				return true;
+			}
+			return aOff && bOff && LeftTurn(node, inA, outA) && !LeftTurn(node, inB, outB);
+		}
+
+		/// <summary>
+		/// Whether movement A's way and movement B's cross only in the box's near half for A: B comes from A's left (in the lane or the
+		/// carriageway nearer A) and they leave by different arms. A is then clear of B once its back is past the box's middle.
+		/// </summary>
+		internal static bool NearHalf(int node, int inA, int outA, int inB, int outB)
+		{
+			return outA != outB && inA != inB && RightOf(node, inA, inB);
 		}
 
 		/// <summary>Whether a car coming in along arm <paramref name="a"/> is on the right of one coming in along arm <paramref name="b"/>.</summary>
@@ -1230,6 +1491,10 @@ namespace HalfGripOpenWorld
 					ActiveBy[step / 400] = movers.Count;
 				}
 				BuildLanes(step);
+				if (LaneChanges(w))
+				{
+					BuildLanes(step);
+				}
 				StartWaiting(step, w);
 				// Record (state at w).
 				foreach (Mover m in movers)
@@ -1382,6 +1647,7 @@ namespace HalfGripOpenWorld
 				m.L.End = steps * Step;
 				m.Rec.Add((float)m.P);
 				m.L.Rec = m.Rec.ToArray();
+				m.L.Lanes = m.LaneRec?.ToArray();
 			}
 			movers.Clear();
 		}
@@ -1394,6 +1660,7 @@ namespace HalfGripOpenWorld
 			Leg leg = m.L;
 			m.Rec.Add((float)leg.Length);
 			leg.Rec = m.Rec.ToArray();
+			leg.Lanes = m.LaneRec?.ToArray();
 			leg.End = t;
 			leg.Profile = null;
 			foreach (Grant g in m.Grants)
@@ -1481,7 +1748,12 @@ namespace HalfGripOpenWorld
 		private void AddToLane(Mover m)
 		{
 			Seg s = m.L.Path[m.Seg];
-			m.Lane = LaneOf(s);
+			if (m.Inner && !TwoLane(s))
+			{
+				// Off the trunk: its one lane (the move over is drawn through the junction's curve).
+				m.Inner = false;
+			}
+			m.Lane = LaneOf(m, s);
 			m.LaneU = LaneU(s, m.P);
 			m.Ahead = null;
 			if (!lanes.TryGetValue(m.Lane, out List<Mover> list))
@@ -1840,6 +2112,9 @@ namespace HalfGripOpenWorld
 		private void Junctions(List<Request> requests, List<Request> refused)
 		{
 			requests.Clear();
+			joined.Clear();
+			joined.UnionWith(joining);
+			joining.Clear();
 			foreach (Mover m in movers)
 			{
 				int k = Asking(m);
@@ -1859,7 +2134,7 @@ namespace HalfGripOpenWorld
 				{
 					M = m, Node = node, SegIndex = k, NodeP = nodeP,
 					InArm = LinkIndex(node, path[k].Edge), OutArm = LinkIndex(node, path[k + 1].Edge),
-					InLane = LaneOf(path[k]), OutLane = LaneOf(path[k + 1]),
+					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneOf(path[k + 1]),
 					Eta = ArriveTime(m.V, nodeP - box - m.P, Math.Max(m.V, DesiredAt(m.L.Profile, m.P + Math.Max(0.0, nodeP - box - m.P)))),
 				});
 			}
@@ -1867,7 +2142,8 @@ namespace HalfGripOpenWorld
 			for (int i = 0; i + 1 < requests.Count; i++)
 			{
 				Request a = requests[i], b = requests[i + 1];
-				if (a.Node == b.Node && b.Eta - a.Eta < 1.0 && a.InArm != b.InArm && RightOf(a.Node, b.InArm, a.InArm))
+				if (a.Node == b.Node && b.Eta - a.Eta < 1.0 && a.InArm != b.InArm && RightOf(a.Node, b.InArm, a.InArm)
+					&& !Yields(a.Node, b.InArm, b.OutArm, a.InArm, a.OutArm) && !Yields(a.Node, a.InArm, a.OutArm, b.InArm, b.OutArm))
 				{
 					requests[i] = b;
 					requests[i + 1] = a;
@@ -1896,25 +2172,67 @@ namespace HalfGripOpenWorld
 					bool force = r.M.Wait > ForceAfter;
 					foreach (Request q in refused)
 					{
-						if (q.InArm == r.InArm || Crosses(node, q.InArm, q.OutArm, r.InArm, r.OutArm))
+						// A car that gives way to this one holds it up neither by being refused first nor by being first in the order.
+						if (q.InArm != r.InArm && Yields(node, q.InArm, q.OutArm, r.InArm, r.OutArm))
+						{
+							continue;
+						}
+						if ((q.InArm == r.InArm && q.InLane == r.InLane) || Conflict(node, q.InArm, q.OutArm, q.InLane, q.OutLane, r.InArm, r.OutArm, r.InLane, r.OutLane))
 						{
 							ok = false;
 							RefusedOrder++;
 							break;
 						}
 					}
+					bool pulled = false;
+					double rNear = 0.0, rFar = 0.0, rVFar = 0.0;
 					if (ok || force)
 					{
 						foreach (Grant g in granted)
 						{
-							if (g.M == r.M || !Crosses(node, g.InKey, g.OutKey, r.InArm, r.OutArm))
+							if (g.M == r.M || !Conflict(node, g.InKey, g.OutKey, g.InLane, g.OutLane, r.InArm, r.OutArm, r.InLane, r.OutLane))
 							{
 								continue;
 							}
+							if (Yields(node, r.InArm, r.OutArm, g.InKey, g.OutKey))
+							{
+								// Giving way to it: the same reckoning as for a car still coming.
+								if (!pulled)
+								{
+									PullAway(r.M, r.NodeP + Traffic.CarLength, r.NodeP + box + Traffic.CarLength, out rNear, out rFar, out rVFar);
+									pulled = true;
+								}
+								if (!TooSoon(r, box, g.M, g.SegIndex, g.InKey, g.OutKey, rNear, rFar, rVFar, GiveWayAfter(r.M.Wait)))
+								{
+									continue;
+								}
+								ok = false;
+								crossing = true;
+								RefusedCross++;
+								break;
+							}
 							// Compatible if the other is through before this one gets there, or this one is through before the other gets
 							// there (a gap taken, as a driver waiting at the line takes one): reckoned from a standstill for this one, and
-							// as if the other speeds up a fifth, with a second to spare.
-							double clear = (g.NodeP + box + Traffic.CarLength - g.M.P) / Math.Max(1.0, Math.Min(g.M.V, g.Through));
+							// as if the other speeds up a fifth, with a second to spare. A car that gives way to this one was let in only
+							// with time to clear before it: reckoned pulling away, as it does.
+							bool gGives = Yields(node, g.InKey, g.OutKey, r.InArm, r.OutArm);
+							double clear;
+							if (gGives)
+							{
+								PullAway(g.M, g.NodeP + Traffic.CarLength, g.NodeP + box + Traffic.CarLength, out double gNear, out clear, out double _);
+								if (NearHalf(node, g.InKey, g.OutKey, r.InArm, r.OutArm))
+								{
+									clear = gNear;
+								}
+								if (clear + 0.5 < r.Eta)
+								{
+									continue;
+								}
+							}
+							else
+							{
+								clear = (g.NodeP + box + Traffic.CarLength - g.M.P) / Math.Max(1.0, Math.Min(g.M.V, g.Through));
+							}
 							if (clear + 0.5 < r.Eta)
 							{
 								continue;
@@ -1928,9 +2246,26 @@ namespace HalfGripOpenWorld
 								ok = false;
 								crossing = true;
 								RefusedCross++;
+								if (MainYields(node, g.InKey, g.OutKey, r.InArm, r.OutArm))
+								{
+									if (mainHeld.Add(((long)r.M.Index << 32) | (uint)node) && MainHeldNotes.Count < 12)
+									{
+										MainHeldNotes.Add("node " + node + " arms " + Traffic.Links[node].Count + " box " + box.ToString("0") + ": main " + r.InArm + ">" + r.OutArm + " eta " + r.Eta.ToString("0.0") + " v " + r.M.V.ToString("0.0") + " / giving way " + g.InKey + ">" + g.OutKey + " at " + (g.M.P - g.NodeP).ToString("0") + " v " + g.M.V.ToString("0.0") + " clear " + clear.ToString("0.0") + " forced " + g.Forced + " wait " + g.M.Wait.ToString("0"));
+									}
+								}
 								break;
 							}
 						}
+					}
+					// Giving way: a car that gives way to someone goes only if every car it gives way to, coming to this junction and
+					// not yet let in, gets there after it is through and a margin. Never let go of by the guard below.
+					if ((ok || force) && !crossing && GivesWayToComing(r, box))
+					{
+						ok = false;
+						crossing = true;
+						RefusedGap++;
+						// Cars in the lane it joins move over for it if they can (the trunk's inner lane).
+						joining.Add(r.OutLane);
 					}
 					bool roomless = false;
 					if (ok || (force && !crossing))
@@ -1970,6 +2305,417 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// The margin a car giving way keeps: it is out of the box this long before a car with the right of way gets to it. A driver kept
+		/// waiting takes smaller gaps (down to <see cref="GiveWayLeast"/> after <see cref="GiveWayPatience"/>), as drivers do: on the trunk,
+		/// in the game's quick day, a long gap both ways seldom comes. The least is what the car with the right of way allows a car in the
+		/// box, so it never waits for it.
+		/// </summary>
+		internal const double GiveWayMargin = 1.0, GiveWayLeast = 0.6, GiveWayPatience = 20.0;
+
+		/// <summary>The margin of a car giving way after waiting <paramref name="waited"/> seconds.</summary>
+		internal static double GiveWayAfter(double waited)
+		{
+			return GiveWayLeast + (GiveWayMargin - GiveWayLeast) * Math.Max(0.0, 1.0 - waited / GiveWayPatience);
+		}
+		/// <summary>How far along the roads into a junction a car giving way looks for cars coming, at most (and how many junctions back).</summary>
+		private const double GiveWayLook = 1500.0;
+		/// <summary>The fastest a car coming to a junction is reckoned to go when working out how far back to look (the trunk's limit and a bit).</summary>
+		private const double GiveWayFastest = 95.0;
+		private const int GiveWayDepth = 6;
+		private readonly List<(int edge, int node, double before, int depth)> lookBack = new List<(int, int, double, int)>();
+
+		/// <summary>
+		/// Whether request <paramref name="r"/> must wait for a car it gives way to: one coming to the node, not yet let in, whose way
+		/// crosses its own and who gets there (at its speed, speeding up to its profile) before this one is through the box and
+		/// <see cref="GiveWayMargin"/>. Looks back along the lanes into the node, and past the junctions behind them a few deep.
+		/// </summary>
+		private bool GivesWayToComing(Request r, double box)
+		{
+			int node = r.Node;
+			if (mainA[node] < 0)
+			{
+				return false;
+			}
+			double margin = GiveWayAfter(r.M.Wait);
+
+			// Its own pull-away through the box, as it will drive it: past the near half, and out of the box at what speed.
+			double farP = r.NodeP + box + Traffic.CarLength;
+			PullAway(r.M, r.NodeP + Traffic.CarLength, farP, out double tNear, out double tFar, out double vFar);
+			double look = Math.Min(GiveWayLook, GiveWayFastest * (tFar + margin) + box + 300.0);
+			List<int> links = Traffic.Links[node];
+			lookBack.Clear();
+			for (int a = 0; a < links.Count; a++)
+			{
+				if (a != r.InArm && (a == mainA[node] || a == mainB[node]))
+				{
+					lookBack.Add((links[a], node, 0.0, 0));
+				}
+			}
+			for (int i = 0; i < lookBack.Count; i++)
+			{
+				(int edge, int toward, double before, int depth) = lookBack[i];
+				Traffic.Edge e = Traffic.Edges[edge];
+				long lane0 = edge * 2L + (e.B == toward ? 1 : 0);
+				for (int sub = 0; sub < (twoLaneEdge[edge] ? 2 : 1); sub++)
+				{
+				if (lanes.TryGetValue(lane0 + sub * InnerKey, out List<Mover> list))
+				{
+					foreach (Mover o in list)
+					{
+						if (o == r.M || o.V < 1.0)
+						{
+							// Standing (queued, waiting to be let in, pulling out): not coming. Once it moves off it asks for the junction
+							// itself, and whoever has the box first then decides.
+							continue;
+						}
+						Seg[] path = o.L.Path;
+						for (int k = o.Seg; k <= o.Seg + depth && k + 1 < path.Length; k++)
+						{
+							if (NodeAfter(path, k) != node)
+							{
+								continue;
+							}
+							int inA = LinkIndex(node, path[k].Edge), outA = LinkIndex(node, path[k + 1].Edge);
+							long oOut = TwoLane(path[k]) ? LaneOf(o, path[k + 1]) : LaneOf(path[k + 1]);
+							if (inA == r.InArm || HasGrant(o, k) || !Conflict(node, r.InArm, r.OutArm, r.InLane, r.OutLane, inA, outA, LaneOf(o, path[k]), oOut) || !Yields(node, r.InArm, r.OutArm, inA, outA))
+							{
+								break;
+							}
+							if (TooSoon(r, box, o, k, inA, outA, tNear, tFar, vFar, margin))
+							{
+								return true;
+							}
+							break;
+						}
+					}
+				}
+				}
+				double reach = before + e.Length;
+				if (depth + 1 < GiveWayDepth && reach < look)
+				{
+					int back = e.A == toward ? e.B : e.A;
+					foreach (int f in Traffic.Links[back])
+					{
+						if (f != edge)
+						{
+							lookBack.Add((f, back, reach, depth + 1));
+						}
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="o"/>, coming to request <paramref name="r"/>'s node along its path's seg <paramref name="k"/> (in along
+		/// arm <paramref name="inA"/>, out along <paramref name="outA"/>), with the right of way over it, gets there too soon for it to go:
+		/// before it is past where their ways cross (<paramref name="tNear"/>, the box's near half, for a car from its left; else
+		/// <paramref name="tFar"/>, the whole box) and the margin; or, joining its lane, without room for it to slow to this car's speed.
+		/// </summary>
+		private bool TooSoon(Request r, double box, Mover o, int k, int inA, int outA, double tNear, double tFar, double vFar, double margin)
+		{
+			int node = r.Node;
+			Seg[] path = o.L.Path;
+			double d = path[k].P0 + path[k].Len - box - o.P;
+			if (d < -2.0 * box - Traffic.CarLength)
+			{
+				// Out of the box already, its back and all.
+				return false;
+			}
+			double top = Math.Max(o.V, DesiredAt(o.L.Profile, o.P + Math.Max(0.0, d)));
+			if (o.Ahead != null && o.Ahead.LaneU - o.LaneU < Traffic.CarLength + MinGap + 2.0 * Headway * top)
+			{
+				// In a queue: it goes no faster than the car in front of it lets it (a little more, as the queue moves off).
+				top = Math.Max(o.V, Math.Min(top, o.Ahead.V + Accel));
+			}
+			double arrive = ArriveTime(o.V, d, top);
+			if (arrive < (NearHalf(node, r.InArm, r.OutArm, inA, outA) ? tNear : tFar) + margin)
+			{
+				return true;
+			}
+			if (outA == r.OutArm)
+			{
+				// Joining its lane: out of the box ahead of it, and far enough ahead that it slows to this car's speed braking firmly
+				// at most, never to a stop (more room while this car has not waited long).
+				double behind = d + 2.0 * box - top * tFar;
+				double dv = Math.Max(0.0, top - vFar);
+				double want = MinGap + top * margin + dv * dv / (2.0 * MergeBrake) * (0.6 + margin);
+				if (behind < want)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// ---- the trunk's two lanes -----------------------------------------------------------------------------------------------
+
+		/// <summary>The lanes cars were refused joining for a gap last step (the outer lanes past a junction): cars on them move over if they can.</summary>
+		private readonly HashSet<long> joining = new HashSet<long>(), joined = new HashSet<long>();
+		/// <summary>Seconds a car keeps to a lane after changing, and how long it takes to move over (as drawn).</summary>
+		private const double KeepLane = 4.0, MoveOverTime = 2.5;
+		/// <summary>How much more a car must gain to overtake, and how much it may lose to keep right (the IDM's acceleration).</summary>
+		private const double OvertakeGain = 0.6, KeepRightLoss = 0.3;
+		/// <summary>The hardest braking a lane change may ask of the car it moves in front of, or of itself behind its new leader.</summary>
+		private const double ChangeBrake = 0.4 * Brake;
+		/// <summary>A car back in the outer lane this far before it leaves the trunk; looks for a car waiting to join this far ahead.</summary>
+		private const double ExitReady = 700.0, JoinLook = 500.0;
+
+		/// <summary>Lane changes counted for trafficview: overtaking, keeping right (and before an exit), moving over for a car joining.</summary>
+		internal int Overtakes, KeptRight, MovedOver;
+
+		/// <summary>
+		/// The trunk's cars change lanes (two each way): into the inner lane to overtake a slower car, or to make room for a car waiting to
+		/// join the outer lane at a junction ahead; back into the outer lane when that costs little (keep right), and always well before
+		/// their exit. Never near a junction (not while asking for one or let into one), never twice within <see cref="KeepLane"/>, and
+		/// only with room in the new lane: neither it nor the car it moves in front of brakes harder than <see cref="ChangeBrake"/>.
+		/// In the cars' order, each seeing the changes before it. Returns whether any car changed.
+		/// </summary>
+		private bool LaneChanges(double w)
+		{
+			bool any = false;
+			foreach (Mover m in movers)
+			{
+				Seg[] path = m.L.Path;
+				Seg s = path[m.Seg];
+				if (!TwoLane(s) || w < m.HoldUntil || w - m.Changed < KeepLane || m.V < 5.0 || m.Grants.Count > 0)
+				{
+					continue;
+				}
+				double into = m.P - s.P0;
+				if (into < 30.0 || s.P0 + s.Len - m.P < 60.0 + m.V * MoveOverTime || Asking(m) >= 0)
+				{
+					continue;
+				}
+				// Leaving the trunk (or its trip ends) soon: the outer lane.
+				bool exit = m.L.Length - m.P < ExitReady && !m.L.Vanishes;
+				for (int k = m.Seg + 1; !exit && k < path.Length && path[k].P0 - m.P < ExitReady; k++)
+				{
+					exit = !TwoLane(path[k]);
+				}
+				double v0 = Math.Max(0.5, DesiredAt(m.L.Profile, m.P));
+				double here = Follow(m, m.Ahead, v0);
+				bool toInner;
+				if (m.Inner)
+				{
+					toInner = false;
+					long outer = LaneOf(s);
+					Neighbours(outer, m, out Mover ahead, out Mover _);
+					double there = Follow(m, ahead, v0);
+					bool keepRight = there >= here - KeepRightLoss && !joined.Contains(NextOuter(m));
+					if (!exit && !keepRight)
+					{
+						continue;
+					}
+				}
+				else
+				{
+					if (exit)
+					{
+						continue;
+					}
+					toInner = true;
+					long inner = LaneOf(s) + InnerKey;
+					Neighbours(inner, m, out Mover ahead, out Mover _);
+					double there = Follow(m, ahead, v0);
+					bool overtake = there > here + OvertakeGain;
+					bool courtesy = !overtake && joined.Contains(NextOuter(m));
+					if (!overtake && !courtesy)
+					{
+						continue;
+					}
+				}
+				long target = LaneOf(s) + (toInner ? InnerKey : 0L);
+				if (!RoomIn(target, m))
+				{
+					continue;
+				}
+				// Moving over: out of the old lane's list, into the new one's in order (later cars this step see it there).
+				if (lanes.TryGetValue(m.Lane, out List<Mover> old))
+				{
+					old.Remove(m);
+				}
+				if (!lanes.TryGetValue(target, out List<Mover> list))
+				{
+					list = new List<Mover>();
+					lanes[target] = list;
+				}
+				if (list.Count == 0)
+				{
+					laneKeys.Add(target);
+				}
+				int at = 0;
+				while (at < list.Count && (list[at].LaneU < m.LaneU || (list[at].LaneU == m.LaneU && list[at].Index < m.Index)))
+				{
+					at++;
+				}
+				list.Insert(at, m);
+				if (toInner)
+				{
+					if (joined.Contains(NextOuter(m)) && Follow(m, null, v0) <= here + OvertakeGain)
+					{
+						MovedOver++;
+					}
+					else
+					{
+						Overtakes++;
+					}
+				}
+				else
+				{
+					KeptRight++;
+				}
+				m.Inner = toInner;
+				m.Lane = target;
+				m.Changed = w;
+				if (m.LaneRec == null)
+				{
+					m.LaneRec = new List<float>();
+				}
+				m.LaneRec.Add((float)m.P);
+				m.LaneRec.Add((float)Math.Min(s.P0 + s.Len, m.P + Math.Max(30.0, m.V * MoveOverTime)));
+				m.LaneRec.Add(toInner ? 1f : 0f);
+				any = true;
+			}
+			return any;
+		}
+
+		/// <summary>The outer lane mover <paramref name="m"/> leaves the next junction by, if that is near and it stays on the trunk (else -1).</summary>
+		private static long NextOuter(Mover m)
+		{
+			Seg[] path = m.L.Path;
+			for (int k = m.Seg; k + 1 < path.Length && path[k].P0 + path[k].Len - m.P < JoinLook; k++)
+			{
+				if (NodeAfter(path, k) >= 0)
+				{
+					return TwoLane(path[k + 1]) ? LaneOf(path[k + 1]) : -1L;
+				}
+			}
+			return -1L;
+		}
+
+		/// <summary>The IDM's acceleration of mover <paramref name="m"/> on a free road to <paramref name="v0"/> behind <paramref name="ahead"/> (null: none).</summary>
+		private static double Follow(Mover m, Mover ahead, double v0)
+		{
+			double q = m.V / v0;
+			double a = Accel * (1.0 - q * q * q * q);
+			if (ahead != null)
+			{
+				a += Interaction(m.V, ahead.LaneU - Traffic.CarLength - m.LaneU, ahead.V);
+			}
+			return a;
+		}
+
+		/// <summary>The cars just ahead of and behind mover <paramref name="m"/>'s place in lane <paramref name="lane"/> (null where none).</summary>
+		private void Neighbours(long lane, Mover m, out Mover ahead, out Mover behind)
+		{
+			ahead = behind = null;
+			if (!lanes.TryGetValue(lane, out List<Mover> list))
+			{
+				return;
+			}
+			foreach (Mover o in list)
+			{
+				if (o == m)
+				{
+					continue;
+				}
+				if (o.LaneU >= m.LaneU)
+				{
+					if (ahead == null || o.LaneU < ahead.LaneU)
+					{
+						ahead = o;
+					}
+				}
+				else if (behind == null || o.LaneU > behind.LaneU)
+				{
+					behind = o;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Whether mover <paramref name="m"/> has room to move into lane <paramref name="lane"/> beside it: for the cars there, and for the
+		/// time it is drawn moving over (<see cref="MoveOverTime"/>), when it is in both lanes: neither car closes on it in that time, in
+		/// the new lane or the one it leaves.
+		/// </summary>
+		private bool RoomIn(long lane, Mover m)
+		{
+			Neighbours(lane, m, out Mover ahead, out Mover behind);
+			if (ahead != null)
+			{
+				double gap = ahead.LaneU - Traffic.CarLength - m.LaneU;
+				if (gap < MinGap + Math.Max(0.0, m.V - ahead.V) * MoveOverTime || Interaction(m.V, gap, ahead.V) < -ChangeBrake)
+				{
+					return false;
+				}
+			}
+			if (behind != null)
+			{
+				double gap = m.LaneU - Traffic.CarLength - behind.LaneU;
+				if (gap < MinGap + Math.Max(0.0, behind.V - m.V) * MoveOverTime || Interaction(behind.V, gap, m.V) < -ChangeBrake)
+				{
+					return false;
+				}
+			}
+			Mover before = m.Ahead;
+			if (before != null && before.LaneU - Traffic.CarLength - m.LaneU < MinGap + Math.Max(0.0, m.V - before.V) * MoveOverTime)
+			{
+				return false;
+			}
+			Neighbours(m.Lane, m, out Mover _, out Mover after);
+			if (after != null && m.LaneU - Traffic.CarLength - after.LaneU < MinGap + Math.Max(0.0, after.V - m.V) * MoveOverTime)
+			{
+				return false;
+			}
+			return true;
+		}
+
+		/// <summary>The braking a car joining a main line may ask of the car coming behind it on it (firm, about 5 m/s2), never a stop.</summary>
+		private const double MergeBrake = 2.0 * Brake;
+
+		/// <summary>
+		/// When car <paramref name="m"/>, pulling away now on a free road (the IDM's free term on its profile, braking for a slower
+		/// stretch ahead), gets to path distances <paramref name="nearP"/> and <paramref name="farP"/>, and its speed at the far one.
+		/// Its real pull-away, not a guess at it: it eases off to the turn's speed, and stands a little short of the box.
+		/// </summary>
+		private static void PullAway(Mover m, double nearP, double farP, out double tNear, out double tFar, out double vFar)
+		{
+			float[] profile = m.L.Profile;
+			double p = m.P, v = m.V, t = 0.0;
+			tNear = -1.0;
+			while (p < farP && t < 40.0)
+			{
+				double v0 = Math.Max(0.5, DesiredAt(profile, p));
+				double q = v / v0;
+				double a = Accel * (1.0 - q * q * q * q);
+				double reach = v * v / (2.0 * Brake) + 2.0 * Sample;
+				for (int i = (int)Math.Floor(p / Sample) + 1; i < profile.Length && i * Sample - p <= reach; i++)
+				{
+					double vs = profile[i];
+					if (vs < v)
+					{
+						double d = i * Sample - p;
+						a = Math.Min(a, d > 0.5 ? (vs * vs - v * v) / (2.0 * d) : -Brake);
+					}
+				}
+				v = Math.Max(0.0, v + Math.Min(Accel, a) * Step);
+				p += v * Step;
+				t += Step;
+				if (tNear < 0.0 && p >= nearP)
+				{
+					tNear = t;
+				}
+			}
+			tFar = t;
+			vFar = v;
+			if (tNear < 0.0)
+			{
+				tNear = t;
+			}
+		}
+
 		/// <summary>The soonest a car at speed <paramref name="v"/> could cover <paramref name="d"/>: speeding up at the IDM's acceleration to <paramref name="top"/>.</summary>
 		private static double ArriveTime(double v, double d, double top)
 		{
@@ -1987,7 +2733,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Seconds to cover <paramref name="d"/> from speed <paramref name="v"/>, pulling away at the IDM's acceleration up to a turn's speed.</summary>
-		private static double ClearTime(double v, double d)
+		internal static double ClearTime(double v, double d)
 		{
 			if (d <= 0.0)
 			{
@@ -2082,7 +2828,13 @@ namespace HalfGripOpenWorld
 					for (int b = a + 1; b < list.Count; b++)
 					{
 						Grant gb = list[b];
-						if (Math.Abs(gb.M.P - gb.NodeP) >= box || !Crosses(node, ga.InKey, ga.OutKey, gb.InKey, gb.OutKey))
+						if (Math.Abs(gb.M.P - gb.NodeP) >= box || !Conflict(node, ga.InKey, ga.OutKey, ga.InLane, ga.OutLane, gb.InKey, gb.OutKey, gb.InLane, gb.OutLane))
+						{
+							continue;
+						}
+						// One from the other's left crosses it in that one's near half only: past the middle (its length and all), it is clear.
+						if ((NearHalf(node, ga.InKey, ga.OutKey, gb.InKey, gb.OutKey) && ga.M.P - ga.NodeP >= Traffic.CarLength)
+							|| (NearHalf(node, gb.InKey, gb.OutKey, ga.InKey, ga.OutKey) && gb.M.P - gb.NodeP >= Traffic.CarLength))
 						{
 							continue;
 						}
@@ -2150,7 +2902,7 @@ namespace HalfGripOpenWorld
 			}
 			for (int k = m.Seg + 1; !found && k < path.Length && path[k].P0 - m.P < Ahead; k++)
 			{
-				if (!lanes.TryGetValue(LaneOf(path[k]), out List<Mover> list) || list.Count == 0)
+				if (!lanes.TryGetValue(LaneOf(m, path[k]), out List<Mover> list) || list.Count == 0)
 				{
 					continue;
 				}
@@ -2196,6 +2948,12 @@ namespace HalfGripOpenWorld
 					m.Wait += Step;
 					WaitAt.TryGetValue(node, out double sec);
 					WaitAt[node] = sec + Step;
+					{
+						int ia = LinkIndex(node, path[ask].Edge), oa = LinkIndex(node, path[ask + 1].Edge);
+						int cat = mainA[node] < 0 ? 3 : (ia != mainA[node] && ia != mainB[node]) ? 0 : (oa == mainA[node] || oa == mainB[node]) ? 1 : 2;
+						WaitKind.TryGetValue(node * 4 + cat, out double s2);
+						WaitKind[node * 4 + cat] = s2 + Step;
+					}
 				}
 			}
 			// The end: stop at the spot.
@@ -2279,9 +3037,97 @@ namespace HalfGripOpenWorld
 				at.InTunnel = false;
 				off = Traffic.LaneOffset(road);
 			}
+			if (TwoLane(s))
+			{
+				off -= LaneWidth * LaneAt(leg, p);
+			}
 			// Right of the way of travel is (hz, -hx).
 			at.X += at.Hz * off;
 			at.Z -= at.Hx * off;
+		}
+
+		/// <summary>How far a physics car given back moves over from the lane it held to the day's.</summary>
+		internal const double HoldGlide = 200.0;
+
+		/// <summary>Leg <paramref name="leg"/>'s car becomes a physics car at <paramref name="p"/>: it keeps the lane it is in (or nearest).</summary>
+		internal static void HoldLaneAt(Leg leg, double p)
+		{
+			leg.HoldLane = InnerAt(leg, p) >= 0.5 ? 1f : 0f;
+			leg.HoldEnd = double.MaxValue;
+		}
+
+		/// <summary>Leg <paramref name="leg"/>'s physics car goes back on its timetable at <paramref name="p"/>: from there it moves over to the day's lane.</summary>
+		internal static void ReleaseLaneAt(Leg leg, double p)
+		{
+			if (leg.HoldLane >= 0f && leg.HoldEnd == double.MaxValue)
+			{
+				leg.HoldEnd = p;
+			}
+		}
+
+		/// <summary>The lane leg <paramref name="leg"/>'s car is drawn in at <paramref name="p"/> (0 outer, 1 inner): the day's, or the one it holds as a physics car.</summary>
+		internal static double LaneAt(Leg leg, double p)
+		{
+			double day = InnerAt(leg, p);
+			if (leg.HoldLane < 0f || p >= leg.HoldEnd + HoldGlide)
+			{
+				return day;
+			}
+			if (p <= leg.HoldEnd)
+			{
+				return leg.HoldLane;
+			}
+			double f = (p - leg.HoldEnd) / HoldGlide;
+			f = f * f * (3.0 - 2.0 * f);
+			return leg.HoldLane + (day - leg.HoldLane) * f;
+		}
+
+		/// <summary>How far the trunk's inner lane is left of its outer lane (a lane's width).</summary>
+		internal const double LaneWidth = 11.0;
+
+		/// <summary>Whether seg <paramref name="s"/> is on the trunk, two lanes each way.</summary>
+		internal static bool TwoLane(Seg s)
+		{
+			return s.Edge >= 0 ? twoLaneEdge[s.Edge] : s.Portal >= 0 && twoLanePortal[s.Portal];
+		}
+
+		/// <summary>How far over to the trunk's inner lane leg <paramref name="leg"/>'s car is at path distance <paramref name="p"/>: 0 in the outer lane, 1 in the inner, between while moving over.</summary>
+		internal static double InnerAt(Leg leg, double p)
+		{
+			float[] l = leg.Lanes;
+			if (l == null)
+			{
+				return 0.0;
+			}
+			// The last change started at or before p.
+			int lo = 0, hi = l.Length / 3 - 1, k = -1;
+			while (lo <= hi)
+			{
+				int mid = (lo + hi) / 2;
+				if (l[mid * 3] <= p)
+				{
+					k = mid;
+					lo = mid + 1;
+				}
+				else
+				{
+					hi = mid - 1;
+				}
+			}
+			if (k < 0)
+			{
+				return 0.0;
+			}
+			double to = l[k * 3 + 2], from = k > 0 ? l[k * 3 - 1] : 0.0;
+			double a = l[k * 3], b = l[k * 3 + 1];
+			if (p >= b || b <= a)
+			{
+				return to;
+			}
+			double f = (p - a) / (b - a);
+			// Eased in and out, as a driver steers over.
+			f = f * f * (3.0 - 2.0 * f);
+			return from + (to - from) * f;
 		}
 
 		/// <summary>
@@ -2419,6 +3265,13 @@ namespace HalfGripOpenWorld
 						foreach (float f in leg.Rec)
 						{
 							h = Noise.Mix(h ^ (uint)BitConverter.SingleToInt32Bits(f));
+						}
+					}
+					if (leg.Lanes != null)
+					{
+						foreach (float f in leg.Lanes)
+						{
+							h = Noise.Mix(h ^ (uint)BitConverter.SingleToInt32Bits(f) ^ 0x1A4EUL);
 						}
 					}
 				}

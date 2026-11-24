@@ -28,6 +28,8 @@ namespace HalfGripOpenWorld
 		/// <summary>Kept waiting this long at a junction, a car gives way only to cars in the box, not to cars still coming (no deadlock);
 		/// three times as long, not to a drawn car standing in the box either (the day holds it there for someone who is a physics car now).</summary>
 		internal const double HoldBreak = 8.0;
+		/// <summary>Seconds more a physics car giving way leaves before a car with the right of way gets to the box, than a day's car does (less as it waits, as the day's margin).</summary>
+		private const double PhysicsGapMore = 1.5;
 		/// <summary>How far ahead of its timetable a car may get before it eases off (none on the last stretch: it waits to be on time).</summary>
 		internal const double EarlyMost = 40.0;
 		/// <summary>The time gap a car keeps to the car in front when working out a safe speed (seconds), and to a line it stops at.</summary>
@@ -47,6 +49,8 @@ namespace HalfGripOpenWorld
 			/// (negative: in the box's near half).</summary>
 			public int Edge, Dir;
 			public double S;
+			/// <summary>Filled by <see cref="Prepare"/>: how far over to the trunk's inner lane it is (0 the outer lane, and on every other road).</summary>
+			public double Lane;
 			public int Node, InArm, OutArm;
 			public double NodeP, ToBox;
 			/// <summary>The junction whose box's far half it is in (-1: none), with its arms: two junctions can be closer than their boxes.</summary>
@@ -340,6 +344,7 @@ namespace HalfGripOpenWorld
 				m.Dir = s.Dir;
 				m.S = s.S0 + s.Dir * Math.Max(0.0, Math.Min(s.Len, m.P - s.P0));
 			}
+			m.Lane = TrafficDay.TwoLane(s) ? TrafficDay.LaneAt(day.Legs[m.Leg], m.P) : 0.0;
 			// In the box of the junction just passed; and the next one, wherever it is.
 			if (k > 0)
 			{
@@ -437,7 +442,7 @@ namespace HalfGripOpenWorld
 			// The car in front along the path; and the nearest stopped one past the junction coming up (its way out must have room).
 			TrafficDay.Seg[] path = leg.Path;
 			int k0 = SegAt(path, me.P);
-			double nearestP = double.MaxValue, nearestV = 0.0;
+			double nearestP = double.MaxValue, nearestV = 0.0, nearestX = 0.0, nearestZ = 0.0;
 			bool blockedOut = false;
 			double boxOut = me.Node >= 0 ? me.NodeP + Traffic.Nodes[me.Node].Box + CarLength + 4.0 : double.MinValue;
 			foreach (Mover o in others)
@@ -453,6 +458,11 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
+					if (TrafficDay.TwoLane(s) && Math.Abs(o.Lane - (j == k0 ? me.Lane : TrafficDay.LaneAt(leg, s.P0 + (o.S - s.S0) * s.Dir))) > 0.6)
+					{
+						// The trunk's other lane: beside it or passing, not in front.
+						break;
+					}
 					double into = (o.S - s.S0) * s.Dir;
 					if (into < -0.01 || into > s.Len + 0.01)
 					{
@@ -467,6 +477,8 @@ namespace HalfGripOpenWorld
 					{
 						nearestP = po;
 						nearestV = Math.Max(0.0, o.V);
+						nearestX = o.X;
+						nearestZ = o.Z;
 					}
 					if (me.Node >= 0 && po < boxOut && po > me.NodeP && o.V < 2.0)
 					{
@@ -477,11 +489,34 @@ namespace HalfGripOpenWorld
 			}
 			if (nearestP < double.MaxValue)
 			{
-				double safe = SafeSpeed(nearestP - me.P - CarLength - TrafficDay.MinGap, nearestV, FollowGap);
+				// Along the path, and in a straight line: round a sharp turn the car in front is nearer than its distance along the way.
+				double gap = nearestP - me.P - CarLength - TrafficDay.MinGap;
+				double dx = nearestX - me.X, dz = nearestZ - me.Z;
+				gap = Math.Min(gap, Math.Sqrt(dx * dx + dz * dz) - CarLength - TrafficDay.MinGap);
+				double safe = SafeSpeed(gap, nearestV, FollowGap);
 				if (safe < target)
 				{
 					target = safe;
 					why = 1;
+				}
+			}
+			// A car that went into the junction just ahead from the same arm, whichever way out: until it is out of the box their ways
+			// share its entry (round a sharp turn they part late), so it is kept a car's distance and the gap in a straight line.
+			if (me.Node >= 0 && me.ToBox < 40.0)
+			{
+				foreach (Mover o in others)
+				{
+					if (o.Car == me.Car || o.Back != me.Node || o.BackIn != me.InArm)
+					{
+						continue;
+					}
+					double dx = o.X - me.X, dz = o.Z - me.Z;
+					double safe = SafeSpeed(Math.Sqrt(dx * dx + dz * dz) - CarLength - TrafficDay.MinGap, Math.Max(0.0, o.V), FollowGap);
+					if (safe < target)
+					{
+						target = safe;
+						why = 1;
+					}
 				}
 			}
 			// Anything with no path in the way, and drawn cars pulling in or out where they are drawn: ahead along the car's heading,
@@ -552,7 +587,36 @@ namespace HalfGripOpenWorld
 							hold = true;
 							break;
 						}
-						if (!patient || meCommitted)
+						if (meCommitted)
+						{
+							continue;
+						}
+						// The right of way (the main line, as the day has it): a car giving way waits for a gap, whatever its wait, as long as
+						// one it gives way to gets there before it would be through; one with the right of way never waits for a physics
+						// car giving way to it (a drawn one, which follows its timetable, is still let go first when it is sooner).
+						if (TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
+						{
+							double box = Traffic.Nodes[me.Node].Box;
+							double waited = st.WaitNode == me.Node ? st.Waited : 0.0;
+							double margin = TrafficDay.GiveWayAfter(waited) + PhysicsGapMore * Math.Max(0.0, 1.0 - waited / TrafficDay.GiveWayPatience);
+							// Its reckoning is rough (full pull-away, no easing for the turn, the other's speed as it is): a wider margin than the day's.
+							double clearMe = TrafficDay.ClearTime(v, me.ToBox - CarLength * 0.5 + 2.0 * box + CarLength) + margin;
+							if (ov < 0.5 && o.ToBox > CarLength * 0.5 + 4.0)
+							{
+								continue;
+							}
+							if (o.ToBox / Math.Max(ov, 4.0) < clearMe)
+							{
+								hold = true;
+								break;
+							}
+							continue;
+						}
+						if (o.Physical && TrafficDay.Yields(me.Node, o.InArm, o.OutArm, me.InArm, me.OutArm))
+						{
+							continue;
+						}
+						if (!patient)
 						{
 							continue;
 						}
@@ -618,12 +682,13 @@ namespace HalfGripOpenWorld
 			}
 
 			// Never far ahead of its timetable (it could not go back on it without a jump); on the last stretch, not ahead at all. Easing
-			// off, not stopping (the day's car may be waiting at a junction this one has passed), and never in or just before a box.
+			// off, not stopping (the day's car may be waiting at a junction this one has passed), and never in a box or just before one.
 			bool last = me.P > leg.Length - EndZone - 30.0;
 			double early = last ? 0.0 : EarlyMost;
-			if (me.P > onTimeP + early - 30.0 && (me.Node < 0 || me.ToBox > 15.0))
+			if (me.P > onTimeP + early - 30.0 && me.Back < 0 && (me.Node < 0 || me.ToBox > 15.0))
 			{
-				double cap = Math.Max(last ? 0.0 : 4.0, Math.Max(0.0, onTimeV) + Math.Max(0.0, onTimeP + early - me.P) * 0.6);
+				// Never below half its road's speed (4 at least) but on the last stretch: a car crawling on the trunk is run into.
+				double cap = Math.Max(last ? 0.0 : Math.Max(4.0, 0.5 * free), Math.Max(0.0, onTimeV) + Math.Max(0.0, onTimeP + early - me.P) * 0.6);
 				if (cap < target)
 				{
 					target = cap;

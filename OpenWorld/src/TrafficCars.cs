@@ -119,7 +119,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>How far moving and parked cars are drawn (units: about 270 m and 140 m), and at most how many.</summary>
 		private const float MovingReach = 900f, ParkedReach = 450f;
-		private const int MostDrawn = 72;
+		private const int MostDrawn = 160;
 
 		/// <summary>Moving cars are chosen as if this much nearer than they are, so a town's parked cars never crowd out the road's.</summary>
 		private const float MovingWeight = 0.4f;
@@ -170,6 +170,9 @@ namespace HalfGripOpenWorld
 			public bool HasLight;
 			public Vector3 LightAt;
 			public Quaternion LightTurn;
+			/// <summary>Its renderers' own shadows (as the enemy car's), for a near car's within <see cref="ShadowAt"/>; and its parts for drawing it far (made when first needed).</summary>
+			public UnityEngine.Rendering.ShadowCastingMode[] ShadowModes;
+			public Part[] Parts;
 		}
 
 		/// <summary>A car being drawn.</summary>
@@ -194,6 +197,14 @@ namespace HalfGripOpenWorld
 			public bool Placed;
 			/// <summary>Whether its lamps are lit (driving) or dark (parked); -1 not set yet.</summary>
 			public int LampsOn = -1;
+			/// <summary>Drawn far (instanced, its body off) and whether its shadows are on (near).</summary>
+			public bool Far, Shadows = true;
+			/// <summary>Parked: where it stands (world x, z).</summary>
+			public double ParkX, ParkZ;
+			/// <summary>A far moving car's last look at the ground: where (world; NaN none), which frame, and the ground under its wheels and the surfaces' offsets, from the road's line.</summary>
+			public double RayX = double.NaN, RayZ;
+			public int RayFrame;
+			public float OffF, OffB, SurfF, SurfB;
 		}
 
 		private TrackManager tm;
@@ -401,6 +412,11 @@ namespace HalfGripOpenWorld
 				return null;
 			}
 			MeshRenderer[] renderers = template.GetComponentsInChildren<MeshRenderer>(true);
+			UnityEngine.Rendering.ShadowCastingMode[] shadowModes = new UnityEngine.Rendering.ShadowCastingMode[renderers.Length];
+			for (int k = 0; k < renderers.Length; k++)
+			{
+				shadowModes[k] = renderers[k].shadowCastingMode;
+			}
 			Transform[] all = template.GetComponentsInChildren<Transform>(true);
 			List<int> paintAt = new List<int>(), wheelAt = new List<int>(), wheelCtl = new List<int>();
 			List<Vector3> axles = new List<Vector3>();
@@ -474,6 +490,7 @@ namespace HalfGripOpenWorld
 				Axle = anyWheel ? Mathf.Max(2f, wheelBox.extents.z * 0.85f) : Mathf.Max(2f, box.extents.z * 0.6f),
 				Rest = rest,
 				WheelCtl = wheelCtl.ToArray(),
+				ShadowModes = shadowModes,
 			};
 			if (lightTemplate != null)
 			{
@@ -611,6 +628,8 @@ namespace HalfGripOpenWorld
 			int moved = 0;
 			foreach (Look look in looks)
 			{
+				// The far cars' parts are made again with the wheels where they now are.
+				look.Parts = null;
 				Transform[] all = look.Template.GetComponentsInChildren<Transform>(true);
 				for (int i = 0; i < look.Wheels.Length; i++)
 				{
@@ -875,7 +894,9 @@ namespace HalfGripOpenWorld
 			{
 				v.Seen = false;
 			}
-			drawnMoving = drawnParked = lit = 0;
+			drawnMoving = drawnParked = lit = drawnFar = 0;
+			drawX = cx;
+			drawZ = cz;
 			long drew = Perf.Now;
 			float dt = Time.deltaTime;
 			bool lights = Sky.LightsOn;
@@ -918,6 +939,7 @@ namespace HalfGripOpenWorld
 				Give(live[c]);
 				live.Remove(c);
 			}
+			DrawFar();
 			Perf.Add(Perf.Part.Draw, drew);
 			// Contact physics: a drawn car the player is about to touch becomes a loose car.
 			long touched = Perf.Now;
@@ -930,7 +952,7 @@ namespace HalfGripOpenWorld
 			{
 				double hour = 3.0 + w / 100.0;
 				hour -= Math.Floor(hour / 24.0) * 24.0;
-				Status = "traffic: " + drawnMoving + " moving and " + drawnParked + " parked drawn, " + lit + " lit, chosen in " + chooseMs.ToString("0.0") + " ms (" + (day.Weekend ? "a weekend" : "a weekday") + ", "
+				Status = "traffic: " + drawnMoving + " moving and " + drawnParked + " parked drawn (" + drawnFar + " far), " + lit + " lit, chosen in " + chooseMs.ToString("0.0") + " ms (" + (day.Weekend ? "a weekend" : "a weekday") + ", "
 					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
 					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "")
 					+ PhysicsStatus()
@@ -1121,7 +1143,8 @@ namespace HalfGripOpenWorld
 				double roadY = at.Y + Network.Lift;
 				v.ParkedLeg = int.MinValue;
 				Lamps(v, true);
-				if (!Pose(v, x, z, roadY, hx, hz))
+				bool far = IsFar(v, x, z);
+				if (!Pose(v, x, z, roadY, hx, hz, far, !far))
 				{
 					return false;
 				}
@@ -1137,7 +1160,17 @@ namespace HalfGripOpenWorld
 				v.LastZ = z;
 				float roll = (float)(mx * hx + mz * hz >= 0.0 ? moved : -moved);
 				v.Spin = Mathf.Repeat(v.Spin + roll / v.Look.WheelRadius * Mathf.Rad2Deg, 360f);
-				Spin(v);
+				if (far)
+				{
+					// Far off: in its group's instanced call, wheels standing still.
+					AddFar(v);
+				}
+				else
+				{
+					ShowNear(v);
+					NearShadows(v, x, z);
+					Spin(v);
+				}
 				DrawnMover(c, at, x, z, hx, hz);
 				drawnMoving++;
 				return true;
@@ -1158,15 +1191,22 @@ namespace HalfGripOpenWorld
 				}
 				// Placed once: it hangs from the world's root, which an origin shift moves, so it stays where it is in the world.
 				v.ParkedLeg = at.Leg;
-				v.Placed = Pose(v, spot.X, spot.Z, WorldGen.Height(spot.X, spot.Z), spot.Hx, spot.Hz);
+				v.ParkX = spot.X;
+				v.ParkZ = spot.Z;
+				v.Placed = Pose(v, spot.X, spot.Z, WorldGen.Height(spot.X, spot.Z), spot.Hx, spot.Hz, false, false);
 				if (!v.Placed)
 				{
 					return false;
 				}
 			}
-			if (!v.Go.activeSelf)
+			if (IsFar(v, v.ParkX, v.ParkZ))
 			{
-				v.Go.SetActive(true);
+				AddFar(v);
+			}
+			else
+			{
+				ShowNear(v);
+				NearShadows(v, v.ParkX, v.ParkZ);
 			}
 			drawnParked++;
 			return true;
@@ -1176,28 +1216,49 @@ namespace HalfGripOpenWorld
 		/// Puts the car's middle at world (x, z) facing (hx, hz), standing on what is under its front and back wheels (looked for down from
 		/// a little over <paramref name="refY"/>, the road's line or the ground), pitched to them; false if nothing is under it yet.
 		/// </summary>
-		private bool Pose(View v, double x, double z, double refY, double hx, double hz)
+		private bool Pose(View v, double x, double z, double refY, double hx, double hz, bool cache = false, bool show = true)
 		{
 			float len = (float)Math.Sqrt(hx * hx + hz * hz);
 			Vector3 fwd = len > 1e-4f ? new Vector3((float)(hx / len), 0f, (float)(hz / len)) : Vector3.forward;
 			Vector3 mid = Origin.Local(x, (float)refY, z);
 			float axle = v.Look.Axle;
-			float top = (float)Math.Max(refY, WorldGen.Height(x, z)) + 6f;
-			bool hf = Ground(mid + fwd * axle, top, out float yf, out float of);
-			bool hb = Ground(mid - fwd * axle, top, out float yb, out float ob);
-			if (!hf && !hb)
+			float yf, of, yb, ob;
+			double rx = x - v.RayX, rz = z - v.RayZ;
+			if (cache && !double.IsNaN(v.RayX) && Time.frameCount - v.RayFrame < FarRayEvery && rx * rx + rz * rz < FarRayMove * FarRayMove)
 			{
-				return false;
+				// Far off: the ground as it was a few frames ago, from the road's line (which follows the car).
+				yf = (float)refY + v.OffF;
+				yb = (float)refY + v.OffB;
+				of = v.SurfF;
+				ob = v.SurfB;
 			}
-			if (!hf)
+			else
 			{
-				yf = yb;
-				of = ob;
-			}
-			if (!hb)
-			{
-				yb = yf;
-				ob = of;
+				float top = (float)Math.Max(refY, WorldGen.Height(x, z)) + 6f;
+				bool hf = Ground(mid + fwd * axle, top, out yf, out of);
+				bool hb = Ground(mid - fwd * axle, top, out yb, out ob);
+				if (!hf && !hb)
+				{
+					v.RayX = double.NaN;
+					return false;
+				}
+				if (!hf)
+				{
+					yf = yb;
+					of = ob;
+				}
+				if (!hb)
+				{
+					yb = yf;
+					ob = of;
+				}
+				v.RayX = x;
+				v.RayZ = z;
+				v.RayFrame = Time.frameCount;
+				v.OffF = yf - (float)refY;
+				v.OffB = yb - (float)refY;
+				v.SurfF = of;
+				v.SurfB = ob;
 			}
 			Rest rest = v.Look.Rest;
 			Vector3 at;
@@ -1221,7 +1282,7 @@ namespace HalfGripOpenWorld
 				at = new Vector3(mid.x, (yf + yb) * 0.5f, mid.z) - turn * new Vector3(0f, v.Look.Bottom, 0f);
 			}
 			v.Root.SetPositionAndRotation(at, turn);
-			if (!v.Go.activeSelf)
+			if (show && !v.Go.activeSelf)
 			{
 				v.Go.SetActive(true);
 			}
@@ -1281,6 +1342,8 @@ namespace HalfGripOpenWorld
 			View v = spare[look].Count > 0 ? spare[look].Pop() : Make(look);
 			v.Car = car;
 			v.LastX = double.NaN;
+			v.RayX = double.NaN;
+			v.Far = false;
 			v.Placed = false;
 			v.ParkedLeg = int.MinValue;
 			if (v.Paint != paint)
@@ -1303,6 +1366,7 @@ namespace HalfGripOpenWorld
 		private void Give(View v)
 		{
 			v.Go.SetActive(false);
+			v.Far = false;
 			if (v.Light != null)
 			{
 				v.Light.enabled = false;

@@ -1,4 +1,62 @@
-# Performance handoff (0.32.1 to 0.32.6; the plan from here first, the history below)
+# Performance handoff (0.32.1 to 0.33.0; the plan from here first, the history below)
+
+## Done in 0.33.0 (2026-11-24, the owner to test: `docs/TESTING.md` test 57)
+
+Steps A and B of the plan below, plus the trunk's second lane (the owner's call, see "Decisions"). Not yet tried in the game.
+
+**A. Right of way at junctions** (`TrafficDay`: `MainLine`, `Yields`, `GivesWayToComing`, `TooSoon`, `PullAway`):
+- Each junction's main line, with the map: the two arms of a higher class than the rest; else among the top class (or the one top arm
+  and the next class) the two arms of one road carrying on; else the pair nearest straight if clearly straighter than the next pair.
+  None at bends, dead ends, hubs of 5 arms or more, crossroads or forks with no clear through road. Seed 1: 726 of 741 junctions.
+- Side arms give way to every main-line car whose way crosses theirs: a car still coming (looked for back along the main arms, both
+  lanes, up to 6 junctions and 1,500 units) or let in already, unless it gets there after this car is past where their ways cross (the
+  box's near half for a car from its left, else the whole box; its pull-away worked out step by step with the IDM on its own profile)
+  and a margin (1 s, down to 0.6 s after 20 s of waiting); joining a car's lane, also room for that car to slow to its speed braking
+  firmly at most. Standing cars (queued) don't count as coming. Never let through by the 45 s guard across a car with the right of way.
+- **Main-line turns stay first come first served between themselves** (`MainTurnsGiveWay` false): with the left-turner giving way to
+  oncoming main-line cars (the plan as agreed), the trunk's cars stood behind left-turners for 363 min a day on seed 1 against 111 first
+  come first served. With two lanes it could be tried again (`TV_TURNS=1` in trafficview).
+- The physics cars' driver (`TrafficDrive.Target`) the same: a side car waits for a gap (a 1.5 s wider margin, less as it waits), a
+  main-line car never waits for a physics car giving way to it; drawn cars still go first when sooner (they follow their timetable).
+- trafficview: `TV_FCFS=1` runs the day first come first served (it reproduces 0.32.6's day exactly) to compare; the report has the
+  junctions with a main line, refusals waiting for a gap, cars with the right of way refused for a car giving way (at most 100 a day:
+  33 to 66 on the 16 seeds, about 650 first come first served), and per junction the minutes waited from side arms, main on, main off.
+
+**The trunk's two lanes** (`TrafficDay`: `LaneChanges`, `RoomIn`, `InnerAt`, `LaneAt`; the owner: "the highway has 2 lanes, whats the
+problem cant they just move over?"):
+- The trunk is drawn with two lanes each way; the traffic drove only the outer one, so nobody could overtake or make room. Now the
+  inner lane is a lane of its own (its key + 2^40). Cars change lanes only clear of junctions (not asking for one, no grant), at most
+  every 4 s, with room for the cars around them and for the 2.5 s it is drawn moving over: into the inner lane to overtake a slower car
+  (IDM gain over 0.6) or to make room for a car refused joining the outer lane ahead; back out when it costs under 0.3 (keep right), and
+  always within 700 of leaving the trunk. A car joining the outer lane does not conflict with one going on in the inner lane; two from
+  the two lanes into one road do. About 4,300 to 5,000 overtakes and 70 to 120 moves for a joiner a day.
+- Each leg records its changes by path distance (`Leg.Lanes`), so everything that places a car from its path distance draws it in its
+  lane (`OnPath`): drawn and late cars, the physics cars' steering line, the junction curves. A physics car keeps the lane it had when
+  it became one (`Leg.HoldLane`; the day doesn't know the cars round it), and glides back to the day's over 200 units when given back.
+  The physics driver follows only the car in front in its own lane.
+
+**B. Cheaper drawn cars** (`TrafficFar.cs`): past 250 units (back near at 230) a drawn car's body is switched off but kept posed, and
+it is drawn with every far car of its look and paint by `Graphics.RenderMeshInstanced`, one call per part (each mesh's submesh), no
+shadows, wheels still, the ground looked for every 8 frames or 25 units; near cars cast shadows only within 150 (165 to turn back on).
+`MostDrawn` 72 to 160. The game's car shader (`GMTK/Car Body Channel Paint`) may not take GPU instancing (not knowable here): config
+`TrafficInstanced` off draws each far car on its own (still no shadows). Physics and loose cars are made from a drawn car near or far.
+
+**Results, 16 seeds (100 circling cars):** the trunk's cars stopped 2.3 to 10.2 min a day in all (111 on seed 1 first come first
+served); no queues of circling cars at 17:00 on seed 1 (5 first come first served). The towns pay: junction waiting 284 to 928 min a
+day (281 on seed 1 first come first served), the slowest tenth of town trips 4.3 to 6.6 times free flow (4.3 on seed 1 before), most
+of it Westhaven's traffic turning left onto the trunk at node 5 and the queue back up the Westhaven link. Checks: everything passes but
+the hours' shape on 7 seeds (3.5 to 3.7; its limit raised to 4, see trafficview), one seed with 11 cars pulling in beside queues (limit
+10), one box conflict on seed 7 (a side car stalled in the box behind a car stopped on its way out: the room check is by distance) and
+one late trip still driving at the day's end on seed 8. Physics cars: within their limits on all 16 after three fixes the new day
+showed (an early car eased off to 4 u/s on the trunk: now half its road's speed, never in a box; a follower round a sharp turn keeps
+its gap in a straight line too; a car that went in from the same arm is kept clear until out of the box).
+
+**C. More circling cars, measured** (`TV_CIRCLING=N` in trafficview, nothing changed in the mod): 300 on seed 1: about 8 circling
+cars each way within 900 of a player on the lap (2.7 with 100), the trunk's cars stopped 13.5 min a day, but the side roads can
+hardly join it at the peak: junction waiting 3,606 min, the slowest tenth of town trips 11 times free flow, 74 trips unfinished at the
+day's end, the day built in 8.4 s. 1,000 would be worse still (a car every 0.9 s each way). **The owner's call:** stay at 100, or 300
+with something for the joins (a slip road's merge, or main-line courtesy for cars waiting long at the trunk), or fewer, faster
+circling cars.
 
 ## Handoff after 0.32.6 (2026-11-24): where things stand
 

@@ -13,9 +13,18 @@ using HalfGripOpenWorld;
 // distance, speed, place on the leg and the leg's times): for finding why they meet.
 internal static partial class Program
 {
+	/// <summary>Cars with the right of way refused for a car giving way to them, a day, at most.</summary>
+	private const int MostMainHeld = 100;
+
 	private static int Main(string[] args)
 	{
 		bool ok = true;
+		// TV_FCFS=1: every junction first come first served, as before 0.33.0, to compare the right of way with.
+		TrafficDay.NoRightOfWay = Environment.GetEnvironmentVariable("TV_FCFS") == "1";
+		// TV_TURNS=1: cars turning off the main line give way to oncoming main-line cars too.
+		TrafficDay.MainTurnsGiveWay = Environment.GetEnvironmentVariable("TV_TURNS") == "1";
+		// TV_CIRCLING=N: N cars circling the trunk instead of the day's number (to measure more highway traffic).
+		TrafficDay.CirclingTry = int.TryParse(Environment.GetEnvironmentVariable("TV_CIRCLING"), out int circling) ? circling : 0;
 		// The cars at rest on their springs first: no map needed.
 		ok &= Rest();
 		Stopwatch watch = Stopwatch.StartNew();
@@ -287,6 +296,14 @@ internal static partial class Program
 				{
 					arms += " " + Network.Roads[Traffic.Edges[e].Road].Kind + "(" + Traffic.Edges[e].Length.ToString("0") + ")";
 				}
+				string kinds = "";
+				for (int c = 0; c < 4; c++)
+				{
+					day.WaitKind.TryGetValue(n * 4 + c, out double w);
+					kinds += (c == 0 ? " side " : c == 1 ? ", main on " : c == 2 ? ", main off " : ", none ") + (w / 60.0).ToString("0.0");
+				}
+				TrafficDay.MainArms(n, out int ma, out int mb);
+				arms += " (main line arms " + ma + ", " + mb + ";" + kinds + ")";
 				Console.WriteLine("      node " + n + " at (" + Traffic.Nodes[n].X.ToString("0") + ", " + Traffic.Nodes[n].Z.ToString("0") + ") box " + Traffic.Nodes[n].Box.ToString("0") + ": " + (waits[i].Value / 60.0).ToString("0.0") + " min;" + arms);
 			}
 		}
@@ -318,6 +335,22 @@ internal static partial class Program
 			foreach (KeyValuePair<int, double> kv in st) all += kv.Value;
 			st.Sort((x, y) => y.Value.CompareTo(x.Value));
 			Console.WriteLine("    stopped (any reason): " + (all / 60.0).ToString("0") + " min");
+			{
+				double trunk = 0.0;
+				string trunkWorst = "";
+				foreach (KeyValuePair<int, double> kv in st)
+				{
+					if (kv.Key >= 0 && Network.Roads[Traffic.Edges[kv.Key].Road].Kind == RoadKind.Trunk)
+					{
+						trunk += kv.Value;
+						if (kv.Value > 60.0)
+						{
+							trunkWorst += " edge " + kv.Key + " (nodes " + Traffic.Edges[kv.Key].A + "/" + Traffic.Edges[kv.Key].B + ") " + (kv.Value / 60.0).ToString("0.0");
+						}
+					}
+				}
+				Console.WriteLine("      on the trunk: " + (trunk / 60.0).ToString("0.0") + " min;" + trunkWorst);
+			}
 			for (int i = 0; i < Math.Min(10, st.Count); i++)
 			{
 				int e = st[i].Key;
@@ -406,7 +439,30 @@ internal static partial class Program
 		ok &= day.OverlapPairs == 0;
 		Console.WriteLine("  crossing cars in a junction box together: " + day.ConflictPairs + " pairs (" + day.BoxConflicts + " steps)" + (day.ConflictPairs == 0 ? "  ok" : "  FAIL"));
 		ok &= day.ConflictPairs == 0;
-		Console.WriteLine("  let go of the queue's order after 45 s: " + day.Forced + " (never into a car in the box, never without room past it)");
+		Console.WriteLine("  let go of the queue's order after 45 s: " + day.Forced + " (never into a car in the box, never without room past it, never across a car with the right of way)");
+		{
+			int lines = 0, three = 0, four = 0, many = 0;
+			for (int n = 0; n < Traffic.Nodes.Count; n++)
+			{
+				int c = Traffic.Links[n].Count;
+				if (c < 3)
+				{
+					continue;
+				}
+				TrafficDay.MainArms(n, out int ma, out int _);
+				lines += ma >= 0 ? 1 : 0;
+				three += c == 3 ? 1 : 0;
+				four += c == 4 ? 1 : 0;
+				many += c > 4 ? 1 : 0;
+			}
+			Console.WriteLine("  right of way: " + lines + " junctions with a main line of " + (three + four + many) + " (" + three + " of three arms, " + four + " of four, " + many + " of more); " + day.RefusedGap + " refusals waiting for a gap");
+			Console.WriteLine("  the trunk's two lanes: " + day.Overtakes + " overtakes, " + day.MovedOver + " moved over for a car joining, " + day.KeptRight + " back to the outer lane");
+			// Not none: a car let out with time to clear may still be slower through the box than reckoned (it slows for its turn, or
+			// for a car on its way out). First come first served gave about 650 a day (TV_FCFS=1).
+			Console.WriteLine("  cars with the right of way refused at a junction for a car giving way to them: " + day.MainHeld + " (at most " + MostMainHeld + ")" + (day.MainHeld <= MostMainHeld ? "  ok" : "  FAIL"));
+			ok &= day.MainHeld <= MostMainHeld;
+			foreach (string n in day.MainHeldNotes) Console.WriteLine("    held: " + n);
+		}
 		foreach (string n in day.OverlapNotes) Console.WriteLine("    overlap: " + n);
 		foreach (string n in day.ConflictNotes) Console.WriteLine("    conflict: " + n);
 		Console.WriteLine("  over the limit + 5%: " + day.Speeding + " steps" + (day.Speeding > 0 ? ", worst " + (100.0 * (day.MaxOver - 1.0)).ToString("0") + "% over" : "") + (day.Speeding == 0 ? "  ok" : "  FAIL"));
@@ -504,10 +560,12 @@ internal static partial class Program
 			for (int e = 0; e < Traffic.Edges.Count; e++) if (Network.Roads[Traffic.Edges[e].Road].Kind == RoadKind.Trunk) trunkLen += Traffic.Edges[e].Length;
 			Console.WriteLine("   through journeys: " + (throughAll / Math.Max(1, day.Through)).ToString("0") + " units each, " + (throughTrunk / Math.Max(1, day.Through)).ToString("0") + " of them on the trunk (" + trunkLen.ToString("0") + " of trunk in all)");
 		}
-		Console.WriteLine("  the hours' shape: off " + (day.Weekend ? "a Saturday's" : "TPG 9") + " by at most " + worst.ToString("0.0") + " points an hour" + (worst < 3.5 ? "  ok" : "  FAIL"));
+		// 4 points (3.5 before 0.33.0): with the right of way the side roads' waits at the evening peak move a little of it later
+		// (3.5 to 3.7 on the 16 seeds; seed 1 first come first served: 3.1).
+		Console.WriteLine("  the hours' shape: off " + (day.Weekend ? "a Saturday's" : "TPG 9") + " by at most " + worst.ToString("0.0") + " points an hour" + (worst < 4.0 ? "  ok" : "  FAIL"));
 		// 3.5 points: a drive here spans an hour or more of the world's clock (it runs 36 times fast, driving does not), which smears
 		// every hour into the next; the tables are tuned against it, but no table can undo it entirely.
-		ok &= worst < 3.5;
+		ok &= worst < 4.0;
 		// Cars moving.
 		// Expected: households with a car x their share of driving x the hour's share of the day (TPG 9), over the hour's 100 s.
 		double perHour = CountWithCars() * Traffic.DrivingShare * Traffic.DaySeconds / 100.0;

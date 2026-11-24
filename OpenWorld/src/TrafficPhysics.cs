@@ -366,7 +366,7 @@ namespace HalfGripOpenWorld
 		{
 			foreach (int c in chosen)
 			{
-				if (!live.TryGetValue(c, out View v) || !v.Go.activeSelf || IsPhysical(c) || looseWanted.Contains(c))
+				if (!live.TryGetValue(c, out View v) || !Drawn(v) || IsPhysical(c) || looseWanted.Contains(c))
 				{
 					continue;
 				}
@@ -418,7 +418,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool BecomeLoose(int c, double w)
 		{
-			if (MostLoose == 0 || tm.enemyCarPrefab == null || !live.TryGetValue(c, out View v) || !v.Go.activeSelf)
+			if (MostLoose == 0 || tm.enemyCarPrefab == null || !live.TryGetValue(c, out View v) || !Drawn(v))
 			{
 				return false;
 			}
@@ -460,6 +460,7 @@ namespace HalfGripOpenWorld
 				chosenMoving.Remove(c);
 			}
 			v.Go.SetActive(false);
+			v.Far = false;
 			return true;
 		}
 
@@ -572,7 +573,7 @@ namespace HalfGripOpenWorld
 					return;
 				}
 				int c = chosen[k];
-				if (!chosenMoving.Contains(c) || !live.TryGetValue(c, out View v) || !v.Go.activeSelf || double.IsNaN(v.LastX))
+				if (!chosenMoving.Contains(c) || !live.TryGetValue(c, out View v) || !Drawn(v) || double.IsNaN(v.LastX))
 				{
 					continue;
 				}
@@ -646,7 +647,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool Become(int c, double w)
 		{
-			if (MostPhysics == 0 || tm.enemyCarPrefab == null || !live.TryGetValue(c, out View v) || !v.Go.activeSelf || double.IsNaN(v.LastX))
+			if (MostPhysics == 0 || tm.enemyCarPrefab == null || !live.TryGetValue(c, out View v) || !Drawn(v) || double.IsNaN(v.LastX))
 			{
 				return false;
 			}
@@ -677,6 +678,7 @@ namespace HalfGripOpenWorld
 			if (live.TryGetValue(c, out View drawn))
 			{
 				drawn.Go.SetActive(false);
+				drawn.Far = false;
 			}
 			return true;
 		}
@@ -1656,11 +1658,21 @@ namespace HalfGripOpenWorld
 		private float gearHold, gearNeutral;
 		private bool woken;
 
+		/// <summary>A driven physics car's lane (held while it drives) goes back to the day's from where it is.</summary>
+		private void LetGoOfLane()
+		{
+			if (!Remote && !Loose && Owner != null && Owner.Day != null && Me.Leg >= 0 && Me.Leg < Owner.Day.Legs.Count)
+			{
+				TrafficDay.ReleaseLaneAt(Owner.Day.Legs[Me.Leg], Me.P);
+			}
+		}
+
 		/// <summary>Starts driving car <paramref name="car"/> on leg <paramref name="leg"/> at <paramref name="p"/>, moving at <paramref name="velocity"/>.</summary>
 		internal void Begin(TrafficCars owner, int car, int leg, double p, Vector3 velocity)
 		{
 			Wake(owner, car, leg, p, velocity);
 			profile = TrafficDay.Profile(owner.Day.Legs[leg]);
+			TrafficDay.HoldLaneAt(owner.Day.Legs[leg], p);
 			Engine(car);
 		}
 
@@ -1777,6 +1789,7 @@ namespace HalfGripOpenWorld
 		/// <summary>This machine handed the car on: a stand-in from here, carrying on as it was going until its new driver's states come.</summary>
 		internal void ToRemote()
 		{
+			LetGoOfLane();
 			coastVelocity = Rb.linearVelocity;
 			coastLeft = (float)TrafficRoom.Playback.Coast;
 			Rb.isKinematic = true;
@@ -1821,6 +1834,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Stops driving (back to the pool).</summary>
 		internal void End()
 		{
+			LetGoOfLane();
 			Car = -1;
 			// Into the pool with its tyre marks off and empty, so nothing is painted when it is next put somewhere.
 			ClearTrails();

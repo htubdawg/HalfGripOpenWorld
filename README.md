@@ -43,7 +43,11 @@ generated from a fixed seed (the same for every player) the way real country com
   workshops, filling stations and market places, and at the kerb of the town streets near the offices, the high streets and the
   churches (never on the main roads or the narrow lanes; a household's second car is round the back, out of sight). They drive along
   the lane to their space and pull in nose first, and out again. They are the game's own enemy car, in everyday colours (the same
-  car the same colour every race), their lamps off when parked, and at night the nearest few light the road. Near you (within about 90 m) the moving cars are real
+  car the same colour every race), their lamps off when parked, and at night the nearest few light the road. At junctions the
+  main road has the right of way (the higher class, or the road that carries on through): cars from a side road wait for a gap,
+  and nobody on the main road stops for them. On the highway (two lanes each way) cars overtake in the inner lane, move over to
+  let a car join, and are back in the outer lane before their exit. Cars past about 75 m are drawn together and cheaply (no
+  shadows, wheels still). Near you (within about 90 m) the moving cars are real
   cars: they follow their lanes, queue behind each other and give way at junctions, and can be pushed, shot and wrecked (a wreck burns,
   explodes and is gone for the rest of the race; it does not count as a kill). A car you held up carries on late once you are past.
   The cars further off are drawn on their timetables, but any car you are about to hit, parked or moving, becomes a real car just
@@ -61,7 +65,7 @@ generated from a fixed seed (the same for every player) the way real country com
 ![The same map with the garages (cyan discs) and the events' start boxes (chequered discs) marked as on the in-game map, and the towns, villages, race courses (the highway along the trunk road) and the start named](docs/world-labels.png)
 
 It streams in tiles 250 units (about 75 m) square around the car, and a floating origin keeps the physics as precise at the world's edge as at the spawn. It is a source
-mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.32.6**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
+mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **0.33.0**, made for game version 0.419 and HalfGripTools 1.0.6 or newer.
 
 **Work in progress.** Street lamps come next (see [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -82,7 +86,7 @@ everything: it installs BepInEx and HalfGripTools, and adds this mod from its Gi
 To update, open the launcher again: Open World gets an **UPDATE** button when a new version is out (everyone in a Multiplayer room
 needs the same version). To stop playing it, switch it off in the game's mod manager.
 
-If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.32.6` and
+If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.33.0` and
 `Open World map made from TokyoNeon`.
 
 ## Playing it
@@ -206,9 +210,10 @@ the same ground.
 | World | `FarSkyline` | true | With `FarView` on, paints the land past `FarViewDistance` into the sky, so on a clear day you see across the whole world (to 40000; the weather brings it in) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. |
 | World | `Deer` | true | Draws the deer (within about 150 m of the car, the nearest 40). Off, none are drawn and none can be hit or shot; where they are does not change. |
 | World | `DeerAmount` | 1 | How many deer groups there are, to find what feels right: 1 is 160 groups (about 540 deer), 0.5 half, 0 none; above 1 there are only so many places deer can live, so 2 gives about 215 groups and 4 about 245. Only alone: in a room it is always 1. From the next race. |
-| World | `Traffic` | true | Draws the traffic: moving cars within about 270 m, parked ones within about 140 m, the nearest 72. Off, none are drawn; where they are does not change. Only changes your own view. |
+| World | `Traffic` | true | Draws the traffic: moving cars within about 270 m, parked ones within about 140 m, the nearest 160 (past about 75 m drawn together, without shadows). Off, none are drawn; where they are does not change. Only changes your own view. |
 | World | `TrafficPhysics` | 24 | With `Traffic` on, at most how many moving traffic cars near you (within 300 units, about 90 m) are real cars with physics (pushed, shot, wrecked, queueing, giving way); they go back on their timetable 400 units (about 120 m) away. 0: none, every traffic car is a wall. More costs more frame time. Only changes your own game. |
 | World | `TrafficLoose` | 6 | With `Traffic` on, at most how many traffic cars you are about to hit become real cars at that moment when they would otherwise be walls: parked cars (on their brakes) and moving cars that are not physics cars just then (pulling in or out, at a junction, near their trip's end; they brake to a stop). Untouched, one goes back to how it was 60 units (about 18 m) away; one you knocked is gone for the rest of the race once you are well away. Separate from `TrafficPhysics`. 0: parked cars are walls. Only changes your own game. |
+| World | `TrafficInstanced` | true | With `Traffic` on, the traffic cars past 250 units (about 75 m) are drawn together: every car of one body and paint in one draw call per part (GPU instancing), without shadows. Off: each far car is drawn on its own (more draw calls, still without shadows). Turn it off only if far traffic cars look wrong (missing, or all in one place). Only changes your own view. |
 | World | `ShiftDistance` | 1000 | Game units (1000 is about 300 m) from the scene's origin before the scene is moved back. |
 | Debug | `Teleport` | false | The Teleport key (F7, rebind it in Settings > Controls) jumps the car to the next key place (the spawn, the towns, their market places, the circuit's grid and paddock, the rally stage's start and service area, the hill climb's start and finish, the highway's start, the retail park, the villages, a filling station and a workshop, the mountain pass), Shift+F7 to the one before; the place's name shows at the top of the screen. If another car stands on the place, the car lands a little along the road or beside it, and nothing can hurt it for 2 seconds. |
 | Debug | `ShowCoords` | false | Shows the world position (and the height above the sea), origin offset and tile count on screen, and the sky: the time, the rain, cloud and wetness at the car, the grip, the nearest storm; with the far view, its chunks drawn, the fog's reach and how far the camera draws; and the deer: how many are drawn, the nearest group's crossing place (how far and which way) how likely groups are to be out feeding at this hour, and how many deer have been killed (by this car, shot here) and how many groups near are reacting; and the traffic: how many cars are drawn (moving, parked, lit) and the traffic's hour; and where the frame time goes (Unity's slowest steps of the frame, the mod's own systems, draw calls and triangles, the GPU's time where the game gives it), also logged every 10 s as `Frame timings`. |

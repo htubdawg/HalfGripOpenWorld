@@ -123,8 +123,13 @@ internal static partial class Program
 		HashSet<long> crashed = new HashSet<long>(), crossed = new HashSet<long>();
 		int made = 0, backOnTime = 0, backLate = 0, waitedEnd = 0, hidden = 0, heldBack = 0, hitPlayer = 0, jumps = 0, targets = 0;
 		double worstJump = 0.0, mostLate = 0.0, sumLate = 0.0, targetMs = 0.0;
-		string crashNote = "", crossNote = "", jumpNote = "";
+		string crashNote = "", crossNote = "", jumpNote = "", hitNote = "";
 		Stopwatch watch = new Stopwatch();
+		foreach (TrafficDay.Leg l in day.Legs)
+		{
+			l.HoldLane = -1f;
+			l.HoldEnd = double.MaxValue;
+		}
 
 		// The player's car stopped across a lane: on the path of the driving car nearest the player, 60 on.
 		double ox = 0.0, oz = 0.0;
@@ -197,6 +202,7 @@ internal static partial class Program
 					{
 						backOnTime++;
 					}
+					TrafficDay.ReleaseLaneAt(day.Legs[s.Leg], s.P);
 					physical.Remove(c);
 					// Where it is drawn now against where it was as a physics car: no jump.
 					TrafficDay.Place drawn = late.At(c, w, out bool _);
@@ -276,6 +282,11 @@ internal static partial class Program
 						continue;
 					}
 					parking.Drawn(e.c, e.at, out double ex, out double ez, out double _, out double _);
+					if (blocked && (ex - ox) * (ex - ox) + (ez - oz) * (ez - oz) < 36.0 * 36.0)
+					{
+						// Drawn into or just short of the player's stopped car (in the game it would have hit it, a wall, or touched it, a loose car): not made physical there, too close to stop.
+						continue;
+					}
 					if (OnPhysical(day, physical, ex, ez, e.at.Hx, e.at.Hz, 20.0))
 					{
 						late.Hide(e.c, w);
@@ -283,6 +294,7 @@ internal static partial class Program
 						continue;
 					}
 					physical[e.c] = new Sim { Car = e.c, Leg = e.at.Leg, P = e.at.P, V = Math.Max(0.0, e.at.Speed), Profile = TrafficDay.Profile(leg), St = new TrafficDrive.State { WaitNode = -1 } };
+					TrafficDay.HoldLaneAt(leg, e.at.P);
 					made++;
 				}
 			}
@@ -421,6 +433,10 @@ internal static partial class Program
 					double dx = ox - ax, dz = oz - az;
 					if (Math.Abs(dx * ahx + dz * ahz) < TrafficDrive.CarLength - 1.0 && Math.Abs(dx * ahz - dz * ahx) < 4.0)
 					{
+						if (hitPlayer == 0)
+						{
+							hitNote = " (first car " + sa.Car + ", leg " + sa.Leg + " at " + sa.P.ToString("0") + " v " + sa.V.ToString("0.0") + ", " + (3.0 + w / 100.0).ToString("0.00") + " h, along " + (dx * ahx + dz * ahz).ToString("0.0") + " across " + (dx * ahz - dz * ahx).ToString("0.0") + ")";
+						}
 						hitPlayer++;
 					}
 				}
@@ -432,11 +448,17 @@ internal static partial class Program
 		{
 			longest = Math.Max(longest, s.MostStopped);
 			longWaits += s.MostStopped > 90.0 ? 1 : 0;
+			if (s.MostStopped > 90.0 && Environment.GetEnvironmentVariable("TV_DRIVE_NOTES") != null)
+			{
+				TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
+				TrafficDrive.Prepare(day, ref lm);
+				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s");
+			}
 		}
 		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && hitPlayer == 0 && jumps == 0 && (blocked || longWaits == 0);
 		Console.WriteLine("  physics cars, " + name + ", 10 minutes from 17:00: " + made + " made physical, back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
 			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " waits to be on time at a trip's end, " + hidden + " drawn cars hidden on a physics car, " + heldBack + " held back from pulling out onto one; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
-			+ (crashNote.Length > 0 ? " (first " + crashNote + ")" : "") + ", " + crossed.Count + " pairs crossing in a box (at most " + MostCrossings + ")" + (crossNote.Length > 0 ? " (first " + crossNote + ")" : "") + (blocked ? ", " + hitPlayer + " steps in the player's car" : "")
+			+ (crashNote.Length > 0 ? " (first " + crashNote + ")" : "") + ", " + crossed.Count + " pairs crossing in a box (at most " + MostCrossings + ")" + (crossNote.Length > 0 ? " (first " + crossNote + ")" : "") + (blocked ? ", " + hitPlayer + " steps in the player's car" + hitNote : "")
 			+ "; jumps going back: worst " + worstJump.ToString("0.0") + (jumpNote.Length > 0 ? " (" + jumpNote + ")" : "") + ", " + jumps + " over 3; longest stop of the cars still physical " + longest.ToString("0") + " s"
 			+ (blocked ? "" : " (" + longWaits + " over 90 s)") + "; " + (targets > 0 ? targetMs * 1000.0 / targets : 0.0).ToString("0.0") + " us a target" + (ok ? "" : " FAIL"));
 		return ok;

@@ -1331,6 +1331,10 @@ The frame rate is back at about 135 of the owner's 140 cap (the `ShowCoords` ove
 
 Refused by the owner, not to be proposed again: physics cars limited by direction or by whether the player is closing on them.
 
+**Done in 0.33.0** (not yet tried in the game, `docs/TESTING.md` test 57): A (right of way; the main line's own turns kept first come
+first served, see `docs/PERF_HANDOFF.md`), the trunk's second lane (asked by the owner: overtaking, moving over for joiners), and B
+(far cars instanced, no shadows, `MostDrawn` 160). C measured only: 300 circling cars choke the side roads' joins; the owner to choose.
+
 ## Traffic: the agreed plan (on `traffic-test-branch`, from `deer-test-branch`; agreed with the owner 2026-11-22)
 
 Cars driving the roads, built on what the deer proved (positions from the seed and the clock, claims settled by the host, drawn only
