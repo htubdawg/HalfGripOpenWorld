@@ -1315,6 +1315,22 @@ Open with the owner: how much grid (patches cover about a third of a town's area
 square or the widened street of a market town; back alleys driveable or footpaths; whether Westhaven gets a seafront (a promenade
 road along the shore with a terrace facing the sea) in place of streets ending at the beach.
 
+## Next: right of way, cheaper drawn cars, more highway traffic (agreed with the owner 2026-11-24, after 0.32.6)
+
+The frame rate is back at about 135 of the owner's 140 cap (the `ShowCoords` overlay had cost about 4 ms a frame; see
+`docs/PERF_HANDOFF.md`). The owner wants ten times the highway traffic or more at that frame rate. Three PRs on
+`traffic-test-branch`, in order; the details, the owner's decisions and the checks are in `docs/PERF_HANDOFF.md`, "The plan":
+
+1. **0.33.0, right of way at junctions.** Each junction's main line worked out with the map (the higher class; among equals, the road
+   that carries on through; else the arms nearest straight): main-line cars never wait for side-arm cars, side arms wait for a gap,
+   a left turn off the main line gives way to oncoming main-line cars, junctions with no clear main line as now. In the day and in
+   the physics cars' driver. Ends the trunk's queues at the Westhaven link.
+2. **0.33.1, cheaper drawn cars.** One instanced mesh per look and colour past about 250 units, no shadows far off, fewer raycasts,
+   `MostDrawn` raised.
+3. **0.33.2, more circling cars in steps** (100, 300, 1,000), each measured; the owner picks.
+
+Refused by the owner, not to be proposed again: physics cars limited by direction or by whether the player is closing on them.
+
 ## Traffic: the agreed plan (on `traffic-test-branch`, from `deer-test-branch`; agreed with the owner 2026-11-22)
 
 Cars driving the roads, built on what the deer proved (positions from the seed and the clock, claims settled by the host, drawn only

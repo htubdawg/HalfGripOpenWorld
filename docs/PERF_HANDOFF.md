@@ -1,9 +1,87 @@
-# Performance handoff (after 0.32.1; 0.32.2 to 0.32.6 below)
+# Performance handoff (0.32.1 to 0.32.6; the plan from here first, the history below)
+
+## Handoff after 0.32.6 (2026-11-24): where things stand
+
+- **The frame rate is back:** 134 to 139 fps driving on 0.32.5 (the owner's cap is about 140; the frame waits 1.3 to 1.5 ms for it).
+  0.32.6 (the ground's shadows back) is not yet tested in game: `docs/TESTING.md` test 56.
+- **What it was:** the `ShowCoords` overlay, about 4 ms a frame. IMGUI repaints inside Unity's rendering step and the long overlay was
+  laid out on every `OnGUI` call. With `ShowCoords` off the game never paid it, but every frame rate read with it on before 0.32.5
+  was about 4 ms low. The trees drawn in blocks gained a little (foliage 0.8 to 0.5 ms), the flat surfaces' shadows little or nothing.
+- **What the frame is now** (0.32.5, driving, `ShowCoords` on): Unity's rendering step 1.4 ms (1,400 to 2,750 draw calls), every
+  script's `Update` 2.4 to 2.5 ms (ours about 0.3: the rest is the game and the owner's 20 other mods), `LateUpdate` 1.4 to 1.5 ms
+  (ours about 0.8, foliage 0.5 to 0.6), the traffic 0.1 to 0.2 ms, physics 0.05 to 0.07 ms.
+- **The tools to measure with:** `ShowCoords` on gives the overlay's frame lines and `Frame timings` in the log every 10 s
+  (`FramePerf.cs`: every step of Unity's frame, our systems, draw calls, triangles, shadow casters). trafficview's highway report
+  (`tools/trafficview/Highway.cs`): the gaps between circling cars and the cars within 900 of a player on the trunk.
+
+### The owner's decisions (2026-11-24)
+
+- **Every moving car near the player stays a physics car, oncoming ones included.** Players are more likely to hit an oncoming car
+  in this game, not less. Do not propose limiting physics cars by direction or by whether the player is closing on them (proposed
+  twice, refused twice).
+- **Physics bodies are already pooled** (`TrafficPhysics.WarmPool`, woken ahead and put to sleep in the pool; taken and given back,
+  never made on demand but when the pool runs short). Switching costs 0.00 to 0.01 ms a frame: nothing to do there.
+- **Right of way, not first come first served.** "Main roads get priority over side roads. Cars should not be stopping because
+  another car wants to jump in front of it on a road." And it is not only road class: a straight road with another joining it has
+  an obvious through road even if both are the same class. No stop signs needed (painted lines or signs later, as looks only).
+- **Cheaper drawn cars: yes.**
+- **The goal:** about 130 to 140 fps (the cap) on a 265K and a 3060 with ten times the highway traffic or more.
+
+### The plan (agreed 2026-11-24): three PRs on `traffic-test-branch`, in this order
+
+**A. Right of way at junctions (0.33.0).** Today every junction is uncontrolled, first come first served by reservation, the car on
+the right first at a tie (`TrafficDay`'s requests and grants, `TrafficDay.cs` about 1870 to 2010; `TrafficDrive.Target`'s junction
+hold for the physics cars, `TrafficDrive.cs` about 500 to 600). Road class is never looked at. So a car from a lane that gets there
+first stops the highway's cars: the queues at the trunk's junction with the Westhaven link (node 5, at 11316, -9288), and the platoons
+trafficview shows by 17:00 (15 gaps under 60 units, longest gaps 4,400 and 5,977).
+
+- **The main line of each junction, worked out once with the traffic's map** (`Traffic`, per node, from `Traffic.Links` and the
+  edges' `Road`): (1) different classes: the highest class's arms; (2) among those, the two arms of one road that carries on through
+  the node (the same `Network` road on both sides); (3) else the pair of arms nearest a straight line (a T or a Y has a through road
+  whatever the classes). No main line where it is not clear: a crossroads of equal roads with no road carrying on and no pair nearly
+  straight, a hub of many arms, a dead end, a node of two arms (a bend, not a junction).
+- **The rule:** a car on the main line, going on along it, never waits for a car from a side arm. A car from a side arm gives way
+  to every main-line car whose way crosses its own and that is coming within a gap it could not clear in (the existing arrival and
+  clearing times: `ArriveTime`, `ClearTime`), then goes. A main-line car turning off across the oncoming lane (a left turn: traffic
+  keeps right) gives way to oncoming main-line cars only. Where there is no main line, today's rule. Never into a car in the box,
+  never without room past it (as now); the 45 s guard against waiting for ever stays, but never across a main-line car coming.
+- **Both places:** the day (`TrafficDay`'s grants) and the physics cars (`TrafficDrive.Target`), so a physics car near the player
+  does what the day's car would have. Through `TrafficLate` nothing changes.
+- **Determinism:** the day changes (everyone in a room needs 0.33.0; the Multiplayer mod enforces one version). Integer and `+ - * /`
+  arithmetic, `Network.Atan2` if an angle is needed, ties by index. No room message changes.
+- **Checks (trafficview):** a new count, main-line cars stopped at a junction for a side-arm car: 0. The trunk's minutes stopped at
+  node 5 (46.8 on seed 1 with 100 circling cars) close to 0. The highway report's gaps at 17:00 close to 06:00's (no queues nose to
+  tail). Every existing check still passes (no two cars on a lane overlapping, no crossing cars in a box together, nobody waiting for
+  ever, the hours and counts in range); run 16 seeds in the background loop (`docs/TRAFFIC_HANDOFF.md`, "Tools"). Look at a few
+  junctions' main lines drawn (trafficview's picture: the main line's arms marked) at a T, a Y, the Westhaven link, a crossroads in
+  Kingsbridge.
+
+**B. Cheaper drawn cars (0.33.1).** Each drawn car is a copy of the enemy car's bodies (`TrafficCars`, look 0: 8 meshes, 1 painted, 2
+lamps; look 1: 9 meshes, 2 painted; 4 wheels turning; shadows as the prefab's), a material per paint colour (`_EntireColor` on a
+copy), stood on the ground by raycasts every frame, up to `MostDrawn` (72) within `MovingReach` (900) and `ParkedReach` (450). Ten
+times the highway traffic would put about 25 cars each way within 900 of the player, against about 2.5 now.
+
+- Measure first (`Frame timings`, standing in Kingsbridge's centre and on the trunk): the draw calls with `Traffic` on and off.
+- Far off, past about 250 units: one mesh per look and colour (body, lamps and wheels merged, wheels still), drawn with
+  `Graphics.RenderMeshInstanced` per look and colour (cars of one colour in one call), no shadows; near: as now, wheels turning.
+  The swap distance with a little hysteresis so a car on the edge does not flicker between the two.
+- No shadows past about 150 units for the near ones too.
+- The ground under a far car from the road's own height (`Network`, the day's place already has its edge and distance) or a raycast
+  every few frames, not every frame.
+- `MostDrawn` raised to fit what ten times the highway puts in reach (moving cars weighted nearer, as now).
+- Checks: check.sh, trafficview (no change to the day), and the frame timings in game: draw calls per drawn car before and after.
+
+**C. More highway cars, in steps (0.33.2).** `TrafficDay.Circling` (100) to 300, then 1,000, each step measured: the day's build on
+the worker (2.5 s at 100; each circling leg records the whole day, about 20 KB), trafficview's highway report (cars within 900, the
+gaps, the trunk's junctions' capacity with A in), the frame timings in game. `TrafficPhysics` (24) caps the physics cars within 300:
+with more cars in reach the nearest get them (as now) and contact physics makes any other car real before it is touched. Which step
+to keep is the owner's call after driving it. The circling cars' one flaw stays: the day repeats at 03:00 and each jumps there.
+
+## History: 0.32.1 to 0.32.6
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
-instead of 10, physics cars driven into the tunnels (a cheap check every frame), a water strip trimmed, the overlay's box. Only the
-first can plausibly cost 2.6 ms. Nothing is changed yet: this is what was found, what the log shows, and how to find out the rest.
+instead of 10, physics cars driven into the tunnels (a cheap check every frame), a water strip trimmed, the overlay's box.
 
 ## Found: two functions walk a car's whole route from its start
 
