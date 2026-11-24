@@ -1064,7 +1064,9 @@ namespace HalfGripOpenWorld
 				{
 					double px = cx + uz * a * (HomeWidth * 0.5 + 4.0) + ux * b * (HomeDepth * 0.5 + 4.0);
 					double pz = cz - ux * a * (HomeWidth * 0.5 + 4.0) + uz * b * (HomeDepth * 0.5 + 4.0);
-					if (!Clear(px, pz, -1) || segments.Snap(px, pz, 18.0, -1, out double _, out double _, out double _))
+					// 18 from any road's line, and from the trunk's its half width more (80 across since 0.34.0: 18 from its line is on it).
+					if (!Clear(px, pz, -1) || segments.Snap(px, pz, 18.0, -1, out double _, out double _, out double _)
+						|| segments.Snap(px, pz, Classes[0].Half + 10.0, -1, out double _, out double _, out double _, RoadKind.Trunk))
 					{
 						return;
 					}

@@ -176,3 +176,57 @@ All of this is a world change: everyone in a room needs the new version.
 - **Following distance:** the manual's 4 s, or something between (real traffic runs at about 1.5 to 2 s)?
 - **Left onto the trunk from a side road:** (a) a wider median to wait in crosswise, or (b) a median acceleration lane?
 - **Junctions too close for their lanes** (nodes 33/3, node 10): one weaving lane between them, or merge them?
+
+## What was built on `ccr-02e633e5-fytf3y` (2026-11-24, not yet tried in the game)
+
+The owner's answers: following distance 2 s at most (kept at 1.5); a left-turn lane in the median for cars turning left onto the
+trunk too, so they wait there; close junctions left to the agent ("you based these roads on real world road growth").
+
+**Rules (`TrafficDay`, `TrafficDrive`):**
+- Left turns yield to oncoming traffic on every road (p. 48), not only the trunk.
+- Gaps onto the trunk are the manual's (9 s left, 8 s right, 6 s across). Onto other roads they are the HCM's (7.1 / 6.2 / 6.5 s),
+  shortening to half over 10 s of waiting, and only for cars within a block (p. 49). The full manual gaps everywhere doubled the
+  towns' junction waiting.
+- A driveway waits for a clear road above 25 mph; no let-in there.
+- No entering a junction across another stream without room to clear it (p. 46).
+- A car that misses its turn lane goes on and is routed round (p. 52). If the only way round is back, it may cross both lanes into
+  the median turn lane when slowed.
+- Turns through a wide junction are made at the speed its size allows (about 15 mph across the trunk). A left off the trunk at
+  walking pace took 9 s, longer than any gap the evenly spaced circling cars left.
+
+**Road (`Network`, `TrunkLanes`, `RoadMesh`):**
+- The trunk is 80 across: its outer shoulders are a lane wide (10 ft paved shoulders, as on PA's rural four-lane roads).
+- `TrunkLanes` finds every side road on the trunk and lays out:
+  - a deceleration lane before it (520), on the shoulder;
+  - an acceleration lane after it (680), on the shoulder;
+  - a left-turn lane in the median for the oncoming carriageway (620);
+  - a median merge lane after it for the side road's left turns (680, two-stage).
+- Overlapping shoulder lanes join into one auxiliary lane from junction to junction. Median lanes stop at junctions; the two
+  directions' median lanes share the median where they meet.
+- `RoadMesh` paints them: dashed lane line, edge line moving out over the taper, asphalt over the concrete median.
+
+**Traffic in the lanes:**
+- A car turning right moves into the deceleration lane, then slows. A car turning left moves into the median lane and waits there.
+- Side roads' right turns join the acceleration lane without a gap. Their left turns cross the near carriageway on a 6 s gap and
+  merge from the median.
+- A merging car goes once up to speed and given room (the car behind brakes at most gently), and waits at the lane's end if none comes.
+- Turners hold back behind their turn lane's queue rather than pull up beside it. A slow queue lets a car in (zipper).
+
+**Results, 16 seeds (`TV_DRIVE_ONLY`):**
+- The trunk's through cars are stopped 1 to 80 min a day on 14 seeds (135 on seed 1 on the branch). Seeds 3 and 13 still have
+  227 and 700, both at Kingsbridge (node 3) when the town's inbound road backs up past the turn lane.
+- meshcheck passes. A drive's house had to be kept further from the wider trunk.
+- `tools/check.sh` passes. jview's project needed `TrafficShared` and `TrafficFar` left out (it no longer built).
+
+**Still failing in trafficview:**
+- **The towns jam.** Junction waiting is 1,000 to 2,700 min a day (284 to 928 on 0.33.0). That leaves trips unfinished at the
+  day's end on every seed, and physics cars stopped over 90 s in Westhaven. The cause is gap acceptance at any realistic gap on the
+  towns' two-lane main roads (the Westhaven and Kingsbridge links): the day's whole demand runs in 40 real minutes. Only the old
+  ~1 s margin plus first-come-first-served left turns (the rule-breaking 0.33.0 behaviour) got back to 705.
+- 7 stop lines on another road's paving (inherited from the branch).
+- A few overlaps and box conflicts a seed.
+
+**Next, for the owner:** the towns' main roads need what real towns build for this. The options:
+- a centre turn lane on the links through Westhaven and Kingsbridge (p. 45; a world change: wider roads through town);
+- roundabouts at their busiest junctions;
+- thinning the towns' peak.

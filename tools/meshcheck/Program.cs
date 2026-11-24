@@ -175,6 +175,10 @@ internal static class Program
 					{
 						bad++;
 						worst = Math.Max(worst, over);
+						if (bad <= 5)
+						{
+							Console.WriteLine("  under the terrain: " + r.Kind + " '" + r.Name + "' at (" + x.ToString("0") + ", " + z.ToString("0") + ") side " + f.ToString("0.00") + " by " + over.ToString("0.00"));
+						}
 					}
 				}
 			}
