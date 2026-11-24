@@ -355,7 +355,7 @@ internal static partial class Program
 				TrafficDay.Leg leg = day.Legs[s.Leg];
 				double onP = TrafficDrive.OnTime(leg, w, out double onV);
 				watch.Restart();
-				double target = TrafficDrive.Target(day, s.Me, s.Profile, movers, obstacles, onP, onV, DriveStep, ref s.St);
+				double target = TrafficDrive.Target(day, s.Me, s.Profile, movers, obstacles, onP, onV, w, DriveStep, ref s.St);
 				targetMs += watch.Elapsed.TotalMilliseconds;
 				targets++;
 				if (Environment.GetEnvironmentVariable("TV_DRIVE_CAR") == c.ToString() && s.Me.Node >= 0 && s.Me.ToBox < 80.0)

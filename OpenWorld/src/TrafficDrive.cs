@@ -431,7 +431,7 @@ namespace HalfGripOpenWorld
 		/// the box; stopping at its trip's end; and easing off when it gets well ahead of its timetable (<paramref name="onTimeP"/>,
 		/// <paramref name="onTimeV"/>: where and how fast the day has it). <paramref name="dt"/> moves the junction wait on.
 		/// </summary>
-		internal static double Target(TrafficDay day, in Mover me, float[] profile, List<Mover> others, List<Obstacle> obstacles, double onTimeP, double onTimeV, double dt, ref State st)
+		internal static double Target(TrafficDay day, in Mover me, float[] profile, List<Mover> others, List<Obstacle> obstacles, double onTimeP, double onTimeV, double now, double dt, ref State st)
 		{
 			TrafficDay.Leg leg = day.Legs[me.Leg];
 			double v = Math.Max(0.0, me.V);
@@ -541,6 +541,11 @@ namespace HalfGripOpenWorld
 				if (me.ToBox < reach)
 				{
 					hold = blockedOut;
+					// Its light, as the day ran it: red, or amber it can stop for (as the day's cars).
+					if (TrafficSignals.Has(me.Node) && !TrafficSignals.MayGo(day.Lights.State(me.Node, me.InArm, now), v, me.ToBox - CarLength * 0.5))
+					{
+						hold = true;
+					}
 					double etaMe = me.ToBox / Math.Max(v, 4.0);
 					bool patient = st.WaitNode != me.Node || st.Waited < HoldBreak;
 					// Past braking to a stop short of the box: committed, it goes whoever else is coming.
@@ -567,6 +572,11 @@ namespace HalfGripOpenWorld
 						}
 						if (o.Node != me.Node || o.InArm == me.InArm || !TrafficDay.Crosses(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
 						{
+							continue;
+						}
+						if (TrafficSignals.Apart(me.Node, me.InArm, o.InArm) && o.ToBox > CarLength * 0.5)
+						{
+							// Coming on the other green: its light holds it (only one already in the box, above, keeps this one back).
 							continue;
 						}
 						if (o.ToBox < -0.5 || (o.ToBox < CarLength * 0.5 && o.V > 2.0))

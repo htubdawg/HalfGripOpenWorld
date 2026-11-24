@@ -335,7 +335,7 @@ internal static partial class Program
 				all += kv.Value;
 			}
 			waits.Sort((x, y) => y.Value.CompareTo(x.Value));
-			Console.WriteLine("    waiting at junctions: " + (all / 60.0).ToString("0") + " min in all; refused: behind a refused car " + day.RefusedOrder + ", crossing a grant " + day.RefusedCross + ", no room " + day.RefusedRoom);
+			Console.WriteLine("    waiting at junctions: " + (all / 60.0).ToString("0") + " min in all; refused: behind a refused car " + day.RefusedOrder + ", crossing a grant " + day.RefusedCross + ", no room " + day.RefusedRoom + ", at a red light " + day.RefusedSignal + " (" + TrafficSignals.Nodes.Count + " junctions with lights, " + day.Lights.Changes + " changes)");
 			for (int i = 0; i < Math.Min(12, waits.Count); i++)
 			{
 				int n = waits[i].Key;

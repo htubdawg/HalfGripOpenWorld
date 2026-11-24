@@ -251,6 +251,55 @@ namespace HalfGripOpenWorld
 		/// <summary>Seconds waited per node and kind (node * 4 + kind: 0 from a side arm, 1 on along the main line, 2 turning off it, 3 no main line). For trafficview.</summary>
 		internal readonly Dictionary<int, double> WaitKind = new Dictionary<int, double>();
 		internal int RefusedOrder, RefusedCross, RefusedRoom;
+		/// <summary>Refusals at a red light (or a green ending before the car would be through).</summary>
+		internal int RefusedSignal;
+		/// <summary>The day's clock this step (the lights read it in <see cref="Junctions"/>).</summary>
+		private double now;
+		/// <summary>The day's traffic lights, as they ran (read back by the physics cars' driver and the drawn lights).</summary>
+		internal readonly TrafficSignals.Lights Lights;
+		private bool[] lightWaiting = new bool[0], lightComing = new bool[0];
+
+		/// <summary>The lights a step on: a side car not yet let in, near its line, is waiting (stopped) or coming (the light's loop sees it).</summary>
+		private void RunLights(double w)
+		{
+			int n = TrafficSignals.Nodes.Count;
+			if (n == 0)
+			{
+				return;
+			}
+			if (lightWaiting.Length != n)
+			{
+				lightWaiting = new bool[n];
+				lightComing = new bool[n];
+			}
+			Array.Clear(lightWaiting, 0, n);
+			Array.Clear(lightComing, 0, n);
+			foreach (Mover m in movers)
+			{
+				int k = Asking(m);
+				if (k < 0)
+				{
+					continue;
+				}
+				Seg[] path = m.L.Path;
+				int node = NodeAfter(path, k);
+				int i = TrafficSignals.IndexOf(node);
+				if (i < 0 || TrafficSignals.PhaseOf(node, LinkIndex(node, path[k].Edge)) != 1)
+				{
+					continue;
+				}
+				double toLine = path[k].P0 + path[k].Len - Traffic.Nodes[node].Box - m.P;
+				if (toLine < TrafficSignals.Detect)
+				{
+					lightComing[i] = true;
+					if (m.V < 3.0)
+					{
+						lightWaiting[i] = true;
+					}
+				}
+			}
+			Lights.Step(w, lightWaiting, lightComing);
+		}
 		/// <summary>Requests refused for a gap: a car giving way to a main-line car coming.</summary>
 		internal int RefusedGap;
 		internal readonly List<string> MainHeldNotes = new List<string>();
@@ -268,6 +317,7 @@ namespace HalfGripOpenWorld
 		{
 			Traffic.Ensure();
 			Prepare();
+			Lights = new TrafficSignals.Lights();
 			Seed = raceSeed;
 			salt = Noise.Mix((ulong)(uint)raceSeed ^ 0x7AF_F1C0_D4E5UL);
 			Weekend = Plots.Unit(salt, 1) < 2.0 / 7.0;
@@ -409,6 +459,8 @@ namespace HalfGripOpenWorld
 					MainLine(node);
 					twoLaneMain[node] = mainA[node] >= 0 && twoLaneEdge[Traffic.Links[node][mainA[node]]] && twoLaneEdge[Traffic.Links[node][mainB[node]]];
 				}
+				// The lights, from the main lines.
+				TrafficSignals.Build();
 				portalDest = new int[Network.Portals.Count];
 				north = -1;
 				for (int p = 0; p < Network.Portals.Count; p++)
@@ -1290,6 +1342,13 @@ namespace HalfGripOpenWorld
 			b = mainB[node];
 		}
 
+		/// <summary>As <see cref="MainArms"/> once the map is prepared (for <see cref="TrafficSignals"/>, built inside it and read every step).</summary>
+		internal static void MainOf(int node, out int a, out int b)
+		{
+			a = mainA[node];
+			b = mainB[node];
+		}
+
 		/// <summary>Whether a movement through node <paramref name="node"/> crosses a carriageway of the trunk: a turn left there, or straight across it from side to side.</summary>
 		private static bool CrossesCarriageway(int node, int inA, int outA)
 		{
@@ -1328,7 +1387,8 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static bool Yields(int node, int inA, int outA, int inB, int outB)
 		{
-			return !NoRightOfWay && MainYields(node, inA, outA, inB, outB);
+			// At a light, cars on different greens never meet (the light keeps them apart): nobody gives way to a car at its red.
+			return !NoRightOfWay && !TrafficSignals.Apart(node, inA, inB) && MainYields(node, inA, outA, inB, outB);
 		}
 
 		/// <summary>trafficview only: every junction first come first served, as before 0.33.0 (to compare with).</summary>
@@ -1624,6 +1684,8 @@ namespace HalfGripOpenWorld
 						m.Rec.Add((float)m.P);
 					}
 				}
+				now = w;
+				RunLights(w);
 				Junctions(requests, refused);
 				// Accelerations, all from the same state, then the move.
 				if (acc.Length < movers.Count)
@@ -2310,6 +2372,13 @@ namespace HalfGripOpenWorld
 				for (int i = start; i < end; i++)
 				{
 					Request r = requests[i];
+					if (TrafficSignals.Has(node) && !TrafficSignals.MayGo(Lights.State(node, r.InArm, now), r.M.V, r.NodeP - box - r.M.P))
+					{
+						// Its light is red (or amber it can stop for): it stops at the line. It holds up nobody on the
+						// other green, so it is not kept in the refused list.
+						RefusedSignal++;
+						continue;
+					}
 					bool ok = true, crossing = false;
 					bool force = r.M.Wait > ForceAfter;
 					foreach (Request q in refused)

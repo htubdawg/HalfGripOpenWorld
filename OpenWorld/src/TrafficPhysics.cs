@@ -1922,7 +1922,7 @@ namespace HalfGripOpenWorld
 			}
 			double w = Owner.Now;
 			double onP = TrafficDrive.OnTime(leg, w, out double onV);
-			double target = TrafficDrive.Target(day, Me, profile, Owner.Movers, Owner.Obstacles, onP, onV, dt, ref Drive);
+			double target = TrafficDrive.Target(day, Me, profile, Owner.Movers, Owner.Obstacles, onP, onV, w, dt, ref Drive);
 			Steer(leg, pos, v, dt);
 			Pedals(target, v, dt);
 		}
