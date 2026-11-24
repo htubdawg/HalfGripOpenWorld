@@ -526,3 +526,6 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - Shadows: buildings, bridges, the covered bridges, trees and cars still cast them; the ground under a hill at a low sun no longer
      shadows itself (say if that is missed).
    - Optional, to see what is not ours: the same drive with only Open World and Multiplayer enabled in the mod manager.
+
+56. The ground's shadows back (0.32.6). A low sun (early morning or evening; `WeatherSkip` to get there): hills shadow the land behind
+   them as before 0.32.5. The frame rate driving as in test 55 (about 135 on 0.32.5): say if it is lower.

@@ -1027,9 +1027,9 @@ namespace HalfGripOpenWorld
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
 			MeshRenderer renderer = go.AddComponent<MeshRenderer>();
 			renderer.sharedMaterial = material;
-			// The ground receives shadows but casts none (0.32.5): every loaded tile was drawn again into the sun's shadow map for each
-			// cascade, for the odd hill's shadow on itself, which the light's angle on the slope already shows.
-			renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+			// The ground casts shadows (hills on the land behind them at a low sun). 0.32.5 turned them off with the flat surfaces' below;
+			// the owner's frame timings then showed the gain had come from the overlay (laid out on every OnGUI call, inside Unity's
+			// rendering step), not the shadows, so 0.32.6 put them back. Only tiles within the shadow distance are drawn into the map.
 			block.Clear();
 			block.SetTexture("_BaseMap", texture);
 			block.SetTexture("_MainTex", texture);

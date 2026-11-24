@@ -1,4 +1,4 @@
-# Performance handoff (after 0.32.1; 0.32.2 to 0.32.5 below)
+# Performance handoff (after 0.32.1; 0.32.2 to 0.32.6 below)
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
@@ -142,6 +142,19 @@ Aimed at the two largest costs that are ours: the draw calls (the rendering step
 
 Not ours and not changed: about 3 ms of the game's and other mods' scripts each frame (21 mods were loaded). A drive with only Open
 World and Multiplayer would show how much of it the other mods are.
+
+## The owner's 0.32.5 drive and 0.32.6 (2026-11-24): "back to 135 fps"
+
+- 134 to 139 fps (7.2 to 7.5 ms) driving with `ShowCoords` on, against the frame cap of about 140: the frame now waits 1.3 to 1.5 ms
+  for the screen (`WaitForLastPresentation`), where it waited 0.1 to 0.6.
+- `FinishFrameRendering` **1.4 to 1.5 ms (3.4 to 5.9 on 0.32.4)**, yet the draw calls only fell to 1,400 to 2,750 (from 2,600 to 3,100)
+  and the shadow casters are about as many (58 to 193). `IMGUISendQueuedEvents` 0.02 to 0.04 (0.06 to 0.66), `ClearImmediateRenderers`
+  0.02 (0.11 to 0.13). So **most of the gain was the overlay**: IMGUI repaints inside Unity's rendering step, and the long overlay laid
+  out on every OnGUI call cost about 4 ms. Every reading of the frame rate with `ShowCoords` on before 0.32.5 was low by that much
+  (0.32.4's longer overlay the most); with it off the game never paid it. Foliage 0.5 to 0.6 ms (0.8), the trees in blocks.
+- **0.32.6: the ground casts shadows again** (hills on the land behind them), asked for by the owner. The flat surfaces (verges,
+  sidewalks, tracks, the courses' surfaces, water) stay without: their shadows fell only on themselves.
+- Still not ours: `ScriptRunBehaviourUpdate` 2.4 to 2.5 ms of which ours about 0.3, and about 0.8 of `LateUpdate`.
 
 ## What the log shows (`LogOutput.log` of the drive, 0.32.1)
 
