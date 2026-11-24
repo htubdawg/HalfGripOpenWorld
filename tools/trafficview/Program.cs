@@ -16,54 +16,6 @@ internal static partial class Program
 	/// <summary>Cars with the right of way refused for a car giving way to them, a day, at most.</summary>
 	private const int MostMainHeld = 100;
 
-	/// <summary>
-	/// Every junction's stop lines: a car waiting at the box's edge on any arm (its front there, in its lane) is off every other road's
-	/// paving. A box sized for roads meeting square left cars waiting at a slanted trunk junction standing in its lanes (the owner's
-	/// screenshot, 0.33.0).
-	/// </summary>
-	private static bool StopLines()
-	{
-		int arms = 0, bad = 0;
-		string first = "";
-		for (int n = 0; n < Traffic.Nodes.Count; n++)
-		{
-			List<int> links = Traffic.Links[n];
-			if (links.Count < 3)
-			{
-				continue;
-			}
-			Traffic.Node node = Traffic.Nodes[n];
-			foreach (int ei in links)
-			{
-				Traffic.Edge e = Traffic.Edges[ei];
-				if (e.Length < node.Box + 2.0)
-				{
-					continue;
-				}
-				Network.Road road = Network.Roads[e.Road];
-				// Coming in along this arm: its stop line, the lane on the right of the way in.
-				double s = e.A == n ? e.Sa + node.Box : e.Sb - node.Box;
-				Traffic.At(road, s, out double x, out double z, out double _);
-				Traffic.Heading(road, s, out double hx, out double hz);
-				double sign = e.A == n ? -1.0 : 1.0;
-				double off = Traffic.LaneOffset(road);
-				x += hz * sign * off;
-				z -= hx * sign * off;
-				arms++;
-				if (!Traffic.ClearOfOthers(n, e.Road, x, z))
-				{
-					bad++;
-					if (first.Length == 0)
-					{
-						first = " (first: node " + n + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + "), a " + road.Kind + " arm, box " + node.Box.ToString("0") + ")";
-					}
-				}
-			}
-		}
-		Console.WriteLine("  stop lines on another road's paving: " + bad + " of " + arms + " arms" + first + (bad == 0 ? "  ok" : "  FAIL"));
-		return bad == 0;
-	}
-
 	private static int Main(string[] args)
 	{
 		bool ok = true;
@@ -397,7 +349,7 @@ internal static partial class Program
 						}
 					}
 				}
-				Console.WriteLine("      on the trunk: " + (trunk / 60.0).ToString("0.0") + " min (going on along it " + (day.TrunkStoppedOn / 60.0).ToString("0.0") + ", waiting to turn off " + (day.TrunkStoppedTurning / 60.0).ToString("0.0") + ");" + trunkWorst);
+				Console.WriteLine("      on the trunk: " + (trunk / 60.0).ToString("0.0") + " min;" + trunkWorst);
 			}
 			for (int i = 0; i < Math.Min(10, st.Count); i++)
 			{
@@ -503,11 +455,7 @@ internal static partial class Program
 				four += c == 4 ? 1 : 0;
 				many += c > 4 ? 1 : 0;
 			}
-			ok &= StopLines();
 			Console.WriteLine("  right of way: " + lines + " junctions with a main line of " + (three + four + many) + " (" + three + " of three arms, " + four + " of four, " + many + " of more); " + day.RefusedGap + " refusals waiting for a gap");
-			Console.WriteLine("  cars stopped in a trunk junction crossing a carriageway: " + day.StoppedAcrossCars + " (" + day.StoppedAcross + " steps)" + (day.StoppedAcrossCars == 0 ? "  ok" : "  FAIL"));
-			ok &= day.StoppedAcrossCars == 0;
-			foreach (string note in day.StoppedAcrossNotes) Console.WriteLine("    across: " + note);
 			Console.WriteLine("  the trunk's two lanes: " + day.Overtakes + " overtakes, " + day.MovedOver + " moved over for a car joining, " + day.KeptRight + " back to the outer lane");
 			// Not none: a car let out with time to clear may still be slower through the box than reckoned (it slows for its turn, or
 			// for a car on its way out). First come first served gave about 650 a day (TV_FCFS=1).

@@ -398,11 +398,9 @@ namespace HalfGripOpenWorld
 				}
 				mainA = new int[n];
 				mainB = new int[n];
-				twoLaneMain = new bool[n];
 				for (int node = 0; node < n; node++)
 				{
 					MainLine(node);
-					twoLaneMain[node] = mainA[node] >= 0 && twoLaneEdge[Traffic.Links[node][mainA[node]]] && twoLaneEdge[Traffic.Links[node][mainB[node]]];
 				}
 				portalDest = new int[Network.Portals.Count];
 				north = -1;
@@ -1269,22 +1267,11 @@ namespace HalfGripOpenWorld
 			b = mainB[node];
 		}
 
-		/// <summary>Whether a movement through node <paramref name="node"/> crosses a carriageway of the trunk: a turn left there, or straight across it from side to side.</summary>
-		private static bool CrossesCarriageway(int node, int inA, int outA)
-		{
-			if (!twoLaneMain[node])
-			{
-				return false;
-			}
-			bool inMain = inA == mainA[node] || inA == mainB[node], outMain = outA == mainA[node] || outA == mainB[node];
-			return LeftTurn(node, inA, outA) || (!inMain && !outMain);
-		}
-
 		/// <summary>Whether the way in along arm <paramref name="inA"/> and out along <paramref name="outA"/> turns left (across the oncoming lane: traffic keeps right).</summary>
 		private static bool LeftTurn(int node, int inA, int outA)
 		{
 			double tx = -armX[node][inA], tz = -armZ[node][inA];
-			return tx * armZ[node][outA] - tz * armX[node][outA] > 0.3;
+			return tx * armZ[node][outA] - tz * armX[node][outA] > 0.0;
 		}
 
 		/// <summary>
@@ -1318,7 +1305,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			return (MainTurnsGiveWay || twoLaneMain[node]) && MainTurnYields(node, inA, outA, inB, outB, a0, a1);
+			return MainTurnsGiveWay && MainTurnYields(node, inA, outA, inB, outB, a0, a1);
 		}
 
 		/// <summary>
@@ -1328,13 +1315,6 @@ namespace HalfGripOpenWorld
 		/// There is no turning lane for them to wait in.
 		/// </summary>
 		internal static bool MainTurnsGiveWay { get; set; }
-
-		/// <summary>
-		/// Per node, whether its main line is the trunk's (two lanes each way): there a car turning off across the oncoming carriageway
-		/// always gives way to the oncoming cars, waiting in the inner lane, which the cars going on pass in the outer one. Never cutting
-		/// across the whole highway in front of them (the owner's screenshot, 0.33.0).
-		/// </summary>
-		private static bool[] twoLaneMain;
 
 		private static bool MainTurnYields(int node, int inA, int outA, int inB, int outB, int a0, int a1)
 		{
@@ -1569,19 +1549,6 @@ namespace HalfGripOpenWorld
 					{
 						StoppedOn.TryGetValue(path[m.Seg].Edge, out double sec);
 						StoppedOn[path[m.Seg].Edge] = sec + Step;
-						if (TwoLane(path[m.Seg]))
-						{
-							// On the trunk: going on along it at the next junction, or turning off.
-							int ahead = m.Seg + 1 < path.Length ? m.Seg + 1 : m.Seg;
-							if (TwoLane(path[ahead]))
-							{
-								TrunkStoppedOn += Step;
-							}
-							else
-							{
-								TrunkStoppedTurning += Step;
-							}
-						}
 					}
 					if (m.V < 0.5 && NearMouth(m))
 					{
@@ -2512,46 +2479,25 @@ namespace HalfGripOpenWorld
 			{
 				Seg[] path = m.L.Path;
 				Seg s = path[m.Seg];
-				if (!TwoLane(s) || w < m.HoldUntil || w - m.Changed < KeepLane || !GrantsGoOn(m))
+				if (!TwoLane(s) || w < m.HoldUntil || w - m.Changed < KeepLane || m.V < 5.0 || m.Grants.Count > 0)
 				{
 					continue;
 				}
 				double into = m.P - s.P0;
-				int ask = Asking(m);
-				if (into < 30.0 || s.P0 + s.Len - m.P < 60.0 + m.V * MoveOverTime || (ask >= 0 && !(TwoLane(path[ask]) && TwoLane(path[ask + 1]))))
+				if (into < 30.0 || s.P0 + s.Len - m.P < 60.0 + m.V * MoveOverTime || Asking(m) >= 0)
 				{
-					// Near the junction it turns off at: it keeps the lane it is in (it got there before).
 					continue;
 				}
-				// Leaving the trunk (or its trip ends) soon: the outer lane for a turn right, the inner one for a turn left (across the
-				// oncoming carriageway: it waits there for a gap, out of the way of the cars going on).
-				int exitLane = !m.L.Vanishes && m.L.Length - m.P < ExitReady ? 0 : -1;
-				for (int k = m.Seg + 1; exitLane < 0 && k < path.Length && path[k].P0 - m.P < ExitReady; k++)
+				// Leaving the trunk (or its trip ends) soon: the outer lane.
+				bool exit = m.L.Length - m.P < ExitReady && !m.L.Vanishes;
+				for (int k = m.Seg + 1; !exit && k < path.Length && path[k].P0 - m.P < ExitReady; k++)
 				{
-					if (!TwoLane(path[k]))
-					{
-						int node = NodeAfter(path, k - 1);
-						exitLane = node >= 0 && twoLaneMain[node] && LeftTurn(node, LinkIndex(node, path[k - 1].Edge), LinkIndex(node, path[k].Edge)) ? 1 : 0;
-					}
+					exit = !TwoLane(path[k]);
 				}
-				if (exitLane < 0 && PocketAhead(m))
-				{
-					// Going on past a trunk junction: the outer lane, leaving the inner one to the cars waiting there to turn left.
-					exitLane = 0;
-				}
-				bool exit = exitLane >= 0;
 				double v0 = Math.Max(0.5, DesiredAt(m.L.Profile, m.P));
 				double here = Follow(m, m.Ahead, v0);
 				bool toInner;
-				if (exit)
-				{
-					if ((m.Inner ? 1 : 0) == exitLane)
-					{
-						continue;
-					}
-					toInner = exitLane == 1;
-				}
-				else if (m.Inner)
+				if (m.Inner)
 				{
 					toInner = false;
 					long outer = LaneOf(s);
@@ -2565,6 +2511,10 @@ namespace HalfGripOpenWorld
 				}
 				else
 				{
+					if (exit)
+					{
+						continue;
+					}
 					toInner = true;
 					long inner = LaneOf(s) + InnerKey;
 					Neighbours(inner, m, out Mover ahead, out Mover _);
@@ -2577,11 +2527,10 @@ namespace HalfGripOpenWorld
 					}
 				}
 				long target = LaneOf(s) + (toInner ? InnerKey : 0L);
-				if (!RoomIn(target, m) || !GrantsAllow(m, toInner))
+				if (!RoomIn(target, m))
 				{
 					continue;
 				}
-				MoveGrants(m, toInner);
 				// Moving over: out of the old lane's list, into the new one's in order (later cars this step see it there).
 				if (lanes.TryGetValue(m.Lane, out List<Mover> old))
 				{
@@ -2630,65 +2579,6 @@ namespace HalfGripOpenWorld
 				any = true;
 			}
 			return any;
-		}
-
-		/// <summary>How far before a trunk junction the cars going on keep to the outer lane (the inner one is the turning lane there).</summary>
-		private const double PocketLength = 400.0;
-
-		/// <summary>Whether mover <paramref name="m"/> comes to a junction on the trunk's main line within <see cref="PocketLength"/>, going on through it.</summary>
-		private static bool PocketAhead(Mover m)
-		{
-			Seg[] path = m.L.Path;
-			for (int k = m.Seg; k + 1 < path.Length && path[k].P0 + path[k].Len - m.P < PocketLength; k++)
-			{
-				int node = NodeAfter(path, k);
-				if (node >= 0 && twoLaneMain[node])
-				{
-					return true;
-				}
-			}
-			return false;
-		}
-
-		/// <summary>Whether every junction mover <paramref name="m"/> has been let into is one it goes straight on through on the trunk (it may still change lanes).</summary>
-		private static bool GrantsGoOn(Mover m)
-		{
-			foreach (Grant g in m.Grants)
-			{
-				Seg[] path = m.L.Path;
-				if (!TwoLane(path[g.SegIndex]) || !TwoLane(path[g.SegIndex + 1]))
-				{
-					return false;
-				}
-			}
-			return true;
-		}
-
-		/// <summary>Whether mover <paramref name="m"/>, let into junctions ahead, can take its grants to the other lane: nobody else let in leaves by that lane there.</summary>
-		private bool GrantsAllow(Mover m, bool toInner)
-		{
-			foreach (Grant g in m.Grants)
-			{
-				long outLane = (g.OutLane & ~InnerKey) + (toInner ? InnerKey : 0L);
-				foreach (Grant o in nodeGrants[g.Node])
-				{
-					if (o.M != m && o.OutLane == outLane && o.InKey != g.InKey)
-					{
-						return false;
-					}
-				}
-			}
-			return true;
-		}
-
-		/// <summary>Mover <paramref name="m"/>'s grants moved with it to the other lane.</summary>
-		private static void MoveGrants(Mover m, bool toInner)
-		{
-			foreach (Grant g in m.Grants)
-			{
-				g.InLane = (g.InLane & ~InnerKey) + (toInner ? InnerKey : 0L);
-				g.OutLane = (g.OutLane & ~InnerKey) + (toInner ? InnerKey : 0L);
-			}
 		}
 
 		/// <summary>The outer lane mover <paramref name="m"/> leaves the next junction by, if that is near and it stays on the trunk (else -1).</summary>
@@ -2894,42 +2784,14 @@ namespace HalfGripOpenWorld
 				return pending == 0 || outLength >= need;
 			}
 			// By distance only: a car let in behind one that is moving, which then stops, would stand in the box and hold it.
-			if (CrossesCarriageway(r.Node, r.InArm, r.OutArm))
-			{
-				// Across a carriageway of the trunk: stopping halfway would hold up all its lanes, so the way out must be moving, or
-				// clear well past the box.
-				return first.LaneU - Traffic.CarLength > need + (first.V > TurnSpeed * 0.5 ? 0.0 : 3.0 * (Traffic.CarLength + MinGap));
-			}
 			return first.LaneU - Traffic.CarLength > need;
 		}
-
-		/// <summary>Steps a car stood still in a trunk junction's box crossing a carriageway (holding up all its lanes), and how many cars did.</summary>
-		internal int StoppedAcross;
-		/// <summary>Seconds cars stood still on the trunk going on along it, and waiting to turn off it.</summary>
-		internal double TrunkStoppedOn, TrunkStoppedTurning;
-		internal int StoppedAcrossCars => stoppedAcross.Count;
-		private readonly HashSet<int> stoppedAcross = new HashSet<int>();
-		internal readonly List<string> StoppedAcrossNotes = new List<string>();
 
 		/// <summary>Grants end once the car is a car's length past the box.</summary>
 		private void Release()
 		{
 			foreach (Mover m in movers)
 			{
-				if (m.V < 0.5)
-				{
-					foreach (Grant g in m.Grants)
-					{
-						if (Math.Abs(m.P - g.NodeP) < Traffic.Nodes[g.Node].Box && CrossesCarriageway(g.Node, g.InKey, g.OutKey))
-						{
-							StoppedAcross++;
-							if (stoppedAcross.Add(m.Index) && StoppedAcrossNotes.Count < 8)
-							{
-								StoppedAcrossNotes.Add("leg " + m.Index + " node " + g.Node + " " + g.InKey + ">" + g.OutKey + " at " + (m.P - g.NodeP).ToString("0") + " box " + Traffic.Nodes[g.Node].Box.ToString("0") + " ahead " + (m.Ahead != null ? (m.Ahead.LaneU - m.LaneU).ToString("0") + " v " + m.Ahead.V.ToString("0.0") : "-") + " lane " + m.Lane);
-							}
-						}
-					}
-				}
 				for (int i = m.Grants.Count - 1; i >= 0; i--)
 				{
 					Grant g = m.Grants[i];

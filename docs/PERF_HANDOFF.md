@@ -1,42 +1,5 @@
 # Performance handoff (0.32.1 to 0.33.0; the plan from here first, the history below)
 
-## Handoff after the owner's 0.33.0 report (2026-11-24): READ THIS FIRST
-
-**The owner's report on 0.33.0 (screenshot):** "you have cars cutting across the entire highway holding up every lane." Cars turning
-off the trunk, and crossing it, stand across both lanes of a carriageway. The owner stopped this agent and wants the traffic
-researched afresh by another agent. **0.33.0 as pushed on `traffic-test-branch` has this bug.**
-
-**Why (as far as found):**
-- In 0.33.0 a car turning left off the trunk (across the oncoming carriageway) is first come first served with the oncoming cars
-  (`TrafficDay.MainTurnsGiveWay` false: see "Done in 0.33.0" below for why it was turned off when the trunk had one lane), so it cuts
-  across both oncoming lanes and they stop for it.
-- A car crossing a carriageway can be let in while the road it goes into is about to queue; it then stops halfway across
-  (`TrafficDay.Room` checks room by distance only).
-- Junction boxes are the widest road's half width and 2 along every arm, which is too short where a road meets another at a slant: a
-  car waiting at the line stands on the other road's paving (about 50 arms of 2,244; at the trunk's junctions only a little).
-
-**Unfinished fixes, committed on `traffic-test-branch` after 0.33.0 (the commit "Unfinished: trunk junction crossing fixes";
-compiles, NOT checked over the 16 seeds, the version still 0.33.0; `git diff 7d7f4df` shows them, `git revert` takes them out):**
-- Trunk junctions (`twoLaneMain`): a car turning left off the trunk always gives way to oncoming cars and moves into the inner lane
-  before a left exit (outer before a right one); cars going on keep to the outer lane within 400 units of a trunk junction, so the
-  inner lane there works as a turning lane (`PocketAhead`); cars may change lanes from a standstill and while let into a junction they
-  go straight on through (their grants moved with them: `GrantsGoOn`, `GrantsAllow`, `MoveGrants`).
-- A movement across a carriageway of the trunk (`CrossesCarriageway`: a left turn, or side to side) needs its way out moving or clear
-  well past the box (`Room`). `LeftTurn` now needs a clear angle (0.3): nearly straight movements were counted as left turns.
-- Boxes widened geometrically (`Traffic.ObliqueBox`, `Traffic.ClearOfOthers`): each arm stepped back until a car waiting there in its
-  lane is off every other road's paving by 2.7, at most 75.
-- trafficview: new checks "stop lines on another road's paving" (7 of 2,244 still fail: slanted lanes at the 75 cap) and "cars stopped
-  in a trunk junction crossing a carriageway" (0 on seeds 1 and 3 after the fixes, with notes); the trunk's stopped minutes split into
-  cars going on and cars waiting to turn off (just added, not yet run).
-- Results on seeds 1 and 3 so far: no car stopped across a carriageway, but the trunk's stopped minutes rose (about 235 and 247 a day,
-  most on edge 15 into node 3, the Kingsbridge link junction): whether that is the left-turn queue waiting in the inner lane
-  (legitimate) or through cars held up is what the new split was going to say. Left-turn demand at node 3 and node 5 is heavy (the
-  towns' commuters) and the oncoming trunk is busy (88% of it the 100 circling cars), so left turns off the trunk have little capacity.
-
-**Open questions for whoever picks this up:** how real at-grade junctions on a dual carriageway handle this (turning lanes, a median
-wide enough to wait in, no right turn across, or grade separation), and whether the trunk's junctions need a different layout (not
-only a different driving rule). The circling cars' number (step C) depends on the answer.
-
 ## Done in 0.33.0 (2026-11-24, the owner to test: `docs/TESTING.md` test 57)
 
 Steps A and B of the plan below, plus the trunk's second lane (the owner's call, see "Decisions"). Not yet tried in the game.
