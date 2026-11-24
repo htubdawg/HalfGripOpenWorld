@@ -2153,3 +2153,13 @@ leaves out a road cut out whole. meshcheck all pass (`holes` 0.43% to 0.33%); pr
 Left (looked at, not done): a few lanes meeting another at a shallow angle, a sliver of ground or verge in the narrow corner
 ((9301, 9211), (-6569, -9954), (-7272, 1156)); preview's `square` lists two. Making them meet square means moving their ends: offer
 it, with the owner's screenshots of the junctions they saw, if these were not the ones.
+
+## Next: the frame rate and dense traffic (agreed with the owner 2026-11-24, after 0.32.3)
+
+The whole plan and the research behind it are in `docs/PERF_HANDOFF.md`, "The agreed plan". In short: **release one (0.33.0)**,
+the frame rate with no change to the world: shadows off for flat things (roads, verges, sidewalks, tracks, gravel, water, the ground
+past the car's neighbours), the rear-view mirror drawn every other frame (reach and foliage kept), the ground's texture through a
+material per tile instead of a property block (same look), mesh colliders only near the car and cooked off the main thread (drawn
+cars' heights from the road, not raycasts), the frame's render counters on the overlay. **Release two**: booked traffic (each trip's
+drive planned when it is made, junction slots booked, queues planned rather than played out, both highway lanes each way, the trunk
+given priority) and far drawn cars drawn instanced, for ten times the highway traffic and more.

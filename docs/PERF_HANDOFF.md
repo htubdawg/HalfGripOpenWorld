@@ -1,4 +1,138 @@
-# Performance handoff (after 0.32.1; 0.32.2 and 0.32.3 below)
+# Performance handoff
+
+**Start here: "The agreed plan (2026-11-24, after 0.32.3)" just below.** It replaces "Ways out, once measured" further down. The
+history under it (0.32.1 to 0.32.3) is why: the traffic's own code is about 0.1 ms a frame, so the frames go to drawing.
+
+## The agreed plan (2026-11-24, after 0.32.3)
+
+The owner wants **130 fps on a 265K and a 3060** (now 100 to 110 on the highway) and **ten times the highway traffic or more**, and
+it must still **look like traffic** (queues, bunching). Two releases, in this order. Nothing below is built yet.
+
+A note on the owner: answer plainly and briefly, about what changes the frame rate or what the player sees. A long explanation of the
+start-of-race day build lost them (it costs no frame rate); keep to the point.
+
+### What the research found (no code changed)
+
+- **The game draws at low resolution** (`SmoothPixelGrid` on the Main Camera, a pixel-art downscale), so the 3060 has little to fill:
+  at 100 fps the limit is most likely the CPU's culling and draw calls (main and render threads). Unity 6000.3.22f1, URP.
+- **About a thousand renderers, every one casting shadows.** `TileRadius` 5 keeps 121 tiles; each has the ground and up to eight
+  parts (`Streamer.Part`: Roads, Verges, Sidewalks, Tracks, Circuit, Gravel, Water, Buildings), several with a submesh per material.
+  The mod never sets `shadowCastingMode` on them, and Unity's default is On, so flat ground, roads and water go into every shadow
+  cascade too.
+- **The rear-view mirror draws the world a second time every frame in the cockpit view.** `RearViewCamera` (scene dump: fov 28,
+  far 1000, depth 0; enabled with the Main Camera by `CameraSwitch.UpdateCameraView`, off in the outside view) feeds the cockpit's
+  `RearViewMirror` sprite (material `MAT_RearviewMirror`). URP gives it its own shadow pass. The game's `RenderBudget` caps its
+  far clip by quality level and hides *terrain* foliage in it; our foliage (`Foliage.Draw`, `RenderParams` with no `camera`) is
+  drawn in it and its shadows regardless. `SmartMirror` turns it toward enemies in `LateUpdate`.
+- **The ground's texture is set through a `MaterialPropertyBlock`** (`Streamer.cs`, the tile's `renderer.SetPropertyBlock(block)`).
+  A renderer with a property block is left out of URP's SRP Batcher, so 121 ground tiles take the slow path (twice with the mirror).
+- **Every loaded tile gets mesh colliders** (ground and every solid part), cooked on the main thread as the tile comes: part of the
+  1.3 ms a tile, about 5 tiles a second at speed. Nothing drives on a tile 400 m off. (Tree trunks' colliders were already near only,
+  `TrunkReach`.) Drawn traffic cars stand on the ground by two raycasts each out to `MovingReach` 900, so they rely on far colliders.
+- **Origin shifts** cost 4.5 to 8.4 ms each, about every 6 s at highway speed (`ShiftDistance` 1000).
+- **Drawn traffic cars** are each a GameObject copy of the enemy car's bodies: 8 or 9 MeshRenderers, a BoxCollider and a kinematic
+  Rigidbody (a wall), painted by swapping `sharedMaterials` (`TrafficCars.Make`, `Paint`). Capped at 72 (`MostDrawn`).
+- **The experiment:** `TrafficDay.Circling` 1000 in trafficview (`TV_DRIVE_ONLY=1`): the day built in 10.2 s (2.6 with 100), about
+  0.95 GB peak; **1,092 legs unfinished, 247 pairs of cars on a lane closer than a car's length, physics cars in each other, the
+  hours' shape off by 4.8 points**: the trunk jams at the uncontrolled junction with the Westhaven link. The day sim also puts each
+  direction of the trunk on one lane (`LaneOf` is per edge and way), though it has two lanes each way. So more circling cars in
+  today's day sim is not the way.
+
+### Tests the owner can make with no build (ask for the overlay's fps line in each, same seed and stretch)
+
+1. The cockpit view against the outside view (the outside view has no mirror camera): roughly the mirror's cost.
+2. `TileRadius` 3 against 5: whether draw calls are the limit.
+3. `ShiftDistance` 3000 against 1000: fewer shift hitches.
+4. `GrassReach` 0 and `TreeShadowReach` 0: the foliage's share.
+
+### Release one: the frame rate (no change to the world; agreed item by item)
+
+1. **Shadows off for flat things.** `ShadowCastingMode.Off` on Roads, Verges, Sidewalks, Tracks, Circuit, Gravel and Water, and on
+   the ground past the car's tile and its neighbours (hills' shadows near the car kept; switch a tile's ground as the car's tile
+   changes, a cheap pass over loaded tiles). Buildings and trees keep theirs (trees by `TreeShadowReach` as now). Agreed.
+2. **The mirror drawn every other frame.** The owner: its reach (1000, about 300 m) is short enough already, **keep its reach and keep
+   the foliage in it**; halving its rate is good. Toggle `RearViewCamera.enabled` on alternate frames, only while the game has it on
+   (cockpit view: watch `CameraSwitch` so the outside view still turns it off and our toggle never turns it back on; restore it on
+   our teardown). The mirror sprite keeps the last picture on the skipped frames. First check in the decompile that it really draws
+   into a RenderTexture (`MAT_RearviewMirror`'s base map; the camera's `targetTexture` is set somewhere, not in the dump): if it
+   draws straight to the screen instead, skipping frames would blank it, so stop and tell the owner. Also try its own shadows off
+   (`UniversalAdditionalCameraData.renderShadows = false`) only if the mirror looks the same; otherwise leave them.
+3. **Ground through a material per tile** instead of the property block: `new Material(material)` with `_BaseMap`/`_MainTex` set,
+   `HideAndDontSave`, freed with the tile (`TileMesh` already frees the mesh and texture; add the material, see `WorldAssets`). The
+   owner: **only if it does not alter the appearance**: same shader, same texture, same settings, so it should not; compare
+   screenshots before and after if in doubt.
+4. **Colliders only near the car, cooked off the main thread.** The owner was surprised this was not done already. Mesh colliders
+   on the tiles within 2 of the car's (the trunk colliders' pattern: added as the car comes, taken off a tile further out), cooked
+   on a worker with `Physics.BakeMesh(mesh.GetInstanceID(), false)` before the `MeshCollider` is added on the main thread (needs the
+   mesh made first: build the tile meshes with `Mesh.AllocateWritableMeshData` on the worker and `ApplyAndDisposeWritableMeshData`
+   on the main thread, or bake right after the mesh is made, on a job). What needs a far collider must stop needing it: **drawn
+   traffic cars' raycasts** (`TrafficCars.cs`, `Physics.Raycast(... groundMask ...)`) take the height from `Network.Point` on the
+   road / `WorldGen.Height` instead (note `Network.Lift` and `CLAUDE.md`'s height rule), past the collider ring at least; check
+   anything else that raycasts the ground far off (deer use code tests; the events' gates? the respawn's "nearest road"?). Physics
+   cars live within 300 to 400 units, inside 2 tiles' 500. A wrap's preload (`BuildAround(..., 1)`) must give the car's landing tile
+   its colliders at once. Add a meshcheck or in-game log check that the car's tile and its neighbours always have colliders.
+5. **Measuring on the overlay** (behind `ShowCoords`, logged every 10 s with `Traffic timings`): Unity's `ProfilerRecorder` for
+   "Main Thread", "Render Thread" (or the CPU frame times from `FrameTimingManager` if enabled), "Batches Count", "SetPass Calls
+   Count", "Shadow Casters Count", "Triangles Count". Some may read 0 in a release player; show what works, say which do not.
+   Owner: "sure".
+
+Also worth doing in this release if cheap: `ShiftDistance`'s default raised (to 2000 or 3000) if the owner's test 3 shows the hitch
+going, and make the shift cheaper (`Origin.cs` walks `FindObjectsByType<Transform>(Include)` for the cockpit's interior layer each
+shift; cache it).
+
+Run `tools/check.sh`, meshcheck, trafficview; bump the version (0.33.0) and the README; add a `docs/TESTING.md` test: fps on the
+highway and in Kingsbridge in the cockpit view against 0.32.3, the mirror moving smoothly enough, no car falling through a tile
+(colliders near), drawn cars still on the road far off, the ground looking the same.
+
+### Release two: dense traffic that looks like traffic
+
+Two parts, agreed with the owner.
+
+**A. Booked traffic** (replaces how `TrafficDay` drives the day; the owner's own idea, worked through in the conversation of
+2026-11-24). Today the timetable only says when each car leaves; the day is then played through on 0.25 s steps (IDM, junction
+reservations, pulling out, letting in) so cars can hold each other up, and that replay is what jams and slows at 1000 circling cars.
+Instead, **plan the clashes away when the trips are made**:
+
+- Each trip, in a fixed order (by departure time, ties by index), is given its whole drive as a plan: times through each junction
+  box and along each stretch. Every car at the same spot on a road gets the same free speed (the road's profile: limit, bends,
+  junctions), so a car never closes on the one ahead by itself.
+- **Junction slots are booked.** A box's slot taken: the car is planned to **stop at the back of the queue** (one car length plus a
+  gap behind the last car planned to stand there) and go when the car ahead has moved up plus a gap; or to slow a little on the way
+  in. **Queues stay, they are planned** (the owner checked this): rush hour books many trips at once, so queues grow long by
+  themselves; at night they vanish. A car planned to come up behind a slower one (a queue's tail, a car pulling in) is planned to
+  slow behind it.
+- Pulling out of a space, being let in, waiting to turn across the oncoming lane into a space: each is a booking rule (a gap in the
+  lane's plan); any not written is lost until it is, so write them all (today's `TrafficDay` has them: `StartWaiting`, `LetInAfter`,
+  `FarSide`/`FarEnd`, `PullOut`/`PullIn`).
+- Booking order gives earlier trips priority; guard against odd waits (never stop for a car still far off; a slot is the box's
+  occupancy only).
+- **A car's place at any time is a formula of its own plan** (piecewise: cruise, slow, stop, go, with smooth accel and braking
+  curves so a queue does not look mechanical). Store the plan as a few pieces per stretch, not a record every 0.5 s; then 10x or more
+  costs little memory or time. Keep `Leg`'s interface (`OnPath`, `At`, the distance at a time that `TrafficDrive.cs:277` reads from
+  `Rec`) so `TrafficLate`, `TrafficDrive`, `TrafficPhysics`, `TrafficParking` and `TrafficRoom` keep working: they read a timetable,
+  and a plan is one.
+- **The highway**: both lanes each way (today one), each lane its own speed, circling cars spaced on it, the trunk given priority at
+  its junctions (local cars book a gap in the trunk's plan to join or cross). Then 1,000 or more circling cars cost almost nothing.
+- Still from the race's seed (different every race, weekday and weekend as now, the same for everyone in a room): the trips come
+  from it as today, booking is deterministic (`CLAUDE.md`'s determinism rules). A room needs the same version, as usual.
+- What the owner was told it costs: queue driving a little simpler unless the curves are done well; each small interaction a rule
+  to write; a big rework (about 2,400 lines of `TrafficDay`'s driving and many of trafficview's checks) and a few rounds of testing.
+  What they gain: density limited only by drawing, no 3 s build, no gridlock.
+- trafficview: keep the checks that still mean something (no two cars closer than a car's length on a lane, the junction boxes,
+  counts by road class against PennDOT, the hours' shape, the wrap, parking, the physics cars' checks); add: queues at the peak
+  (lengths at the busiest junctions), the gaps between circling cars along the trunk, the build time and memory at 1,000 and 3,000
+  circling cars. Run trafficsim too (the room reads the ledger).
+- Near the player nothing changes: physics cars with `TrafficDrive`, contact physics, the ledger, the room.
+
+**B. Drawn cars made cheap to draw** (agreed). Past a near ring (say 150 units, where the GameObject cars with their box stay, for
+contact physics and walls), draw cars with `Graphics.RenderMeshInstanced`: per look, one call per body mesh and material, instances
+grouped by paint (a material per paint per look, as now), wheels as instances too (or left off far out); heights from the road
+(`Network.Point`) and the plan, not raycasts; no shadows past a distance. Then raise `MostDrawn` from 72 to several hundred and the
+moving reach on the trunk toward the fog's end. Lamps at night: the nearest few keep real lights as now; far ones emissive only.
+
+**Not now (the owner):** fewer physics cars on the highway ("it's a racing game, you weave all over the highway"; maybe later).
+
+## History: after 0.32.1; 0.32.2 and 0.32.3 below
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
