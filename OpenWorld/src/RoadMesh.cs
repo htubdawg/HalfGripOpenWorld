@@ -137,6 +137,10 @@ namespace HalfGripOpenWorld
 						Strip(roads, road, i, a, b, bridge);
 					}
 				}
+				if (road.Kind == RoadKind.Trunk)
+				{
+					TrunkPaint(roads, r, road, i, spans);
+				}
 				if (verge)
 				{
 					// Each side's verge or sidewalk along its own edge, which runs on past the full width to its own cut.
@@ -271,7 +275,7 @@ namespace HalfGripOpenWorld
 			float lo, hi;
 			switch (hub.Kind)
 			{
-				case RoadKind.Trunk: lo = 5.5f / 66f; hi = 14.5f / 66f; break;
+				case RoadKind.Trunk: lo = 12.5f / 80f; hi = 21.5f / 80f; break;
 				case RoadKind.Primary: lo = 3.5f / 28f; hi = 12.5f / 28f; break;
 				case RoadKind.Secondary: lo = 2.5f / 24f; hi = 10.5f / 24f; break;
 				case RoadKind.Street: lo = 0.5f / 20f; hi = 8.5f / 20f; break;
@@ -540,6 +544,85 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return false;
+		}
+
+		/// <summary>Columns of the trunk's texture the junction lanes' paint samples: plain asphalt, the dashed lane line, the solid edge line.</summary>
+		private const float TrunkAsphalt = 7.5f / 80f, TrunkDashed = 22.5f / 80f, TrunkSolid = 11.5f / 80f;
+		/// <summary>How far from the trunk's centre its outer edge line is (the deceleration and acceleration lanes' inner line), and their own edge line.</summary>
+		private const double TrunkEdgeLine = 28.5, TrunkLaneEdge = 39.0;
+		/// <summary>The paint stands this far over the surface, so it is drawn over it.</summary>
+		private const float PaintLift = 0.03f;
+
+		/// <summary>
+		/// The trunk's junction lanes (<see cref="TrunkLanes"/>) painted over piece i where it is drawn: a deceleration or acceleration
+		/// lane turns the outer edge line into a dashed lane line with an edge line out past it, moving out over the taper; a median lane
+		/// is asphalt over the concrete median, opening over its tapers. Drawn with the trunk's own material, from its columns.
+		/// </summary>
+		private static void TrunkPaint(Mesher m, int r, Network.Road road, int i, List<(double t0, double t1)> spans)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			foreach (TrunkLanes.Zone z in TrunkLanes.Zones)
+			{
+				if (z.Road != r || z.S1 <= sa || z.S0 >= sb || sb <= sa)
+				{
+					continue;
+				}
+				foreach ((double t0, double t1) in spans)
+				{
+					double a = Math.Max(t0, (z.S0 - sa) / (sb - sa)), b = Math.Min(t1, (z.S1 - sa) / (sb - sa));
+					if (b <= a)
+					{
+						continue;
+					}
+					// Short steps, so the tapers come out as slants.
+					int steps = Math.Max(1, (int)Math.Ceiling((b - a) * (sb - sa) / 20.0));
+					for (int k = 0; k < steps; k++)
+					{
+						double ta = a + (b - a) * k / steps, tb = a + (b - a) * (k + 1) / steps;
+						double ra = Ramp(z, sa + (sb - sa) * ta), rb = Ramp(z, sa + (sb - sa) * tb);
+						if (z.Kind == TrunkLanes.Median)
+						{
+							Paint(m, road, i, ta, tb, -5.0 * ra, 5.0 * ra, -5.0 * rb, 5.0 * rb, TrunkAsphalt);
+						}
+						else
+						{
+							// The carriageway going the way S grows is on the right (side -1).
+							double side = z.Dir > 0 ? -1.0 : 1.0;
+							Paint(m, road, i, ta, tb, side * (TrunkEdgeLine - 0.5), side * (TrunkEdgeLine + 0.5), side * (TrunkEdgeLine - 0.5), side * (TrunkEdgeLine + 0.5), TrunkDashed);
+							double ea = TrunkEdgeLine + (TrunkLaneEdge - TrunkEdgeLine) * ra, eb = TrunkEdgeLine + (TrunkLaneEdge - TrunkEdgeLine) * rb;
+							Paint(m, road, i, ta, tb, side * (ea - 0.5), side * (ea + 0.5), side * (eb - 0.5), side * (eb + 0.5), TrunkSolid);
+						}
+					}
+				}
+			}
+		}
+
+		/// <summary>How far open junction lane <paramref name="z"/> is at <paramref name="s"/>: 0 at its ends, 1 past its tapers.</summary>
+		private static double Ramp(TrunkLanes.Zone z, double s)
+		{
+			double f = Math.Min(s - z.S0, z.S1 - s) / TrunkLanes.Taper;
+			return Math.Max(0.0, Math.Min(1.0, f));
+		}
+
+		/// <summary>A strip of paint over fractions ta to tb of piece i, between offsets from the centre (left positive) at each end, all of one texture column.</summary>
+		private static void Paint(Mesher m, Network.Road road, int i, double ta, double tb, double loA, double hiA, double loB, double hiB, float u)
+		{
+			if (hiA - loA < 0.05 && hiB - loB < 0.05)
+			{
+				return;
+			}
+			Vector3 la = PaintAt(m, road, i, ta, hiA), lb = PaintAt(m, road, i, tb, hiB);
+			Vector3 ra = PaintAt(m, road, i, ta, loA), rb = PaintAt(m, road, i, tb, loB);
+			float va = V(road, i, ta), vb = V(road, i, tb);
+			m.Quad(Paving(RoadKind.Trunk), la, lb, ra, rb, new Vector2(u, va), new Vector2(u, vb), new Vector2(u, va), new Vector2(u, vb));
+		}
+
+		/// <summary>A point <paramref name="off"/> left of the trunk's centre at fraction t of piece i, on its surface and the paint's lift over it.</summary>
+		private static Vector3 PaintAt(Mesher m, Network.Road road, int i, double t, double off)
+		{
+			double s = road.S[i] * (1.0 - t) + road.S[i + 1] * t;
+			Network.Point(road, i, t, off / Network.HalfAt(road, s), 0.0, out double x, out double z, out double y);
+			return new Vector3((float)(x - m.Ox), (float)(y + Network.Lift) + PaintLift, (float)(z - m.Oz));
 		}
 
 		/// <summary>The road's surface over fractions a to b of piece i, and a bridge's sides and parapets.</summary>
@@ -1112,20 +1195,24 @@ namespace HalfGripOpenWorld
 			return m;
 		}
 
-		/// <summary>One pixel per unit across (66) and along (40): two carriageways of two lanes, shoulders, a concrete median.</summary>
+		/// <summary>
+		/// One pixel per unit across (80) and along (40): two carriageways of two lanes, paved shoulders a lane wide, a concrete median.
+		/// The junctions' lanes are painted over it (<see cref="TrunkPaint"/>), sampling its columns: <see cref="TrunkAsphalt"/>, the
+		/// dashed lane line, the solid edge line.
+		/// </summary>
 		private static Texture2D Trunk()
 		{
 			Color asphalt = new Color(0.27f, 0.27f, 0.29f);
 			Color white = new Color(0.86f, 0.86f, 0.82f);
 			Color yellow = new Color(0.85f, 0.70f, 0.20f);
-			Texture2D t = Blank(66, (int)TextureLength, asphalt, false);
-			Fill(t, 28, 38, new Color(0.55f, 0.55f, 0.52f));
-			Line(t, 4, white, 40);
-			Line(t, 15, white, 15);
-			Line(t, 27, yellow, 40);
-			Line(t, 38, yellow, 40);
-			Line(t, 50, white, 15);
-			Line(t, 61, white, 40);
+			Texture2D t = Blank(80, (int)TextureLength, asphalt, false);
+			Fill(t, 35, 45, new Color(0.55f, 0.55f, 0.52f));
+			Line(t, 11, white, 40);
+			Line(t, 22, white, 15);
+			Line(t, 34, yellow, 40);
+			Line(t, 45, yellow, 40);
+			Line(t, 57, white, 15);
+			Line(t, 68, white, 40);
 			t.Apply();
 			return t;
 		}

@@ -234,8 +234,8 @@ namespace HalfGripOpenWorld
 		internal const double HighwayBoxBack = 200.0;
 
 		/// <summary>
-		/// The middle of a carriageway of the trunk road, from its centre line: the road is 66 across, a median 10 wide in the middle,
-		/// two lanes of 11 each side and a shoulder of 4 outside them (RoadMesh's texture).
+		/// The middle of a carriageway of the trunk road, from its centre line: the road is 80 across, a median 10 wide in the middle,
+		/// a shoulder of 2 each side of it, two lanes of 11 each side and a shoulder of 11 outside them (RoadMesh's texture).
 		/// </summary>
 		internal const double Carriageway = 17.5;
 

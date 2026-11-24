@@ -594,6 +594,12 @@ namespace HalfGripOpenWorld
 						// The right of way (the main line, as the day has it): a car giving way waits for a gap, whatever its wait, as long as
 						// one it gives way to gets there before it would be through; one with the right of way never waits for a physics
 						// car giving way to it (a drawn one, which follows its timetable, is still let go first when it is sooner).
+						if (o.OutArm == me.OutArm && TrafficDay.EntryIx(me.Node, me.InArm, me.OutArm) != 0 && TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
+						{
+							// Onto the trunk into a junction lane (an acceleration lane, or the median's): the car going on along the trunk
+							// that way is in another lane, so it is no bar.
+							continue;
+						}
 						if (TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
 						{
 							double box = Traffic.Nodes[me.Node].Box;
@@ -605,7 +611,7 @@ namespace HalfGripOpenWorld
 							{
 								continue;
 							}
-							if (o.ToBox / Math.Max(ov, 4.0) < clearMe)
+							if (o.ToBox / Math.Max(ov, 4.0) < Math.Max(clearMe, TrafficDay.SideGap(me.Node, me.InArm, me.OutArm, waited)))
 							{
 								hold = true;
 								break;
