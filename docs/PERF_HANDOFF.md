@@ -15,8 +15,8 @@ researched afresh by another agent. **0.33.0 as pushed on `traffic-test-branch` 
 - Junction boxes are the widest road's half width and 2 along every arm, which is too short where a road meets another at a slant: a
   car waiting at the line stands on the other road's paving (about 50 arms of 2,244; at the trunk's junctions only a little).
 
-**Unfinished fixes, committed on `traffic-test-branch` after 0.33.0 (the commit "Unfinished: trunk junction crossing fixes";
-compiles, NOT checked over the 16 seeds, the version still 0.33.0; `git diff 7d7f4df` shows them, `git revert` takes them out):**
+**Unfinished fixes, on branch `traffic-highway-crossing-fixes` (on top of 0.33.0, which is `traffic-test-branch`; compiles, NOT
+checked over the 16 seeds, the version still 0.33.0; `git diff traffic-test-branch` shows them):**
 - Trunk junctions (`twoLaneMain`): a car turning left off the trunk always gives way to oncoming cars and moves into the inner lane
   before a left exit (outer before a right one); cars going on keep to the outer lane within 400 units of a trunk junction, so the
   inner lane there works as a turning lane (`PocketAhead`); cars may change lanes from a standstill and while let into a junction they
