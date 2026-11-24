@@ -2657,12 +2657,6 @@ namespace HalfGripOpenWorld
 					// Overtaking and keeping right wait a while between changes; getting into the lane for its turn does not.
 					continue;
 				}
-				if (exitLane < 0 && PocketAhead(m))
-				{
-					// Going on past a trunk junction: the outer lane, leaving the inner one to the cars waiting there to turn left.
-					exitLane = 0;
-				}
-				bool exit = exitLane >= 0;
 				double v0 = Math.Max(0.5, DesiredAt(m.L.Profile, m.P));
 				double here = Follow(m, m.Ahead, v0);
 				bool toInner;
