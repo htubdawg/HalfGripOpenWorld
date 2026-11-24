@@ -58,8 +58,13 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private const double LastOut = 1800.0;
 
-		/// <summary>A car waiting this long to pull out is let in: the car behind it on the lane leaves it a gap.</summary>
+		/// <summary>
+		/// A car waiting this long to pull out is let in: the car behind it on the lane leaves it a gap. Only on a road no faster than
+		/// <see cref="SlowRoad"/> (a town street): elsewhere it waits until the road is clear, as the manual says.
+		/// </summary>
 		private const double LetInAfter = 20.0;
+		/// <summary>The fastest road (a 25 mph street) where a car pulling out may be let in, or take a short gap (units a second).</summary>
+		private const double SlowRoad = 26.0 * Traffic.Mph;
 		/// <summary>
 		/// The shortest stay at a place. A stay is counted from leaving home, not from arriving: the world's clock runs 36 times fast and
 		/// driving does not, so a drive spans an hour or two of it, and a stay counted from arriving would push every way home late into
@@ -1030,8 +1035,15 @@ namespace HalfGripOpenWorld
 			public double LaneU;
 			/// <summary>The car just ahead on the same lane this step (null if none).</summary>
 			public Mover Ahead;
-			/// <summary>On the trunk's inner lane (its outer lane otherwise, and on every other road); when it last changed lanes; its changes (as <see cref="Leg.Lanes"/>).</summary>
-			public bool Inner;
+			/// <summary>
+			/// Which of the trunk's lanes it is in (0 the outer, and the one lane of every other road; 1 the inner; <see cref="AuxIx"/> a
+			/// junction's deceleration or acceleration lane; <see cref="MedianIx"/> a median lane); when it last changed lanes; its changes
+			/// (as <see cref="Leg.Lanes"/>).
+			/// </summary>
+			public int Ix;
+			public bool Inner { get => Ix == 1; set => Ix = value ? 1 : 0; }
+			/// <summary>In a junction lane it merges from (not the one it turns off from): where along its path that lane ends (MaxValue: none).</summary>
+			public double LaneEnd = double.MaxValue;
 			public double Changed = -1e9;
 			public List<float> LaneRec;
 		}
@@ -1068,11 +1080,20 @@ namespace HalfGripOpenWorld
 		/// <summary>Added to a lane's key for the trunk's inner lane beside it.</summary>
 		private const long InnerKey = 1L << 40;
 
-		/// <summary>The lane mover <paramref name="m"/> is in (or keeps to) on seg <paramref name="s"/>: the inner one there if it is on the trunk's inner lane and <paramref name="s"/> has one.</summary>
+		/// <summary>The lane mover <paramref name="m"/> is in (or keeps to) on seg <paramref name="s"/>: its trunk lane there if <paramref name="s"/> is on the trunk.</summary>
 		private static long LaneOf(Mover m, Seg s)
 		{
-			return LaneOf(s) + (m.Inner && TwoLane(s) ? InnerKey : 0L);
+			return LaneKey(s, m.Ix);
 		}
+
+		/// <summary>Lane <paramref name="ix"/> of seg <paramref name="s"/> (0 on a road with one lane each way).</summary>
+		private static long LaneKey(Seg s, int ix)
+		{
+			return LaneOf(s) + (TwoLane(s) ? ix * InnerKey : 0L);
+		}
+
+		/// <summary>Lane indexes of the trunk's junction lanes (<see cref="TrunkLanes"/>): its deceleration and acceleration lanes, its median lanes.</summary>
+		internal const int AuxIx = 2, MedianIx = 3;
 
 		/// <summary>
 		/// Whether two movements through a node, each with the lanes it comes in and leaves by, cross: as <see cref="Crosses"/>, but two
@@ -1280,6 +1301,17 @@ namespace HalfGripOpenWorld
 			return LeftTurn(node, inA, outA) || (!inMain && !outMain);
 		}
 
+		/// <summary>Whether a movement through node <paramref name="node"/> crosses another stream: a turn left anywhere, or across a main road from side to side, or across a carriageway of the trunk.</summary>
+		private static bool CrossesTraffic(int node, int inA, int outA)
+		{
+			if (CrossesCarriageway(node, inA, outA) || LeftTurn(node, inA, outA))
+			{
+				return true;
+			}
+			int a0 = mainA[node], a1 = mainB[node];
+			return a0 >= 0 && inA != a0 && inA != a1 && outA != a0 && outA != a1;
+		}
+
 		/// <summary>Whether the way in along arm <paramref name="inA"/> and out along <paramref name="outA"/> turns left (across the oncoming lane: traffic keeps right).</summary>
 		private static bool LeftTurn(int node, int inA, int outA)
 		{
@@ -1318,16 +1350,71 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			return (MainTurnsGiveWay || twoLaneMain[node]) && MainTurnYields(node, inA, outA, inB, outB, a0, a1);
+			return MainTurnYields(node, inA, outA, inB, outB, a0, a1);
 		}
 
 		/// <summary>
-		/// Whether a car turning off the main line across the oncoming lane gives way to the oncoming main-line car. Off: tried in
-		/// trafficview (seed 1, 100 circling cars), the cars turning left off the trunk waited in its one lane for a gap and the trunk's
-		/// cars stood behind them for three times as long as with the turn first come first served, where one oncoming car stops now and then.
-		/// There is no turning lane for them to wait in.
+		/// Unused since 0.34.0, kept so trafficview's switch still compiles: a car turning left off the main line always gives way to the
+		/// oncoming cars going on ("Drivers turning left must yield to oncoming vehicles going straight ahead", PA Driver's Manual p. 48).
+		/// 0.33.0 had it first come first served, and left-turners cut across oncoming traffic (the owner's report).
 		/// </summary>
 		internal static bool MainTurnsGiveWay { get; set; }
+
+		/// <summary>
+		/// The gap a car from a side arm leaves before a car with the right of way gets to the junction (seconds), from the PA Driver's
+		/// Manual (p. 49): "about a 6-second gap in both directions to cross", "a gap of about eight (8) seconds ... approaching from the
+		/// left" to turn right, "a 9-second gap" turning left from a minor onto a major street. Not shortened by waiting: the manual has no
+		/// such thing. 0 for a car on the main line (a left turn off it needs only to be clear of the oncoming car).
+		/// </summary>
+		internal static double SideGap(int node, int inA, int outA, double waited)
+		{
+			double gap = SideGap(node, inA, outA);
+			if (mainA[node] >= 0 && !twoLaneMain[node])
+			{
+				// Off the trunk a driver kept waiting takes a shorter gap, down to half after 10 s (as studies of gap
+				// acceptance find); the car it goes in front of still never has to brake hard (TooSoon).
+				gap *= 1.0 - (1.0 - TownPatience) * Math.Min(1.0, waited / TownPatienceAfter);
+			}
+			return gap;
+		}
+
+		private const double TownPatience = 0.5, TownPatienceAfter = 10.0;
+
+		internal static double SideGap(int node, int inA, int outA)
+		{
+			if (mainA[node] < 0 || inA == mainA[node] || inA == mainB[node])
+			{
+				return 0.0;
+			}
+			int entry = EntryIx(node, inA, outA);
+			if (entry == MedianIx)
+			{
+				// Turning left onto the trunk in two stages: across the near carriageway into the median lane, as across a road.
+				return AcrossGap;
+			}
+			bool trunk = twoLaneMain[node];
+			if (LeftTurn(node, inA, outA))
+			{
+				return trunk ? LeftGap : TownLeftGap;
+			}
+			return RightTurn(node, inA, outA) ? (trunk ? RightGap : TownRightGap) : (trunk ? AcrossGap : TownAcrossGap);
+		}
+
+		/// <summary>The manual's gaps (p. 49), kept onto the trunk, where a misjudged one meets 55 mph.</summary>
+		internal const double LeftGap = 9.0, RightGap = 8.0, AcrossGap = 6.0;
+		/// <summary>
+		/// Onto every other road, the gaps drivers are measured to take (the Highway Capacity Manual's critical headways for a two-way
+		/// stop onto a two-lane road: 7.1 s turning left, 6.2 s right, 6.5 s across). The manual's 8 and 9 s, everywhere, held the towns'
+		/// side streets up for twice as long as before (seed 1: 2,084 minutes waiting at junctions against 1,231) with nothing gained.
+		/// </summary>
+		internal const double TownLeftGap = 7.1, TownRightGap = 6.2, TownAcrossGap = 6.5;
+
+		/// <summary>Whether the way in along arm <paramref name="inA"/> and out along <paramref name="outA"/> turns right (traffic keeps right: no oncoming lane crossed).</summary>
+		private static bool RightTurn(int node, int inA, int outA)
+		{
+			double tx = -armX[node][inA], tz = -armZ[node][inA];
+			return tx * armZ[node][outA] - tz * armX[node][outA] < -0.3;
+		}
 
 		/// <summary>
 		/// Per node, whether its main line is the trunk's (two lanes each way): there a car turning off across the oncoming carriageway
@@ -1411,7 +1498,8 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					double turn = cos <= cos45 ? TurnSpeed : TurnSpeed + (v[i] - TurnSpeed) * (cos - cos45) / (cos20 - cos45);
+					double sharp = TurnAt(box);
+					double turn = cos <= cos45 ? sharp : sharp + (v[i] - sharp) * (cos - cos45) / (cos20 - cos45);
 					v[i] = (float)Math.Min(v[i], turn);
 				}
 			}
@@ -1430,6 +1518,18 @@ namespace HalfGripOpenWorld
 			}
 			return v;
 		}
+
+		/// <summary>
+		/// The speed of a sharp turn through a junction whose box is <paramref name="box"/> (half) across: round a curve about that
+		/// radius at the bends' sideways pull (<see cref="Lateral"/>), from <see cref="TurnSpeed"/> at a town street's corner to about
+		/// 15 mph across the trunk, 80 wide (a left off it at walking pace took 9 s to clear, longer than any gap its traffic left).
+		/// </summary>
+		internal static double TurnAt(double box)
+		{
+			return Math.Max(TurnSpeed, Math.Min(MostTurn, Math.Sqrt(Lateral * box)));
+		}
+
+		private const double MostTurn = 22.0;
 
 		internal static double DesiredAt(float[] profile, double p)
 		{
@@ -1558,6 +1658,10 @@ namespace HalfGripOpenWorld
 					while (m.Seg + 1 < path.Length && m.P >= path[m.Seg].P0 + path[m.Seg].Len)
 					{
 						m.Seg++;
+						if (TwoLane(path[m.Seg]) && !TwoLane(path[m.Seg - 1]))
+						{
+							EnterTrunk(m, w);
+						}
 					}
 					double limit = path[m.Seg].Speed;
 					if (m.V > limit * 1.05)
@@ -1781,10 +1885,11 @@ namespace HalfGripOpenWorld
 		private void AddToLane(Mover m)
 		{
 			Seg s = m.L.Path[m.Seg];
-			if (m.Inner && !TwoLane(s))
+			if (m.Ix != 0 && !TwoLane(s))
 			{
 				// Off the trunk: its one lane (the move over is drawn through the junction's curve).
-				m.Inner = false;
+				m.Ix = 0;
+				m.LaneEnd = double.MaxValue;
 			}
 			m.Lane = LaneOf(m, s);
 			m.LaneU = LaneU(s, m.P);
@@ -1858,13 +1963,17 @@ namespace HalfGripOpenWorld
 						}
 					}
 				}
+				// "A vehicle entering a public highway from an alley, private road or driveway must wait until the main road is clear"
+				// (PA Driver's Manual p. 48): on a road faster than a 25 mph street, the gap a car turning right leaves (8 s).
+				bool slowRoad = first.Speed <= SlowRoad;
+				double pullGap = slowRoad ? 3.0 : RightGap;
 				List<Mover> list = null;
 				if (clear && lanes.TryGetValue(lane, out list))
 				{
 					foreach (Mover o in list)
 					{
 						double d = o.LaneU - u;
-						if (Math.Abs(d) < 40.0 || (d < 0.0 && -d < 3.0 * o.V))
+						if (Math.Abs(d) < 40.0 || (d < 0.0 && -d < pullGap * o.V))
 						{
 							clear = false;
 							break;
@@ -1890,7 +1999,7 @@ namespace HalfGripOpenWorld
 				}
 				// Let in: after a while the car just behind leaves a gap (below), and the car pulls out once the gap is there and
 				// nothing is coming fast.
-				if (!clear && w - leg.Ready >= LetInAfter && !Coming(first, u))
+				if (!clear && slowRoad && w - leg.Ready >= LetInAfter && !Coming(first, u))
 				{
 					bool gap = true;
 					if (list != null || lanes.TryGetValue(lane, out list))
@@ -2167,7 +2276,7 @@ namespace HalfGripOpenWorld
 				{
 					M = m, Node = node, SegIndex = k, NodeP = nodeP,
 					InArm = LinkIndex(node, path[k].Edge), OutArm = LinkIndex(node, path[k + 1].Edge),
-					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneOf(path[k + 1]),
+					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneKey(path[k + 1], EntryIx(path, k)),
 					Eta = ArriveTime(m.V, nodeP - box - m.P, Math.Max(m.V, DesiredAt(m.L.Profile, m.P + Math.Max(0.0, nodeP - box - m.P)))),
 				});
 			}
@@ -2339,12 +2448,11 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The margin a car giving way keeps: it is out of the box this long before a car with the right of way gets to it. A driver kept
-		/// waiting takes smaller gaps (down to <see cref="GiveWayLeast"/> after <see cref="GiveWayPatience"/>), as drivers do: on the trunk,
-		/// in the game's quick day, a long gap both ways seldom comes. The least is what the car with the right of way allows a car in the
-		/// box, so it never waits for it.
+		/// The margin a car giving way keeps: it is out of the box this long before a car with the right of way gets to it, and never
+		/// sooner than the manual's gap (<see cref="SideGap"/>). Waiting no longer shrinks it (0.34.0: <see cref="GiveWayLeast"/> is the
+		/// margin itself): the PA Driver's Manual has no shorter gap for an impatient driver, and a car taking one made the trunk brake.
 		/// </summary>
-		internal const double GiveWayMargin = 1.0, GiveWayLeast = 0.6, GiveWayPatience = 20.0;
+		internal const double GiveWayMargin = 1.0, GiveWayLeast = 1.0, GiveWayPatience = 20.0;
 
 		/// <summary>The margin of a car giving way after waiting <paramref name="waited"/> seconds.</summary>
 		internal static double GiveWayAfter(double waited)
@@ -2375,7 +2483,8 @@ namespace HalfGripOpenWorld
 			// Its own pull-away through the box, as it will drive it: past the near half, and out of the box at what speed.
 			double farP = r.NodeP + box + Traffic.CarLength;
 			PullAway(r.M, r.NodeP + Traffic.CarLength, farP, out double tNear, out double tFar, out double vFar);
-			double look = Math.Min(GiveWayLook, GiveWayFastest * (tFar + margin) + box + 300.0);
+			double gap = SideGap(node, r.InArm, r.OutArm, r.M.Wait);
+			double look = Math.Min(GiveWayLook, GiveWayFastest * Math.Max(tFar + margin, gap) + box + 300.0);
 			List<int> links = Traffic.Links[node];
 			lookBack.Clear();
 			for (int a = 0; a < links.Count; a++)
@@ -2390,7 +2499,7 @@ namespace HalfGripOpenWorld
 				(int edge, int toward, double before, int depth) = lookBack[i];
 				Traffic.Edge e = Traffic.Edges[edge];
 				long lane0 = edge * 2L + (e.B == toward ? 1 : 0);
-				for (int sub = 0; sub < (twoLaneEdge[edge] ? 2 : 1); sub++)
+				for (int sub = 0; sub < (twoLaneEdge[edge] ? 4 : 1); sub++)
 				{
 				if (lanes.TryGetValue(lane0 + sub * InnerKey, out List<Mover> list))
 				{
@@ -2415,7 +2524,7 @@ namespace HalfGripOpenWorld
 							{
 								break;
 							}
-							if (TooSoon(r, box, o, k, inA, outA, tNear, tFar, vFar, margin))
+							if (TooSoon(r, box, o, k, inA, outA, tNear, tFar, vFar, margin, depth == 0))
 							{
 								return true;
 							}
@@ -2446,7 +2555,7 @@ namespace HalfGripOpenWorld
 		/// before it is past where their ways cross (<paramref name="tNear"/>, the box's near half, for a car from its left; else
 		/// <paramref name="tFar"/>, the whole box) and the margin; or, joining its lane, without room for it to slow to this car's speed.
 		/// </summary>
-		private bool TooSoon(Request r, double box, Mover o, int k, int inA, int outA, double tNear, double tFar, double vFar, double margin)
+		private bool TooSoon(Request r, double box, Mover o, int k, int inA, int outA, double tNear, double tFar, double vFar, double margin, bool block = true)
 		{
 			int node = r.Node;
 			Seg[] path = o.L.Path;
@@ -2463,7 +2572,14 @@ namespace HalfGripOpenWorld
 				top = Math.Max(o.V, Math.Min(top, o.Ahead.V + Accel));
 			}
 			double arrive = ArriveTime(o.V, d, top);
-			if (arrive < (NearHalf(node, r.InArm, r.OutArm, inA, outA) ? tNear : tFar) + margin)
+			// The manual's gap counts the cars within a block of the junction ("about a 6-second gap ... or about a block of clear space
+			// to the right and left", p. 49): off the trunk, those on the roads straight into it; any further off need only find it clear.
+			double need = (NearHalf(node, r.InArm, r.OutArm, inA, outA) ? tNear : tFar) + margin;
+			if (block || twoLaneMain[node])
+			{
+				need = Math.Max(need, SideGap(node, r.InArm, r.OutArm, r.M.Wait));
+			}
+			if (arrive < need)
 			{
 				return true;
 			}
@@ -2493,7 +2609,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The hardest braking a lane change may ask of the car it moves in front of, or of itself behind its new leader.</summary>
 		private const double ChangeBrake = 0.4 * Brake;
 		/// <summary>A car back in the outer lane this far before it leaves the trunk; looks for a car waiting to join this far ahead.</summary>
-		private const double ExitReady = 700.0, JoinLook = 500.0;
+		private const double ExitReady = 1200.0, JoinLook = 500.0;
 
 		/// <summary>Lane changes counted for trafficview: overtaking, keeping right (and before an exit), moving over for a car joining.</summary>
 		internal int Overtakes, KeptRight, MovedOver;
@@ -2507,12 +2623,13 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool LaneChanges(double w)
 		{
-			bool any = false;
+			zipper.Clear();
+			bool any = JunctionLanes(w);
 			foreach (Mover m in movers)
 			{
 				Seg[] path = m.L.Path;
 				Seg s = path[m.Seg];
-				if (!TwoLane(s) || w < m.HoldUntil || w - m.Changed < KeepLane || !GrantsGoOn(m))
+				if (!TwoLane(s) || w < m.HoldUntil || m.Ix >= AuxIx || w - m.Changed < JunctionLaneKeep || !GrantsGoOn(m))
 				{
 					continue;
 				}
@@ -2533,6 +2650,12 @@ namespace HalfGripOpenWorld
 						int node = NodeAfter(path, k - 1);
 						exitLane = node >= 0 && twoLaneMain[node] && LeftTurn(node, LinkIndex(node, path[k - 1].Edge), LinkIndex(node, path[k].Edge)) ? 1 : 0;
 					}
+				}
+				bool exit = exitLane >= 0;
+				if (!exit && w - m.Changed < KeepLane)
+				{
+					// Overtaking and keeping right wait a while between changes; getting into the lane for its turn does not.
+					continue;
 				}
 				if (exitLane < 0 && PocketAhead(m))
 				{
@@ -2579,6 +2702,10 @@ namespace HalfGripOpenWorld
 				long target = LaneOf(s) + (toInner ? InnerKey : 0L);
 				if (!RoomIn(target, m) || !GrantsAllow(m, toInner))
 				{
+					if (exit)
+					{
+						Zip(m, target);
+					}
 					continue;
 				}
 				MoveGrants(m, toInner);
@@ -2632,6 +2759,489 @@ namespace HalfGripOpenWorld
 			return any;
 		}
 
+		// ---- the trunk's junction lanes (TrunkLanes) -----------------------------------------------------------------------------
+
+		/// <summary>Seconds a car keeps to a lane before moving into a junction lane or merging out of one (shorter than between overtakes: it is getting where it must be).</summary>
+		private const double JunctionLaneKeep = 1.5;
+		/// <summary>How far ahead a car on the trunk looks for the junction it turns off at.</summary>
+		private const double ExitLook = 2000.0;
+
+		/// <summary>The lane a car going from path seg <paramref name="k"/> onto the trunk at k + 1 comes into (see the node overload).</summary>
+		private static int EntryIx(Seg[] path, int k)
+		{
+			if (k + 1 >= path.Length || !TwoLane(path[k + 1]) || TwoLane(path[k]))
+			{
+				return 0;
+			}
+			int node = NodeAfter(path, k);
+			return node < 0 ? 0 : EntryIx(node, LinkIndex(node, path[k].Edge), LinkIndex(node, path[k + 1].Edge));
+		}
+
+		/// <summary>
+		/// The lane a car from a side arm comes into on the trunk at node <paramref name="node"/>: a turn right into the acceleration lane
+		/// beside the near carriageway, a turn left into the median lane beside the far one (two stages), where those lanes are there;
+		/// else the outer lane (0).
+		/// </summary>
+		internal static int EntryIx(int node, int inA, int outA)
+		{
+			if (node < 0 || inA < 0 || outA < 0 || mainA[node] < 0 || inA == mainA[node] || inA == mainB[node] || (outA != mainA[node] && outA != mainB[node]))
+			{
+				return 0;
+			}
+			int edge = Traffic.Links[node][outA];
+			if (!twoLaneEdge[edge])
+			{
+				return 0;
+			}
+			Traffic.Edge e = Traffic.Edges[edge];
+			int dir = e.A == node ? 1 : -1;
+			double s = (e.A == node ? e.Sa : e.Sb) + dir * (TrunkLanes.Mouth + 5.0);
+			bool left = LeftTurn(node, inA, outA);
+			int kind = left ? TrunkLanes.Median : TrunkLanes.Aux;
+			return TrunkLanes.Find(e.Road, kind, dir, s) >= 0 ? (left ? MedianIx : AuxIx) : 0;
+		}
+
+		/// <summary>How far left of the outer lane lane index <paramref name="ix"/> is drawn, in lane widths (as <see cref="Leg.Lanes"/> records it).</summary>
+		private static float LaneValue(int ix)
+		{
+			return ix == 1 ? 1f : ix == AuxIx ? (float)TrunkLanes.AuxLane : ix == MedianIx ? (float)TrunkLanes.MedianLane : 0f;
+		}
+
+		/// <summary>Distance along the trunk road at path distance <paramref name="p"/> on seg <paramref name="s"/>.</summary>
+		private static double RoadS(Seg s, double p)
+		{
+			return s.S0 + s.Dir * (p - s.P0);
+		}
+
+		/// <summary>Mover <paramref name="m"/> has just come onto the trunk from a side road: into the junction lane its turn leads to, if any.</summary>
+		private void EnterTrunk(Mover m, double w)
+		{
+			int ix = EntryIx(m.L.Path, m.Seg - 1);
+			m.Ix = ix;
+			m.LaneEnd = double.MaxValue;
+			// Drawn in that lane from the junction (a car that left the trunk from another lane earlier is drawn back in the outer one).
+			List<float> rec = m.LaneRec;
+			if (ix == 0 && (rec == null || rec[rec.Count - 1] == 0f))
+			{
+				return;
+			}
+			Seg s = m.L.Path[m.Seg];
+			if (m.LaneRec == null)
+			{
+				m.LaneRec = new List<float>();
+			}
+			m.LaneRec.Add((float)s.P0);
+			m.LaneRec.Add((float)(s.P0 + 1.0));
+			m.LaneRec.Add(LaneValue(ix));
+			m.Changed = w;
+		}
+
+		/// <summary>
+		/// The junction mover <paramref name="m"/> turns off the trunk at next, within <see cref="ExitLook"/>: the path distance and road
+		/// distance of its node, and whether it turns left there (across the oncoming carriageway). False if none (it goes on, or ends).
+		/// </summary>
+		private static bool ExitAhead(Mover m, out double exitS, out bool left)
+		{
+			exitS = 0.0;
+			left = false;
+			Seg[] path = m.L.Path;
+			for (int k = m.Seg + 1; k < path.Length && path[k].P0 - m.P < ExitLook; k++)
+			{
+				if (TwoLane(path[k]))
+				{
+					continue;
+				}
+				int node = NodeAfter(path, k - 1);
+				if (node < 0)
+				{
+					return false;
+				}
+				Seg before = path[k - 1];
+				exitS = RoadS(before, before.P0 + before.Len);
+				left = LeftTurn(node, LinkIndex(node, before.Edge), LinkIndex(node, path[k].Edge));
+				return true;
+			}
+			return false;
+		}
+
+		/// <summary>Whether junction lane <paramref name="zone"/> leads to a junction at road distance <paramref name="exitS"/> (it ends at that junction's mouth, or runs on through it).</summary>
+		private static bool Leads(int zone, double exitS)
+		{
+			TrunkLanes.Zone z = TrunkLanes.Zones[zone];
+			double reach = TrunkLanes.Mouth + 10.0;
+			return z.Dir > 0 ? exitS >= z.S0 && exitS <= z.S1 + reach : exitS <= z.S1 && exitS >= z.S0 - reach;
+		}
+
+		/// <summary>Path distance where junction lane <paramref name="zone"/> ends ahead of mover <paramref name="m"/> (MaxValue if past its trunk path).</summary>
+		private static double LaneEndOf(Mover m, int zone)
+		{
+			double end = TrunkLanes.EndOf(zone);
+			int road = TrunkLanes.Zones[zone].Road;
+			Seg[] path = m.L.Path;
+			for (int k = m.Seg; k < path.Length && TwoLane(path[k]); k++)
+			{
+				Seg s = path[k];
+				if (s.Edge < 0 || Traffic.Edges[s.Edge].Road != road)
+				{
+					continue;
+				}
+				double a = RoadS(s, s.P0), b = RoadS(s, s.P0 + s.Len);
+				if ((end - a) * (end - b) <= 0.0)
+				{
+					return s.P0 + (end - s.S0) * s.Dir;
+				}
+			}
+			return double.MaxValue;
+		}
+
+		/// <summary>
+		/// Cars into and out of the trunk's junction lanes: a car turning right off it moves into the deceleration lane once in it (it is
+		/// in the outer lane by then), a car turning left into the median's turn lane (from the inner lane); a car in an acceleration or
+		/// median lane it does not turn off from merges once up to speed and given room (the cars on the trunk brake gently at most), and
+		/// stops at the lane's end if none comes. Before the other lane changes each step.
+		/// </summary>
+		private bool JunctionLanes(double w)
+		{
+			bool any = false;
+			foreach (Mover m in movers)
+			{
+				Seg[] path = m.L.Path;
+				Seg s = path[m.Seg];
+				if (!TwoLane(s) || s.Edge < 0 || w < m.HoldUntil || w - m.Changed < JunctionLaneKeep)
+				{
+					continue;
+				}
+				int road = Traffic.Edges[s.Edge].Road, dir = s.Dir > 0 ? 1 : -1;
+				double rs = RoadS(s, m.P);
+				bool exit = ExitAhead(m, out double exitS, out bool left);
+				if (m.Ix < AuxIx)
+				{
+					if (exit && m.Ix != (left ? 1 : 0) && GrantsGoOn(m) && ExitNear(m) < MissAt)
+					{
+						// Still in the wrong lane for its turn this close to it: it goes on, and takes the next way round.
+						if (Miss(m))
+						{
+							Missed++;
+							continue;
+						}
+						// No way round but back (a turn left off the trunk): slowed in the outer lane, the inner one clear beside it, it
+						// goes over into the median's turn lane rather than stand in a through lane.
+						if (left && m.Ix == 0 && m.V < 5.0)
+						{
+							int mz = TrunkLanes.Find(road, TrunkLanes.Median, dir, rs);
+							long median = LaneKey(s, MedianIx);
+							if (mz >= 0 && Leads(mz, exitS) && RoomIn(LaneKey(s, 1), m) && RoomIn(median, m) && GrantsAllowIx(m, MedianIx))
+							{
+								IntoJunctionLanes++;
+								Switch(m, median, MedianIx, w);
+								any = true;
+							}
+						}
+						continue;
+					}
+					if (!exit || m.Ix != (left ? 1 : 0) || !GrantsGoOn(m))
+					{
+						continue;
+					}
+					int zone = TrunkLanes.Find(road, left ? TrunkLanes.Median : TrunkLanes.Aux, dir, rs);
+					if (zone < 0 || !Leads(zone, exitS))
+					{
+						continue;
+					}
+					int ix = left ? MedianIx : AuxIx;
+					long target = LaneKey(s, ix);
+					if (!RoomIn(target, m) || !GrantsAllowIx(m, ix))
+					{
+						Zip(m, target);
+						continue;
+					}
+					IntoJunctionLanes++;
+					Switch(m, target, ix, w);
+					any = true;
+					continue;
+				}
+				int kind = m.Ix == AuxIx ? TrunkLanes.Aux : TrunkLanes.Median;
+				int here = TrunkLanes.Find(road, kind, dir, rs);
+				if (here < 0)
+				{
+					// In a junction's mouth: the lane it is turning off from ends just behind, the one it has come into begins just ahead.
+					here = TrunkLanes.Find(road, kind, dir, rs - dir * (TrunkLanes.Mouth + 12.0));
+					if (here < 0 || !(exit && left == (m.Ix == MedianIx) && Leads(here, exitS)))
+					{
+						int ahead = TrunkLanes.Find(road, kind, dir, rs + dir * (TrunkLanes.Mouth + 12.0));
+						here = ahead >= 0 ? ahead : here;
+					}
+				}
+				if (here >= 0 && exit && left == (m.Ix == MedianIx) && Leads(here, exitS))
+				{
+					// It turns off from this lane.
+					m.LaneEnd = double.MaxValue;
+					continue;
+				}
+				m.LaneEnd = here >= 0 ? LaneEndOf(m, here) : m.P;
+				double v0 = Math.Max(0.5, DesiredAt(m.L.Profile, m.P));
+				// Up to speed first; but a car turning off soon across the other lanes goes over at once (given room).
+				bool hurry = exit && (left != (m.Ix == MedianIx));
+				if (!hurry && m.V < 0.85 * v0 && m.LaneEnd - m.P > 150.0)
+				{
+					continue;
+				}
+				int back = m.Ix == AuxIx ? 0 : 1;
+				long into = LaneKey(s, back);
+				if (!GrantsGoOn(m) || !RoomIn(into, m) || !GrantsAllowIx(m, back))
+				{
+					continue;
+				}
+				Merged++;
+				m.LaneEnd = double.MaxValue;
+				Switch(m, into, back, w);
+				any = true;
+			}
+			return any;
+		}
+
+		/// <summary>
+		/// For mover <paramref name="m"/>, in the lane next to the junction lane it turns off from (the outer beside a deceleration lane,
+		/// the inner beside the median's): the lane distance of the last car standing in that lane's queue ahead of it, within reach
+		/// of its junction, if it could not move in beside it now (MaxValue: no such queue, or it has room).
+		/// </summary>
+		private double TurnQueueTail(Mover m)
+		{
+			if (!ExitAhead(m, out double exitS, out bool left) || m.Ix != (left ? 1 : 0))
+			{
+				return double.MaxValue;
+			}
+			Seg s = m.L.Path[m.Seg];
+			int road = Traffic.Edges[s.Edge].Road, dir = s.Dir > 0 ? 1 : -1;
+			int zone = TrunkLanes.Find(road, left ? TrunkLanes.Median : TrunkLanes.Aux, dir, RoadS(s, m.P));
+			if (zone < 0 || !Leads(zone, exitS) || !lanes.TryGetValue(LaneKey(s, left ? MedianIx : AuxIx), out List<Mover> list))
+			{
+				return double.MaxValue;
+			}
+			double tail = double.MaxValue;
+			foreach (Mover o in list)
+			{
+				// Ahead of it (or drawing level), moving or not: the lane's last car is the nearest such. It keeps behind it until it can
+				// move in, never level with it, where it could not.
+				if (o.LaneU > m.LaneU - Traffic.CarLength && o.LaneU < tail)
+				{
+					tail = o.LaneU;
+				}
+			}
+			// Only behind it: one already alongside or let into the junction goes on as it is.
+			if (tail == double.MaxValue || tail - m.LaneU > 400.0 || m.Grants.Count > 0)
+			{
+				return double.MaxValue;
+			}
+			// Its place is behind that car: once there it moves in (JunctionLanes).
+			return tail;
+		}
+
+		/// <summary>This step's cars slowed in a queue beside the lane they must get into for their turn: the lane and their spot along it.</summary>
+		private readonly List<(long lane, double u)> zipper = new List<(long lane, double u)>();
+
+		/// <summary>
+		/// Mover <paramref name="m"/> could not move into lane <paramref name="target"/> for its turn: if it is slowed in a queue there,
+		/// the car coming behind it in that lane leaves it a gap (as drivers let one another in, in turn, at a slow queue).
+		/// </summary>
+		private void Zip(Mover m, long target)
+		{
+			if (m.V < 5.0)
+			{
+				zipper.Add((target, m.LaneU));
+			}
+		}
+
+		/// <summary>How near the junction it turns off at a car still in the wrong lane for its turn gives it up and goes on.</summary>
+		private const double MissAt = 220.0;
+
+		/// <summary>Turns given up in the day (the car went on and took another way).</summary>
+		internal int Missed;
+
+		/// <summary>Path distance from mover <paramref name="m"/> to the node it turns off the trunk at (MaxValue if none ahead).</summary>
+		private static double ExitNear(Mover m)
+		{
+			Seg[] path = m.L.Path;
+			for (int k = m.Seg + 1; k < path.Length && path[k].P0 - m.P < ExitLook; k++)
+			{
+				if (!TwoLane(path[k]))
+				{
+					return path[k].P0 - m.P;
+				}
+			}
+			return double.MaxValue;
+		}
+
+		/// <summary>
+		/// "If you miss your exit, take the next one" (PA Driver's Manual p. 52): mover <paramref name="m"/>, unable to get into the lane
+		/// for its turn off the trunk, goes straight on through that junction instead and its path from there is routed afresh to the
+		/// same end (never turning back along the stretch past the junction). False if no such way (it keeps its path).
+		/// </summary>
+		private bool Miss(Mover m)
+		{
+			Leg leg = m.L;
+			Seg[] path = leg.Path;
+			int k = m.Seg;
+			while (k + 1 < path.Length && TwoLane(path[k + 1]))
+			{
+				k++;
+			}
+			int node = NodeAfter(path, k);
+			if (node < 0 || mainA[node] < 0 || k + 1 >= path.Length)
+			{
+				return false;
+			}
+			int inA = LinkIndex(node, path[k].Edge);
+			if (inA != mainA[node] && inA != mainB[node])
+			{
+				return false;
+			}
+			int straight = inA == mainA[node] ? mainB[node] : mainA[node];
+			int e2 = Traffic.Links[node][straight];
+			if (!twoLaneEdge[e2])
+			{
+				return false;
+			}
+			Traffic.Edge edge = Traffic.Edges[e2];
+			int dir2 = edge.A == node ? 1 : -1;
+			double nearS = dir2 > 0 ? edge.Sa : edge.Sb;
+			Traffic.Anchor a = OffJunctions(new Traffic.Anchor { Edge = e2, S = nearS });
+			// Where it was going: the end of its path (before the tunnel, if it ends in one).
+			Seg last = path[path.Length - 1];
+			int pb = -1;
+			if (last.Edge < 0)
+			{
+				if (path.Length < 2 || last.Inbound)
+				{
+					return false;
+				}
+				pb = last.Portal;
+				last = path[path.Length - 2];
+			}
+			if (last.Edge < 0)
+			{
+				return false;
+			}
+			Traffic.Anchor b = new Traffic.Anchor { Edge = last.Edge, S = last.S0 + last.Dir * last.Len };
+			List<Seg> segs = new List<Seg>();
+			for (int j = 0; j <= k; j++)
+			{
+				segs.Add(path[j]);
+			}
+			segs.Add(new Seg { Edge = e2, Dir = dir2, S0 = nearS, Len = Math.Abs(a.S - nearS), Speed = EdgeSpeed(e2), Portal = -1 });
+			int before = segs.Count;
+			if (!Way(a, -1, b, pb, segs) || segs.Count <= before || segs[before].Edge != e2 || segs[before].Dir != dir2)
+			{
+				// The quickest way from there turns back: on along the trunk to its next junction, and the best way from each road
+				// leaving that (never back along this stretch).
+				segs.RemoveRange(before - 1, segs.Count - (before - 1));
+				int n2 = dir2 > 0 ? edge.B : edge.A;
+				List<Seg> best = null;
+				double bestLen = double.MaxValue;
+				for (int f = 0; f < Traffic.Links[n2].Count; f++)
+				{
+					int ef = Traffic.Links[n2][f];
+					if (ef == e2)
+					{
+						continue;
+					}
+					Traffic.Edge fe = Traffic.Edges[ef];
+					int fdir = fe.A == n2 ? 1 : -1;
+					double fs = fdir > 0 ? fe.Sa : fe.Sb;
+					Traffic.Anchor fa = OffJunctions(new Traffic.Anchor { Edge = ef, S = fs });
+					List<Seg> trial = new List<Seg>
+					{
+						new Seg { Edge = e2, Dir = dir2, S0 = nearS, Len = edge.Length, Speed = EdgeSpeed(e2), Portal = -1 },
+						new Seg { Edge = ef, Dir = fdir, S0 = fs, Len = Math.Abs(fa.S - fs), Speed = EdgeSpeed(ef), Portal = -1 },
+					};
+					if (!Way(fa, -1, b, pb, trial) || trial.Count <= 2 || trial[2].Edge != ef || trial[2].Dir != fdir)
+					{
+						continue;
+					}
+					double len = 0.0;
+					foreach (Seg t in trial)
+					{
+						len += t.Len;
+					}
+					if (len < bestLen)
+					{
+						bestLen = len;
+						best = trial;
+					}
+				}
+				if (best == null)
+				{
+					return false;
+				}
+				segs.AddRange(best);
+			}
+			leg.Path = Finish(segs, out double length);
+			leg.Length = length;
+			leg.Profile = Profile(leg);
+			return true;
+		}
+
+		/// <summary>Cars moved into a junction lane to turn off, and merged out of one, in the day.</summary>
+		internal int IntoJunctionLanes, Merged;
+
+		/// <summary>Mover <paramref name="m"/> moved into lane <paramref name="target"/> (its index <paramref name="ix"/>): out of the old lane's list, into the new one's in order, its grants with it, the change recorded.</summary>
+		private void Switch(Mover m, long target, int ix, double w)
+		{
+			foreach (Grant g in m.Grants)
+			{
+				Seg[] path = m.L.Path;
+				g.InLane = LaneKey(path[g.SegIndex], ix);
+				g.OutLane = LaneKey(path[g.SegIndex + 1], ix);
+			}
+			if (lanes.TryGetValue(m.Lane, out List<Mover> old))
+			{
+				old.Remove(m);
+			}
+			if (!lanes.TryGetValue(target, out List<Mover> list))
+			{
+				list = new List<Mover>();
+				lanes[target] = list;
+			}
+			if (list.Count == 0)
+			{
+				laneKeys.Add(target);
+			}
+			int at = 0;
+			while (at < list.Count && (list[at].LaneU < m.LaneU || (list[at].LaneU == m.LaneU && list[at].Index < m.Index)))
+			{
+				at++;
+			}
+			list.Insert(at, m);
+			m.Ix = ix;
+			m.Lane = target;
+			m.Changed = w;
+			Seg s = m.L.Path[m.Seg];
+			if (m.LaneRec == null)
+			{
+				m.LaneRec = new List<float>();
+			}
+			m.LaneRec.Add((float)m.P);
+			m.LaneRec.Add((float)Math.Min(s.P0 + s.Len, m.P + Math.Max(30.0, m.V * MoveOverTime)));
+			m.LaneRec.Add(LaneValue(ix));
+		}
+
+		/// <summary>As <see cref="GrantsAllow"/>, into lane index <paramref name="ix"/>.</summary>
+		private bool GrantsAllowIx(Mover m, int ix)
+		{
+			foreach (Grant g in m.Grants)
+			{
+				long outLane = LaneKey(m.L.Path[g.SegIndex + 1], ix);
+				foreach (Grant o in nodeGrants[g.Node])
+				{
+					if (o.M != m && o.OutLane == outLane && o.InKey != g.InKey)
+					{
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
 		/// <summary>How far before a trunk junction the cars going on keep to the outer lane (the inner one is the turning lane there).</summary>
 		private const double PocketLength = 400.0;
 
@@ -2669,7 +3279,7 @@ namespace HalfGripOpenWorld
 		{
 			foreach (Grant g in m.Grants)
 			{
-				long outLane = (g.OutLane & ~InnerKey) + (toInner ? InnerKey : 0L);
+				long outLane = LaneKey(m.L.Path[g.SegIndex + 1], toInner ? 1 : 0);
 				foreach (Grant o in nodeGrants[g.Node])
 				{
 					if (o.M != m && o.OutLane == outLane && o.InKey != g.InKey)
@@ -2686,8 +3296,9 @@ namespace HalfGripOpenWorld
 		{
 			foreach (Grant g in m.Grants)
 			{
-				g.InLane = (g.InLane & ~InnerKey) + (toInner ? InnerKey : 0L);
-				g.OutLane = (g.OutLane & ~InnerKey) + (toInner ? InnerKey : 0L);
+				Seg[] path = m.L.Path;
+				g.InLane = LaneKey(path[g.SegIndex], toInner ? 1 : 0);
+				g.OutLane = LaneKey(path[g.SegIndex + 1], toInner ? 1 : 0);
 			}
 		}
 
@@ -2894,10 +3505,11 @@ namespace HalfGripOpenWorld
 				return pending == 0 || outLength >= need;
 			}
 			// By distance only: a car let in behind one that is moving, which then stops, would stand in the box and hold it.
-			if (CrossesCarriageway(r.Node, r.InArm, r.OutArm))
+			if (CrossesTraffic(r.Node, r.InArm, r.OutArm))
 			{
-				// Across a carriageway of the trunk: stopping halfway would hold up all its lanes, so the way out must be moving, or
-				// clear well past the box.
+				// Across another stream of traffic (a carriageway of the trunk, an oncoming lane, a main road from side to side): stopping
+				// halfway would hold it up, so the way out must be moving, or clear well past the box. "Do not enter an intersection if
+				// there are vehicles blocking your way. Wait until you are sure you can clear the intersection" (PA Driver's Manual p. 46).
 				return first.LaneU - Traffic.CarLength > need + (first.V > TurnSpeed * 0.5 ? 0.0 : 3.0 * (Traffic.CarLength + MinGap));
 			}
 			return first.LaneU - Traffic.CarLength > need;
@@ -3074,6 +3686,19 @@ namespace HalfGripOpenWorld
 					worst = Math.Min(worst, Interaction(v, room + MinGap - 1.0, 0.0));
 				}
 			}
+			// A car beside it waiting to come into this lane for its turn, in a slow queue: leave it room, if it can stop for it gently.
+			foreach ((long lane, double u) in zipper)
+			{
+				if (lane != m.Lane || u <= m.LaneU)
+				{
+					continue;
+				}
+				double room = u - Traffic.CarLength - 2.0 - m.LaneU;
+				if (room > 0.0 && room < 60.0 && v * v / (2.0 * 0.5 * Brake) < room && (m.Ahead == null || m.Ahead.LaneU > u))
+				{
+					worst = Math.Min(worst, Interaction(v, room + MinGap - 1.0, 0.0));
+				}
+			}
 			// A junction it has not been let into: stop at the box's edge.
 			int ask = Asking(m);
 			if (ask >= 0)
@@ -3092,6 +3717,26 @@ namespace HalfGripOpenWorld
 						WaitKind.TryGetValue(node * 4 + cat, out double s2);
 						WaitKind[node * 4 + cat] = s2 + Step;
 					}
+				}
+			}
+			// Turning off soon from a junction lane it is not yet in: it does not pull up beside that lane's queue (where it could not
+			// get in, and would stand in a through lane), but holds back behind its last car and slips in there.
+			if (m.Ix < AuxIx && TwoLane(path[m.Seg]) && path[m.Seg].Edge >= 0)
+			{
+				double tail = TurnQueueTail(m);
+				if (tail < double.MaxValue)
+				{
+					// Standing a little further back than behind a car in its own lane, so the move in asks nothing hard of it.
+					worst = Math.Min(worst, Interaction(v, tail - Traffic.CarLength - MinGap - 6.0 - m.LaneU, 0.0));
+				}
+			}
+			// The end of the junction lane it is to merge from: no further (it waits there for a gap, out of everyone's way).
+			if (m.Ix >= AuxIx && m.LaneEnd < double.MaxValue)
+			{
+				double left = m.LaneEnd - m.P;
+				if (left < v * v / (2.0 * 0.6 * Brake) + 30.0)
+				{
+					worst = Math.Min(worst, Interaction(v, left + MinGap - 1.0, 0.0));
 				}
 			}
 			// The end: stop at the spot.
@@ -3190,7 +3835,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Leg <paramref name="leg"/>'s car becomes a physics car at <paramref name="p"/>: it keeps the lane it is in (or nearest).</summary>
 		internal static void HoldLaneAt(Leg leg, double p)
 		{
-			leg.HoldLane = InnerAt(leg, p) >= 0.5 ? 1f : 0f;
+			double lane = InnerAt(leg, p);
+			// Held in the through lane it is nearest; in a junction lane it follows the day (it turns off from it, or merges).
+			leg.HoldLane = lane < -0.5 || lane > 1.5 ? -1f : lane >= 0.5 ? 1f : 0f;
 			leg.HoldEnd = double.MaxValue;
 		}
 
@@ -3211,6 +3858,19 @@ namespace HalfGripOpenWorld
 			{
 				return day;
 			}
+			if (day < -0.01 || day > 1.01)
+			{
+				// The day has it moving into a junction lane (to turn off, or out of one): it glides there from the lane it held, over
+				// the day's own move.
+				double start = ChangeStart(leg, p);
+				if (p <= start)
+				{
+					return leg.HoldLane;
+				}
+				double g = Math.Min(1.0, (p - start) / HoldGlide);
+				g = g * g * (3.0 - 2.0 * g);
+				return leg.HoldLane + (day - leg.HoldLane) * g;
+			}
 			if (p <= leg.HoldEnd)
 			{
 				return leg.HoldLane;
@@ -3218,6 +3878,18 @@ namespace HalfGripOpenWorld
 			double f = (p - leg.HoldEnd) / HoldGlide;
 			f = f * f * (3.0 - 2.0 * f);
 			return leg.HoldLane + (day - leg.HoldLane) * f;
+		}
+
+		/// <summary>Where the leg's latest lane change at or before path distance <paramref name="p"/> began (0 if none).</summary>
+		private static double ChangeStart(Leg leg, double p)
+		{
+			float[] l = leg.Lanes;
+			double start = 0.0;
+			for (int k = 0; l != null && k + 2 < l.Length && l[k] <= p; k += 3)
+			{
+				start = l[k];
+			}
+			return start;
 		}
 
 		/// <summary>How far the trunk's inner lane is left of its outer lane (a lane's width).</summary>

@@ -508,6 +508,7 @@ internal static partial class Program
 			Console.WriteLine("  cars stopped in a trunk junction crossing a carriageway: " + day.StoppedAcrossCars + " (" + day.StoppedAcross + " steps)" + (day.StoppedAcrossCars == 0 ? "  ok" : "  FAIL"));
 			ok &= day.StoppedAcrossCars == 0;
 			foreach (string note in day.StoppedAcrossNotes) Console.WriteLine("    across: " + note);
+			Console.WriteLine("  junction lanes: " + day.IntoJunctionLanes + " into one to turn off, " + day.Merged + " merged out of one, " + day.Missed + " turns missed (went on and round)");
 			Console.WriteLine("  the trunk's two lanes: " + day.Overtakes + " overtakes, " + day.MovedOver + " moved over for a car joining, " + day.KeptRight + " back to the outer lane");
 			// Not none: a car let out with time to clear may still be slower through the box than reckoned (it slows for its turn, or
 			// for a car on its way out). First come first served gave about 650 a day (TV_FCFS=1).

@@ -119,8 +119,10 @@ namespace HalfGripOpenWorld
 
 		private static readonly Class[] Classes =
 		{
-			// Half widths: a lane is 11 units (a car is about 5.4 wide). Trunk: two carriageways of two lanes and a median.
-			new Class { Half = 33.0, Grade = 0.05, Window = 40, Keep = 6, Rounds = 4, Soft = 0.035, Steep = 8.0, Bank = 160.0 },
+			// Half widths: a lane is 11 units (a car is about 5.4 wide). Trunk: two carriageways of two lanes and a median, and a paved
+			// shoulder a lane wide outside each (10 ft, as on Pennsylvania's rural four-lane roads): the junctions' deceleration and
+			// acceleration lanes are painted on it (TrunkLanes). 66 across until 0.34.0, a shoulder of 4.
+			new Class { Half = 40.0, Grade = 0.05, Window = 40, Keep = 6, Rounds = 4, Soft = 0.035, Steep = 8.0, Bank = 160.0 },
 			new Class { Half = 14.0, Grade = 0.07, Window = 22, Keep = 4, Rounds = 3, Soft = 0.05, Steep = 5.0, Bank = 120.0 },
 			new Class { Half = 12.0, Grade = 0.09, Window = 14, Keep = 3, Rounds = 3, Soft = 0.07, Steep = 3.0, Bank = 90.0 },
 			new Class { Half = 10.0, Grade = 0.11, Window = 3, Keep = 1, Rounds = 2, Soft = 0.09, Steep = 2.0, Bank = 30.0 },
@@ -291,6 +293,7 @@ namespace HalfGripOpenWorld
 					System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 					Build();
 					Wrap.Find();
+					TrunkLanes.Build();
 					BuildMs = watch.Elapsed.TotalMilliseconds;
 					built = true;
 				}
@@ -1061,7 +1064,9 @@ namespace HalfGripOpenWorld
 				{
 					double px = cx + uz * a * (HomeWidth * 0.5 + 4.0) + ux * b * (HomeDepth * 0.5 + 4.0);
 					double pz = cz - ux * a * (HomeWidth * 0.5 + 4.0) + uz * b * (HomeDepth * 0.5 + 4.0);
-					if (!Clear(px, pz, -1) || segments.Snap(px, pz, 18.0, -1, out double _, out double _, out double _))
+					// 18 from any road's line, and from the trunk's its half width more (80 across since 0.34.0: 18 from its line is on it).
+					if (!Clear(px, pz, -1) || segments.Snap(px, pz, 18.0, -1, out double _, out double _, out double _)
+						|| segments.Snap(px, pz, Classes[0].Half + 10.0, -1, out double _, out double _, out double _, RoadKind.Trunk))
 					{
 						return;
 					}

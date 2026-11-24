@@ -1,5 +1,121 @@
 # Traffic: handoff
 
+## READ THIS FIRST: right of way and the trunk's junction lanes (2026-11-24, branch `ccr-02e633e5-fytf3y`)
+
+**Branch:** `ccr-02e633e5-fytf3y`. It holds 0.33.0 (`traffic-test-branch`), plus the unfinished crossing fixes of
+`traffic-highway-crossing-fixes` (re-applied), plus this work. The version is still 0.33.0: bump it with the release. Nothing here
+has been tried in the game. It changes the world (the trunk is wider) and the day, so everyone in a room needs the same build.
+
+**Read first:** `docs/TRAFFIC_RESEARCH.md`. It compares the traffic with the **PA Driver's Manual (PUB 95, 4-21)**, quoted with page
+numbers, and has "What was built" with the 16-seed numbers. The manual is at
+https://www.pa.gov/content/dam/copapwp-pagov/en/penndot/documents/public/dvspubsforms/bdl/bdl-manuals/pa-drivers-manual-non-commercial/english/pub%2095.pdf.
+The old `dot.state.pa.us` link fails (502). The fetch tool can't reach pa.gov; `curl` in Bash can. The owner wants the manual
+followed: "go read the pa drivers handbook".
+
+### The owner's decisions (2026-11-24)
+- **No diamond interchanges** (a small rural area). Ramps along the road's side and left-turn lanes in the median instead. Built.
+- **Following distance 2 s at most** ("most people are tailgating assholes"). Kept at 1.5 s (`TrafficDay.Headway`).
+- **Left onto the trunk from a side road:** a median lane to wait in, so nobody is held up. Built (the median merge lane).
+- **Close junctions:** the agent's call. One continuous auxiliary lane on the shoulder between them; median lanes stop at each
+  junction.
+- **No roundabouts, ever.**
+- **Add turn lanes** on the towns' roads. This is the next job, not yet started.
+- The owner asked whether traffic lights, or just their logic, would help. The answer is below. No decision yet: ask before
+  building any.
+
+### What is built
+- **`TrunkLanes.cs` (new, pure):**
+  - Finds every side road meeting the trunk (an end on it, or an at-grade crossing).
+  - Lays out per junction:
+    - a deceleration lane before it on the shoulder (520, side road's side);
+    - an acceleration lane after it (680);
+    - a median left-turn lane for the oncoming carriageway (620);
+    - a median merge lane after it for the side road's lefts (680; none at crossroads).
+  - Shoulder lanes that overlap join, through junctions too. Median lanes are cut at every junction (`Cut`), the two directions
+    share the median where they meet (`Share`), and merge lanes shorter than 380 are dropped.
+  - Built at the end of `Network.Ensure`. Every tool project that lists `Network.cs` now lists it too.
+- **The trunk is 80 across** (`Network.Classes[0].Half` 40, was 33): its outer shoulders are a lane wide. Its texture is 80 columns
+  (`RoadMesh.Trunk`). `RoadMesh.TrunkPaint` paints the junction lanes over it from its own columns: a dashed lane line, an edge line
+  moving out over the taper, asphalt over the median. The hub plate's clear columns and `Courses` comment were updated.
+- **The traffic (`TrafficDay`):**
+  - `Mover.Ix` replaces `Inner`. The lanes are 0 outer, 1 inner, 2 aux (`AuxIx`), 3 median (`MedianIx`). Keys are `LaneKey(seg,
+    ix)`; drawn offsets come from `LaneValue` (`TrunkLanes.AuxLane` -1, `MedianLane` 2.136 lane widths left of the outer).
+  - `JunctionLanes` (run first in `LaneChanges`) moves turners into their lane, merges cars out of aux and median lanes, and handles
+    missed turns.
+  - `EntryIx` / `EnterTrunk`: side-road cars come straight into the aux or median lane. `Conflict` then sees no clash with the
+    trunk's through cars (out lanes differ). `TrafficDrive` skips them the same way.
+  - `TurnQueueTail`: a turner holds back behind its lane's last car, never level with it.
+  - `zipper` / `Zip`: a slow queue lets a car in.
+  - `Miss`: a car that can't reach its turn lane within 220 goes on and is re-routed, never back along the stretch (it tries each
+    road off the next node). If the only way is back, a slowed left-turner in the outer lane may cross both lanes into the median.
+  - `LaneEnd`: a merging car stops at its lane's end if no gap comes.
+  - `TurnAt(box)`: turn speed through a junction scales with its size (13 to 22). Before, a left off the trunk took 9 s at 13 u/s,
+    longer than the evenly spaced circling cars' 8.5 s gaps, and the median queue never moved.
+- **Rules:**
+  - Left turns yield to oncoming traffic everywhere (`MainYields`; `MainTurnsGiveWay` is now unused).
+  - `SideGap` onto the trunk is the manual's 9 / 8 / 6 s (6 s for a two-stage left into the median). Elsewhere it is the HCM's
+    7.1 / 6.2 / 6.5 s, halving over 10 s of waiting (`TownPatience`), and only for cars on the arms straight into the node (`block`
+    in `TooSoon`).
+  - Patience no longer shrinks the margin (`GiveWayLeast` = 1.0).
+  - Driveways: an 8 s gap, and no let-in above 25 mph (`SlowRoad`).
+  - `CrossesTraffic`: the strict room rule for any movement across another stream.
+- **Physics cars:**
+  - `HoldLaneAt` only holds lanes 0 and 1.
+  - `LaneAt` glides from a held lane into a junction lane the day moves to (`ChangeStart`).
+- **Tools:**
+  - trafficview prints the junction-lane counts (into, merged, missed).
+  - meshcheck prints where `clip` fails.
+  - `Network`'s drive houses keep `Half + 10` clear of the trunk (one sat on the wider trunk).
+  - jview's project leaves out `TrafficShared` and `TrafficFar` (it no longer built).
+
+### Where it stands (16 seeds, `TV_DRIVE_ONLY=1`; reports were in the scratchpad, rerun them)
+- **The trunk works:** its through cars are stopped 1 to 80 min a day on 14 seeds (135 on seed 1 on the branch). **Seeds 3 and 13
+  still jam at Kingsbridge** (node 3, about -3950, -8950): 227 and 700 min, when Kingsbridge's inbound link backs up past the
+  median turn lane and left-turners fill both through lanes.
+- **The towns jam (every seed fails):**
+  - Junction waiting is 1,000 to 2,700 min a day (284 to 928 on 0.33.0), worst in Westhaven: nodes 161, 180, 233, 186 on the
+    Westhaven link and its side streets.
+  - So: trips unfinished at the day's end on all 16 seeds; the physics cars' "over 90 s" stops in Westhaven on 15 seeds.
+  - Experiments on seed 1: gaps under about 3.5 s don't bind. Any realistic gap (HCM or the manual) tips the towns over a cliff.
+    Only the old ~1 s margin plus first-come-first-served left turns (0.33.0's rule-breaking) got back to 705 min. The links are
+    two-lane roads at capacity, and the day's whole demand runs in about 40 real minutes.
+- **Also failing:**
+  - 7 stop lines on another road's paving (inherited from the branch);
+  - a few "cars on a lane closer than a car's length" (8 seeds) and "crossing cars in a box" (6);
+  - "stopped across a carriageway" (3 seeds).
+  - Look at these after the towns: the zipper, missed turns and merges are the likely sources.
+- **Checks:** `tools/check.sh` passes (stub HalfGripTools.dll: see "This session's environment" below). meshcheck passes; 3 `clip`
+  samples within its tolerance at the trunk junction at (-12172, -6294).
+
+### Next: turn lanes in the towns (the owner's call)
+- **Centre turn lanes** (manual p. 45: "TURNING FROM OR INTO A CENTER TURN LANE"). The Westhaven link and the Kingsbridge link
+  (Primary through town), and probably the secondaries through towns: a centre lane for left turns from both directions, and for
+  side streets' lefts to finish in before merging.
+- **The same machinery as the trunk's median lanes:** a `MedianIx`-like lane on a two-lane road, zones from the junctions, drawn
+  paint, `JunctionLanes` moving turners in. Main-line through cars then never wait behind a left-turner, and side-street lefts go in
+  two stages.
+- **It needs the roads widened through town.** That is a world change: house plots, sidewalks, lots and parks all read
+  `road.Half`. Run meshcheck's `clear`, `facades`, `homes`, `lots`, `sidewalks`.
+- Likely also right-turn bays where a side street's queue is long.
+- Then re-run the 16 seeds and fix the remaining fails. Kingsbridge on seeds 3 and 13 should ease once the town's link flows.
+
+### Would traffic lights help? (the owner's question)
+- **Yes, at the few junctions that saturate.** No gap rule can give a side street capacity once the main road's flow leaves too few
+  gaps. A signal gives each approach a fixed share of green, about 1,800 cars an hour a lane while green. Real engineers signalise
+  exactly where gap acceptance fails, by the MUTCD's volume warrants; the FHWA report notes signals once peak-hour main x left-turn
+  volumes pass thresholds.
+- **In the sim:** a signal is a timetable on a node. Each arm green, yellow or red from the race clock (deterministic, no
+  messages). Grants only to green arms, and to protected or permissive lefts as the phase allows. It fits on top of
+  `TrafficDay.Junctions` (a refusal reason) and `TrafficDrive.Target` (hold at red).
+- **Logic alone, with no lights drawn, would be a mistake.** Main-road cars would stop at an invisible red, which reads as the bug the
+  owner hates ("cars should not be stopping because another car wants to jump in front of it"). Draw the heads if signals go in.
+  The manual's signal rules are Ch. 2, pp. 8 to 9.
+- **The cost:** main-line cars do stop at red. That trades the owner's "main roads get priority" for flow.
+- **Recommendation:** turn lanes first (asked for). Signals only at the 2 to 4 Westhaven link junctions still saturated after that,
+  and never on the trunk. Ask the owner before building any.
+
+---
+
 For the agent picking up NPC traffic. Read `CLAUDE.md`, then in `docs/PLAN.md` the three traffic sections ("Traffic: the agreed plan",
 "Traffic: what the studies say, and the trip model", and the older research under them), then this. Work on **`traffic-test-branch`**
 (made from `deer-test-branch`; commit and push there; the owner merges).
