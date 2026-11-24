@@ -1,4 +1,4 @@
-# Performance handoff (after 0.32.1; 0.32.2 to 0.32.4 below)
+# Performance handoff (after 0.32.1; 0.32.2 to 0.32.5 below)
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
@@ -105,6 +105,43 @@ What the owner's 0.32.4 drive should settle, and what follows from each answer (
   ways out: colliders baked on a worker (`Physics.BakeMesh`), fewer tiles made a frame.
 - For ten times the highway traffic, whatever the above: drawn cars must cost far less each (one mesh, no shadows far off, perhaps
   GPU instancing), and the trunk's junction with the Westhaven link given priority so the circling cars do not form platoons.
+
+## The owner's 0.32.4 drive (2026-11-24): "barely 80 fps driving instead of the capped 140"
+
+The log (about 30 s of driving from the spawn, three `Frame timings` lines; the room's host alone; StadiumAsh, a clear dry day, 12:13;
+21 mods loaded) says, per frame, averaged over a second:
+
+- 86 to 110 fps (9.2 to 11.7 ms). **The main thread is what limits it**: waiting for the screen or the GPU
+  (`TimeUpdate.WaitForLastPresentationAndUpdateTime`) only 0.1 to 0.6 ms. The GPU's own time is n/a in this build.
+- `PostLateUpdate.FinishFrameRendering` (URP's culling and draw submission on the main thread) **3.4 to 5.9 ms**: the largest step,
+  with **2,600 to 3,100 draw calls** (as many batches), 516 to 535 set-pass calls, 1.7 to 2.0 million triangles, 145 to 202 shadow
+  casters.
+- `Update.ScriptRunBehaviourUpdate` 2.3 to 2.4 ms, of which ours (sky, deer, traffic, the streamer's checks) about 0.2: **about 2.1 ms
+  is the game's and the other mods' scripts.** `PreLateUpdate.ScriptRunBehaviourLateUpdate` 1.9 to 2.1 ms, of which ours about 1.0
+  (foliage 0.8, streaming 0.01 to 0.2, far view 0.06): about 1 ms not ours.
+- `PreUpdate.IMGUISendQueuedEvents` 0.06 to 0.66 ms (OnGUI: the overlay and other mods' windows). Physics 0.1 ms. The traffic 0.1 to
+  0.2 ms. Tiles made 0 to 0.2 ms a frame (8 to 11 a second while driving), no hitches over twice the average.
+
+Was 0.32.4 worse? Its timings cost nothing with `ShowCoords` off. With it on, the overlay was four lines longer and laid out on every
+OnGUI call (several a frame), which costs. The drive was also on a clear day (the far view and the painted land to the horizon), where
+0.32.1's was in rain and fog. Like for like, read the frame rate with `ShowCoords` off (the Steam overlay's counter).
+
+## Done in 0.32.5 (the owner to test: `docs/TESTING.md` test 55)
+
+Aimed at the two largest costs that are ours: the draw calls (the rendering step) and foliage's own time.
+
+- **Trees drawn a block of 4 by 4 tiles at a time** (`Foliage.Cell`), not a tile at a time: eight instanced calls a tile (four pines
+  of two parts each) made about 800 calls with 100 tiles loaded, before their shadows. Now about eight a block (16 blocks or so
+  loaded), split into the trees within `TreeShadowReach` (casting shadows) and the rest; a block's trees are put together again when a
+  tile in it comes or goes, the origin shifts or the car's tile changes (a copy of their matrices, kept arrays). Unity still leaves out
+  a block no camera or shadow cascade sees. Grass is still drawn per tile (it is near the car, and per tile culls better).
+- **Flat surfaces cast no shadows:** the ground, verges, sidewalks, farm tracks, the circuit's and the rally's surfaces and the water
+  were all drawn again into the sun's shadow map for each cascade. They still receive shadows. The roads keep theirs (bridges' decks,
+  parapets, the covered bridges' roofs), and the buildings.
+- **The overlay's text made four times a second**, its height worked out then, not on every OnGUI call.
+
+Not ours and not changed: about 3 ms of the game's and other mods' scripts each frame (21 mods were loaded). A drive with only Open
+World and Multiplayer would show how much of it the other mods are.
 
 ## What the log shows (`LogOutput.log` of the drive, 0.32.1)
 

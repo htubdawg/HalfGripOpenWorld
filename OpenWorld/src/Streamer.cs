@@ -1027,6 +1027,9 @@ namespace HalfGripOpenWorld
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
 			MeshRenderer renderer = go.AddComponent<MeshRenderer>();
 			renderer.sharedMaterial = material;
+			// The ground receives shadows but casts none (0.32.5): every loaded tile was drawn again into the sun's shadow map for each
+			// cascade, for the odd hill's shadow on itself, which the light's angle on the slope already shows.
+			renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 			block.Clear();
 			block.SetTexture("_BaseMap", texture);
 			block.SetTexture("_MainTex", texture);
@@ -1161,7 +1164,15 @@ namespace HalfGripOpenWorld
 			GameObject go = new GameObject(name) { layer = roadLayer };
 			go.transform.SetParent(tile, false);
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
-			go.AddComponent<MeshRenderer>().sharedMaterials = materials;
+			MeshRenderer partRenderer = go.AddComponent<MeshRenderer>();
+			partRenderer.sharedMaterials = materials;
+			// The verges, sidewalks, tracks, the courses' surfaces and the water lie on the ground and would only shadow themselves, at the
+			// cost of drawing them again into the shadow map for each cascade (0.32.5). The buildings stand up off it, and the roads keep
+			// theirs for their bridges (decks, parapets, the covered bridges' roofs).
+			if (name != "Buildings" && name != "Roads")
+			{
+				partRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+			}
 			if (solid)
 			{
 				go.AddComponent<MeshCollider>().sharedMesh = mesh;
@@ -1340,6 +1351,9 @@ namespace HalfGripOpenWorld
 			Physics.SyncTransforms();
 		}
 
+		private GUIContent overlay;
+		private float overlayAt, overlayWidth, overlayHeight;
+
 		private void OnGUI()
 		{
 			// The place just teleported to, for a few seconds, mid-screen at the top.
@@ -1351,19 +1365,27 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			Origin.World(player.transform.position, out double x, out double z);
-			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + ((player.transform.position.y - Network.Lift) / 3.3).ToString("0") + " m above the sea\n"
-				+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
-				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
-				+ (Sky.Status != null ? "\n" + Sky.Status : "")
-				+ (Deer.Status != null ? "\n" + Deer.Status : "")
-				+ (TrafficCars.Status != null ? "\n" + TrafficCars.Status : "")
-				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "")
-				+ (FramePerf.Text() is string frame ? "\n" + frame : "");
-			// As tall as the text is (the deer's and the traffic's lines wrap), so nothing is cut off at the bottom.
-			GUIContent content = new GUIContent(text);
+			// The text and its height made four times a second, not on every OnGUI call (several a frame): laying out the long overlay
+			// cost the frame time it was there to measure.
 			float width = Mathf.Min(900f, Screen.width - 24f);
-			GUI.Label(new Rect(12f, 12f, width, GUI.skin.label.CalcHeight(content, width) + 4f), content);
+			if (overlay == null || Time.unscaledTime >= overlayAt || width != overlayWidth)
+			{
+				overlayAt = Time.unscaledTime + 0.25f;
+				overlayWidth = width;
+				Origin.World(player.transform.position, out double x, out double z);
+				string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + ((player.transform.position.y - Network.Lift) / 3.3).ToString("0") + " m above the sea\n"
+					+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
+					+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
+					+ (Sky.Status != null ? "\n" + Sky.Status : "")
+					+ (Deer.Status != null ? "\n" + Deer.Status : "")
+					+ (TrafficCars.Status != null ? "\n" + TrafficCars.Status : "")
+					+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "")
+					+ (FramePerf.Text() is string frame ? "\n" + frame : "");
+				// As tall as the text is (the deer's and the traffic's lines wrap), so nothing is cut off at the bottom.
+				overlay = new GUIContent(text);
+				overlayHeight = GUI.skin.label.CalcHeight(overlay, width) + 4f;
+			}
+			GUI.Label(new Rect(12f, 12f, width, overlayHeight), overlay);
 		}
 
 		private void OnDestroy()

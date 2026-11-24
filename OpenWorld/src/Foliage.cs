@@ -288,12 +288,42 @@ namespace HalfGripOpenWorld
 			TileFoliage t = new TileFoliage { Tile = tile, Tx = tx, Tz = tz, Grass = grass, PlacedAt = tile.position };
 			t.TreeMatrices = TreeMatrices(trees, t.PlacedAt, out t.TreeBox);
 			t.GrassBox = Box(grass, 1.5f, 4f);
+			if (tiles.TryGetValue(key, out TileFoliage old))
+			{
+				Leave(old);
+			}
 			tiles[key] = t;
+			long ck = CellKey(tx, tz);
+			if (!cells.TryGetValue(ck, out Cell cell))
+			{
+				cells[ck] = cell = new Cell();
+			}
+			cell.Members.Add(t);
+			cell.Dirty = true;
 		}
 
 		internal void Remove(long key)
 		{
-			tiles.Remove(key);
+			if (tiles.TryGetValue(key, out TileFoliage t))
+			{
+				Leave(t);
+				tiles.Remove(key);
+			}
+		}
+
+		/// <summary>Takes a tile out of its block (the block gathered again, or dropped when it is empty).</summary>
+		private void Leave(TileFoliage t)
+		{
+			long ck = CellKey(t.Tx, t.Tz);
+			if (cells.TryGetValue(ck, out Cell cell))
+			{
+				cell.Members.Remove(t);
+				cell.Dirty = true;
+				if (cell.Members.Count == 0)
+				{
+					cells.Remove(ck);
+				}
+			}
 		}
 
 		/// <summary>The car's tile, each frame: the grass and the trees' shadows follow it.</summary>
@@ -436,6 +466,33 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// Tiles' trees are drawn together a block of <see cref="CellTiles"/> by <see cref="CellTiles"/> tiles at a time (0.32.5): drawn a
+		/// tile at a time, the trees took eight instanced calls a tile, about 800 with 100 tiles loaded and more for their shadows, a large
+		/// part of the 2,600 to 3,100 draw calls the owner's 0.32.4 frame timings showed, with the main thread's rendering the frame's
+		/// longest step. A block still lets Unity leave out the trees of a block no camera or shadow sees. Each block keeps its trees
+		/// within <see cref="Mod.TreeShadowReach"/> (which cast shadows) apart from the rest (which do not).
+		/// </summary>
+		private const int CellTiles = 4;
+
+		private sealed class Cell
+		{
+			public readonly List<TileFoliage> Members = new List<TileFoliage>();
+			public Matrix4x4[][] Near, Far;
+			public int[] NearCount, FarCount;
+			public Bounds NearBox, FarBox;
+			public bool HasNear, HasFar, Dirty = true;
+		}
+
+		private readonly Dictionary<long, Cell> cells = new Dictionary<long, Cell>();
+		private int cellsCarTx = int.MinValue, cellsCarTz = int.MinValue, cellsShadows = -1;
+
+		private static long CellKey(int tx, int tz)
+		{
+			int cx = (int)Math.Floor(tx / (double)CellTiles), cz = (int)Math.Floor(tz / (double)CellTiles);
+			return ((long)cx << 32) | (uint)cz;
+		}
+
 		private void DrawFoliage()
 		{
 			if (broken)
@@ -446,6 +503,11 @@ namespace HalfGripOpenWorld
 			{
 				int reach = Mod.GrassReach.Value;
 				int shadows = Mod.TreeShadowReach.Value;
+				// Which trees cast shadows follows the car's tile: every block is gathered again when it changes (a few times a minute at speed).
+				bool regather = carTx != cellsCarTx || carTz != cellsCarTz || shadows != cellsShadows;
+				cellsCarTx = carTx;
+				cellsCarTz = carTz;
+				cellsShadows = shadows;
 				foreach (TileFoliage t in tiles.Values)
 				{
 					if (t.Tile == null)
@@ -455,32 +517,46 @@ namespace HalfGripOpenWorld
 					Vector3 at = t.Tile.position;
 					if (at != t.PlacedAt)
 					{
+						// The origin shifted: the tile's instances move, and its block is gathered again.
 						Move(t.TreeMatrices, at - t.PlacedAt);
 						Move(t.GrassMatrices, at - t.PlacedAt);
 						t.PlacedAt = at;
-					}
-					int near = Math.Max(Math.Abs(t.Tx - carTx), Math.Abs(t.Tz - carTz));
-					if (t.TreeMatrices != null)
-					{
-						Bounds box = new Bounds(t.TreeBox.center + at, t.TreeBox.size);
-						ShadowCastingMode cast = near <= shadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
-						for (int k = 0; k < treeDraws.Count; k++)
+						if (cells.TryGetValue(CellKey(t.Tx, t.Tz), out Cell moved))
 						{
-							Draw(treeDraws[k].mesh, treeDraws[k].sub, treeDraws[k].material, t.TreeMatrices[k], box, cast);
+							moved.Dirty = true;
 						}
 					}
+					int near = Math.Max(Math.Abs(t.Tx - carTx), Math.Abs(t.Tz - carTz));
 					if (t.Grass != null && t.Grass.Length > 0 && near <= reach)
 					{
 						t.GrassMatrices ??= GrassMatrices(t.Grass, at);
 						Bounds box = new Bounds(t.GrassBox.center + at, t.GrassBox.size);
 						for (int k = 0; k < GrassKinds; k++)
 						{
-							Draw(tuft, 0, grassMaterials[k], t.GrassMatrices[k], box, ShadowCastingMode.Off);
+							Draw(tuft, 0, grassMaterials[k], t.GrassMatrices[k], t.GrassMatrices[k]?.Length ?? 0, box, ShadowCastingMode.Off);
 						}
 					}
 					else
 					{
 						t.GrassMatrices = null;
+					}
+				}
+				foreach (Cell cell in cells.Values)
+				{
+					if (cell.Dirty || regather)
+					{
+						Gather(cell, shadows);
+					}
+					for (int k = 0; k < treeDraws.Count; k++)
+					{
+						if (cell.HasNear)
+						{
+							Draw(treeDraws[k].mesh, treeDraws[k].sub, treeDraws[k].material, cell.Near[k], cell.NearCount[k], cell.NearBox, ShadowCastingMode.On);
+						}
+						if (cell.HasFar)
+						{
+							Draw(treeDraws[k].mesh, treeDraws[k].sub, treeDraws[k].material, cell.Far[k], cell.FarCount[k], cell.FarBox, ShadowCastingMode.Off);
+						}
 					}
 				}
 			}
@@ -492,13 +568,99 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>
-		/// One draw's instances of a tile, with the tile's bounds, so Unity leaves the whole call out for a camera (or a shadow cascade)
-		/// that cannot see the tile.
-		/// </summary>
-		private static void Draw(Mesh mesh, int sub, Material material, Matrix4x4[] list, Bounds box, ShadowCastingMode shadows)
+		/// <summary>Puts a block's tiles' trees together, those near the car (casting shadows) apart from the rest; the arrays are kept and only grown.</summary>
+		private void Gather(Cell cell, int shadows)
 		{
-			if (mesh == null || material == null || list == null)
+			int draws = treeDraws.Count;
+			if (cell.Near == null || cell.Near.Length != draws)
+			{
+				cell.Near = new Matrix4x4[draws][];
+				cell.Far = new Matrix4x4[draws][];
+				cell.NearCount = new int[draws];
+				cell.FarCount = new int[draws];
+			}
+			Array.Clear(cell.NearCount, 0, draws);
+			Array.Clear(cell.FarCount, 0, draws);
+			cell.HasNear = cell.HasFar = false;
+			Vector3 nearMin = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue), nearMax = -nearMin, farMin = nearMin, farMax = -nearMin;
+			// Sized first, so each array is grown at most once.
+			foreach (TileFoliage t in cell.Members)
+			{
+				if (t.TreeMatrices == null)
+				{
+					continue;
+				}
+				bool near = Math.Max(Math.Abs(t.Tx - carTx), Math.Abs(t.Tz - carTz)) <= shadows;
+				int[] counts = near ? cell.NearCount : cell.FarCount;
+				for (int k = 0; k < draws; k++)
+				{
+					counts[k] += t.TreeMatrices[k]?.Length ?? 0;
+				}
+				Vector3 lo = t.TreeBox.min + t.PlacedAt, hi = t.TreeBox.max + t.PlacedAt;
+				if (near)
+				{
+					cell.HasNear = true;
+					nearMin = Vector3.Min(nearMin, lo);
+					nearMax = Vector3.Max(nearMax, hi);
+				}
+				else
+				{
+					cell.HasFar = true;
+					farMin = Vector3.Min(farMin, lo);
+					farMax = Vector3.Max(farMax, hi);
+				}
+			}
+			for (int k = 0; k < draws; k++)
+			{
+				if (cell.Near[k] == null || cell.Near[k].Length < cell.NearCount[k])
+				{
+					cell.Near[k] = new Matrix4x4[cell.NearCount[k] + cell.NearCount[k] / 4 + 16];
+				}
+				if (cell.Far[k] == null || cell.Far[k].Length < cell.FarCount[k])
+				{
+					cell.Far[k] = new Matrix4x4[cell.FarCount[k] + cell.FarCount[k] / 4 + 16];
+				}
+			}
+			Array.Clear(cell.NearCount, 0, draws);
+			Array.Clear(cell.FarCount, 0, draws);
+			foreach (TileFoliage t in cell.Members)
+			{
+				if (t.TreeMatrices == null)
+				{
+					continue;
+				}
+				bool near = Math.Max(Math.Abs(t.Tx - carTx), Math.Abs(t.Tz - carTz)) <= shadows;
+				Matrix4x4[][] into = near ? cell.Near : cell.Far;
+				int[] counts = near ? cell.NearCount : cell.FarCount;
+				for (int k = 0; k < draws; k++)
+				{
+					Matrix4x4[] list = t.TreeMatrices[k];
+					if (list == null)
+					{
+						continue;
+					}
+					Array.Copy(list, 0, into[k], counts[k], list.Length);
+					counts[k] += list.Length;
+				}
+			}
+			if (cell.HasNear)
+			{
+				cell.NearBox.SetMinMax(nearMin, nearMax);
+			}
+			if (cell.HasFar)
+			{
+				cell.FarBox.SetMinMax(farMin, farMax);
+			}
+			cell.Dirty = false;
+		}
+
+		/// <summary>
+		/// One draw's first <paramref name="count"/> instances (a tile's grass, a block's trees), with their bounds, so Unity leaves the
+		/// whole call out for a camera (or a shadow cascade) that cannot see them.
+		/// </summary>
+		private static void Draw(Mesh mesh, int sub, Material material, Matrix4x4[] list, int count, Bounds box, ShadowCastingMode shadows)
+		{
+			if (mesh == null || material == null || list == null || count <= 0)
 			{
 				return;
 			}
@@ -509,9 +671,9 @@ namespace HalfGripOpenWorld
 				receiveShadows = true,
 				layer = 0,
 			};
-			for (int start = 0; start < list.Length; start += Batch)
+			for (int start = 0; start < count; start += Batch)
 			{
-				Graphics.RenderMeshInstanced(rp, mesh, sub, list, Math.Min(Batch, list.Length - start), start);
+				Graphics.RenderMeshInstanced(rp, mesh, sub, list, Math.Min(Batch, count - start), start);
 			}
 		}
 

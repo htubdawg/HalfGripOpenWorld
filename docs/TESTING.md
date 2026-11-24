@@ -516,3 +516,13 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      Kingsbridge's centre, a few seconds each. Send `LogOutput.log`: every 10 s it has `Frame timings: ...` and every step of Unity's
      frame (`Frame timings, every step of Unity's frame: ...`). A screenshot of the overlay where the frame rate is lowest helps.
    - With `ShowCoords` off the frame rate is as on 0.32.3 (the markers come out of Unity's frame).
+
+55. The frame rate after 0.32.5 (trees drawn in blocks, flat surfaces casting no shadows, the overlay made 4 times a second).
+   - `ShowCoords` off: the frame rate driving from the spawn east along the trunk, read with the Steam overlay's counter, against
+     0.32.4's. Then `ShowCoords` on, the same drive, and send `LogOutput.log` (its `Frame timings` lines: the draw calls should be
+     several hundred fewer, `PostLateUpdate.FinishFrameRendering` and foliage lower).
+   - The woods look as before: trees everywhere they were, shadows from the near ones, none missing at block edges (every 1,000 units,
+     about 300 m) or flickering as the car crosses a tile or the origin shifts.
+   - Shadows: buildings, bridges, the covered bridges, trees and cars still cast them; the ground under a hill at a low sun no longer
+     shadows itself (say if that is missed).
+   - Optional, to see what is not ours: the same drive with only Open World and Multiplayer enabled in the mod manager.

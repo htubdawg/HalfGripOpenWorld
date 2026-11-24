@@ -1050,3 +1050,8 @@ queue for real.
 
 - A build for measuring the frame: Unity's frame step by step, the mod's systems, the renderer's counts (`FramePerf.cs`), and
   trafficview's report of the highway as a player meets it. See `docs/PERF_HANDOFF.md`, "Done in 0.32.4". No change to the traffic.
+
+## 0.32.5 (2026-11-24)
+
+- The owner's 0.32.4 frame timings: the main thread's rendering (2,600 to 3,100 draw calls) is the largest cost; the traffic 0.1 to 0.2
+  ms. Trees drawn in blocks, flat surfaces casting no shadows, the overlay cheaper. See `docs/PERF_HANDOFF.md`. No change to the traffic.
