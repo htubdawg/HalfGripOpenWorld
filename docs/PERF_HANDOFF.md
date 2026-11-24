@@ -1,4 +1,4 @@
-# Performance handoff (after 0.32.1; 0.32.2 below)
+# Performance handoff (after 0.32.1; 0.32.2 and 0.32.3 below)
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
@@ -48,11 +48,19 @@ what is left. The next build: the two scans fixed, the timings on the overlay, n
   `Release`, `WarmPool`); drawn moving and parked, physics live, bodies taken and given back in the last minute. Averaged over a
   second; logged every 10 s as `Traffic timings: ...`. Not timed: the game's own physics and audio for the bodies (inside Unity's
   step, not ours): if the fps is still down with small numbers here, that is where it goes (the handoff's suspect 1).
-- **Tyre marks, still seen rarely (a streak from far away).** `Origin.Shift` switches rigidbody interpolation off and put it back
-  after two frames: at 135 fps that is 15 ms, often before one physics step (20 ms), so a body could be drawn a frame from its pose
-  before the shift, a tile or more away, and its trail painted a streak from there. It now also waits for two physics steps
-  (`Time.fixedTime`). Physics cars also hold their trails off (not emptied) for 0.3 s over each shift (`TrafficBody.HoldTrails`).
-  Not proven to be the cause: it is the one path left where a body is drawn away from where it is.
+- **Tyre marks:** the fix written here was already on `main` (PRs 50 and 51, `main`'s 0.32.1: interpolation back after two physics
+  steps, marks held off over a shift, a jump guard); this branch had been started from `main` before they were merged. Merged in as
+  0.32.3 with `main`'s version kept. The owner saw no tyre marks on 0.32.2.
+
+## The owner's 0.32.2 drive (2026-11-24)
+
+- Better but still 100 to 110 fps at highway speed. The log's `Traffic timings`: the traffic's own code about 0.1 ms a frame, 1 to 7
+  cars drawn, physics steps 0.01 to 0.03 ms, switching 0.00 to 0.01 ms; and the frame time does not follow the physics cars (133 fps
+  with 6 live, 99 with 2). **The traffic is not where the frames go.** Next: time the rest of what runs at speed (the tiles built and
+  loaded, about 5 a second, with Unity's own mesh and collider work; the far view; the sky; foliage).
+- Drawn cars stood too high and dropped when made physical: 0.32.2 lacked `main`'s rest on the springs (`TrafficRest.cs`). Merged in
+  0.32.3.
+- The owner wants 130 fps on a 265K and a 3060 and ten times the highway traffic or more.
 
 ## What the log shows (`LogOutput.log` of the drive, 0.32.1)
 

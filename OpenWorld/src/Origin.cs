@@ -35,8 +35,8 @@ namespace HalfGripOpenWorld
 
 		private static readonly List<(Rigidbody body, RigidbodyInterpolation mode)> paused = new List<(Rigidbody, RigidbodyInterpolation)>();
 		private static int restoreAt;
-		/// <summary>The physics clock (<c>Time.fixedTime</c>) at the last shift: interpolation comes back once the physics has stepped twice since.</summary>
-		private static float shiftedAtFixed;
+		/// <summary>The physics clock at the last shift: interpolation comes back only once it has stepped twice since.</summary>
+		private static float fixedAtShift;
 
 		internal static void Reset(bool active)
 		{
@@ -128,7 +128,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			restoreAt = Time.frameCount + 2;
-			shiftedAtFixed = Time.fixedTime;
+			fixedAtShift = Time.fixedTime;
 
 			int roots = 0;
 			HashSet<Transform> moved = new HashSet<Transform>();
@@ -229,11 +229,11 @@ namespace HalfGripOpenWorld
 
 		private static void RestoreInterpolation()
 		{
-			// Two frames were not enough: at 135 fps two frames are 15 ms, often less than one physics step (20 ms), so interpolation came
-			// back before the physics had stepped from the new place, the body was drawn for a frame from its pose before the shift, a
-			// whole tile or more away, and a tyre trail painted a streak from there across the country (the owner, rarely, after 0.32.0).
-			// Now it waits for two physics steps as well.
-			if (paused.Count == 0 || Time.frameCount < restoreAt || Time.fixedTime < shiftedAtFixed + 1.5f * Time.fixedDeltaTime)
+			// Two frames were not enough: at a high frame rate they can pass with no physics step (50 a second against 144 frames), and an
+			// interpolated body was then drawn for a frame between its pose before the shift and now, a whole shift away. The tyre marks of
+			// every moving traffic car drew a point there, a segment as long as the shift (the owner's log, 2026-11-23: 1118 at a shift of
+			// 500 by 1000). So it waits for two physics steps since the shift too, both taken with the bodies where they are now.
+			if (paused.Count == 0 || Time.frameCount < restoreAt || Time.fixedTime < fixedAtShift + 2f * Time.fixedDeltaTime - 1e-4f)
 			{
 				return;
 			}

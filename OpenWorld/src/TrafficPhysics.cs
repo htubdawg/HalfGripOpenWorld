@@ -433,7 +433,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			b.Place(RestPlace(v.Root.position, b.LookIndex, 0.15f), v.Root.rotation);
+			PlaceAsDrawn(b, v, 0.15f);
 			Vector3 velocity = Vector3.zero;
 			bool pulling = false;
 			double legT = 0.0;
@@ -477,7 +477,7 @@ namespace HalfGripOpenWorld
 		{
 			foreach (TrafficBody b in physical.Values)
 			{
-				if (b == null || !b.Alive || b.Remote || b.Age < 1.2f || b.Rb.linearVelocity.sqrMagnitude > 9f || b.Rb.angularVelocity.sqrMagnitude > 0.04f || b.transform.up.y < 0.97f)
+				if (b == null || !b.Alive || b.Remote || b.Loose || b.Hurt || b.Age < 1.2f || b.Rb.linearVelocity.sqrMagnitude > 9f || b.Rb.angularVelocity.sqrMagnitude > 0.04f || b.transform.up.y < 0.97f)
 				{
 					continue;
 				}
@@ -503,9 +503,30 @@ namespace HalfGripOpenWorld
 				restHeight[b.LookIndex] = r;
 				if (r.n == RestKnown)
 				{
-					Mod.Info("Traffic: body model " + b.LookIndex + " stands " + (r.sum / r.n).ToString("0.00") + " over the ground on its springs (cars are put down there from now on)");
+					// The worked-out rest beside what the game's physics did (on tarmac they should agree to a hundredth or so; the verges, the
+					// ground and the tracks sit 0.1 lower).
+					Rest rest = looks[b.LookIndex].Rest;
+					Mod.Info("Traffic: body model " + b.LookIndex + " stands " + (r.sum / r.n).ToString("0.00") + " over the ground on its springs"
+						+ (rest != null && rest.Ok ? " (worked out: " + rest.Height.ToString("0.00") + ")" : " (cars are put down there from now on)"));
 				}
 			}
+		}
+
+		/// <summary>
+		/// Puts body <paramref name="b"/> where drawn car <paramref name="v"/> is. With the rest worked out (<see cref="Rest"/>) the drawn car
+		/// already stands exactly as the physics car does at rest, so the body goes to the same pose with its springs and wheels at rest too:
+		/// nothing drops, bounces or moves. Without it, as before: a little up (<paramref name="drop"/>) or at the learned height.
+		/// </summary>
+		private void PlaceAsDrawn(TrafficBody b, View v, float drop)
+		{
+			Rest rest = v.Look.Rest;
+			if (rest != null && rest.Ok)
+			{
+				b.Place(v.Root.position, v.Root.rotation);
+				b.Settle(rest);
+				return;
+			}
+			b.Place(RestPlace(v.Root.position, b.LookIndex, drop), v.Root.rotation);
 		}
 
 		/// <summary>Where to put a body of model <paramref name="look"/> standing in for a drawn car at <paramref name="drawn"/>: over the ground at its rest height once that is known, else <paramref name="drop"/> up.</summary>
@@ -639,7 +660,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
-			b.Place(RestPlace(v.Root.position, b.LookIndex, 0.4f), v.Root.rotation);
+			PlaceAsDrawn(b, v, 0.4f);
 			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
 			physical[c] = b;
 			madePhysical++;
@@ -914,9 +935,13 @@ namespace HalfGripOpenWorld
 			return b;
 		}
 
-		/// <summary>Bodies made and woken ahead of need at the start of the race, and the one awake now (for one frame).</summary>
+		/// <summary>
+		/// Bodies kept woken and spare ahead of need (topped up one a frame), and the one awake now (for one frame). A body is only ever put
+		/// to use woken: the game's controller takes its wheels' places in its <c>Start</c>, the frame after the body is first switched on, so
+		/// a body made and placed at once had its wheels moved to the rest pose first and the controller took those, widened again by 1.1
+		/// (the wheels popped out) and lowered (the car bounced) (the owner, 2026-11-23).
+		/// </summary>
 		private const int WarmBodies = 3;
-		private int warmed;
 		private TrafficBody warming;
 
 		/// <summary>
@@ -926,7 +951,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private void WarmPool()
 		{
-			if (warming == null && (warmed >= WarmBodies || (MostLoose == 0 && MostPhysics == 0)))
+			if (warming == null && (bodySpare.Count >= WarmBodies || (MostLoose == 0 && MostPhysics == 0)))
 			{
 				return;
 			}
@@ -939,6 +964,8 @@ namespace HalfGripOpenWorld
 		{
 			if (warming != null)
 			{
+				// Started now (its controller's Start ran as it woke): the rest is worked out from it, once.
+				LearnRestFrom(warming);
 				warming.gameObject.SetActive(false);
 				warming.Rb.isKinematic = false;
 				if (warming.Ec.audioSource != null)
@@ -949,11 +976,12 @@ namespace HalfGripOpenWorld
 				warming = null;
 				return;
 			}
-			if (warmed >= WarmBodies || (MostLoose == 0 && MostPhysics == 0) || tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
+			int bodies = physical.Count + remote.Count + bodySpare.Count;
+			if (bodySpare.Count >= WarmBodies || bodies >= MostPhysics + MostLoose + WarmBodies || (MostLoose == 0 && MostPhysics == 0) || tm.enemyCarPrefab == null
+				|| madeFrame == Time.frameCount || physicsFailed)
 			{
 				return;
 			}
-			warmed++;
 			TrafficBody b;
 			try
 			{
@@ -1287,43 +1315,51 @@ namespace HalfGripOpenWorld
 				}
 			}
 			trailsOffFor = TrailsOff;
-			clearing = true;
+			trailsSettle = 0f;
+			// The guard starts again from wherever the body is put.
+			trailShifts = -1;
 			ClearParticles();
 		}
 
-		/// <summary>True while the tyre marks are being kept empty (after a placement); false while they are only held off (over an origin shift, keeping the marks already drawn).</summary>
-		private bool clearing;
-
-		private void OnEnable()
-		{
-			Origin.Shifted += HoldTrails;
-		}
-
-		private void OnDisable()
-		{
-			Origin.Shifted -= HoldTrails;
-		}
-
 		/// <summary>
-		/// Over an origin shift the tyre marks are held off (not emptied: the marks already drawn are moved with the scene) for
-		/// <see cref="TrailsOff"/>, as after a placement: a body drawn for a frame from its pose before the shift (see
-		/// <see cref="Origin"/>'s interpolation) would paint a streak from there (the owner still saw one, rarely, after 0.32.0).
+		/// The springs and the wheels as at rest (<see cref="TrafficCars.Rest"/>), after <see cref="Place"/>: each of the game's wheels' last
+		/// length (so the damper sees no movement on the first step: a stale length from the pool kicked the body) and each wheel drawn where
+		/// the game draws it at rest (it eases its wheels there a tenth a frame, so from the pool's pose they slid into place).
 		/// </summary>
-		private void HoldTrails(Vector3 delta)
+		internal void Settle(TrafficCars.Rest rest)
 		{
-			if (trails == null)
+			if (Cc == null || rest.Length == null)
 			{
-				trails = GetComponentsInChildren<TrailRenderer>(true);
+				return;
 			}
-			foreach (TrailRenderer t in trails)
+			if (Cc.wheels == null || Cc.wheels.Length != rest.Length.Length || Cc.wheels[0] == null)
 			{
-				if (t != null)
+				// Not started yet (made this frame: the warm pool ran short). Its controller's Start must take the wheels where the prefab has
+				// them, so they are left alone until it has (LateUpdate).
+				settleLater = rest;
+				return;
+			}
+			settleLater = null;
+			for (int i = 0; i < rest.Length.Length; i++)
+			{
+				if (Cc.wheels[i] != null)
 				{
-					t.emitting = false;
+					Cc.wheels[i].lastLength = rest.Length[i];
 				}
 			}
-			trailsOffFor = Mathf.Max(trailsOffFor, TrailsOff);
+			int front = Cc.frontWheels != null ? Cc.frontWheels.Count : 0;
+			for (int i = 0; i < rest.Local.Length; i++)
+			{
+				Transform w = i < front ? Cc.frontWheels[i] : (Cc.backWheels != null && i - front < Cc.backWheels.Count ? Cc.backWheels[i - front] : null);
+				if (w != null)
+				{
+					w.localPosition = rest.Local[i];
+				}
+			}
 		}
+
+		/// <summary>A rest to settle into once the controller has started (<see cref="Settle"/>).</summary>
+		private TrafficCars.Rest settleLater;
 
 		/// <summary>The body's particles (the tyres' smoke, the exhaust) emptied: anything emitted along a move would hang in a line across the country.</summary>
 		private void ClearParticles()
@@ -1425,42 +1461,194 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>After the body was placed: its tyre marks kept empty, then back on (as the game has them: on unless airborne).</summary>
+		/// <summary>
+		/// After the body was placed: its tyre marks kept empty with interpolation held off (<see cref="TrailsOff"/>), then interpolation back
+		/// on while the marks stay off a while longer (<see cref="TrailsSettle"/>), then the marks back on as the game has them (on unless
+		/// airborne). And every frame the jump guard (<see cref="GuardTrails"/>).
+		/// </summary>
+		/// <remarks>
+		/// Interpolation and the marks used to come back on the same frame: an interpolated body can be drawn for a frame or two from a pose it
+		/// had before it was put here (the pool's, the scene's origin), and with its marks already on, that frame painted a streak from there
+		/// to here, on the odd swapped car (the owner, after four fixes that each cleared the marks around the move itself).
+		/// </remarks>
 		private void LateUpdate()
 		{
-			if (trailsOffFor <= 0f || trails == null)
+			if (settleLater != null && Cc != null && Cc.wheels != null && Cc.wheels.Length > 0 && Cc.wheels[0] != null)
+			{
+				Settle(settleLater);
+			}
+			if (trails == null)
 			{
 				return;
 			}
-			trailsOffFor -= Time.deltaTime;
-			bool back = trailsOffFor <= 0f;
-			if (clearing)
+			if (trailsOffFor > 0f)
 			{
+				trailsOffFor -= Time.deltaTime;
 				ClearParticles();
+				if (trailsOffFor <= 0f && interpHeld)
+				{
+					// Interpolation back first; the marks wait out a few physics steps more, so its history is all from here.
+					interpHeld = false;
+					Rb.interpolation = interpMode;
+					trailsSettle = TrailsSettle;
+				}
+				TrailsOffNow();
 			}
-			if (back && interpHeld)
+			else if (trailsSettle > 0f)
 			{
-				interpHeld = false;
-				Rb.interpolation = interpMode;
+				trailsSettle -= Time.deltaTime;
+				TrailsOffNow();
+				if (trailsSettle <= 0f)
+				{
+					foreach (TrailRenderer t in trails)
+					{
+						if (t != null)
+						{
+							t.emitting = !Cc.isAirborne;
+							// Emptied again with it on: whatever it kept from before starts nowhere.
+							t.Clear();
+						}
+					}
+				}
 			}
+			GuardTrails();
+		}
+
+		/// <summary>How long the marks stay off after interpolation comes back (seconds: several physics steps).</summary>
+		private const float TrailsSettle = 0.15f;
+		private float trailsSettle;
+
+		/// <summary>The marks off and empty this frame (the game's effect controller turns them on when the wheels land, so each frame).</summary>
+		private void TrailsOffNow()
+		{
 			foreach (TrailRenderer t in trails)
 			{
-				if (t == null)
+				if (t != null)
 				{
-					continue;
-				}
-				// Off again each frame (the game's effect controller turns them on when the wheels land) until the window is over.
-				t.emitting = back && !Cc.isAirborne;
-				if (clearing)
-				{
+					t.emitting = false;
 					t.Clear();
 				}
 			}
-			if (back)
+		}
+
+		/// <summary>Where each mark's wheel was drawn last frame, and the origin shift count then (a shift moves everything: no jump).</summary>
+		private Vector3[] trailLast;
+		private int trailShifts = -1;
+
+		/// <summary>
+		/// The jump guard, whatever moved the body. Runs in LateUpdate, after interpolation has placed the body and before Unity adds this
+		/// frame's points to the marks. If the drawn body is away from its rigidbody (interpolating from a stale pose), or a marked wheel
+		/// went further this frame than the car's speed allows, the marks are emptied and kept off as after a placing: no streak can be
+		/// drawn from where it was to where it is.
+		/// </summary>
+		private void GuardTrails()
+		{
+			if (trailLast == null || trailLast.Length != trails.Length)
 			{
-				clearing = false;
+				trailLast = new Vector3[trails.Length];
+				trailShifts = -1;
+			}
+			bool shifted = trailShifts != Origin.Shifts;
+			if (shifted && trailShifts >= 0 && trailsOffFor <= 0f)
+			{
+				// An origin shift: for a few frames after it an interpolated body can still be drawn part of the way back toward where it was
+				// before (the owner's log, 2026-11-23: marks emptied with the wheel 104 to 146 from them, a tenth of the shift, even with
+				// interpolation held off over the shift). The marks are kept off over that time instead, and emptied as they come back.
+				TrailsOffNow();
+				trailsSettle = Mathf.Max(trailsSettle, ShiftHold);
+			}
+			trailShifts = Origin.Shifts;
+			// One physics step's travel is the most interpolation lags by; this is many times that.
+			bool stale = !Rb.isKinematic && (transform.position - Rb.position).sqrMagnitude > JumpSlack * JumpSlack;
+			// A stand-in is kinematic, moved by MovePosition, and may report no speed: allowed a fast car's travel instead.
+			float speed = Rb.isKinematic ? Mathf.Max(Rb.linearVelocity.magnitude, 120f) : Rb.linearVelocity.magnitude;
+			float most = speed * Mathf.Max(Time.deltaTime, Time.fixedDeltaTime) * 2f + JumpSlack;
+			bool jumped = stale;
+			for (int i = 0; i < trails.Length; i++)
+			{
+				if (trails[i] == null)
+				{
+					continue;
+				}
+				Vector3 p = trails[i].transform.position;
+				if (!shifted && (p - trailLast[i]).sqrMagnitude > most * most)
+				{
+					jumped = true;
+				}
+				trailLast[i] = p;
+			}
+			if (!jumped)
+			{
+				// The marks' own points: a segment no car draws in a frame, or a head far from both ends (a point kept from before, which
+				// the drawn line would join to the wheel), is a streak, whatever made it. Emptied before it is drawn again.
+				float seg = most + speed * Time.deltaTime * 2f + 6f;
+				for (int i = 0; i < trails.Length; i++)
+				{
+					string why = Streak(trails[i], seg);
+					if (why != null)
+					{
+						trails[i].Clear();
+						if (!streakLogged)
+						{
+							streakLogged = true;
+							Mod.Info("Traffic: car " + Car + "'s tyre mark emptied (" + why + ")");
+						}
+					}
+				}
+				return;
+			}
+			TrailsOffNow();
+			ClearParticles();
+			if (trailsOffFor <= 0f)
+			{
+				trailsSettle = Mathf.Max(trailsSettle, TrailsSettle);
+			}
+			if (!guardLogged)
+			{
+				guardLogged = true;
+				Mod.Info("Traffic: car " + Car + "'s tyre marks cut at a jump (" + (stale ? "drawn away from its body" : "a wheel moved too far in a frame") + ")");
 			}
 		}
+
+		private bool streakLogged;
+
+		/// <summary>Why trail <paramref name="t"/> holds a streak (a segment at either end longer than <paramref name="seg"/>, or its head that far from both ends), or null.</summary>
+		private static string Streak(TrailRenderer t, float seg)
+		{
+			if (t == null)
+			{
+				return null;
+			}
+			int n = t.positionCount;
+			if (n == 0)
+			{
+				return null;
+			}
+			float seg2 = seg * seg;
+			Vector3 head = t.transform.position;
+			Vector3 first = t.GetPosition(0), last = t.GetPosition(n - 1);
+			// Only while it draws: off (airborne), a mark stays behind as the car flies on.
+			if (t.emitting && (head - first).sqrMagnitude > seg2 && (head - last).sqrMagnitude > seg2)
+			{
+				return "its wheel " + Mathf.Sqrt(Mathf.Min((head - first).sqrMagnitude, (head - last).sqrMagnitude)).ToString("0") + " from its ends";
+			}
+			if (n >= 2)
+			{
+				float a = (t.GetPosition(1) - first).sqrMagnitude, b = (last - t.GetPosition(n - 2)).sqrMagnitude;
+				if (a > seg2 || b > seg2)
+				{
+					return "a segment " + Mathf.Sqrt(Mathf.Max(a, b)).ToString("0") + " long";
+				}
+			}
+			return null;
+		}
+
+		/// <summary>How long the marks stay off after an origin shift (seconds): past the frames and physics steps the shift's interpolation pause lasts.</summary>
+		private const float ShiftHold = 0.3f;
+
+		/// <summary>Distance (units) past which a move in one frame, or the drawn body from its rigidbody, is a jump.</summary>
+		private const float JumpSlack = 4f;
+		private bool guardLogged;
 		internal TrafficDrive.State Drive;
 		internal TrafficDrive.Mover Me;
 		private float offFor, steer;
