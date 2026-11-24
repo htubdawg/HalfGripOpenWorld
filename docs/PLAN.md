@@ -3,6 +3,12 @@
 Agreed with the owner after testing 0.4.3. Work top to bottom; each PR runs `tools/check.sh`, `tools/preview` and `tools/meshcheck`
 before it goes up, and adds checks for what it fixes.
 
+## Traffic: right of way and junction lanes (in progress, branch `ccr-02e633e5-fytf3y`)
+
+Agreed with the owner 2026-11-24: follow the PA Driver's Manual (PUB 95); no interchanges; ramps on the trunk's shoulders and
+left-turn lanes in its median (built); following distance 2 s at most; no roundabouts ever; turn lanes in the towns next (not built);
+traffic lights only if the owner agrees. See `docs/TRAFFIC_HANDOFF.md` (top) and `docs/TRAFFIC_RESEARCH.md`.
+
 ## Map API for MiniMap (0.4.6; asked for by the MiniMap mod)
 
 Done: `MapView` (public, read by reflection; see README) gives each loaded tile's map picture (land use, water, roads by class) and
