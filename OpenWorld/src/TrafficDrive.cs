@@ -71,6 +71,9 @@ namespace HalfGripOpenWorld
 			/// <summary>Seconds it has been held at the junction it is waiting at, and which node.</summary>
 			public double Waited;
 			public int WaitNode;
+			/// <summary>What holds it at the junction it is at (for the overlay and trafficview): 0 nothing, 1 its light, 2 no room past the
+			/// box, 3 a car crossing in the box, 4 a car that can't stop any more, 5 giving way, 6 a car there first.</summary>
+			public int Held;
 			/// <summary>Why it is going slower than its profile (for the overlay): 0 free, 1 a car in front, 2 a junction, 3 the trip's end, 4 early.</summary>
 			public int Why;
 		}
@@ -543,13 +546,15 @@ namespace HalfGripOpenWorld
 				if (me.ToBox < reach)
 				{
 					hold = blockedOut;
+					st.Held = blockedOut ? 2 : 0;
 					// Its light, as the day ran it: red, or amber it can stop for (as the day's cars).
 					// A side road's light changes for the day's cars only: one held at red past LightGiveUp with none of them there to
 					// call the green goes as at a give way (the light out of it), as a driver does at a light that never changes.
 					bool unlit = TrafficSignals.Has(me.Node) && st.WaitNode == me.Node && st.Waited > LightGiveUp && TrafficSignals.PhaseOf(me.Node, me.InArm) == 1;
-					if (TrafficSignals.Has(me.Node) && !unlit && !TrafficSignals.MayGo(day.Lights.State(me.Node, me.InArm, now), v, me.ToBox - CarLength * 0.5))
+					if (!hold && TrafficSignals.Has(me.Node) && !unlit && !TrafficSignals.MayGo(day.Lights.State(me.Node, me.InArm, now), v, me.ToBox - CarLength * 0.5))
 					{
 						hold = true;
+						st.Held = 1;
 					}
 					double etaMe = me.ToBox / Math.Max(v, 4.0);
 					bool patient = st.WaitNode != me.Node || st.Waited < HoldBreak;
@@ -571,6 +576,7 @@ namespace HalfGripOpenWorld
 							if (o.BackIn != me.InArm && TrafficDay.Crosses(me.Node, me.InArm, me.OutArm, o.BackIn, o.BackOut))
 							{
 								hold = true;
+								st.Held = 3;
 								break;
 							}
 							continue;
@@ -590,6 +596,7 @@ namespace HalfGripOpenWorld
 							if (o.Physical || o.V > 0.5 || st.WaitNode != me.Node || st.Waited < 3.0 * HoldBreak)
 							{
 								hold = true;
+								st.Held = 3;
 								break;
 							}
 							continue;
@@ -600,6 +607,7 @@ namespace HalfGripOpenWorld
 						{
 							// It can't stop for this car any more (a car that set off late must not cut across a fast one): it goes first.
 							hold = true;
+							st.Held = 4;
 							break;
 						}
 						if (meCommitted)
@@ -622,13 +630,15 @@ namespace HalfGripOpenWorld
 							double margin = TrafficDay.GiveWayAfter(waited) + PhysicsGapMore * Math.Max(0.0, 1.0 - waited / TrafficDay.GiveWayPatience);
 							// Its reckoning is rough (full pull-away, no easing for the turn, the other's speed as it is): a wider margin than the day's.
 							double clearMe = TrafficDay.ClearTime(v, me.ToBox - CarLength * 0.5 + 2.0 * box + CarLength) + margin;
-							if (ov < 0.5 && o.ToBox > CarLength * 0.5 + 4.0)
+							if (ov < 0.5)
 							{
+								// Standing (at its line or behind): not coming, as in the day. Once it moves off, it is reckoned again.
 								continue;
 							}
 							if (o.ToBox / Math.Max(ov, 4.0) < Math.Max(clearMe, TrafficDay.SideGap(me.Node, me.InArm, me.OutArm, waited)))
 							{
 								hold = true;
+								st.Held = 5;
 								break;
 							}
 							continue;
@@ -664,6 +674,7 @@ namespace HalfGripOpenWorld
 							first = oRight != meRight ? oRight : o.Car < me.Car;
 						}
 						hold = first;
+						st.Held = first ? 6 : 0;
 					}
 				}
 			}

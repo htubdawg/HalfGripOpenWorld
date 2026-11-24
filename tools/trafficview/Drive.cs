@@ -468,7 +468,7 @@ internal static partial class Program
 			{
 				TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
 				TrafficDrive.Prepare(day, ref lm);
-				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)));
+				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)));
 			}
 		}
 		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && hitPlayer == 0 && jumps == 0 && (blocked || longWaits == 0);
