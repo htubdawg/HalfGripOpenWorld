@@ -365,6 +365,81 @@ namespace HalfGripOpenWorld
 					Nodes[n] = node;
 				}
 			}
+			for (int n = 0; n < Nodes.Count; n++)
+			{
+				ObliqueBox(n);
+			}
+		}
+
+		/// <summary>The most a junction's box is widened for a road meeting another at a slant.</summary>
+		private const double BoxMost = 75.0;
+
+		/// <summary>How far a car waiting at a box's edge, in its lane, keeps off another road's paving (about half a car's width).</summary>
+		internal const double StopClear = 2.7;
+
+		/// <summary>
+		/// Widens node <paramref name="n"/>'s box so a car waiting at its edge on any arm, in its lane coming in, is off every other road's
+		/// paving: a road meeting the trunk at a slant is on its paving well past its half width and a little (enough only where roads meet
+		/// square), and cars waited in the highway's lanes. Worked out from the roads themselves (they curve near a junction): each arm
+		/// stepped back a unit at a time until clear of the other roads' lines by their half widths and <see cref="StopClear"/>.
+		/// </summary>
+		private static void ObliqueBox(int n)
+		{
+			List<int> links = Links[n];
+			if (links.Count < 3)
+			{
+				return;
+			}
+			Node node = Nodes[n];
+			double box = node.Box;
+			foreach (int ei in links)
+			{
+				Edge e = Edges[ei];
+				Network.Road road = Network.Roads[e.Road];
+				double off = LaneOffset(road), sign = e.A == n ? -1.0 : 1.0;
+				double d = node.Box;
+				while (d < BoxMost && d < e.Length - 1.0)
+				{
+					double s = e.A == n ? e.Sa + d : e.Sb - d;
+					At(road, s, out double x, out double z, out double _);
+					Heading(road, s, out double hx, out double hz);
+					x += hz * sign * off;
+					z -= hx * sign * off;
+					if (ClearOfOthers(n, e.Road, x, z))
+					{
+						break;
+					}
+					d += 1.0;
+				}
+				box = Math.Max(box, Math.Min(d, BoxMost));
+			}
+			node.Box = box;
+			Nodes[n] = node;
+		}
+
+		/// <summary>Whether point (x, z) is off the paving (by <see cref="StopClear"/>) of every road at node <paramref name="n"/> but <paramref name="road"/>.</summary>
+		internal static bool ClearOfOthers(int n, int road, double x, double z)
+		{
+			foreach (int ej in Links[n])
+			{
+				Edge f = Edges[ej];
+				if (f.Road == road)
+				{
+					continue;
+				}
+				Network.Road other = Network.Roads[f.Road];
+				double need = other.Half + StopClear;
+				double sNode = f.A == n ? f.Sa : f.Sb, lo = Math.Max(0.0, sNode - 150.0), hi = Math.Min(other.S[other.Count - 1], sNode + 150.0);
+				for (double q = lo; q <= hi; q += 2.0)
+				{
+					At(other, q, out double ox, out double oz, out double _);
+					if ((ox - x) * (ox - x) + (oz - z) * (oz - z) < need * need)
+					{
+						return false;
+					}
+				}
+			}
+			return true;
 		}
 
 		/// <summary>Per node, which connected part of the graph it is in; the biggest part (by length of road) is <see cref="MainPart"/>.</summary>
