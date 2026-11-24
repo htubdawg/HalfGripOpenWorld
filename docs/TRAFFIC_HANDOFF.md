@@ -1045,3 +1045,8 @@ queue for real.
 - 0.32.3: this line of work (tunnels, 100 circling cars, 0.32.2) had started from `main` before PRs 50 and 51 (`main`'s 0.32.1: tyre
   marks, rest on the springs) were merged, and lacked them. `main` merged in, `main`'s tyre-mark and origin code kept. Always compare a
   branch with `main` before starting.
+
+## 0.32.4 (2026-11-24)
+
+- A build for measuring the frame: Unity's frame step by step, the mod's systems, the renderer's counts (`FramePerf.cs`), and
+  trafficview's report of the highway as a player meets it. See `docs/PERF_HANDOFF.md`, "Done in 0.32.4". No change to the traffic.

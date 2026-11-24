@@ -526,7 +526,21 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>Timed for the frame timings (ShowCoords).</summary>
 		private void Update()
+		{
+			long timed = FramePerf.Now;
+			try
+			{
+				UpdateDeer();
+			}
+			finally
+			{
+				FramePerf.Add(FramePerf.Part.Deer, timed);
+			}
+		}
+
+		private void UpdateDeer()
 		{
 			if (failed || tm == null)
 			{

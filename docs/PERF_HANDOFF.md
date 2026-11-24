@@ -1,4 +1,4 @@
-# Performance handoff (after 0.32.1; 0.32.2 and 0.32.3 below)
+# Performance handoff (after 0.32.1; 0.32.2 to 0.32.4 below)
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
@@ -61,6 +61,50 @@ what is left. The next build: the two scans fixed, the timings on the overlay, n
 - Drawn cars stood too high and dropped when made physical: 0.32.2 lacked `main`'s rest on the springs (`TrafficRest.cs`). Merged in
   0.32.3.
 - The owner wants 130 fps on a 265K and a 3060 and ten times the highway traffic or more.
+
+## Done in 0.32.4 (2026-11-24, the owner to test: `docs/TESTING.md` test 54)
+
+The plan's next step after the 0.32.2 drive: time everything else that runs at speed. Nothing that changes what is drawn or how; a
+build for measuring, kept behind `ShowCoords` (off, no markers are in Unity's frame and nothing is timed).
+
+- **Unity's own frame, step by step** (`FramePerf.cs`): with `ShowCoords` on, a marker goes after every step of Unity's player loop
+  (`PlayerLoop.SetPlayerLoop`; about 100 steps, a stopwatch read each), so each step's time is the time since the marker before:
+  `FixedUpdate.PhysicsFixedUpdate` (the game's physics, all the cars' rigidbodies and wheels), `Update.ScriptRunBehaviourUpdate` (every
+  script's `Update`, the game's and the mods'), `PreLateUpdate.ScriptRunBehaviourLateUpdate`, `PostLateUpdate.FinishFrameRendering`
+  (URP's rendering on the main thread), `TimeUpdate.WaitForLastPresentationAndUpdateTime` (waiting for the GPU or the screen) and the
+  rest. The overlay shows the six slowest and the time between frames; the log every 10 s has every step over 0.01 ms. This is the
+  part that answers the open question: CPU or GPU, game or mod, physics or rendering.
+- **Our own systems timed**: the highway's wrap, the origin shift, streaming (with the tiles made inside it, their meshes and colliders
+  on the main thread, and how many a second), the far view (`Follow` and its cameras), foliage's instanced drawing, the sky, the deer,
+  the traffic's whole `Update` (its own line as before).
+- **The renderer's counts and the GPU** (`ProfilerRecorder`, `FrameTimingManager`): draw calls, batches, set-pass calls, triangles,
+  shadow casters, GC allocated a frame, and the GPU's, the render thread's and the main thread's frame times. A release build of the
+  game may not give some of them: they then read "n/a" (the log's `Frame timings on: ...` line says which, with `VerboseLog`).
+- Also on the line: the frame's average and worst in the second and how many frames were over twice the average (hitches: a tile
+  made, an origin shift, a body switched).
+- **trafficview reports the highway as a player meets it** (`tools/trafficview/Highway.cs`, reported, not failed). Seed 1 (the day's
+  checksum unchanged, 62b10cf9f1c421ce):
+  - The gaps between circling cars along the lap (34,352 units, 50 cars each way, even would be 687): at 06:00 even (median 664 and
+    678, longest 1,770); by 12:00 bunching (median about 480, 10% under 200, a few over 2,000); at 17:00 platoons (median about 375,
+    10% under 22: 15 gaps under 60 across the two ways, cars queued nose to tail; longest gap 5,977 and 4,400). The queues are the trunk's uncontrolled junction with the
+    Westhaven link (node 5), which the evening's local traffic crosses.
+  - Cars within 900 units (the drawn reach) of a player driving the lap: about 2.5 circling the same way and 2.7 oncoming at either
+    168 or 85 km/h, 5 to 8 moving in all, 13 to 14 parked; no circling car in reach 0 to 6% of the time. So "a car each way in sight
+    most of the time" is what 100 gives; "ten times the traffic" on the highway would be about 25 each way within 900.
+
+What the owner's 0.32.4 drive should settle, and what follows from each answer (to choose with the owner):
+
+- The GPU's time (or `WaitForLastPresentation` / `FinishFrameRendering` large and the scripts small): the GPU or the render thread.
+  Then the draw calls, triangles and shadow casters say what: the far view, tiles, trees' shadows, the drawn cars (8 or 9 meshes each,
+  shadows on). Ways out: fewer meshes per drawn car (one combined mesh), no shadows past a distance, a shorter far view.
+- `PhysicsFixedUpdate` large: the game's physics (the player's car, physics traffic cars, tile colliders). Ways out: fewer physics
+  cars on the trunk (only cars the player closes on), simpler colliders.
+- `ScriptRunBehaviourUpdate` / `LateUpdate` large with ours small: another mod's or the game's own scripts (the overlay's own line
+  says ours).
+- Hitches (worst frame, frames over twice the average) with "tiles made" in them: the tiles' main-thread work (meshes, colliders);
+  ways out: colliders baked on a worker (`Physics.BakeMesh`), fewer tiles made a frame.
+- For ten times the highway traffic, whatever the above: drawn cars must cost far less each (one mesh, no shadows far off, perhaps
+  GPU instancing), and the trunk's junction with the Westhaven link given priority so the circling cars do not form platoons.
 
 ## What the log shows (`LogOutput.log` of the drive, 0.32.1)
 

@@ -194,9 +194,15 @@ namespace HalfGripOpenWorld
 
 		private void Update()
 		{
+			// The frame timings' markers in Unity's frame only while the overlay is on.
+			FramePerf.Want(Mod.ShowCoords.Value && player != null);
 			if (player == null)
 			{
 				return;
+			}
+			if (FramePerf.LogDue())
+			{
+				Mod.Log.LogInfo("Frame timings: " + FramePerf.Text()?.Replace("\n", "; ") + "\nFrame timings, every step of Unity's frame: " + FramePerf.AllSteps());
 			}
 			if (Mod.Teleport.Value && Mod.TeleportKey != null && Mod.TeleportKey.Down)
 			{
@@ -503,6 +509,7 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			long timed = FramePerf.Now;
 			try
 			{
 				WrapRound();
@@ -511,6 +518,8 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogError("The highway's wrap failed: " + e);
 			}
+			FramePerf.Add(FramePerf.Part.Wrap, timed);
+			timed = FramePerf.Now;
 			try
 			{
 				Origin.Follow(player.transform.position, Mod.ShiftDistance.Value, TileSize);
@@ -519,6 +528,8 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogError("Origin shift failed: " + e);
 			}
+			FramePerf.Add(FramePerf.Part.Origin, timed);
+			timed = FramePerf.Now;
 			try
 			{
 				Stream();
@@ -527,8 +538,11 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogError("Tile streaming failed: " + e);
 			}
+			// Streaming's time includes the tiles made in it (shown on their own as well).
+			FramePerf.Add(FramePerf.Part.Stream, timed);
 			if (Far != null)
 			{
+				timed = FramePerf.Now;
 				try
 				{
 					// After the tiles came and went this frame, so the far view's holes follow them with no frame between.
@@ -539,6 +553,7 @@ namespace HalfGripOpenWorld
 				{
 					Mod.Log.LogWarning("Far view failed: " + e);
 				}
+	FramePerf.Add(FramePerf.Part.FarView, timed);
 			}
 		}
 
@@ -940,7 +955,22 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
+		/// <summary>A tile made from its worked-out heights (timed for the frame timings: its meshes and colliders are made here, on the main thread).</summary>
 		private void Make(Heights data)
+		{
+			long timed = FramePerf.Now;
+			try
+			{
+				MakeTile(data);
+			}
+			finally
+			{
+				FramePerf.Add(FramePerf.Part.Tiles, timed);
+				FramePerf.TileMade();
+			}
+		}
+
+		private void MakeTile(Heights data)
 		{
 			float started = Time.realtimeSinceStartup;
 			int side = Quads + 3;
@@ -1328,7 +1358,8 @@ namespace HalfGripOpenWorld
 				+ (Sky.Status != null ? "\n" + Sky.Status : "")
 				+ (Deer.Status != null ? "\n" + Deer.Status : "")
 				+ (TrafficCars.Status != null ? "\n" + TrafficCars.Status : "")
-				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "");
+				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "")
+				+ (FramePerf.Text() is string frame ? "\n" + frame : "");
 			// As tall as the text is (the deer's and the traffic's lines wrap), so nothing is cut off at the bottom.
 			GUIContent content = new GUIContent(text);
 			float width = Mathf.Min(900f, Screen.width - 24f);
@@ -1337,6 +1368,7 @@ namespace HalfGripOpenWorld
 
 		private void OnDestroy()
 		{
+			FramePerf.Remove();
 			if (Instance == this)
 			{
 				Instance = null;

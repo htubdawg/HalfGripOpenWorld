@@ -14,6 +14,7 @@
     <Compile Include="Drive.cs" />
     <Compile Include="Contact.cs" />
     <Compile Include="Rest.cs" />
+    <Compile Include="Highway.cs" />
     <Compile Include="../../OpenWorld/src/TrafficRest.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />

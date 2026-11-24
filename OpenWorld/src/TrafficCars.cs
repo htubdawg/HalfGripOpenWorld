@@ -828,6 +828,7 @@ namespace HalfGripOpenWorld
 				failed = true;
 			}
 			Perf.Add(Perf.Part.Update, started);
+			FramePerf.Add(FramePerf.Part.Traffic, started);
 		}
 
 		/// <summary>The day's clock now: the room's (the host's race clock; alone, this machine's), from the hour the race started.</summary>

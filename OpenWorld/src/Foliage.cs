@@ -422,7 +422,21 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>Timed for the frame timings (ShowCoords).</summary>
 		private void LateUpdate()
+		{
+			long timed = FramePerf.Now;
+			try
+			{
+				DrawFoliage();
+			}
+			finally
+			{
+				FramePerf.Add(FramePerf.Part.Foliage, timed);
+			}
+		}
+
+		private void DrawFoliage()
 		{
 			if (broken)
 			{

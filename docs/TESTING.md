@@ -504,3 +504,15 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      rest on the springs).
    - Tyre marks: watch traffic cars near you over origin shifts (the log's `Origin shift N` lines) and as cars become physics cars:
      no streak across the country, from anywhere.
+
+54. Where the frame goes (0.32.4; see `docs/PERF_HANDOFF.md`, "Done in 0.32.4"). `ShowCoords` on (and `VerboseLog` on for the
+   `Frame timings on: ...` line saying what this build of the game gives).
+   - The overlay ends with four lines, averaged over the last second: `frame N ms (F fps), worst W ms, H over twice the average; GPU
+     ..., render thread ..., main thread ...`; `Unity's slowest steps: ...` (six steps of Unity's frame by name, and the time between
+     frames); `ours: wrap, origin, streaming, tiles made, far view, foliage, sky, deer, traffic` (ms a frame, and tiles made in the
+     second); `drawn: ... draw calls, ... batches, ... set-pass calls, ...k triangles, ... shadow casters; GC ... KB a frame`. "n/a"
+     where the game's build does not give a number.
+   - Drive the same route as test 53 (from the spawn east along the trunk at speed), then stand still on the trunk, then in
+     Kingsbridge's centre, a few seconds each. Send `LogOutput.log`: every 10 s it has `Frame timings: ...` and every step of Unity's
+     frame (`Frame timings, every step of Unity's frame: ...`). A screenshot of the overlay where the frame rate is lowest helps.
+   - With `ShowCoords` off the frame rate is as on 0.32.3 (the markers come out of Unity's frame).

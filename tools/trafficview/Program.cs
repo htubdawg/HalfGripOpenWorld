@@ -600,6 +600,7 @@ internal static partial class Program
 		}
 		ok &= Drive(day);
 		ok &= Contact(day);
+		Highway(day);
 		if (picture != null)
 		{
 			Pictures.Draw(day, passes, picture);

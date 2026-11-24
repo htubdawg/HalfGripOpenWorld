@@ -518,7 +518,21 @@ namespace HalfGripOpenWorld
 			roads.Add((m, m.GetColor("_BaseColor"), shines && m.HasProperty("_Smoothness") ? m.GetFloat("_Smoothness") : -1f));
 		}
 
+		/// <summary>Timed for the frame timings (ShowCoords).</summary>
 		private void Update()
+		{
+			long timed = FramePerf.Now;
+			try
+			{
+				UpdateSky();
+			}
+			finally
+			{
+				FramePerf.Add(FramePerf.Part.Sky, timed);
+			}
+		}
+
+		private void UpdateSky()
 		{
 			if (!ready || tm == null || tm.playerCarController == null)
 			{

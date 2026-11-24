@@ -81,6 +81,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `FarView.cs` | The far view: chunk meshes past the loaded tiles (holes where tiles are, skirts), the sea to the horizon, the cameras' reach |
 | `Origin.cs` | The floating origin: moves the scene, particles and trails |
 | `Wrap.cs` | The highway wraps round: the trunk's two tunnels joined (a car into one comes out of the other); pure, `Streamer` does the jump as an origin shift that keeps the car and its cameras in place, `WorldScene` builds the open tunnels |
+| `FramePerf.cs` | Where the whole frame goes, with ShowCoords only: markers after every step of Unity's player loop, the mod's own systems timed, the renderer's counts and the GPU's time; on the overlay and logged as `Frame timings` |
 | `GameCaches.cs` | World positions the game keeps in fields, moved on each shift |
 | `MultiplayerLink.cs` | Positions over the network in world coordinates; stand-in cars moved on each shift |
 
