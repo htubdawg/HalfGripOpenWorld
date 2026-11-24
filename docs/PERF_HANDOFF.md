@@ -3,7 +3,36 @@
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
 instead of 10, physics cars driven into the tunnels (a cheap check every frame), a water strip trimmed, the overlay's box. Only the
-first can plausibly cost 2.6 ms. Nothing is changed yet: this is what the log shows, what is suspected, and how to find out.
+first can plausibly cost 2.6 ms. Nothing is changed yet: this is what was found, what the log shows, and how to find out the rest.
+
+## Found: two functions walk a car's whole route from its start
+
+The owner's point (2026-11-24): a handful of physics cars, and thicker town traffic in this mod never cost frames, so the
+implementation is at fault. It is. A town car's trip is 10 to 20 stretches of road (`TrafficDay.Seg`); **a circling car's leg is the
+whole day in one piece: 6 laps of the trunk, about 250 stretches, 257,000 units, about 5,000 records.** Two functions scan a leg's
+path from its first stretch on every call, so their cost grows with the leg, and the 100 circling cars are now what the player meets:
+
+- **`TrafficParking.Corner`** (`TrafficParking.cs:619`): `int j = 1; while (j < path.Length && path[j].P0 <= p) j++;` to find the
+  junction nearest `p`. Called by `TrafficParking.Drawn` (every drawn moving car, **every frame**) and by `TrafficDrive.Line`, which
+  `TrafficDrive.Project` calls about 26 times (16 samples and 10 refinements) and `Steer`, `OnLane` and `Toward` once each, **per
+  physics car per physics step**.
+- **`TrafficDrive.NearTunnel`** (`TrafficDrive.cs`, `foreach (TrafficDay.Seg s in leg.Path)`): the whole path, every call. Called
+  by `TrafficPhysics.Bubble` for each physics car and by `Drivable` for each candidate car, every choice (0.4 s), and by trafficview.
+
+**Fix:** find the stretch with the binary search already there (`TrafficDrive.SegAt`, `TrafficDay.OnPath` uses the same) and look
+only at it and its neighbours: `Corner` needs the junctions either side of `p` (stretches `k` and `k + 1`); `NearTunnel` needs the
+stretches within `TunnelKeep` of `p` (walk out from `k` while `P0` is within reach). Both then cost the same whatever the leg's
+length. Check: trafficview (the drive checks use both) gives the same day checksum, the same physics car results and no jumps.
+Grep the rest of the traffic's per-frame code for any other scan from a path's or a record array's start (`TrafficDay.cs:2392`'s
+linear scan of `Rec` is in a diagnostic pass for trafficview only, not in the game; leave it).
+
+**Alternative or addition:** make each circling car's day a chain of one-lap legs instead of one leg, so no path is ever long. That
+touches `TrafficDay`'s through traffic, the ledger (a late car moves to its next leg) and trafficview's counts; do it only if the
+binary search is not enough.
+
+The arithmetic says this waste is real but may not be all of the 2.6 ms (roughly 125 stretches walked per call, tens of calls per
+physics car per step and one per drawn car per frame). So **the same build adds the timings below**, and the owner's next test says
+what is left. The next build: the two scans fixed, the timings on the overlay, nothing else.
 
 ## What the log shows (`LogOutput.log` of the drive, 0.32.1)
 
@@ -31,9 +60,9 @@ first can plausibly cost 2.6 ms. Nothing is changed yet: this is what the log sh
   "empty". Not measured yet: trafficview should print the gaps between circling cars along the trunk at a few hours.
 - The circling cars all go at the trunk's free speed, so at the owner's speed the same-way ones are slow obstacles, not traffic.
 
-## Suspects for the 2.6 ms, most likely first
+## Other suspects for what is left after the fix, most likely first
 
-1. **Physics cars on the highway.** Each is a full copy of the game's enemy car (`TrafficPhysics`, `MakeBody`: `CarControllerNew`,
+1. **Physics cars on the highway** (their own cost, apart from the scans above). Each is a full copy of the game's enemy car (`TrafficPhysics`, `MakeBody`: `CarControllerNew`,
    rigidbody, wheels, colliders, its audio sources, tyre trails and particles; its AI, guns and `PitGuard` switched off), driven by
    `TrafficBody.FixedUpdate` (`TrafficDrive.Project`, `Target`, `Steer`). Before 0.32.1 there were almost none on the trunk; now one
    to several are live most of the way, and one is **made and released every few seconds**: `SetActive(true)` on a whole car (its
