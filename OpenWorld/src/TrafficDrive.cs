@@ -243,12 +243,19 @@ namespace HalfGripOpenWorld
 			Line(leg, q, out x, out z, out double _, out double _);
 		}
 
-		/// <summary>Whether a tunnel is on leg <paramref name="leg"/>'s path within <see cref="TunnelKeep"/> either side of <paramref name="p"/>.</summary>
+		/// <summary>
+		/// Whether a tunnel is on leg <paramref name="leg"/>'s path within <see cref="TunnelKeep"/> either side of <paramref name="p"/>. Only
+		/// the stretches within reach are looked at, found by binary search: a circling car's leg is the whole day (about 250 stretches),
+		/// and walking it from its start on every call cost frames once 100 of them were on the trunk (0.32.1).
+		/// </summary>
 		internal static bool NearTunnel(TrafficDay.Leg leg, double p)
 		{
-			foreach (TrafficDay.Seg s in leg.Path)
+			TrafficDay.Seg[] path = leg.Path;
+			// The stretch before the one at p - TunnelKeep too: it may end exactly there.
+			for (int j = Math.Max(0, SegAt(path, p - TunnelKeep) - 1); j < path.Length && path[j].P0 <= p + TunnelKeep; j++)
 			{
-				if (s.Edge < 0 && s.P0 <= p + TunnelKeep && s.P0 + s.Len >= p - TunnelKeep)
+				TrafficDay.Seg s = path[j];
+				if (s.Edge < 0 && s.P0 + s.Len >= p - TunnelKeep)
 				{
 					return true;
 				}
@@ -368,7 +375,8 @@ namespace HalfGripOpenWorld
 			m.ToBox = m.NodeP - Traffic.Nodes[node].Box - m.P;
 		}
 
-		private static int SegAt(TrafficDay.Seg[] path, double p)
+		/// <summary>The last stretch of <paramref name="path"/> starting at or before <paramref name="p"/> (0 if none): a binary search.</summary>
+		internal static int SegAt(TrafficDay.Seg[] path, double p)
 		{
 			int lo = 0, hi = path.Length - 1;
 			while (lo < hi)

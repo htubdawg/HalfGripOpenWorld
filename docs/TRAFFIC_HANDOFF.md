@@ -990,3 +990,9 @@ queue for real.
 - **100 circling cars** (above). trafficview passes; the day builds in about 2.5 s instead of 1.6; the trunk's cars now wait a little
   at its uncontrolled junction with the Westhaven link (node 5, about 3 s a pass on average).
 
+## 0.32.2 (2026-11-24)
+
+- The frame rate lost with the 100 circling cars: two scans of a leg's whole path fixed and timings on the overlay. See
+  `docs/PERF_HANDOFF.md`, "Done in 0.32.2".
+- Tyre marks (point 2 above), a fifth fix: `Origin`'s interpolation is put back only after two physics steps, and physics cars hold
+  their trails off over each origin shift. See the same section.

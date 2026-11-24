@@ -22,6 +22,101 @@ namespace HalfGripOpenWorld
 		/// <summary>One line for the debug overlay (ShowCoords).</summary>
 		internal static string Status;
 
+		/// <summary>
+		/// Where the traffic's frame time goes (0.32.2: the frame rate fell from about 135 to about 100 on the highway with 100 circling
+		/// cars, and the log had no timings). Stopwatch ticks summed over a second for each part, then shown per frame on the overlay and
+		/// logged every 10 s, both with ShowCoords only; bodies taken and given back counted over the last minute.
+		/// </summary>
+		internal static class Perf
+		{
+			/// <summary>The traffic's whole <c>Update</c>; inside it the choice (every 0.4 s, its bubble included), drawing, the per-frame bubble, contact physics and the movers; apart from it all physics cars' <c>FixedUpdate</c>s, and the bodies taken, placed and given back.</summary>
+			internal enum Part { Update, Choose, Draw, Bubble, Contact, Movers, Fixed, Switch, Count }
+
+			private static readonly long[] sum = new long[(int)Part.Count];
+			private static readonly float[] ms = new float[(int)Part.Count];
+			private static int frames, taken, given, bucket, shownFrames;
+			private static float seconds, shownFrame, sinceLog;
+			/// <summary>Bodies taken and given back in each of the last 60 seconds.</summary>
+			private static readonly int[] takenIn = new int[60], givenIn = new int[60];
+
+			internal static long Now => System.Diagnostics.Stopwatch.GetTimestamp();
+
+			internal static void Add(Part p, long since)
+			{
+				sum[(int)p] += System.Diagnostics.Stopwatch.GetTimestamp() - since;
+			}
+
+			internal static void Taken() => taken++;
+			internal static void Given() => given++;
+
+			internal static void Reset()
+			{
+				Array.Clear(sum, 0, sum.Length);
+				Array.Clear(ms, 0, ms.Length);
+				Array.Clear(takenIn, 0, takenIn.Length);
+				Array.Clear(givenIn, 0, givenIn.Length);
+				frames = taken = given = bucket = shownFrames = 0;
+				seconds = shownFrame = sinceLog = 0f;
+			}
+
+			/// <summary>Once a frame: after a second, each part's average per frame is what the overlay shows.</summary>
+			internal static void Frame(float dt)
+			{
+				frames++;
+				seconds += dt;
+				if (seconds < 1f)
+				{
+					return;
+				}
+				double toMs = 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
+				for (int i = 0; i < sum.Length; i++)
+				{
+					ms[i] = (float)(sum[i] * toMs);
+					sum[i] = 0;
+				}
+				shownFrame = seconds * 1000f / frames;
+				shownFrames = frames;
+				bucket = (bucket + 1) % takenIn.Length;
+				takenIn[bucket] = taken;
+				givenIn[bucket] = given;
+				taken = given = 0;
+				sinceLog += seconds;
+				frames = 0;
+				seconds = 0f;
+			}
+
+			private static int Minute(int[] counts)
+			{
+				int n = 0;
+				foreach (int c in counts)
+				{
+					n += c;
+				}
+				return n;
+			}
+
+			/// <summary>The overlay's line (ms per frame, averaged over the last second).</summary>
+			internal static string Text(int moving, int parked, int physicsLive)
+			{
+				return "frame " + shownFrame.ToString("0.0") + " ms (" + shownFrames + " fps); traffic " + ms[(int)Part.Update].ToString("0.00") + " ms a frame (choose "
+					+ ms[(int)Part.Choose].ToString("0.00") + ", draw " + ms[(int)Part.Draw].ToString("0.00") + ", bubble " + ms[(int)Part.Bubble].ToString("0.00") + ", contact "
+					+ ms[(int)Part.Contact].ToString("0.00") + ", movers " + ms[(int)Part.Movers].ToString("0.00") + "), physics steps " + ms[(int)Part.Fixed].ToString("0.00")
+					+ ", bodies switched " + ms[(int)Part.Switch].ToString("0.00") + "; drawn " + moving + " moving, " + parked + " parked; physics live " + physicsLive
+					+ ", bodies taken " + Minute(takenIn) + " and given back " + Minute(givenIn) + " in the last minute";
+			}
+
+			/// <summary>True every 10 s (the overlay's line is then logged too).</summary>
+			internal static bool LogDue()
+			{
+				if (sinceLog < 10f)
+				{
+					return false;
+				}
+				sinceLog = 0f;
+				return true;
+			}
+		}
+
 		/// <summary>How far moving and parked cars are drawn (units: about 270 m and 140 m), and at most how many.</summary>
 		private const float MovingReach = 900f, ParkedReach = 450f;
 		private const int MostDrawn = 72;
@@ -139,6 +234,7 @@ namespace HalfGripOpenWorld
 			groundMask = (1 << 0) | (floor >= 0 ? 1 << floor : 0);
 			int seed = Weather.Seed;
 			raceSeed = seed;
+			Perf.Reset();
 			startHour = Sky.StartHourOf(seed);
 			try
 			{
@@ -560,6 +656,8 @@ namespace HalfGripOpenWorld
 				Status = null;
 				return;
 			}
+			Perf.Frame(Time.unscaledDeltaTime);
+			long started = Perf.Now;
 			try
 			{
 				Pump();
@@ -571,6 +669,7 @@ namespace HalfGripOpenWorld
 				Clear();
 				failed = true;
 			}
+			Perf.Add(Perf.Part.Update, started);
 		}
 
 		/// <summary>The day's clock now: the room's (the host's race clock; alone, this machine's), from the hour the race started.</summary>
@@ -602,18 +701,23 @@ namespace HalfGripOpenWorld
 				nextChoose = Time.unscaledTime + ChooseEvery;
 				chosenX = cx;
 				chosenZ = cz;
+				long chose = Perf.Now;
 				Choose(w, cx, cz);
+				Perf.Add(Perf.Part.Choose, chose);
 			}
 			else
 			{
 				// A physics car into a tunnel goes back the frame it is in the dark (it is through it in a fraction of a choice's interval).
+				long bubbled = Perf.Now;
 				Bubble(w, cx, cz, true);
+				Perf.Add(Perf.Part.Bubble, bubbled);
 			}
 			foreach (View v in live.Values)
 			{
 				v.Seen = false;
 			}
 			drawnMoving = drawnParked = lit = 0;
+			long drew = Perf.Now;
 			float dt = Time.deltaTime;
 			bool lights = Sky.LightsOn;
 			// The physics cars are the nearest: theirs are the first headlights.
@@ -655,9 +759,14 @@ namespace HalfGripOpenWorld
 				Give(live[c]);
 				live.Remove(c);
 			}
+			Perf.Add(Perf.Part.Draw, drew);
 			// Contact physics: a drawn car the player is about to touch becomes a loose car.
+			long touched = Perf.Now;
 			Contact(w);
+			Perf.Add(Perf.Part.Contact, touched);
+			long moved = Perf.Now;
 			BuildMovers();
+			Perf.Add(Perf.Part.Movers, moved);
 			if (Mod.ShowCoords.Value)
 			{
 				double hour = 3.0 + w / 100.0;
@@ -665,7 +774,12 @@ namespace HalfGripOpenWorld
 				Status = "traffic: " + drawnMoving + " moving and " + drawnParked + " parked drawn, " + lit + " lit, chosen in " + chooseMs.ToString("0.0") + " ms (" + (day.Weekend ? "a weekend" : "a weekday") + ", "
 					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
 					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "")
-					+ PhysicsStatus();
+					+ PhysicsStatus()
+					+ "\n" + Perf.Text(drawnMoving, drawnParked, physical.Count);
+				if (Perf.LogDue())
+				{
+					Mod.Log.LogInfo("Traffic timings: " + Perf.Text(drawnMoving, drawnParked, physical.Count));
+				}
 			}
 		}
 

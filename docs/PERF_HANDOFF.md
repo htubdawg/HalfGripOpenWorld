@@ -1,4 +1,4 @@
-# Performance handoff (after 0.32.1)
+# Performance handoff (after 0.32.1; 0.32.2 below)
 
 The owner, 2026-11-24, on 0.32.1: **frame rate down from about 135 to about 100** (7.4 to 10 ms a frame: about 2.6 ms more), and the
 highway "barely" busier for it. 0.32.1 changed four things (see `docs/TRAFFIC_HANDOFF.md`, "0.32.1"): 100 cars circling the trunk
@@ -33,6 +33,26 @@ binary search is not enough.
 The arithmetic says this waste is real but may not be all of the 2.6 ms (roughly 125 stretches walked per call, tens of calls per
 physics car per step and one per drawn car per frame). So **the same build adds the timings below**, and the owner's next test says
 what is left. The next build: the two scans fixed, the timings on the overlay, nothing else.
+
+## Done in 0.32.2 (2026-11-24, the owner to test: `docs/TESTING.md` test 53)
+
+- **The two scans fixed.** `TrafficParking.Corner` finds its junction with `TrafficDrive.SegAt` (the binary search, made internal),
+  `TrafficDrive.NearTunnel` looks only at the stretches from the one at `p - TunnelKeep` (and the one before, which may end exactly
+  there) to `p + TunnelKeep`. Grepped the rest of the per-frame traffic code: no other scan from a path's start (`Prepare`, `Line`,
+  `Target` already start from `SegAt`; `TrafficDay`'s full walks are in the day's build or trafficview's diagnostics). trafficview
+  (`TV_DRIVE_ONLY=1`): the same day checksum (62b10cf9f1c421ce), the same physics car results line for line, no jumps; the drivers'
+  line 7.0 us a point projected instead of 9.7 (its test cars are local ones; a circling car's gain is larger).
+- **Timings on the overlay and in the log** (`TrafficCars.Perf`, `ShowCoords` only): the frame time and fps; the traffic's whole
+  `Update` a frame and inside it the choice (its full bubble included), drawing, the per-frame bubble, `Contact`, `BuildMovers`;
+  all physics cars' `FixedUpdate`s (per frame); the bodies' switching (`TakeBody` with `MakeBody`, `Place` with its `SetActive`,
+  `Release`, `WarmPool`); drawn moving and parked, physics live, bodies taken and given back in the last minute. Averaged over a
+  second; logged every 10 s as `Traffic timings: ...`. Not timed: the game's own physics and audio for the bodies (inside Unity's
+  step, not ours): if the fps is still down with small numbers here, that is where it goes (the handoff's suspect 1).
+- **Tyre marks, still seen rarely (a streak from far away).** `Origin.Shift` switches rigidbody interpolation off and put it back
+  after two frames: at 135 fps that is 15 ms, often before one physics step (20 ms), so a body could be drawn a frame from its pose
+  before the shift, a tile or more away, and its trail painted a streak from there. It now also waits for two physics steps
+  (`Time.fixedTime`). Physics cars also hold their trails off (not emptied) for 0.3 s over each shift (`TrafficBody.HoldTrails`).
+  Not proven to be the cause: it is the one path left where a body is drawn away from where it is.
 
 ## What the log shows (`LogOutput.log` of the drive, 0.32.1)
 

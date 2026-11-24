@@ -493,3 +493,12 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
    - World 7.548, -9.002 (the trunk by the sea): no strip of water along the foot of the cutting south of the road.
    - `ShowCoords`: the overlay shows every line (none cut off at the bottom), and the height is metres above the sea (about 0 on
      the trunk there, which runs at sea level, not -19).
+
+53. The frame rate on the highway (0.32.2; see `docs/PERF_HANDOFF.md`).
+   - Same room seed, route, hour and weather as the 0.32.1 drive: from the spawn east along the trunk at speed. Say the frame rate
+     against the 135 before 0.32.1 and the 100 on it.
+   - `ShowCoords` on: the overlay's last line is `frame N ms (F fps); traffic ... ms a frame (choose, draw, bubble, contact,
+     movers), physics steps ..., bodies switched ...; drawn ...; physics live ..., bodies taken ... and given back ... in the last
+     minute`, each part averaged over the last second. The same line is in the log every 10 s as `Traffic timings: ...`: send the log.
+   - Tyre marks: watch traffic cars near you over origin shifts (the log's `Origin shift N` lines) and as cars become physics cars:
+     no streak across the country, from anywhere.

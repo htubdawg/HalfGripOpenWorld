@@ -873,6 +873,20 @@ namespace HalfGripOpenWorld
 		/// <summary>A physics car for car <paramref name="c"/>, from the pool or new, in its paint and model (inactive; placed by the caller).</summary>
 		private TrafficBody TakeBody(int c)
 		{
+			long started = Perf.Now;
+			try
+			{
+				return TakeBodyTimed(c);
+			}
+			finally
+			{
+				Perf.Add(Perf.Part.Switch, started);
+			}
+		}
+
+		private TrafficBody TakeBodyTimed(int c)
+		{
+			Perf.Taken();
 			Wears(c, out int look, out int paint);
 			TrafficBody b = null;
 			while (bodySpare.Count > 0 && b == null)
@@ -911,6 +925,17 @@ namespace HalfGripOpenWorld
 		/// before the player touches it, then costs no more than a body taken from the pool.
 		/// </summary>
 		private void WarmPool()
+		{
+			if (warming == null && (warmed >= WarmBodies || (MostLoose == 0 && MostPhysics == 0)))
+			{
+				return;
+			}
+			long started = Perf.Now;
+			WarmPoolTimed();
+			Perf.Add(Perf.Part.Switch, started);
+		}
+
+		private void WarmPoolTimed()
 		{
 			if (warming != null)
 			{
@@ -1047,9 +1072,12 @@ namespace HalfGripOpenWorld
 		/// <summary>Back to the pool: asleep, still, its engine and light off.</summary>
 		private void Release(TrafficBody b)
 		{
+			long started = Perf.Now;
+			Perf.Given();
 			b.End();
 			b.gameObject.SetActive(false);
 			bodySpare.Push(b);
+			Perf.Add(Perf.Part.Switch, started);
 		}
 
 		/// <summary>Every physics car back on its timetable through the room (the traffic switched off, or stopped), and every stand-in gone.</summary>
@@ -1205,6 +1233,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal void Place(Vector3 pos, Quaternion turn)
 		{
+			long started = TrafficCars.Perf.Now;
 			// The tyre marks off and empty BEFORE the move (they paint from where the wheels were to where they are), kept off a moment after.
 			ClearTrails();
 			transform.SetPositionAndRotation(pos, turn);
@@ -1229,6 +1258,7 @@ namespace HalfGripOpenWorld
 				Rb.interpolation = RigidbodyInterpolation.None;
 			}
 			ClearTrails();
+			TrafficCars.Perf.Add(TrafficCars.Perf.Part.Switch, started);
 		}
 
 		private bool interpHeld;
@@ -1257,7 +1287,42 @@ namespace HalfGripOpenWorld
 				}
 			}
 			trailsOffFor = TrailsOff;
+			clearing = true;
 			ClearParticles();
+		}
+
+		/// <summary>True while the tyre marks are being kept empty (after a placement); false while they are only held off (over an origin shift, keeping the marks already drawn).</summary>
+		private bool clearing;
+
+		private void OnEnable()
+		{
+			Origin.Shifted += HoldTrails;
+		}
+
+		private void OnDisable()
+		{
+			Origin.Shifted -= HoldTrails;
+		}
+
+		/// <summary>
+		/// Over an origin shift the tyre marks are held off (not emptied: the marks already drawn are moved with the scene) for
+		/// <see cref="TrailsOff"/>, as after a placement: a body drawn for a frame from its pose before the shift (see
+		/// <see cref="Origin"/>'s interpolation) would paint a streak from there (the owner still saw one, rarely, after 0.32.0).
+		/// </summary>
+		private void HoldTrails(Vector3 delta)
+		{
+			if (trails == null)
+			{
+				trails = GetComponentsInChildren<TrailRenderer>(true);
+			}
+			foreach (TrailRenderer t in trails)
+			{
+				if (t != null)
+				{
+					t.emitting = false;
+				}
+			}
+			trailsOffFor = Mathf.Max(trailsOffFor, TrailsOff);
 		}
 
 		/// <summary>The body's particles (the tyres' smoke, the exhaust) emptied: anything emitted along a move would hang in a line across the country.</summary>
@@ -1369,7 +1434,10 @@ namespace HalfGripOpenWorld
 			}
 			trailsOffFor -= Time.deltaTime;
 			bool back = trailsOffFor <= 0f;
-			ClearParticles();
+			if (clearing)
+			{
+				ClearParticles();
+			}
 			if (back && interpHeld)
 			{
 				interpHeld = false;
@@ -1383,7 +1451,14 @@ namespace HalfGripOpenWorld
 				}
 				// Off again each frame (the game's effect controller turns them on when the wheels land) until the window is over.
 				t.emitting = back && !Cc.isAirborne;
-				t.Clear();
+				if (clearing)
+				{
+					t.Clear();
+				}
+			}
+			if (back)
+			{
+				clearing = false;
 			}
 		}
 		internal TrafficDrive.State Drive;
@@ -1588,6 +1663,20 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			long started = TrafficCars.Perf.Now;
+			try
+			{
+				Step();
+			}
+			finally
+			{
+				TrafficCars.Perf.Add(TrafficCars.Perf.Part.Fixed, started);
+			}
+		}
+
+		/// <summary>A physics step's driving (timed by <see cref="FixedUpdate"/>).</summary>
+		private void Step()
+		{
 			Age += Time.fixedDeltaTime;
 			if (Remote)
 			{

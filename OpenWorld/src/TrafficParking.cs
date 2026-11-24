@@ -619,12 +619,10 @@ namespace HalfGripOpenWorld
 		internal static void Corner(TrafficDay.Leg leg, double p, ref double x, ref double z, ref double hx, ref double hz)
 		{
 			TrafficDay.Seg[] path = leg.Path;
-			// The nearest junction along the path: between seg j - 1 and seg j.
-			int j = 1;
-			while (j < path.Length && path[j].P0 <= p)
-			{
-				j++;
-			}
+			// The nearest junction along the path: between seg j - 1 and seg j, j the first stretch after the one p is on (by binary
+			// search: a circling car's leg is the whole day, about 250 stretches, and this runs for every drawn car every frame and many
+			// times a physics step for every physics car).
+			int j = Math.Max(1, TrafficDrive.SegAt(path, p) + 1);
 			if (j < path.Length && j > 1 && p - path[j - 1].P0 < path[j].P0 - p)
 			{
 				j--;
