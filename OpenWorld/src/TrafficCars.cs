@@ -604,6 +604,11 @@ namespace HalfGripOpenWorld
 				chosenZ = cz;
 				Choose(w, cx, cz);
 			}
+			else
+			{
+				// A physics car into a tunnel goes back the frame it is in the dark (it is through it in a fraction of a choice's interval).
+				Bubble(w, cx, cz, true);
+			}
 			foreach (View v in live.Values)
 			{
 				v.Seen = false;

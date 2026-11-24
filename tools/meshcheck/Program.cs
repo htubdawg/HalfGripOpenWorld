@@ -93,6 +93,7 @@ internal static class Program
 			("bridges", Bridges),
 			("flooded", Flooded),
 			("water", Water),
+			("seastrip", SeaStrip),
 			("verges", Verges),
 			("tracks", Tracks),
 			("bases", Bases),
@@ -613,6 +614,51 @@ internal static class Program
 		}
 		Console.WriteLine("parks:   " + Parks.All.Count + " parks, " + paths + " with paths; " + ponds + " ponds, " + high + " of " + edges + " water edges over the ground, " + shallow + " with no water in the middle; " + onLawn + " of " + buildings + " buildings on their tiles on a lawn; " + benchesBad + " of " + Parks.Benches.Count + " benches on a road or in water");
 		return Parks.All.Count > 0 && paths == Parks.All.Count && high == 0 && shallow == 0 && onLawn == 0 && benchesBad == 0;
+	}
+
+	/// <summary>
+	/// The owner's report (0.32.0, world 7,548, -9,002): the ring of water round the sea stood as a strip with a wall along the foot of the
+	/// trunk's cutting south of the road. The tile's lake and sea quads (four vertices at one height, larger than a pond's) are sampled
+	/// every unit over x 7,500 to 7,700 and z -9,012 to -9,000: none may be above the ground.
+	/// </summary>
+	private static bool SeaStrip()
+	{
+		const float tile = 250f;
+		int tx = (int)Math.Floor(7500.0 / tile), tz = (int)Math.Floor(-9006.0 / tile);
+		RoadMeshData water = WaterMesh.Build(tx, tz, tile);
+		double ox = tx * tile, oz = tz * tile;
+		int exposed = 0, samples = 0;
+		double worst = 0.0;
+		for (double x = 7500.5; x < 7700.0; x += 1.0)
+		{
+			for (double z = -9011.5; z < -9000.0; z += 1.0)
+			{
+				double ground = WorldGen.Height(x, z);
+				// The flat quads: every four vertices from the first quad after the rivers' ribbons are one axis-aligned square at a level.
+				for (int i = 0; i + 3 < water.Vertices.Length; i += 4)
+				{
+					Vector3 a = water.Vertices[i], d = water.Vertices[i + 3];
+					if (a.y != d.y || water.Vertices[i + 1].y != a.y || water.Vertices[i + 2].y != a.y || a.x != water.Vertices[i + 1].x || a.z != water.Vertices[i + 2].z)
+					{
+						continue;
+					}
+					double x0 = ox + Math.Min(a.x, d.x), x1 = ox + Math.Max(a.x, d.x), z0 = oz + Math.Min(a.z, d.z), z1 = oz + Math.Max(a.z, d.z);
+					if (x < x0 || x > x1 || z < z0 || z > z1)
+					{
+						continue;
+					}
+					samples++;
+					if (a.y > ground + 0.02)
+					{
+						exposed++;
+						worst = Math.Max(worst, a.y - ground);
+					}
+				}
+			}
+		}
+		bool ok = exposed == 0;
+		Console.WriteLine("seastrip: the sea's ring at the foot of the trunk's cutting (7,500 to 7,700, -9,012 to -9,000): " + exposed + " of " + samples + " water samples above the ground (worst " + worst.ToString("0.00") + ")  " + (ok ? "ok" : "FAIL"));
+		return ok;
 	}
 
 	private static bool Water()

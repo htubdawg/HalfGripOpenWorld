@@ -1322,14 +1322,17 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			Origin.World(player.transform.position, out double x, out double z);
-			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + player.transform.position.y.ToString("0") + " m\n"
+			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + ((player.transform.position.y - Network.Lift) / 3.3).ToString("0") + " m above the sea\n"
 				+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
 				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
 				+ (Sky.Status != null ? "\n" + Sky.Status : "")
 				+ (Deer.Status != null ? "\n" + Deer.Status : "")
 				+ (TrafficCars.Status != null ? "\n" + TrafficCars.Status : "")
 				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "");
-			GUI.Label(new Rect(12f, 12f, 900f, 130f), text);
+			// As tall as the text is (the deer's and the traffic's lines wrap), so nothing is cut off at the bottom.
+			GUIContent content = new GUIContent(text);
+			float width = Mathf.Min(900f, Screen.width - 24f);
+			GUI.Label(new Rect(12f, 12f, width, GUI.skin.label.CalcHeight(content, width) + 4f), content);
 		}
 
 		private void OnDestroy()

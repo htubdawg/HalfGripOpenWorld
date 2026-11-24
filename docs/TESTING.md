@@ -485,3 +485,11 @@ Last run (0.17.0, by the owner): 1, 7 to 12, 15 to 17b and 19 to 23 good. Not ru
      A car B knocked is gone for both once B is well away. On B the first touch may still be a wall for a moment (the room's grant is
      a round trip; B's sweep looks 0.5 s ahead to cover it); say if it is often.
    - Send `LogOutput.log` and a screenshot of a car you knocked out of its space.
+52. Fixes from the owner's 0.32.0 drive (0.32.1).
+   - Follow a highway car into a tunnel (`Teleport` to the trunk, keep close behind one): it keeps its speed into the dark, never
+     braking at the mouth, and comes out of the far tunnel ahead of you. The log has `Traffic: car N back on its timetable ... (in a
+     tunnel)`, and no `loose` line for it.
+   - The highway is busier: 100 cars circle it (10 before). A car each way in sight most of the time; say if it is too many or too few.
+   - World 7.548, -9.002 (the trunk by the sea): no strip of water along the foot of the cutting south of the road.
+   - `ShowCoords`: the overlay shows every line (none cut off at the bottom), and the height is metres above the sea (about 0 on
+     the trunk there, which runs at sea level, not -19).

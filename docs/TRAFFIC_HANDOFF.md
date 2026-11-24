@@ -181,8 +181,9 @@ only the differences are spelt out here):
 - **Every car into a trunk tunnel comes out of the other at the same moment.** Since the wrap joins the trunk's ends, they are not a way
   off the map: trips beyond the map go by the road north only, and it takes the draw the trunk's ends had (`PullOf`, so the share of
   work beyond the map stays the same; without it, three quarters of the commuters drove to Kingsbridge's towers and jammed it).
-- **Through traffic circles the trunk:** 10 cars, half each way, spread along it at 03:00 and driven all day through the wrap. They add
-  about 1,800 to the trunk's count. Flaw: at 03:00, where the day repeats, each jumps from where the day ends it to where it began.
+- **Through traffic circles the trunk:** 100 cars (10 until 0.32.1, which the owner found too thin), half each way, spread evenly by
+  distance along it at 03:00 and driven all day through the wrap. They add about 18,000 to the trunk's count (28,000 in all, well over
+  a real principal arterial's: chosen for the drive, not the counts). Flaw: at 03:00, where the day repeats, each jumps from where the day ends it to where it began.
   (Through journeys from the road north round the wrap and back were tried first: 72,000 units, 15 to 20 world hours each, mostly on
   the main roads, not the trunk.)
 - **A stay is counted from leaving home** (`MinStay` 20 s at least). Driving runs in real time while the world's clock runs 36 times
@@ -975,3 +976,17 @@ queue for real.
 - Verify before claiming: say what you read yourself and what came from notes.
 - Plain words about what the player sees.
 - Show pictures you have looked at yourself.
+
+## 0.32.1 (2026-11-24)
+
+- **Physics cars drive into the tunnels.** The owner saw a highway car brake at a tunnel mouth: handed back to its timetable 100
+  short of the tunnel, it became a loose car (on its brakes) the moment the player behind was about to touch it. Now a physics car
+  is never handed back for a tunnel ahead: it drives on in (`TrafficDrive.Toward` keeps its steering point straight down the tunnel
+  past the glue plane, where its line goes on at the far tunnel) and goes back on its timetable in the dark
+  (`TrafficDrive.InDark`: its middle within 3 of the glue plane), early or late as it is (early is a negative lateness, drawn where it
+  is), or is retired there if damaged. `TrafficCars` looks for that every frame between the choices (`Bubble(..., darkOnly)`): at
+  speed a car is through the tunnel's dark well inside a choice's 0.4 s. Still no car made a physics car within `TunnelKeep` of a
+  tunnel, nor handed to another player there. trafficview's physics cars do the same.
+- **100 circling cars** (above). trafficview passes; the day builds in about 2.5 s instead of 1.6; the trunk's cars now wait a little
+  at its uncontrolled junction with the Westhaven link (node 5, about 3 s a pass on average).
+

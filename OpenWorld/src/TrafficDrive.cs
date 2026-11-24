@@ -22,7 +22,8 @@ namespace HalfGripOpenWorld
 		internal const double LookAhead = 200.0;
 		/// <summary>The last stretch of a trip: there a physics car goes back on its timetable, which draws the pull into its space.</summary>
 		internal const double EndZone = 45.0;
-		/// <summary>No physics car within this of a tunnel along its path (the day drives the wrap and the road out).</summary>
+		/// <summary>No car made a physics car within this of a tunnel along its path (the day drives the wrap and the road out); one already
+		/// a physics car drives on into the tunnel and goes back in its dark (<see cref="InDark"/>).</summary>
 		internal const double TunnelKeep = 80.0;
 		/// <summary>Kept waiting this long at a junction, a car gives way only to cars in the box, not to cars still coming (no deadlock);
 		/// three times as long, not to a drawn car standing in the box either (the day holds it there for someone who is a physics car now).</summary>
@@ -192,6 +193,54 @@ namespace HalfGripOpenWorld
 				&& Math.Abs(dx * rx + dz * rz) <= w + l2 * rf + w2 * rr
 				&& Math.Abs(dx * hx + dz * hz) <= l2 + l * ff + w * rf
 				&& Math.Abs(dx * hrx + dz * hrz) <= w2 + l * fr + w * rr;
+		}
+
+		/// <summary>
+		/// Whether a physics car at <paramref name="p"/> on leg <paramref name="leg"/> is in the dark of a tunnel it is driving into: its
+		/// middle within <see cref="DarkBack"/> of the glue plane (<see cref="Wrap.Depth"/> in) or past it. There it goes back on its
+		/// timetable, out of the player's sight; a physics car drives right in (the day takes it through the wrap), not handed back
+		/// before the mouth, where it would be seen to brake or vanish (owner, 2026-11-24).
+		/// </summary>
+		internal static bool InDark(TrafficDay.Leg leg, double p)
+		{
+			// The seg it is on, the one before (just past the plane) or the next (a few units short of a short tunnel stretch).
+			TrafficDay.Seg[] path = leg.Path;
+			int k = SegAt(path, p);
+			for (int j = Math.Max(0, k - 1); j <= Math.Min(path.Length - 1, k + 1); j++)
+			{
+				TrafficDay.Seg s = path[j];
+				if (s.Edge < 0 && !s.Inbound && p >= s.P0 + s.Len - DarkBack && p <= s.P0 + s.Len + DarkBack)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>How far short of the glue plane a car's middle counts as in the dark (its tail is then well inside the mouth).</summary>
+		internal const double DarkBack = 3.0;
+
+		/// <summary>
+		/// The point a physics car steers for, <paramref name="ahead"/> on from <paramref name="p"/> along its line. Past the glue plane of a
+		/// tunnel it is driving into, the line goes on at the far tunnel (the wrap), so the point is kept straight on down this tunnel.
+		/// </summary>
+		internal static void Toward(TrafficDay.Leg leg, double p, double ahead, out double x, out double z)
+		{
+			double q = p + ahead;
+			TrafficDay.Seg[] path = leg.Path;
+			for (int j = Math.Max(0, SegAt(path, p) - 1); j < path.Length && path[j].P0 < q; j++)
+			{
+				TrafficDay.Seg s = path[j];
+				double end = s.P0 + s.Len;
+				if (s.Edge < 0 && !s.Inbound && end >= p - DarkBack && end < q)
+				{
+					Line(leg, end, out x, out z, out double _, out double _);
+					x += s.Dx * (q - end);
+					z += s.Dz * (q - end);
+					return;
+				}
+			}
+			Line(leg, q, out x, out z, out double _, out double _);
 		}
 
 		/// <summary>Whether a tunnel is on leg <paramref name="leg"/>'s path within <see cref="TunnelKeep"/> either side of <paramref name="p"/>.</summary>

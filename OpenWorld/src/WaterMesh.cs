@@ -93,7 +93,7 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					double x0 = Math.Max(ox, Rivers.GridMin + i * size), x1 = Math.Min(ox + tileSize, Rivers.GridMin + (i + 1) * size);
-					double z0 = Math.Max(oz, Rivers.GridMin + j * size), z1 = Math.Min(oz + tileSize, Rivers.GridMin + (j + 1) * size);
+					double z0 = Math.Max(oz, Rivers.GridMin + j * size), z1 = Math.Min(Math.Min(oz + tileSize, Rivers.GridMin + (j + 1) * size), North(i, j));
 					if (x1 <= x0 || z1 <= z0)
 					{
 						continue;
@@ -141,6 +141,17 @@ namespace HalfGripOpenWorld
 				uv[k] = new UnityEngine.Vector2(v[k].x / 40f, v[k].z / 40f);
 			}
 			return new RoadMeshData { Vertices = v.ToArray(), Normals = normals, Uv = uv, Triangles = new[] { tris.ToArray() } };
+		}
+
+		/// <summary>
+		/// The north edge (largest z) a ring cell's water is cut back to, by hand where the ground falls below the water's level before the
+		/// ring's straight edge, so the water stood there as a strip with a wall at that edge; elsewhere no cut. (235, 69) and (236, 69),
+		/// world 7,500 to 7,700 by -9,100 to -9,000: the sea's level showed along the foot of the trunk's cutting, between -9,000 and
+		/// -9,004 (owner's report, 2026-11-24). At -9,008 the ground is above the sea all along, so the cut edge is under it.
+		/// </summary>
+		private static double North(int i, int j)
+		{
+			return j == 69 && (i == 235 || i == 236) && double.IsNaN(Surface(i, j)) ? -9008.0 : double.MaxValue;
 		}
 
 		private static double Surface(int i, int j)

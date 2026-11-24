@@ -94,11 +94,16 @@ namespace HalfGripOpenWorld
 		private readonly List<(int car, TrafficBody body, Leave what, TrafficRoom.Op op, ulong to)> acts = new List<(int, TrafficBody, Leave, TrafficRoom.Op, ulong)>();
 
 		/// <summary>
-		/// The bubble's going back, done before the choice: each physics car that is out of reach, on the last stretch of its trip or near a
-		/// tunnel goes back on its timetable if it can (upright, on its lane, undamaged), late by where it is on its leg; otherwise it stays
-		/// (stopped) until the player is out of reach, then is retired.
+		/// The bubble's going back, done before the choice: each physics car that is out of reach or on the last stretch of its trip goes
+		/// back on its timetable if it can (upright, on its lane, undamaged), late by where it is on its leg; otherwise it stays (stopped)
+		/// until the player is out of reach, then is retired. One driving into a tunnel goes on into its dark and goes back there, out of
+		/// sight, early or late as it is (or is retired there if it is damaged): never braking or waiting at the mouth.
 		/// </summary>
-		private void Bubble(double w, double cx, double cz)
+		/// <remarks>
+		/// With <paramref name="darkOnly"/> only the cars in a tunnel's dark are looked at: <see cref="TrafficCars"/> does that every frame
+		/// between the choices, since at speed a car is through the tunnel's few units of dark well inside one choice's interval.
+		/// </remarks>
+		private void Bubble(double w, double cx, double cz, bool darkOnly = false)
 		{
 			wrecks.RemoveAll(b => b == null);
 			if (physical.Count == 0)
@@ -116,6 +121,10 @@ namespace HalfGripOpenWorld
 					acts.Add((kv.Key, null, Leave.Back, default, 0UL));
 					continue;
 				}
+				if (darkOnly && (b.Loose || !TrafficDrive.InDark(day.Legs[b.Leg], b.P)))
+				{
+					continue;
+				}
 				if (b.Loose)
 				{
 					LooseBubble(kv.Key, b, w, cx, cz);
@@ -127,6 +136,7 @@ namespace HalfGripOpenWorld
 				bool far = dx * dx + dz * dz > (double)PhysicsLeave * PhysicsLeave || MostPhysics == 0;
 				bool end = !leg.Vanishes && b.P > leg.Length - TrafficDrive.EndZone;
 				bool tunnel = TrafficDrive.NearTunnel(leg, b.P + 20.0);
+				bool dark = TrafficDrive.InDark(leg, b.P);
 				if (others && b.Alive && !end && !tunnel && MostPhysics > 0)
 				{
 					// Another player clearly nearer (or within reach when this one is past it) drives it from here on: only they have the
@@ -138,18 +148,20 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 				}
-				if (!far && !end && !tunnel)
+				if (!far && !end && !dark)
 				{
 					b.Hold = false;
 					continue;
 				}
 				Vector3 f = b.transform.forward;
-				bool fit = b.Alive && !b.Hurt && !b.GaveUp && b.transform.up.y > 0.7f && TrafficDrive.OnLane(leg, b.P, x, z, f.x, f.z);
+				// In a tunnel's dark nobody sees it go, so it goes back however it is driving (a wreck is retired below).
+				bool fit = b.Alive && !b.Hurt && (dark || (!b.GaveUp && b.transform.up.y > 0.7f && TrafficDrive.OnLane(leg, b.P, x, z, f.x, f.z)));
 				if (fit)
 				{
 					double d = TrafficDrive.Lateness(leg, b.P, w);
-					// On the last stretch it waits to be on time rather than be drawn jumping ahead to where the day has it.
-					if (!far && d < -1.0)
+					// On the last stretch it waits to be on time rather than be drawn jumping ahead to where the day has it. In a tunnel it
+					// goes now, drawn where it is (early is a negative lateness).
+					if (!far && !dark && d < -1.0)
 					{
 						continue;
 					}
@@ -161,11 +173,11 @@ namespace HalfGripOpenWorld
 					{
 						backOnTime++;
 					}
-					Mod.Info("Traffic: car " + kv.Key + " back on its timetable " + (d >= TrafficLate.Least ? d.ToString("0.0") + " s late" : "on time") + (far ? " (out of reach)" : end ? " (its trip's end)" : " (a tunnel ahead)"));
+					Mod.Info("Traffic: car " + kv.Key + " back on its timetable " + (d >= TrafficLate.Least ? d.ToString("0.0") + " s late" : "on time") + (far ? " (out of reach)" : end ? " (its trip's end)" : " (in a tunnel)"));
 					acts.Add((kv.Key, b, Leave.Back, LateOp(b.Leg, b.P, w), 0UL));
 					continue;
 				}
-				if (!far)
+				if (!far && !dark)
 				{
 					// Can't go back here: it stops and waits for the player to go.
 					b.Hold = true;
@@ -1749,7 +1761,7 @@ namespace HalfGripOpenWorld
 		private void Steer(TrafficDay.Leg leg, Vector3 pos, float v, float dt)
 		{
 			double ahead = Math.Max(10.0, Math.Min(45.0, 8.0 + 0.6 * Math.Max(0f, v)));
-			TrafficDrive.Line(leg, P + ahead, out double tx, out double tz, out double _, out double _);
+			TrafficDrive.Toward(leg, P, ahead, out double tx, out double tz);
 			Vector3 to = Origin.Local(tx, pos.y, tz) - pos;
 			to.y = 0f;
 			Vector3 f = transform.forward;

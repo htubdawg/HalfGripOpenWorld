@@ -109,11 +109,12 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Cars circling the trunk all day (through traffic: the wrap makes the trunk a loop). A lap takes about 500 s, so each passes a
-		/// point about five times a day: 10 of them add about 1,800 to the trunk's count, which the local traffic (about 3,000 to 4,500)
-		/// brings to about the 5,400 a day Pennsylvania's principal arterials carry. Their one flaw: the day repeats at 03:00, and there
-		/// each jumps from where the day ends it to where the day began it.
+		/// point about five times a day. 10 of them made the trunk's count about the 5,400 a day Pennsylvania's principal arterials carry,
+		/// which the owner found too thin to drive in (2026-11-24): 100 (about 18,000 a day more) keep a car in sight along the highway
+		/// most of the time. Their one flaw: the day repeats at 03:00, and there each jumps from where the day ends it to where the day
+		/// began it.
 		/// </summary>
-		private const int Circling = 10;
+		private const int Circling = 100;
 
 		/// <summary>Straight-line distance at which a place draws a quarter as strongly as one next door... half: weight / (1 + (d / Reach)²).</summary>
 		private const double Reach = 3000.0;
@@ -910,11 +911,27 @@ namespace HalfGripOpenWorld
 						trunk.Add(e);
 					}
 				}
+				// Spread evenly by distance along the trunk's long stretches (so many cars never start on one spot), each way in turn.
+				double trunkLength = 0.0;
+				foreach (int te in trunk)
+				{
+					trunkLength += Traffic.Edges[te].Length;
+				}
+				int ti = 0;
+				double before = 0.0;
 				for (int i = 0; i < Circling && trunk.Count > 0; i++)
 				{
 					int into = i % 2 == 0 ? Wrap.A : Wrap.B, other = Wrap.Other(into);
-					Traffic.Edge e = Traffic.Edges[trunk[(int)((long)i * trunk.Count / Circling)]];
-					Traffic.Anchor start = new Traffic.Anchor { Edge = trunk[(int)((long)i * trunk.Count / Circling)], S = (e.Sa + e.Sb) * 0.5, Side = 1 };
+					double want = (i + 0.5) * trunkLength / Circling;
+					while (ti + 1 < trunk.Count && before + Traffic.Edges[trunk[ti]].Length <= want)
+					{
+						before += Traffic.Edges[trunk[ti]].Length;
+						ti++;
+					}
+					Traffic.Edge e = Traffic.Edges[trunk[ti]];
+					double u = (want - before) / Math.Max(1.0, e.Length);
+					u = Math.Max(0.0, Math.Min(1.0, u));
+					Traffic.Anchor start = OffJunctions(new Traffic.Anchor { Edge = trunk[ti], S = e.Sa + (e.Sb - e.Sa) * u, Side = 1 });
 					segs.Clear();
 					bool ok = Way(start, -1, PortalAnchor(into), into, segs);
 					double lap = 0.0;

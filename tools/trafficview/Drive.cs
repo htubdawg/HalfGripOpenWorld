@@ -157,10 +157,10 @@ internal static partial class Program
 			{
 				w -= Traffic.DaySeconds;
 			}
-			if (t >= nextBubble)
+			bool bubble = t >= nextBubble;
 			{
-				nextBubble += BubbleEvery;
-				// Going back: out of reach, the trip's end, a tunnel ahead.
+				// Going back: out of reach, the trip's end (each bubble), in a tunnel's dark (every step, as TrafficCars does each frame:
+				// driven right in, it is through the dark within a bubble's interval).
 				keys.Clear();
 				keys.AddRange(physical.Keys);
 				keys.Sort();
@@ -171,13 +171,17 @@ internal static partial class Program
 					TrafficDrive.Line(leg, s.P, out double x, out double z, out double _, out double _);
 					bool far = (x - px) * (x - px) + (z - pz) * (z - pz) > PhysLeave * PhysLeave;
 					bool end = !leg.Vanishes && s.P > leg.Length - TrafficDrive.EndZone;
-					bool tunnel = TrafficDrive.NearTunnel(leg, s.P + 20.0);
-					if (!far && !end && !tunnel)
+					bool dark = TrafficDrive.InDark(leg, s.P);
+					if (!bubble && !dark)
+					{
+						continue;
+					}
+					if (!far && !end && !dark)
 					{
 						continue;
 					}
 					double d = TrafficDrive.Lateness(leg, s.P, w);
-					if (!far && d < -1.0)
+					if (!far && !dark && d < -1.0)
 					{
 						waitedEnd++;
 						continue;
@@ -208,6 +212,10 @@ internal static partial class Program
 						jumps += jump > 3.0 ? 1 : 0;
 					}
 				}
+			}
+			if (bubble)
+			{
+				nextBubble += BubbleEvery;
 				// Making: every drawn driving car within reach, nearest first, up to the cap; one on a physics car hidden instead. Before
 				// that, as TrafficCars does for every drawn car: one about to pull out onto a physics car held back in its space, one in or
 				// about to run into a physics car hidden.
