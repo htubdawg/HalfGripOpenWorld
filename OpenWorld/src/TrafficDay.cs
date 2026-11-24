@@ -1391,6 +1391,12 @@ namespace HalfGripOpenWorld
 			return !NoRightOfWay && !TrafficSignals.Apart(node, inA, inB) && MainYields(node, inA, outA, inB, outB);
 		}
 
+		/// <summary>As <see cref="Yields"/> with the junction's light out of it (a physics car the light never saw, going as at a give way).</summary>
+		internal static bool YieldsUnlit(int node, int inA, int outA, int inB, int outB)
+		{
+			return !NoRightOfWay && MainYields(node, inA, outA, inB, outB);
+		}
+
 		/// <summary>trafficview only: every junction first come first served, as before 0.33.0 (to compare with).</summary>
 		internal static bool NoRightOfWay { get; set; }
 

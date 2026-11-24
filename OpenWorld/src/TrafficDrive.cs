@@ -28,6 +28,8 @@ namespace HalfGripOpenWorld
 		/// <summary>Kept waiting this long at a junction, a car gives way only to cars in the box, not to cars still coming (no deadlock);
 		/// three times as long, not to a drawn car standing in the box either (the day holds it there for someone who is a physics car now).</summary>
 		internal const double HoldBreak = 8.0;
+		/// <summary>Seconds held at a side road's red before a physics car gives up on the light (see <see cref="Target"/>).</summary>
+		internal const double LightGiveUp = 30.0;
 		/// <summary>Seconds more a physics car giving way leaves before a car with the right of way gets to the box, than a day's car does (less as it waits, as the day's margin).</summary>
 		private const double PhysicsGapMore = 1.5;
 		/// <summary>How far ahead of its timetable a car may get before it eases off (none on the last stretch: it waits to be on time).</summary>
@@ -542,7 +544,10 @@ namespace HalfGripOpenWorld
 				{
 					hold = blockedOut;
 					// Its light, as the day ran it: red, or amber it can stop for (as the day's cars).
-					if (TrafficSignals.Has(me.Node) && !TrafficSignals.MayGo(day.Lights.State(me.Node, me.InArm, now), v, me.ToBox - CarLength * 0.5))
+					// A side road's light changes for the day's cars only: one held at red past LightGiveUp with none of them there to
+					// call the green goes as at a give way (the light out of it), as a driver does at a light that never changes.
+					bool unlit = TrafficSignals.Has(me.Node) && st.WaitNode == me.Node && st.Waited > LightGiveUp && TrafficSignals.PhaseOf(me.Node, me.InArm) == 1;
+					if (TrafficSignals.Has(me.Node) && !unlit && !TrafficSignals.MayGo(day.Lights.State(me.Node, me.InArm, now), v, me.ToBox - CarLength * 0.5))
 					{
 						hold = true;
 					}
@@ -574,7 +579,7 @@ namespace HalfGripOpenWorld
 						{
 							continue;
 						}
-						if (TrafficSignals.Apart(me.Node, me.InArm, o.InArm) && o.ToBox > CarLength * 0.5)
+						if (!unlit && TrafficSignals.Apart(me.Node, me.InArm, o.InArm) && o.ToBox > CarLength * 0.5)
 						{
 							// Coming on the other green: its light holds it (only one already in the box, above, keeps this one back).
 							continue;
@@ -604,13 +609,13 @@ namespace HalfGripOpenWorld
 						// The right of way (the main line, as the day has it): a car giving way waits for a gap, whatever its wait, as long as
 						// one it gives way to gets there before it would be through; one with the right of way never waits for a physics
 						// car giving way to it (a drawn one, which follows its timetable, is still let go first when it is sooner).
-						if (o.OutArm == me.OutArm && TrafficDay.EntryIx(me.Node, me.InArm, me.OutArm) != 0 && TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
+						if (o.OutArm == me.OutArm && TrafficDay.EntryIx(me.Node, me.InArm, me.OutArm) != 0 && (unlit ? TrafficDay.YieldsUnlit(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm) : TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm)))
 						{
 							// Onto the trunk into a junction lane (an acceleration lane, or the median's): the car going on along the trunk
 							// that way is in another lane, so it is no bar.
 							continue;
 						}
-						if (TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
+						if (unlit ? TrafficDay.YieldsUnlit(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm) : TrafficDay.Yields(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm))
 						{
 							double box = Traffic.Nodes[me.Node].Box;
 							double waited = st.WaitNode == me.Node ? st.Waited : 0.0;

@@ -31,6 +31,22 @@ internal static partial class Program
 		public TrafficDrive.Mover Me;
 	}
 
+	/// <summary>A light's states over the physics run, every 10 s (G, A, R; - no light).</summary>
+	private static string LightsTrace(TrafficDay day, int node, int arm, double w0)
+	{
+		if (!TrafficSignals.Has(node))
+		{
+			return "-";
+		}
+		char[] c = new char[(int)(DriveRun / 10.0)];
+		for (int i = 0; i < c.Length; i++)
+		{
+			int st = day.Lights.State(node, arm, w0 + i * 10.0);
+			c[i] = st == TrafficSignals.Green ? 'G' : st == TrafficSignals.Amber ? 'A' : 'R';
+		}
+		return new string(c);
+	}
+
 	private static bool Drive(TrafficDay day)
 	{
 		bool ok = DriveLine(day);
@@ -452,7 +468,7 @@ internal static partial class Program
 			{
 				TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
 				TrafficDrive.Prepare(day, ref lm);
-				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s");
+				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)));
 			}
 		}
 		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && hitPlayer == 0 && jumps == 0 && (blocked || longWaits == 0);
