@@ -1098,6 +1098,8 @@ namespace HalfGripOpenWorld
 			public double LaneEnd = double.MaxValue;
 			public double Changed = -1e9;
 			public List<float> LaneRec;
+			/// <summary>trafficview's notes: how it pulled out (0 the road clear, 1 let in, 2 forced).</summary>
+			public int How;
 		}
 
 		private sealed class Grant
@@ -1940,7 +1942,7 @@ namespace HalfGripOpenWorld
 							if (!overlapPairs.Contains(pair) && OverlapNotes.Count < 14)
 							{
 								Mover a = list[i], b = list[i + 1];
-								OverlapNotes.Add("w " + (step * Step).ToString("0") + " lane " + key + " gap " + gap.ToString("0.0") + ": behind leg " + a.Index + " seg " + a.Seg + " in " + (a.P - a.L.Path[a.Seg].P0).ToString("0") + " v " + a.V.ToString("0.0") + " age " + (step - a.StartStep) + " forced " + (a.Grants.Exists(g => g.Forced)) + " / ahead leg " + b.Index + " seg " + b.Seg + " in " + (b.P - b.L.Path[b.Seg].P0).ToString("0") + " v " + b.V.ToString("0.0") + " age " + (step - b.StartStep));
+								OverlapNotes.Add("w " + (step * Step).ToString("0") + " lane " + key + " gap " + gap.ToString("0.0") + ": behind leg " + a.Index + " seg " + a.Seg + " in " + (a.P - a.L.Path[a.Seg].P0).ToString("0") + " v " + a.V.ToString("0.0") + " age " + (step - a.StartStep) + " forced " + (a.Grants.Exists(g => g.Forced)) + " / ahead leg " + b.Index + " seg " + b.Seg + " in " + (b.P - b.L.Path[b.Seg].P0).ToString("0") + " v " + b.V.ToString("0.0") + " age " + (step - b.StartStep) + " how " + b.How + " appears " + b.L.Appears + " | changed " + (step * Step - a.Changed).ToString("0.0") + "/" + (step * Step - b.Changed).ToString("0.0") + " s ago, ix " + a.Ix + "/" + b.Ix + " grants " + Grants(a) + " / " + Grants(b) + " changes " + Changes(a) + " / " + Changes(b) + " | " + LastMove(a) + " / " + LastMove(b));
 							}
 							Overlaps++;
 							overlapPairs.Add(((long)Math.Min(list[i].Index, list[i + 1].Index) << 32) | (uint)Math.Max(list[i].Index, list[i + 1].Index));
@@ -1949,6 +1951,38 @@ namespace HalfGripOpenWorld
 				}
 			}
 		}
+
+		private static string Grants(Mover m)
+		{
+			string t = "";
+			foreach (Grant g in m.Grants)
+			{
+				t += "[n" + g.Node + " " + g.InKey + ">" + g.OutKey + " out " + g.OutLane + " at " + (m.P - g.NodeP).ToString("0") + "]";
+			}
+			return t;
+		}
+
+		private static string Changes(Mover m)
+		{
+			if (m.LaneRec == null)
+			{
+				return "-";
+			}
+			string t = "";
+			for (int i = Math.Max(0, m.LaneRec.Count - 6); i + 2 < m.LaneRec.Count + 0; i += 3)
+			{
+				t += "[" + (m.LaneRec[i] - m.P).ToString("0") + ".." + (m.LaneRec[i + 1] - m.P).ToString("0") + " to " + m.LaneRec[i + 2] + "]";
+			}
+			return t;
+		}
+
+		/// <summary>trafficview's notes: what last moved the car between lanes.</summary>
+		private string LastMove(Mover m)
+		{
+			return lastMove.TryGetValue(m.Index, out string t) ? t : "-";
+		}
+
+		internal readonly Dictionary<int, string> lastMove = new Dictionary<int, string>();
 
 		private void AddToLane(Mover m)
 		{
@@ -2041,7 +2075,7 @@ namespace HalfGripOpenWorld
 					foreach (Mover o in list)
 					{
 						double d = o.LaneU - u;
-						if (Math.Abs(d) < 40.0 || (d < 0.0 && -d < pullGap * o.V))
+						if (Math.Abs(d) < 40.0 || (d < 0.0 && (-d < pullGap * o.V || !CanStopBehind(-d, o.V))))
 						{
 							clear = false;
 							break;
@@ -2067,6 +2101,7 @@ namespace HalfGripOpenWorld
 				}
 				// Let in: after a while the car just behind leaves a gap (below), and the car pulls out once the gap is there and
 				// nothing is coming fast.
+				int how = 0;
 				if (!clear && slowRoad && w - leg.Ready >= LetInAfter && !Coming(first, u))
 				{
 					bool gap = true;
@@ -2083,6 +2118,7 @@ namespace HalfGripOpenWorld
 						}
 					}
 					clear = gap;
+					how = 1;
 					if (!gap)
 					{
 						letIn.Add((lane, u));
@@ -2096,11 +2132,12 @@ namespace HalfGripOpenWorld
 				{
 					lanes.TryGetValue(lane, out list);
 				}
-				if (!clear && list != null && list.Exists(o => Math.Abs(o.LaneU - u) < Traffic.CarLength + 2.0))
+				if (!clear && list != null && list.Exists(o => Math.Abs(o.LaneU - u) < Traffic.CarLength + 2.0 || (o.LaneU < u && !CanStopBehind(u - o.LaneU, o.V))))
 				{
-					// Even forced, never on top of another car.
+					// Even forced, never on top of another car, nor in front of one that could not stop for it.
 					continue;
 				}
+				how = clear ? how : 2;
 				if (!clear)
 				{
 					PullOutsForced++;
@@ -2119,7 +2156,7 @@ namespace HalfGripOpenWorld
 				{
 					ProfileSeconds += Sample / Math.Max(1.0, Math.Min(leg.Profile[q], leg.Profile[q + 1]));
 				}
-				Mover m = new Mover { Index = waiting[i], L = leg, StartStep = step, P = 0.0, Seg = k0, HoldUntil = leg.Appears ? -1.0 : w + leg.PullOut };
+				Mover m = new Mover { Index = waiting[i], L = leg, StartStep = step, P = 0.0, Seg = k0, HoldUntil = leg.Appears ? -1.0 : w + leg.PullOut, How = how };
 				m.V = leg.Appears ? Math.Min(leg.Profile[0], leg.Path[0].Speed) : 0.0;
 				movers.Add(m);
 				AddToLane(m);
@@ -2244,6 +2281,15 @@ namespace HalfGripOpenWorld
 		/// holds up its own lane meanwhile, and a longer wait on a busy main road backs the queue up through the junctions behind it.
 		/// </summary>
 		private const double FarHoldMost = 15.0;
+
+		/// <summary>
+		/// Whether a car <paramref name="behind"/> back (centre to centre) going <paramref name="v"/> can stop short of a car standing
+		/// in front of it with a second to see it and the least gap to spare: a car pulling out in front of it is standing there.
+		/// </summary>
+		private static bool CanStopBehind(double behind, double v)
+		{
+			return behind - Traffic.CarLength - MinGap >= v * v / (2.0 * Brake) + v;
+		}
 
 		private bool Coming(Seg s, double u, double reach = 80.0)
 		{
@@ -2813,6 +2859,7 @@ namespace HalfGripOpenWorld
 				{
 					KeptRight++;
 				}
+				lastMove[m.Index] = "change to inner " + toInner + " w " + w.ToString("0.0");
 				m.Inner = toInner;
 				m.Lane = target;
 				m.Changed = w;
@@ -2886,6 +2933,7 @@ namespace HalfGripOpenWorld
 		private void EnterTrunk(Mover m, double w)
 		{
 			int ix = EntryIx(m.L.Path, m.Seg - 1);
+			lastMove[m.Index] = "enter trunk ix " + ix + " w " + w.ToString("0.0");
 			m.Ix = ix;
 			m.LaneEnd = double.MaxValue;
 			// Drawn in that lane from the junction (a car that left the trunk from another lane earlier is drawn back in the outer one).
@@ -3254,8 +3302,9 @@ namespace HalfGripOpenWorld
 		internal int IntoJunctionLanes, Merged;
 
 		/// <summary>Mover <paramref name="m"/> moved into lane <paramref name="target"/> (its index <paramref name="ix"/>): out of the old lane's list, into the new one's in order, its grants with it, the change recorded.</summary>
-		private void Switch(Mover m, long target, int ix, double w)
+		private void Switch(Mover m, long target, int ix, double w, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0)
 		{
+			lastMove[m.Index] = "switch " + m.Ix + ">" + ix + " w " + w.ToString("0.0") + " line " + line + " room " + RoomIn(target, m);
 			foreach (Grant g in m.Grants)
 			{
 				Seg[] path = m.L.Path;
@@ -3430,6 +3479,43 @@ namespace HalfGripOpenWorld
 		/// time it is drawn moving over (<see cref="MoveOverTime"/>), when it is in both lanes: neither car closes on it in that time, in
 		/// the new lane or the one it leaves.
 		/// </summary>
+		/// <summary>
+		/// The nearest car behind mover <paramref name="m"/> still short of lane <paramref name="lane"/>, let through the junction at the
+		/// lane's start into it: where it is reckoned along the lane (negative before its start) and its speed. False if none.
+		/// </summary>
+		private bool ComingInto(long lane, Mover m, out double u, out double v)
+		{
+			u = double.MinValue;
+			v = 0.0;
+			Seg s = m.L.Path[m.Seg];
+			if (s.Edge < 0)
+			{
+				return false;
+			}
+			Traffic.Edge e = Traffic.Edges[s.Edge];
+			if (!nodeGrants.TryGetValue(s.Dir > 0 ? e.A : e.B, out List<Grant> list))
+			{
+				return false;
+			}
+			bool any = false;
+			foreach (Grant g in list)
+			{
+				if (g.OutLane != lane || g.M == m || g.M.Lane == lane || g.M.Seg > g.SegIndex)
+				{
+					continue;
+				}
+				Seg o = g.M.L.Path[g.SegIndex + 1];
+				double gu = LaneU(o, o.P0) - (o.P0 - g.M.P);
+				if (gu < m.LaneU && gu > u)
+				{
+					u = gu;
+					v = g.M.V;
+					any = true;
+				}
+			}
+			return any;
+		}
+
 		private bool RoomIn(long lane, Mover m)
 		{
 			Neighbours(lane, m, out Mover ahead, out Mover behind);
@@ -3445,6 +3531,15 @@ namespace HalfGripOpenWorld
 			{
 				double gap = m.LaneU - Traffic.CarLength - behind.LaneU;
 				if (gap < MinGap + Math.Max(0.0, behind.V - m.V) * MoveOverTime || Interaction(behind.V, gap, m.V) < -ChangeBrake)
+				{
+					return false;
+				}
+			}
+			// Just past a junction, a car still coming through it into the lane is behind it too, though not yet on the lane's list.
+			if (ComingInto(lane, m, out double cu, out double cv))
+			{
+				double gap = m.LaneU - Traffic.CarLength - cu;
+				if (gap < MinGap + Math.Max(0.0, cv - m.V) * MoveOverTime || Interaction(cv, gap, m.V) < -ChangeBrake)
 				{
 					return false;
 				}
