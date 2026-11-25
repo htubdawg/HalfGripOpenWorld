@@ -18,7 +18,7 @@ using UnityEngine;
 //   6. verges:  the step from a verge's outer edge to the ground (its inner edge is the road's edge by construction), under 0.1
 //   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
 //   8. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
-//   9. faces:   road, verge and water meshes with no upside-down flat faces, under 65000 vertices
+//   9. faces:   road, verge and water meshes with no upside-down flat faces and no zero normals (a white glow), under 65000 vertices
 //  11. ribbons:  farm tracks' and footpaths' ribbons over the drawn ground everywhere across them (away from paved roads, which
 //                they run under)
 //  12. sidewalks: a sidewalk's back on or over the ground, its kerb's foot under it
@@ -950,7 +950,7 @@ internal static class Program
 
 	private static bool Faces()
 	{
-		int down = 0, most = 0;
+		int down = 0, most = 0, badNormals = 0;
 		for (int tz = -64; tz < 64; tz++)
 		{
 			for (int tx = -64; tx < 64; tx++)
@@ -964,6 +964,20 @@ internal static class Program
 						continue;
 					}
 					most = Math.Max(most, d.Vertices.Length);
+					// No zero or broken normal: it is NaN in the lighting, a white glowing patch through the bloom (the trunk's
+					// junction lanes' paint narrowing to nothing at a taper's end, RoadMesh.Quad).
+					for (int k = 0; d.Normals != null && k < d.Normals.Length; k++)
+					{
+						Vector3 nk = d.Normals[k];
+						if (!(nk.sqrMagnitude > 0.5f && nk.sqrMagnitude < 1.5f))
+						{
+							if (badNormals < 5)
+							{
+								Console.WriteLine("  a broken normal (" + nk.x + ", " + nk.y + ", " + nk.z + ") at (" + (tx * 250f + d.Vertices[k].x).ToString("0.0") + ", " + (tz * 250f + d.Vertices[k].z).ToString("0.0") + ")");
+							}
+							badNormals++;
+						}
+					}
 					for (int m = 0; m < d.Triangles.Length; m++)
 					{
 						// A covered bridge's roof has an underside.
@@ -986,8 +1000,8 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track, water and circuit meshes; most vertices in one mesh " + most);
-		return down == 0 && most < 65000;
+		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track, water and circuit meshes; " + badNormals + " zero or broken normals; most vertices in one mesh " + most);
+		return down == 0 && badNormals == 0 && most < 65000;
 	}
 
 	private static bool Lots()

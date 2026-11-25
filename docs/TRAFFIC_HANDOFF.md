@@ -1,5 +1,15 @@
 # Traffic: handoff
 
+## The glowing patches in the trunk's median (2026-11-25, the owner's screenshot)
+
+Small white glowing patches in the trunk's median at intervals (in daylight, at (-2643, -9813) and all along it). Made by the trunk's
+junction lanes' paint (`RoadMesh.TrunkPaint`, commit cd01409): the median lane's asphalt narrows to nothing at each taper's end, so
+the strip's first 20-unit step had two corners at one place, `RoadMesh.Quad` took its normal from that corner (zero), and a zero
+normal is NaN in the lighting: NaN pixels blow up white through the bloom. `Quad` now falls back to the diagonals (then straight
+up). And the paint on the carriageway going the other way (side -1) was never drawn: its offsets came in reversed and `Paint` threw
+the strip away; now put in order, so those deceleration and acceleration lanes' markings show. meshcheck `faces` now fails on a zero
+or broken normal (92 on the old code, 0 now). The whole meshcheck passes; check.sh passes. Not yet seen in the game.
+
 ## READ THIS FIRST: the doubled lanes and the 16 seeds' leftovers (2026-11-25, `traffic-test-branch`)
 
 Worked through "NEXT" below, items 1 to 3. Still 0.33.0, not tried in the game. **The world changed** (four farm lanes): everyone

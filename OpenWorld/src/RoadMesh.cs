@@ -607,6 +607,16 @@ namespace HalfGripOpenWorld
 		/// <summary>A strip of paint over fractions ta to tb of piece i, between offsets from the centre (left positive) at each end, all of one texture column.</summary>
 		private static void Paint(Mesher m, Network.Road road, int i, double ta, double tb, double loA, double hiA, double loB, double hiB, float u)
 		{
+			// Each end's offsets in order: on the carriageway going the other way (side -1) they came in reversed, so the test below
+			// threw every strip there away and its junction lanes were never painted.
+			if (hiA < loA)
+			{
+				(loA, hiA) = (hiA, loA);
+			}
+			if (hiB < loB)
+			{
+				(loB, hiB) = (hiB, loB);
+			}
 			if (hiA - loA < 0.05 && hiB - loB < 0.05)
 			{
 				return;
@@ -945,7 +955,15 @@ namespace HalfGripOpenWorld
 			uv.Add(ub);
 			uv.Add(uc);
 			uv.Add(ud);
-			Vector3 normal = Vector3.Cross(b - a, c - a).normalized;
+			// From the corner a, else (two corners at one place: a strip of paint narrowing to nothing at a taper's end) across the
+			// diagonals, else straight up. A zero normal is NaN in the lighting, and NaN pixels blew up white through the bloom: a
+			// glowing patch in the trunk's median at every junction lane's end (the owner's screenshot).
+			Vector3 normal = Vector3.Cross(b - a, c - a);
+			if (normal.sqrMagnitude < 1e-10f)
+			{
+				normal = Vector3.Cross(d - a, b - c);
+			}
+			normal = normal.sqrMagnitude < 1e-10f ? Vector3.up : normal.normalized;
 			if (up && normal.y < 0f)
 			{
 				normal = -normal;
