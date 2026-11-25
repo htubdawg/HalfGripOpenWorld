@@ -257,9 +257,12 @@ namespace HalfGripOpenWorld
 		private double now;
 		/// <summary>The day's traffic lights, as they ran (read back by the physics cars' driver and the drawn lights).</summary>
 		internal readonly TrafficSignals.Lights Lights;
-		private bool[] lightWaiting = new bool[0], lightComing = new bool[0];
+		private bool[] lightWaiting = new bool[0], lightComing = new bool[0], leftWaiting = new bool[0], leftComing = new bool[0];
 
-		/// <summary>The lights a step on: a side car not yet let in, near its line, is waiting (stopped) or coming (the light's loop sees it).</summary>
+		/// <summary>
+		/// The lights a step on: a side car not yet let in, near its line, is waiting (stopped) or coming (the light's loop sees it); so is
+		/// a car on the main line turning left at a light with arrows (the loop in its bay).
+		/// </summary>
 		private void RunLights(double w)
 		{
 			int n = TrafficSignals.Nodes.Count;
@@ -271,9 +274,13 @@ namespace HalfGripOpenWorld
 			{
 				lightWaiting = new bool[n];
 				lightComing = new bool[n];
+				leftWaiting = new bool[n];
+				leftComing = new bool[n];
 			}
 			Array.Clear(lightWaiting, 0, n);
 			Array.Clear(lightComing, 0, n);
+			Array.Clear(leftWaiting, 0, n);
+			Array.Clear(leftComing, 0, n);
 			foreach (Mover m in movers)
 			{
 				int k = Asking(m);
@@ -284,21 +291,27 @@ namespace HalfGripOpenWorld
 				Seg[] path = m.L.Path;
 				int node = NodeAfter(path, k);
 				int i = TrafficSignals.IndexOf(node);
-				if (i < 0 || TrafficSignals.PhaseOf(node, LinkIndex(node, path[k].Edge)) != 1)
+				if (i < 0 || k + 1 >= path.Length)
 				{
 					continue;
 				}
+				int phase = TrafficSignals.PhaseOf(node, LinkIndex(node, path[k].Edge), LinkIndex(node, path[k + 1].Edge));
+				if (phase == TrafficSignals.MainPhase)
+				{
+					continue;
+				}
+				bool[] seen = phase == TrafficSignals.ArrowPhase ? leftComing : lightComing, stopped = phase == TrafficSignals.ArrowPhase ? leftWaiting : lightWaiting;
 				double toLine = path[k].P0 + path[k].Len - Traffic.Nodes[node].Box - m.P;
 				if (toLine < TrafficSignals.Detect)
 				{
-					lightComing[i] = true;
+					seen[i] = true;
 					if (m.V < 3.0)
 					{
-						lightWaiting[i] = true;
+						stopped[i] = true;
 					}
 				}
 			}
-			Lights.Step(w, lightWaiting, lightComing);
+			Lights.Step(w, lightWaiting, lightComing, leftWaiting, leftComing);
 		}
 		/// <summary>Requests refused for a gap: a car giving way to a main-line car coming.</summary>
 		internal int RefusedGap;
@@ -1088,9 +1101,8 @@ namespace HalfGripOpenWorld
 			/// <summary>The car just ahead on the same lane this step (null if none).</summary>
 			public Mover Ahead;
 			/// <summary>
-			/// Which of the trunk's lanes it is in (0 the outer, and the one lane of every other road; 1 the inner; <see cref="AuxIx"/> a
-			/// junction's deceleration or acceleration lane; <see cref="MedianIx"/> a median lane); when it last changed lanes; its changes
-			/// (as <see cref="Leg.Lanes"/>).
+			/// Which of the trunk's lanes it is in (0 the outer, and the one lane of every other road; 1 the inner; <see cref="MedianIx"/> a
+			/// left-turn bay in the median); when it last changed lanes; its changes (as <see cref="Leg.Lanes"/>).
 			/// </summary>
 			public int Ix;
 			public bool Inner { get => Ix == 1; set => Ix = value ? 1 : 0; }
@@ -1152,8 +1164,8 @@ namespace HalfGripOpenWorld
 			return LaneOf(s) + (TwoLane(s) ? ix * InnerKey : 0L);
 		}
 
-		/// <summary>Lane indexes of the trunk's junction lanes (<see cref="TrunkLanes"/>): its deceleration and acceleration lanes, its median lanes.</summary>
-		internal const int AuxIx = 2, MedianIx = 3;
+		/// <summary>The lane index of the trunk's left-turn bays (<see cref="TrunkLanes"/>).</summary>
+		internal const int MedianIx = 3;
 
 		/// <summary>
 		/// Whether two movements through a node, each with the lanes it comes in and leaves by, cross: as <see cref="Crosses"/>, but two
@@ -1387,7 +1399,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether the way in along arm <paramref name="inA"/> and out along <paramref name="outA"/> turns left (across the oncoming lane: traffic keeps right).</summary>
-		private static bool LeftTurn(int node, int inA, int outA)
+		internal static bool LeftTurn(int node, int inA, int outA)
 		{
 			double tx = -armX[node][inA], tz = -armZ[node][inA];
 			return tx * armZ[node][outA] - tz * armX[node][outA] > 0.3;
@@ -1403,7 +1415,7 @@ namespace HalfGripOpenWorld
 		internal static bool Yields(int node, int inA, int outA, int inB, int outB)
 		{
 			// At a light, cars on different greens never meet (the light keeps them apart): nobody gives way to a car at its red.
-			return !NoRightOfWay && !TrafficSignals.Apart(node, inA, inB) && MainYields(node, inA, outA, inB, outB);
+			return !NoRightOfWay && !TrafficSignals.Apart(node, inA, outA, inB, outB) && MainYields(node, inA, outA, inB, outB);
 		}
 
 		/// <summary>As <see cref="Yields"/> with the junction's light out of it (a physics car the light never saw, going as at a give way).</summary>
@@ -1466,12 +1478,6 @@ namespace HalfGripOpenWorld
 			if (mainA[node] < 0 || inA == mainA[node] || inA == mainB[node])
 			{
 				return 0.0;
-			}
-			int entry = EntryIx(node, inA, outA);
-			if (entry == MedianIx)
-			{
-				// Turning left onto the trunk in two stages: across the near carriageway into the median lane, as across a road.
-				return AcrossGap;
 			}
 			bool trunk = twoLaneMain[node];
 			if (LeftTurn(node, inA, outA))
@@ -1871,7 +1877,7 @@ namespace HalfGripOpenWorld
 				}
 				Stuck.Add(look + " :: leg " + m.Index + " p " + m.P.ToString("0") + "/" + m.L.Length.ToString("0") + " v " + m.V.ToString("0.0") + " seg " + m.Seg + "/" + path.Length + " lane " + m.Lane
 					+ " u " + m.LaneU.ToString("0") + " " + why + " ahead " + (m.Ahead != null ? m.Ahead.Index + " at " + m.Ahead.LaneU.ToString("0") : "-") + " grants" + grants + " wait " + m.Wait.ToString("0") + " binding " + m.Binding + " ix " + m.Ix + " laneEnd " + (m.LaneEnd < double.MaxValue ? (m.LaneEnd - m.P).ToString("0") : "-")
-					+ (m.Ix >= AuxIx ? " goOn " + GrantsGoOn(m) + " room0 " + RoomIn(LaneKey(path[m.Seg], 0), m) + " room1 " + RoomIn(LaneKey(path[m.Seg], 1), m) + " " + roomWhy + " allow0 " + GrantsAllowIx(m, 0) + " allow1 " + GrantsAllowIx(m, 1) + " " + LastMove(m) : ""));
+					+ (m.Ix == MedianIx ? " goOn " + GrantsGoOn(m) + " room0 " + RoomIn(LaneKey(path[m.Seg], 0), m) + " room1 " + RoomIn(LaneKey(path[m.Seg], 1), m) + " " + roomWhy + " allow0 " + GrantsAllowIx(m, 0) + " allow1 " + GrantsAllowIx(m, 1) + " " + LastMove(m) : ""));
 			}
 			foreach (Mover m in movers)
 			{
@@ -2435,7 +2441,7 @@ namespace HalfGripOpenWorld
 				{
 					M = m, Node = node, SegIndex = k, NodeP = nodeP,
 					InArm = LinkIndex(node, path[k].Edge), OutArm = LinkIndex(node, path[k + 1].Edge),
-					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneKey(path[k + 1], EntryIx(path, k)),
+					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneKey(path[k + 1], 0),
 					Eta = ArriveTime(m.V, nodeP - box - m.P, Math.Max(m.V, DesiredAt(m.L.Profile, m.P + Math.Max(0.0, nodeP - box - m.P)))),
 				});
 			}
@@ -2469,7 +2475,7 @@ namespace HalfGripOpenWorld
 				for (int i = start; i < end; i++)
 				{
 					Request r = requests[i];
-					if (TrafficSignals.Has(node) && !TrafficSignals.MayGo(Lights.State(node, r.InArm, now), r.M.V, r.NodeP - box - r.M.P))
+					if (TrafficSignals.Has(node) && !TrafficSignals.MayGo(Lights.State(node, r.InArm, r.OutArm, now), r.M.V, r.NodeP - box - r.M.P))
 					{
 						// Its light is red (or amber it can stop for): it stops at the line. It holds up nobody on the
 						// other green, so it is not kept in the refused list.
@@ -2820,7 +2826,7 @@ namespace HalfGripOpenWorld
 			{
 				Seg[] path = m.L.Path;
 				Seg s = path[m.Seg];
-				if (!TwoLane(s) || w < m.HoldUntil || m.Ix >= AuxIx || w - m.Changed < JunctionLaneKeep || !GrantsGoOn(m))
+				if (!TwoLane(s) || w < m.HoldUntil || m.Ix == MedianIx || w - m.Changed < JunctionLaneKeep || !GrantsGoOn(m))
 				{
 					continue;
 				}
@@ -2952,45 +2958,10 @@ namespace HalfGripOpenWorld
 		/// <summary>How far ahead a car on the trunk looks for the junction it turns off at.</summary>
 		private const double ExitLook = 2000.0;
 
-		/// <summary>The lane a car going from path seg <paramref name="k"/> onto the trunk at k + 1 comes into (see the node overload).</summary>
-		private static int EntryIx(Seg[] path, int k)
-		{
-			if (k + 1 >= path.Length || !TwoLane(path[k + 1]) || TwoLane(path[k]))
-			{
-				return 0;
-			}
-			int node = NodeAfter(path, k);
-			return node < 0 ? 0 : EntryIx(node, LinkIndex(node, path[k].Edge), LinkIndex(node, path[k + 1].Edge));
-		}
-
-		/// <summary>
-		/// The lane a car from a side arm comes into on the trunk at node <paramref name="node"/>: a turn right into the acceleration lane
-		/// beside the near carriageway, a turn left into the median lane beside the far one (two stages), where those lanes are there;
-		/// else the outer lane (0).
-		/// </summary>
-		internal static int EntryIx(int node, int inA, int outA)
-		{
-			if (node < 0 || inA < 0 || outA < 0 || mainA[node] < 0 || inA == mainA[node] || inA == mainB[node] || (outA != mainA[node] && outA != mainB[node]))
-			{
-				return 0;
-			}
-			int edge = Traffic.Links[node][outA];
-			if (!twoLaneEdge[edge])
-			{
-				return 0;
-			}
-			Traffic.Edge e = Traffic.Edges[edge];
-			int dir = e.A == node ? 1 : -1;
-			double s = (e.A == node ? e.Sa : e.Sb) + dir * (TrunkLanes.Mouth + 5.0);
-			bool left = LeftTurn(node, inA, outA);
-			int kind = left ? TrunkLanes.Median : TrunkLanes.Aux;
-			return TrunkLanes.Find(e.Road, kind, dir, s) >= 0 ? (left ? MedianIx : AuxIx) : 0;
-		}
-
 		/// <summary>How far left of the outer lane lane index <paramref name="ix"/> is drawn, in lane widths (as <see cref="Leg.Lanes"/> records it).</summary>
 		private static float LaneValue(int ix)
 		{
-			return ix == 1 ? 1f : ix == AuxIx ? (float)TrunkLanes.AuxLane : ix == MedianIx ? (float)TrunkLanes.MedianLane : 0f;
+			return ix == 1 ? 1f : ix == MedianIx ? (float)TrunkLanes.MedianLane : 0f;
 		}
 
 		/// <summary>Distance along the trunk road at path distance <paramref name="p"/> on seg <paramref name="s"/>.</summary>
@@ -2999,10 +2970,13 @@ namespace HalfGripOpenWorld
 			return s.S0 + s.Dir * (p - s.P0);
 		}
 
-		/// <summary>Mover <paramref name="m"/> has just come onto the trunk from a side road: into the junction lane its turn leads to, if any.</summary>
+		/// <summary>
+		/// Mover <paramref name="m"/> has just come onto the trunk from a side road: into the outer lane (a car from a side road waits at
+		/// its line for a gap and crosses or joins in one go; there is no median lane or acceleration lane to come into).
+		/// </summary>
 		private void EnterTrunk(Mover m, double w)
 		{
-			int ix = EntryIx(m.L.Path, m.Seg - 1);
+			const int ix = 0;
 			lastMove[m.Index] = "enter trunk ix " + ix + " w " + w.ToString("0.0");
 			m.Ix = ix;
 			m.LaneEnd = double.MaxValue;
@@ -3082,10 +3056,10 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Cars into and out of the trunk's junction lanes: a car turning right off it moves into the deceleration lane once in it (it is
-		/// in the outer lane by then), a car turning left into the median's turn lane (from the inner lane); a car in an acceleration or
-		/// median lane it does not turn off from merges once up to speed and given room (the cars on the trunk brake gently at most), and
-		/// stops at the lane's end if none comes. Before the other lane changes each step.
+		/// Cars into and out of the trunk's left-turn bays: a car turning left moves into the bay from the inner lane once beside it; one
+		/// in a bay it no longer turns off from (its turn missed) moves back into the inner lane once given
+		/// room, and stops at the bay's end if none comes. A car turning right slows in the outer lane (there are no deceleration lanes).
+		/// Before the other lane changes each step.
 		/// </summary>
 		private bool JunctionLanes(double w)
 		{
@@ -3101,7 +3075,7 @@ namespace HalfGripOpenWorld
 				int road = Traffic.Edges[s.Edge].Road, dir = s.Dir > 0 ? 1 : -1;
 				double rs = RoadS(s, m.P);
 				bool exit = ExitAhead(m, out double exitS, out bool left);
-				if (m.Ix < AuxIx)
+				if (m.Ix < MedianIx)
 				{
 					if (exit && m.Ix != (left ? 1 : 0) && GrantsGoOn(m) && ExitNear(m) < MissAt)
 					{
@@ -3126,16 +3100,16 @@ namespace HalfGripOpenWorld
 						}
 						continue;
 					}
-					if (!exit || m.Ix != (left ? 1 : 0) || !GrantsGoOn(m))
+					if (!exit || !left || m.Ix != 1 || !GrantsGoOn(m))
 					{
 						continue;
 					}
-					int zone = TrunkLanes.Find(road, left ? TrunkLanes.Median : TrunkLanes.Aux, dir, rs);
+					int zone = TrunkLanes.Find(road, TrunkLanes.Median, dir, rs);
 					if (zone < 0 || !Leads(zone, exitS))
 					{
 						continue;
 					}
-					int ix = left ? MedianIx : AuxIx;
+					const int ix = MedianIx;
 					long target = LaneKey(s, ix);
 					if (!RoomIn(target, m) || !GrantsAllowIx(m, ix))
 					{
@@ -3147,7 +3121,7 @@ namespace HalfGripOpenWorld
 					any = true;
 					continue;
 				}
-				int kind = m.Ix == AuxIx ? TrunkLanes.Aux : TrunkLanes.Median;
+				const int kind = TrunkLanes.Median;
 				int here = TrunkLanes.Find(road, kind, dir, rs);
 				if (here < 0)
 				{
@@ -3173,7 +3147,7 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				int back = m.Ix == AuxIx ? 0 : 1;
+				const int back = 1;
 				long into = LaneKey(s, back);
 				if (!GrantsGoOn(m) || !RoomIn(into, m) || !GrantsAllowIx(m, back))
 				{
@@ -3194,14 +3168,14 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private double TurnQueueTail(Mover m)
 		{
-			if (!ExitAhead(m, out double exitS, out bool left) || m.Ix != (left ? 1 : 0))
+			if (!ExitAhead(m, out double exitS, out bool left) || !left || m.Ix != 1)
 			{
 				return double.MaxValue;
 			}
 			Seg s = m.L.Path[m.Seg];
 			int road = Traffic.Edges[s.Edge].Road, dir = s.Dir > 0 ? 1 : -1;
-			int zone = TrunkLanes.Find(road, left ? TrunkLanes.Median : TrunkLanes.Aux, dir, RoadS(s, m.P));
-			if (zone < 0 || !Leads(zone, exitS) || !lanes.TryGetValue(LaneKey(s, left ? MedianIx : AuxIx), out List<Mover> list))
+			int zone = TrunkLanes.Find(road, TrunkLanes.Median, dir, RoadS(s, m.P));
+			if (zone < 0 || !Leads(zone, exitS) || !lanes.TryGetValue(LaneKey(s, MedianIx), out List<Mover> list))
 			{
 				return double.MaxValue;
 			}
@@ -3820,14 +3794,14 @@ namespace HalfGripOpenWorld
 			{
 				M = r.M, Node = next, SegIndex = k, NodeP = nodeP,
 				InArm = LinkIndex(next, path[k].Edge), OutArm = LinkIndex(next, path[k + 1].Edge),
-				InLane = r.OutLane, OutLane = TwoLane(path[k]) ? LaneOf(r.M, path[k + 1]) : LaneKey(path[k + 1], EntryIx(path, k)),
+				InLane = r.OutLane, OutLane = TwoLane(path[k]) ? LaneOf(r.M, path[k + 1]) : LaneKey(path[k + 1], 0),
 				Eta = ArriveTime(r.M.V, nodeP - nextBox - r.M.P, Math.Max(r.M.V, DesiredAt(r.M.L.Profile, nodeP - nextBox))),
 			};
 			if (q.InArm < 0 || q.OutArm < 0)
 			{
 				return true;
 			}
-			if (TrafficSignals.Has(next) && Lights.State(next, q.InArm, now) != TrafficSignals.Green)
+			if (TrafficSignals.Has(next) && Lights.State(next, q.InArm, q.OutArm, now) != TrafficSignals.Green)
 			{
 				r.M.NextWhy = "light at " + next;
 				return false;
@@ -4147,7 +4121,7 @@ namespace HalfGripOpenWorld
 			}
 			// Turning off soon from a junction lane it is not yet in: it does not pull up beside that lane's queue (where it could not
 			// get in, and would stand in a through lane), but holds back behind its last car and slips in there.
-			if (m.Ix < AuxIx && TwoLane(path[m.Seg]) && path[m.Seg].Edge >= 0)
+			if (m.Ix < MedianIx && TwoLane(path[m.Seg]) && path[m.Seg].Edge >= 0)
 			{
 				double tail = TurnQueueTail(m);
 				if (tail < double.MaxValue)
@@ -4157,7 +4131,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			// The end of the junction lane it is to merge from: no further (it waits there for a gap, out of everyone's way).
-			if (m.Ix >= AuxIx && m.LaneEnd < double.MaxValue)
+			if (m.Ix == MedianIx && m.LaneEnd < double.MaxValue)
 			{
 				double left = m.LaneEnd - m.P;
 				if (left < v * v / (2.0 * 0.6 * Brake) + 30.0)

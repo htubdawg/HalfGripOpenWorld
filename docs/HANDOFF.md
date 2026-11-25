@@ -10,62 +10,47 @@ Last written 2026-11-25.
 
 - **Branch: `traffic-test-branch`.** Work and push only there; never start a new branch. Before starting, look at every branch's
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
-- **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights (logic in `TrafficSignals.cs`, drawn American style by `SignalPoles.cs` and `SignalHeads.cs`), the trunk's
-  junction lanes (`TrunkLanes.cs`: deceleration and acceleration lanes on the shoulder, left-turn and merge lanes in the median),
-  right of way fixes, and lanes no longer laid on lanes (`Network.Throughs`, meshcheck `alongside`). Late and early drawn cars are let
-  off a stand with nothing to stand for (`TrafficLate.SkipStand`), and the median paint no longer glows (`RoadMesh.Quad`). **The world
-  changed** since 0.33.0 (the trunk is wider, four farm lanes are gone), so everyone in a room needs the same build. Bump the version
-  with the next release.
-- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58).
-- Last checks: `tools/check.sh`, the whole meshcheck and preview pass. trafficview passes on all 16 seeds (`TV_DRIVE_ONLY=1`, seeds 1
-  to 15 and 20261122) and in full on seeds 1, 7, 9 and 13. trafficsim passes.
-- **Traffic lights drawn** (2026-11-25, the owner: "American style"): `SignalPoles` lays out 48 masts at the 16 junctions with lights,
-  every one across the junction from its drivers (the owner, on the first version: arms over the stop line at the T's could only be
-  seen from 50 to 100 ft back; a T's stem now has its arm on the far verge of the road it meets). `SignalHeads` draws them (mesh in
-  `SignalMesh`) and lights each lamp from `day.Lights.State`. trafficview's `traffic lights drawn` line checks them, two heads within
-  20 degrees ahead and 40 ft or more past the stop line for every way in (seed 1 `TV_DRIVE_ONLY=1`: ok; the first layout failed 17 of 48).
-  The mesh was looked at outside the game (the heads, visors and backplates from a driver's eye and behind) but not yet in it. Not
-  done: no lights where the traffic failed to build (the day picks the junctions), no street name signs or "signal ahead" signs, poles
-  not kept off houses or trees (none checked; houses stand back from the corners).
+- **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights (logic in `TrafficSignals.cs`, drawn American style by
+  `SignalPoles.cs` and `SignalHeads.cs`), right of way fixes, lanes no longer laid on lanes (`Network.Throughs`, meshcheck
+  `alongside`), late drawn cars let off a stand with nothing to stand for (`TrafficLate.SkipStand`), and now **the highway reworked**
+  (below). **The world changed** since 0.33.0, so everyone in a room needs the same build. Bump the version with the next release.
+- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 and 59).
 
-## Next: rework the highway's layout
+## The highway reworked (2026-11-25)
 
-The owner: the highway (the trunk road) is horrible as it is, and its layout is to be completely reworked. **Ask the owner what they
-want it to be before designing anything.** The questions below are a starting point.
+The owner's brief: no overpasses or underpasses; lights where needed are fine; "the median is not meant to be used as a lane"; the
+on/off lanes and the bots using the median as a turning lane were the problem; dedicated left-turn lanes with left-turn arrows at
+lights; K-rails here and there; a wide grass median in places; the median mostly open so players can cross into the oncoming traffic;
+keep the general route and the wrap. Standing decisions are in `docs/PLAN.md`.
 
-**What the trunk is now:**
-- A dual carriageway, two lanes each way, round the map. It wraps: two tunnels joined (`Wrap.cs`, built by `WorldScene`, the jump in
-  `Streamer`).
-- At-grade junctions with every side road. Kingsbridge's link meets it at node 3 and Westhaven's at node 5 (11316, -9288).
-- `TrunkLanes.cs` adds the auxiliary lanes; `RoadMesh.TrunkPaint` paints them.
-- Traffic lights' logic at the junctions with primary or bigger roads (`TrafficSignals.cs`).
-- 100 cars circle it all day (`TrafficDay`); the highway event's course runs along it (`Courses`, "Highway 10.1 km, 33 gates").
+What was done (same 80 units across, so the land, routes and other roads are unchanged):
+- **Cross-section** (`TrunkLanes`' constants, used by `Traffic.LaneOffset`, `Courses.Carriageway`, the spawn, the texture): a grass
+  median 24 wide, flush with the road (drawn in the texture, so it drives like the road), a shoulder of 2 and a yellow line, two
+  lanes of 11, a shoulder of 4 (was: a concrete median 10 wide and shoulders a lane wide for the shoulder lanes).
+- **No shoulder lanes, no median merge lanes.** `TrunkLanes.Zones` holds only left-turn bays: one per junction and carriageway that
+  turns left there, back 520 from the junction's mouth, never past the junction before it, on its own side of the centre line.
+  `RoadMesh.TrunkPaint` paves the median at each junction's opening and each bay (taper at its far end, white line beside the inner
+  lane, yellow on the median side; lines lifted over the bay's asphalt so they don't fight).
+- **Traffic** (`TrafficDay`, `TrafficDrive`): a car turning left moves into the bay and waits there; a car from a side road joins or
+  crosses in one go (its gap: `LeftGap` or `AcrossGap`), never in two stages; no more `AuxIx`/`EntryIx`.
+- **Left arrows** (`TrafficSignals`): at lights whose main line is the trunk, a protected arrow phase (steps 3 to 5 of 9) for both
+  bays together, only when a car waits in one (`ArrowMin` 6 s, `ArrowMax` 20 s); the trunk's lefts go only on it. `State` and
+  `Apart` take the movement (in and out arm). `SignalPoles` hangs the bay's head only where there is a left to make (`Mast.Arrow`);
+  `SignalHeads` draws it with arrow lenses and lights them from the arrow's state. Physics cars held at an arrow with no day car to
+  call it go after `LightGiveUp`, as on a side road.
+- **K-rails** (`TrunkLanes.Rails`, `RoadMesh.KRail`): Jersey profile, concrete, in the road mesh (so solid), on about half the stretches
+  with room for one 450 clear of junctions and 60 clear of bays: 5 rails, 1.4 km in all, 14% of the trunk (listed by meshcheck
+  `median`, e.g. round (12229, -8922) and (4393, -10413)).
+- **Checks:** meshcheck `median` (new); jview `JVIEW_TEX=1` draws the trunk's markings. Looked at from above: the Westhaven link's
+  junction (11316, -9288) and the rail at (12229, -8922).
 
-**What is wrong with it** (from the owner's 0.33.0 report and the traffic work):
-- Cars turning off or crossing the trunk stood across both lanes of a carriageway ("cars cutting across the entire highway holding up
-  every lane"). The median lanes and lights were the answer so far.
-- Left turns off and onto the trunk at nodes 3 and 5 carry the towns' commuters against busy oncoming traffic, so they have little
-  capacity. Queues back up the Westhaven link at the peak.
-- Side roads meeting at a slant leave a waiting car on the trunk's paving. Junction boxes were widened (`Traffic.ObliqueBox`, at most
-  75), but a few slanted lanes still hit that cap.
-- More circling cars are blocked on this. With 300, the side roads can hardly join the trunk at the peak (3,606 min of junction
-  waiting a day, 74 trips unfinished). The owner wants ten times today's highway traffic at about 135 fps.
+Last checks: see the PR / commit message for this session's results (`tools/check.sh`, meshcheck, preview, trafficview on 16 seeds).
 
-**Questions to settle with the owner:**
-- Grade separation (overpasses, slip roads) or still at-grade? The owner ruled out diamond interchanges on 2026-11-24 ("a small rural
-  area"). A complete rework may reopen that, but ask; don't assume.
-- Fewer junctions on the trunk (side roads joined to each other first), right-in/right-out only, or a different route round the map?
-- Is it still a ring that wraps through the tunnels?
-
-**What a layout change touches:**
-- `Network.cs` (the trunk's route, its junctions) and `TrunkLanes.cs`; `RoadMesh.cs` (the trunk's paint).
-- `Wrap.cs` and `WorldScene.cs` (the tunnels); `Streamer.cs` (the wrap's jump, the trunk's ground loaded ahead).
-- `Traffic.cs`, `TrafficDay.cs`, `TrafficDrive.cs`, `TrafficSignals.cs` (the graph, lanes, right of way, the circling cars).
-- `Courses.cs` (the highway event), `Signs.cs`, `Herds.cs` (crossings), `Foliage.cs`, `Parks.cs`, `Plots.cs`, `TownPlan.cs` (kept off
-  it).
-- Checks: meshcheck `wrap`, `seastrip`, `joints`, `holes`, `hubs`, `poke`, `alongside`; preview; trafficview on the 16 seeds;
-  `tools/trafficview/Highway.cs` (the circling cars as a player meets them).
-- It changes the world: everyone in a room needs the same build.
+Possible next steps (ask the owner):
+- More or longer K-rails, a wider median in places (the width is constant now; varying it changes `Network.HalfAt` and everything
+  under it), rumble strips, a turn arrow painted in each bay.
+- Right-turn bays at the lit junctions (none now: a right turner slows in the outer lane).
+- The traffic leftovers below; then more circling cars in steps (300 choked the side roads' joins before the rework: measure again).
 
 ## Traffic leftovers (after the highway, or if the rework doesn't cover them)
 

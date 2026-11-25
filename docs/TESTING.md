@@ -187,8 +187,7 @@ owner has reported on it.
      its `Frame timings` lines (draw calls and shadow casters with traffic about, against 0.32.6's).
 58. `traffic-test-branch` after 0.33.0 (not released; everyone in a room needs the same build: four farm lanes changed). The
    highway's own items (57's first point) wait for the highway rework (`docs/HANDOFF.md`).
-   - No small white glowing patches in the trunk's median (they were at (-2643, -9813) and all along it); the markings of the
-     deceleration and acceleration lanes show on both carriageways.
+   - No small white glowing patches in the trunk's median (they were at (-2643, -9813) and all along it).
    - Traffic lights are drawn, American style, at the 16 junctions where a primary road or the trunk meets a secondary or bigger
      road: a grey steel mast arm for each way in, across the junction from it, with a yellow head for each lane and one on the pole
      (from a side road at a T, across the road you meet). Stopped at the line, the lights are ahead of you, not overhead. The lamp lit is the one the cars obey: red, amber, green as the cars stop and go; it glows at night. Say if
@@ -197,3 +196,16 @@ owner has reported on it.
      turns: side-road cars wait, then several go together while the main road stops. Say if a main road seems to stop for nothing.
    - No physics car stands for minutes behind a drawn car that is stopped for no visible reason.
    - No country lane is laid on top of another (Farm lanes near (7796, -10404) and (-5751, 12853)): one road, not two in one.
+59. The highway reworked (`traffic-test-branch`, not released; the world changed, everyone in a room needs the same build).
+   - The highway has a grass median about 7 m wide, flush with the road: drive across it anywhere into the oncoming carriageway (it
+     drives like the road). The shoulders are narrow; there are no long on/off lanes beside the carriageways any more.
+   - At every side road the median is paved for the opening, and the carriageway that turns left there has a left-turn lane cut into
+     the median before it (solid white line beside it, yellow on its median side, opening out over a taper). Cars turning left move
+     into it and wait there, never in a through lane and never in the median elsewhere. Cars coming out of a side road wait at their
+     line and cross or join in one go. Say if a car stands in the median outside a left-turn lane, or across a carriageway.
+   - K-rail (a grey concrete barrier) runs down the middle of the median on five stretches, e.g. round (12229, -8922) and (4393,
+     -10413). It is solid. Say if you would like more, fewer or longer ones.
+   - At the junctions with lights on the highway, the left-turn lane has its own head on the mast arm with red, amber and green
+     arrows. Left turns go only on the green arrow (both left-turn lanes together, every through lane red), and the arrow only comes
+     up when a car waits in a left-turn lane. Say if a car turns left on a red arrow, or the arrow never comes.
+   - The highway event's grid and start box are in the moved lanes (the carriageway's middle is further out now).

@@ -4,27 +4,38 @@ using System.Collections.Generic;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// The trunk's junction lanes, worked out once from the layout (pure, deterministic, no Unity types). A dual carriageway carrying
-	/// fast traffic past side roads has them so nobody turning holds up the cars going on (the owner's design, after "cars cutting across
-	/// the entire highway"; the PA Driver's Manual's rules for them, pp. 45 to 52):
-	///   - a deceleration lane on the right before a side road, in the outer shoulder: a car turning right moves into it, then slows
-	///     ("Do not slow down until after you have moved into the exit lane");
-	///   - an acceleration lane on the right after it: a car turning right out of the side road comes up to speed there, then merges
-	///     ("Accelerate up to the speed of traffic. Merge into the opening in traffic");
-	///   - a left-turn lane in the median before it, for the oncoming carriageway: a car turning left waits there for a gap, out of the
-	///     through lanes ("enter it completely");
-	///   - a median lane after it for the cars turning left out of the side road: they cross the near carriageway, then wait and come
-	///     up to speed in the median before merging into the far one ("cross the 'first' roadway ... then turn left on the other side").
-	/// Where two junctions' lanes overlap, they join into one (a continuous auxiliary lane between close interchanges and junctions,
-	/// as real roads are built); where two median lanes of opposite directions meet, the median is shared out between them (back to
-	/// back left-turn lanes), a median lane too short to merge from is left out (a left from that side road crosses in one go, as at
-	/// a crossroads, where the median is the two directions' turn lanes).
-	/// The outer shoulder is a lane wide all along the trunk (a paved shoulder, as on Pennsylvania's rural four-lane roads), so the lanes
-	/// are paint: <see cref="RoadMesh"/> draws them, <see cref="TrafficDay"/> drives them.
+	/// The trunk's junction lanes and median, worked out once from the layout (pure, deterministic, no Unity types). The trunk is a rural
+	/// divided highway with at-grade junctions (the owner, 2026-11-25: no overpasses; lights where needed; "the median is not meant to be
+	/// used as a lane"):
+	///   - a grass median 24 wide (about 7 m), flush with the road, so a player may cross it anywhere into the oncoming carriageway;
+	///   - at each side road, the median paved over for the opening, and a dedicated left-turn bay cut into it before the junction for
+	///     the carriageway whose traffic turns left there: a car turning left moves into it, slows and waits there out of the through lanes
+	///     (at a junction with a light, for the green arrow: <see cref="TrafficSignals"/>; else for a gap in the oncoming traffic);
+	///   - no deceleration or acceleration lanes on the shoulder and no median lanes to merge from: a car turning right slows in the outer
+	///     lane, one coming out of a side road waits at its line for a gap and crosses in one go (never standing in the median);
+	///   - K-rails (a concrete barrier down the middle) on a few stretches well away from any junction (<see cref="Rails"/>).
+	/// Each direction's bay is on its own side of the centre line, so a crossroads' two bays sit back to back. The lanes are paint over the
+	/// trunk's drawn median: <see cref="RoadMesh"/> draws them (and the rails), <see cref="TrafficDay"/> drives them.
 	/// </summary>
 	internal static class TrunkLanes
 	{
-		internal const int Aux = 0, Median = 1;
+		/// <summary>The kind of every junction lane: a left-turn bay in the median (the shoulder lanes, kind 0, are gone).</summary>
+		internal const int Median = 1;
+
+		// ---- the cross-section (from the centre line out; the road is 80 across, as RoadMesh's texture) ----
+
+		/// <summary>Half the median (grass, flush): 24 across.</summary>
+		internal const double MedianHalf = 12.0;
+		/// <summary>The paved shoulder between the median and the inner lane.</summary>
+		internal const double InnerShoulder = 2.0;
+		/// <summary>A lane's width.</summary>
+		internal const double LaneWidth = 11.0;
+		/// <summary>The middle of the inner lane, of the outer lane, and the outer edge line, from the centre line.</summary>
+		internal const double InnerMid = MedianHalf + InnerShoulder + LaneWidth * 0.5, OuterMid = InnerMid + LaneWidth, EdgeLine = OuterMid + LaneWidth * 0.5;
+		/// <summary>The middle of a carriageway (between its two lanes), from the centre line.</summary>
+		internal const double Carriageway = MedianHalf + InnerShoulder + LaneWidth;
+		/// <summary>A left-turn bay's inner edge (beside the inner lane, where the yellow edge line was) and outer edge (by the centre line), and its middle.</summary>
+		internal const double BayIn = MedianHalf + 1.0, BayOut = BayIn - LaneWidth, BayMid = (BayIn + BayOut) * 0.5;
 
 		/// <summary>A junction lane: on trunk road <see cref="Road"/>, for traffic going <see cref="Dir"/> (+1 the way its distance grows), from <see cref="S0"/> to <see cref="S1"/> (S0 &lt; S1).</summary>
 		internal struct Zone
@@ -40,39 +51,42 @@ namespace HalfGripOpenWorld
 			public double S;
 		}
 
+		/// <summary>A stretch of K-rail down the middle of trunk road <see cref="Road"/>, from <see cref="S0"/> to <see cref="S1"/>.</summary>
+		internal struct Rail
+		{
+			public int Road;
+			public double S0, S1;
+		}
+
 		internal static readonly List<Zone> Zones = new List<Zone>();
 		internal static readonly List<Junction> Junctions = new List<Junction>();
+		internal static readonly List<Rail> Rails = new List<Rail>();
 
-		/// <summary>How far from the junction's middle a lane starts or ends: past the side road's mouth.</summary>
+		/// <summary>How far from the junction's middle a bay ends (the median opening is paved this far each way): past the side road's mouth.</summary>
 		internal const double Mouth = 45.0;
-		/// <summary>
-		/// The deceleration lane: 55 mph (81 units a second) down to a turn's 13 at the traffic's braking (8.25, about 2.5 m/s²) takes
-		/// about 390; with the taper to move over in.
-		/// </summary>
-		internal const double Decel = 520.0;
-		/// <summary>The acceleration lane: from a turn up to the trunk's speed at the traffic's 5 (about 1.5 m/s²) takes about 560; with its taper.</summary>
-		internal const double Accel = 680.0;
-		/// <summary>The left-turn lane: slowing as in the deceleration lane, and room for about five cars waiting (5 x 21).</summary>
-		internal const double TurnLane = 620.0;
-		/// <summary>The shortest median lane a car could come up to speed in and merge from: shorter, it is left out.</summary>
-		internal const double ShortestMerge = 380.0;
-		/// <summary>The taper at a lane's ends, drawn as the edge line moving out (or the median opening).</summary>
+		/// <summary>The left-turn bay: 55 mph (81 units a second) down to a turn's 13 at the traffic's braking (8.25, about 2.5 m/s²) takes
+		/// about 390, partly in the taper; with room for about five cars waiting (5 x 21), as a rural signalised junction's bay.</summary>
+		internal const double TurnLane = 520.0;
+		/// <summary>The taper at a bay's far end, drawn as the bay's edge moving out from the inner lane's edge.</summary>
 		internal const double Taper = 100.0;
-		/// <summary>Two lanes of one kind this close end to end are joined.</summary>
-		private const double JoinGap = 200.0;
 		/// <summary>No junction lanes this near a trunk road's ends (its tunnels, where the highway wraps round).</summary>
 		private const double EndClear = 400.0;
 		/// <summary>Roads crossing more than this apart in height pass over or under (no junction), as in <see cref="Traffic"/>.</summary>
 		private const double OverPass = 4.0;
+		/// <summary>K-rail is kept this far from any junction and the trunk's ends; a stretch shorter than <see cref="RailShortest"/> gets none, one longer is cut to <see cref="RailLongest"/>.</summary>
+		internal const double RailClear = 450.0, RailShortest = 400.0, RailLongest = 1600.0;
+		/// <summary>K-rail is kept this far from a bay's end.</summary>
+		private const double RailBayGap = 60.0;
 
-		/// <summary>How far left of a carriageway's outer lane the middle of a lane is, in lane widths (11): the outer lane 0, the inner 1, the median lane (on the centre line) and the deceleration or acceleration lane (in the outer shoulder, its middle 34.5 out).</summary>
-		internal const double MedianLane = (5.0 + 2.0 + 11.0 + 5.5) / 11.0, AuxLane = -1.0;
+		/// <summary>How far left of a carriageway's outer lane the middle of its left-turn bay is, in lane widths (the outer lane 0, the inner 1).</summary>
+		internal const double MedianLane = (OuterMid - BayMid) / LaneWidth;
 
 		/// <summary>Works out the junctions and lanes from the layout. Called once, at the end of <see cref="Network.Ensure"/>.</summary>
 		internal static void Build()
 		{
 			Zones.Clear();
 			Junctions.Clear();
+			Rails.Clear();
 			for (int t = 0; t < Network.Roads.Count; t++)
 			{
 				Network.Road trunk = Network.Roads[t];
@@ -82,6 +96,7 @@ namespace HalfGripOpenWorld
 				}
 				List<Junction> found = Find(t);
 				Lanes(t, found);
+				Barriers(t, found);
 				Junctions.AddRange(found);
 			}
 		}
@@ -237,12 +252,14 @@ namespace HalfGripOpenWorld
 			return fa >= 0.0 && fa < 1.0 && fb >= 0.0 && fb < 1.0;
 		}
 
-		/// <summary>The lanes for trunk road <paramref name="t"/>'s junctions, joined and shared out as the class summary says.</summary>
+		/// <summary>
+		/// The left-turn bays for trunk road <paramref name="t"/>'s junctions: each back from its junction's mouth, but never past the
+		/// mouth of the junction before it (a bay belongs to one junction; where two are close, the bay is as long as the stretch between).
+		/// </summary>
 		private static void Lanes(int t, List<Junction> found)
 		{
 			Network.Road trunk = Network.Roads[t];
 			double length = trunk.S[trunk.Count - 1];
-			List<Zone> aux = new List<Zone>(), turn = new List<Zone>(), merge = new List<Zone>();
 			foreach (Junction j in found)
 			{
 				for (int side = -1; side <= 1; side += 2)
@@ -251,62 +268,92 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					// The carriageway beside this side: traffic keeps right, so the right side (-1) is the one driven the way S grows.
-					int d = -side;
-					aux.Add(Before(t, Aux, d, j.S, Decel));
-					aux.Add(After(t, Aux, d, j.S, Accel));
-					turn.Add(Before(t, Median, -d, j.S, TurnLane));
-					if (j.Side != 0)
+					// Traffic keeps right: a side road left of S's way (+1) is a left turn for the cars going S's way (+1), one on the
+					// right (-1) for those going the other way.
+					Zone z = Before(t, Median, side, j.S, TurnLane);
+					foreach (Junction o in found)
 					{
-						merge.Add(After(t, Median, -d, j.S, Accel));
+						if (side > 0 && o.S < j.S - 1.0)
+						{
+							z.S0 = Math.Max(z.S0, o.S + Mouth);
+						}
+						else if (side < 0 && o.S > j.S + 1.0)
+						{
+							z.S1 = Math.Min(z.S1, o.S - Mouth);
+						}
 					}
+					Clamp(z, length);
 				}
 			}
-			List<Zone> median = Join(turn, found);
-			// Back to back left-turn lanes of the two ways: the median shared out at the middle of their overlap.
-			Share(median);
-			// The median lanes to merge from: what is left of each once the turn lanes (of either way) have their place.
-			foreach (Zone m in merge)
+		}
+
+		/// <summary>
+		/// K-rail on trunk road <paramref name="t"/>: on about half the stretches between junctions long enough to hold one well
+		/// clear of both (and of the tunnels), in the middle of the stretch, so the median stays open to drive across almost everywhere.
+		/// Which stretches is from the trunk's own index and the stretch's (deterministic).
+		/// </summary>
+		private static void Barriers(int t, List<Junction> found)
+		{
+			Network.Road trunk = Network.Roads[t];
+			double length = trunk.S[trunk.Count - 1];
+			List<double> stops = new List<double> { EndClear - RailClear };
+			foreach (Junction j in found)
 			{
-				Zone left = m;
-				bool keep = true;
-				foreach (Zone o in median)
+				stops.Add(j.S);
+			}
+			stops.Add(length - EndClear + RailClear);
+			for (int k = 0; k + 1 < stops.Count; k++)
+			{
+				double a = stops[k] + RailClear, b = stops[k + 1] - RailClear;
+				// Kept off the bays (and their tapers) at either end, with a little room to swing out into one.
+				foreach (Zone z in Zones)
 				{
-					if (o.S1 <= left.S0 || o.S0 >= left.S1)
+					if (z.Road != t || z.S1 <= a - RailBayGap || z.S0 >= b + RailBayGap)
 					{
 						continue;
 					}
-					if (o.Dir == left.Dir)
+					if (z.S0 + z.S1 < a + b)
 					{
-						// The same way: one lane on, the merge into the next junction's turn lane (a car may stay in it to turn there).
-						continue;
-					}
-					// The other way's turn lane: the merge keeps the part next to its own junction.
-					if (left.Dir > 0)
-					{
-						left.S1 = Math.Min(left.S1, o.S0);
+						a = Math.Max(a, z.S1 + RailBayGap);
 					}
 					else
 					{
-						left.S0 = Math.Max(left.S0, o.S1);
+						b = Math.Min(b, z.S0 - RailBayGap);
 					}
-					keep = left.S1 - left.S0 >= ShortestMerge;
 				}
-				if (keep)
+				if (b - a < RailShortest || (Noise.Mix((ulong)(t * 7919 + k * 104729 + 17)) % 2UL) != 0UL)
 				{
-					median.Add(left);
+					continue;
+				}
+				double mid = (a + b) * 0.5, half = Math.Min(b - a, RailLongest) * 0.5;
+				Rails.Add(new Rail { Road = t, S0 = mid - half, S1 = mid + half });
+			}
+		}
+
+		/// <summary>Whether K-rail stands down trunk road <paramref name="road"/>'s middle at distance <paramref name="s"/> along it.</summary>
+		internal static bool RailAt(int road, double s)
+		{
+			foreach (Rail r in Rails)
+			{
+				if (r.Road == road && s >= r.S0 && s <= r.S1)
+				{
+					return true;
 				}
 			}
-			median = Join(median, found);
-			Share(median);
-			foreach (Zone z in Join(aux))
+			return false;
+		}
+
+		/// <summary>Whether the median is paved at distance <paramref name="s"/> along trunk road <paramref name="road"/>: a junction's opening.</summary>
+		internal static bool Opening(int road, double s)
+		{
+			foreach (Junction j in Junctions)
 			{
-				Clamp(z, length);
+				if (j.Road == road && Math.Abs(s - j.S) <= Mouth)
+				{
+					return true;
+				}
 			}
-			foreach (Zone z in median)
-			{
-				Clamp(z, length);
-			}
+			return false;
 		}
 
 		private static void Clamp(Zone z, double length)
@@ -329,100 +376,6 @@ namespace HalfGripOpenWorld
 		private static Zone After(int t, int kind, int d, double s, double length)
 		{
 			return d > 0 ? new Zone { Road = t, Kind = kind, Dir = d, S0 = s + Mouth, S1 = s + Mouth + length } : new Zone { Road = t, Kind = kind, Dir = d, S0 = s - Mouth - length, S1 = s - Mouth };
-		}
-
-		/// <summary>
-		/// Lanes of one direction and kind that overlap or nearly meet, joined: deceleration and acceleration lanes through a junction
-		/// between them too (one auxiliary lane on from junction to junction); median lanes never through a junction (the median is
-		/// open there, for the turns), each cut back to the junction's mouth instead.
-		/// </summary>
-		private static List<Zone> Join(List<Zone> zones, List<Junction> junctions = null)
-		{
-			if (junctions != null)
-			{
-				zones = Cut(zones, junctions);
-			}
-			List<Zone> sorted = new List<Zone>(zones);
-			sorted.Sort((a, b) => a.Dir != b.Dir ? a.Dir.CompareTo(b.Dir) : a.Kind != b.Kind ? a.Kind.CompareTo(b.Kind) : a.S0 != b.S0 ? a.S0.CompareTo(b.S0) : a.S1.CompareTo(b.S1));
-			List<Zone> joined = new List<Zone>();
-			foreach (Zone z in sorted)
-			{
-				if (joined.Count > 0)
-				{
-					Zone last = joined[joined.Count - 1];
-					if (last.Dir == z.Dir && last.Kind == z.Kind && z.S0 <= last.S1 + JoinGap)
-					{
-						last.S1 = Math.Max(last.S1, z.S1);
-						joined[joined.Count - 1] = last;
-						continue;
-					}
-				}
-				joined.Add(z);
-			}
-			return joined;
-		}
-
-		/// <summary>Median lanes cut where a junction lies inside them, each piece kept back by <see cref="Mouth"/> from it (short pieces dropped).</summary>
-		private static List<Zone> Cut(List<Zone> zones, List<Junction> junctions)
-		{
-			List<Zone> list = new List<Zone>(zones);
-			foreach (Junction j in junctions)
-			{
-				List<Zone> next = new List<Zone>();
-				foreach (Zone z in list)
-				{
-					if (j.S - Mouth >= z.S1 || j.S + Mouth <= z.S0)
-					{
-						next.Add(z);
-						continue;
-					}
-					Zone a = z, b = z;
-					a.S1 = Math.Min(z.S1, j.S - Mouth);
-					b.S0 = Math.Max(z.S0, j.S + Mouth);
-					if (a.S1 - a.S0 > Taper * 2.0)
-					{
-						next.Add(a);
-					}
-					if (b.S1 - b.S0 > Taper * 2.0)
-					{
-						next.Add(b);
-					}
-				}
-				list = next;
-			}
-			return list;
-		}
-
-		/// <summary>
-		/// Median lanes of the two directions overlapping: split at the middle of the overlap, the one reaching further back keeping
-		/// the part on its side (each keeps the end at its own junction, back to back).
-		/// </summary>
-		private static void Share(List<Zone> median)
-		{
-			for (int a = 0; a < median.Count; a++)
-			{
-				for (int b = 0; b < median.Count; b++)
-				{
-					Zone za = median[a], zb = median[b];
-					if (za.Dir <= 0 || zb.Dir >= 0 || za.S1 <= zb.S0 || zb.S1 <= za.S0)
-					{
-						continue;
-					}
-					double mid = (Math.Max(za.S0, zb.S0) + Math.Min(za.S1, zb.S1)) * 0.5;
-					if (za.S0 + za.S1 <= zb.S0 + zb.S1)
-					{
-						za.S1 = mid;
-						zb.S0 = mid;
-					}
-					else
-					{
-						za.S0 = mid;
-						zb.S1 = mid;
-					}
-					median[a] = za;
-					median[b] = zb;
-				}
-			}
 		}
 
 		/// <summary>The junction lane of <paramref name="kind"/> on trunk road <paramref name="road"/> for traffic going <paramref name="dir"/> at distance <paramref name="s"/> along it, or -1.</summary>

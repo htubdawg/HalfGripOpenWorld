@@ -77,6 +77,10 @@ using UnityEngine;
 //                there and back adding up to nothing; every lane's point past one glue plane landing on the other tunnel's floor in
 //                the same lane, going in; the ground under each open tunnel's floor and the road level into its mouth; the highway
 //                event's ends clear of both tunnels
+//  30. median:  the trunk's median is no lane (the owner, 2026-11-25): every junction lane a left-turn bay, ending at the mouth of a
+//                junction where its carriageway turns left and running through none; the bay on its own carriageway's side of the
+//                centre line, clear of the inner lane; K-rail on a few stretches only, each well clear of every junction, bay and
+//                opening, the median open to drive across over most of the trunk
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -125,6 +129,7 @@ internal static class Program
 			("alongside", Alongside),
 			("deer", DeerChecks),
 			("wrap", WrapChecks),
+			("median", MedianChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -629,6 +634,84 @@ internal static class Program
 	/// trunk's cutting south of the road. The tile's lake and sea quads (four vertices at one height, larger than a pond's) are sampled
 	/// every unit over x 7,500 to 7,700 and z -9,012 to -9,000: none may be above the ground.
 	/// </summary>
+	private static bool MedianChecks()
+	{
+		int notBay = 0, through = 0, loose = 0, shortBays = 0, railNear = 0, railOnBay = 0;
+		double trunkLength = 0.0, railed = 0.0;
+		foreach (TrunkLanes.Zone z in TrunkLanes.Zones)
+		{
+			if (z.Kind != TrunkLanes.Median)
+			{
+				notBay++;
+			}
+			if (z.S1 - z.S0 < TrunkLanes.Taper * 2.0)
+			{
+				shortBays++;
+			}
+			double end = z.Dir > 0 ? z.S1 : z.S0;
+			bool leads = false;
+			foreach (TrunkLanes.Junction j in TrunkLanes.Junctions)
+			{
+				if (j.Road != z.Road)
+				{
+					continue;
+				}
+				if (j.S > z.S0 + 1.0 && j.S < z.S1 - 1.0)
+				{
+					through++;
+					Console.WriteLine("  median: the bay " + z.S0.ToString("0") + " to " + z.S1.ToString("0") + " runs through the junction at " + j.S.ToString("0"));
+				}
+				// The junction ahead of the bay's end, on the side its carriageway turns left into.
+				if (Math.Abs(j.S - (end + z.Dir * TrunkLanes.Mouth)) < 1.0 && (j.Side == 0 || j.Side == z.Dir))
+				{
+					leads = true;
+				}
+			}
+			if (!leads)
+			{
+				loose++;
+				Console.WriteLine("  median: the bay " + z.S0.ToString("0") + " to " + z.S1.ToString("0") + " (way " + z.Dir + ") ends at no junction where its carriageway turns left");
+			}
+		}
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (road.Kind == RoadKind.Trunk && road.Count > 1)
+			{
+				trunkLength += road.S[road.Count - 1];
+			}
+		}
+		foreach (TrunkLanes.Rail r in TrunkLanes.Rails)
+		{
+			railed += r.S1 - r.S0;
+			Network.Road rr = Network.Roads[r.Road];
+			Network.Locate(rr, (r.S0 + r.S1) * 0.5, out int ri, out double rf);
+			Console.WriteLine("  median: K-rail " + ((r.S1 - r.S0) / 3.3).ToString("0") + " m real, its middle at (" + (rr.X[ri] + (rr.X[ri + 1] - rr.X[ri]) * rf).ToString("0") + ", " + (rr.Z[ri] + (rr.Z[ri + 1] - rr.Z[ri]) * rf).ToString("0") + ")");
+			foreach (TrunkLanes.Junction j in TrunkLanes.Junctions)
+			{
+				if (j.Road == r.Road && j.S > r.S0 - TrunkLanes.RailClear + 1.0 && j.S < r.S1 + TrunkLanes.RailClear - 1.0)
+				{
+					railNear++;
+					Console.WriteLine("  median: K-rail " + r.S0.ToString("0") + " to " + r.S1.ToString("0") + " within " + TrunkLanes.RailClear.ToString("0") + " of the junction at " + j.S.ToString("0"));
+				}
+			}
+			foreach (TrunkLanes.Zone z in TrunkLanes.Zones)
+			{
+				if (z.Road == r.Road && z.S1 > r.S0 && z.S0 < r.S1)
+				{
+					railOnBay++;
+				}
+			}
+		}
+		// The bay between the centre line and the inner lane, on its own side; the lanes clear of the median and inside the road.
+		bool section = TrunkLanes.BayOut > 0.0 && TrunkLanes.BayIn <= TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder && TrunkLanes.InnerMid - TrunkLanes.LaneWidth * 0.5 >= TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder
+			&& TrunkLanes.EdgeLine <= 40.0 && Math.Abs(Traffic.LaneOffset(Network.Roads.First(r => r.Kind == RoadKind.Trunk)) - TrunkLanes.OuterMid) < 1e-9;
+		double share = trunkLength > 0.0 ? railed / trunkLength : 1.0;
+		bool ok = notBay == 0 && through == 0 && loose == 0 && shortBays == 0 && railNear == 0 && railOnBay == 0 && section && TrunkLanes.Rails.Count > 0 && share < 0.3 && TrunkLanes.Zones.Count > 0;
+		Console.WriteLine("median: " + TrunkLanes.Junctions.Count + " junctions on the trunk, " + TrunkLanes.Zones.Count + " left-turn bays (" + notBay + " not bays, " + through + " through a junction, " + loose + " leading nowhere, " + shortBays + " too short); "
+			+ TrunkLanes.Rails.Count + " K-rails, " + (railed / 3.3).ToString("0") + " m real, " + (share * 100.0).ToString("0") + "% of the trunk (" + railNear + " near a junction, " + railOnBay + " on a bay); cross-section " + (section ? "ok" : "wrong") + "  " + (ok ? "ok" : "FAIL"));
+		return ok;
+	}
+
 	private static bool SeaStrip()
 	{
 		const float tile = 250f;
@@ -1827,7 +1910,7 @@ internal static class Program
 					c.At(c.StartS - Courses.HighwayBoxBack, out double sx, out double sz, out double _, out double sdx, out double sdz);
 					double ahead = (x - sx) * sdx + (z - sz) * sdz, left = (z - sz) * sdx - (x - sx) * sdz;
 					what = "the westbound carriageway behind the grid";
-					return !(across < 5.0 || across > c.Half - 4.0 || left < 0.0 || c.StartS - Courses.HighwayBoxBack + ahead > c.StartS - Courses.GridBack - 10.0);
+					return !(across < TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder || across > c.Half - 4.0 || left < 0.0 || c.StartS - Courses.HighwayBoxBack + ahead > c.StartS - Courses.GridBack - 10.0);
 				}
 				if (lot != null)
 				{

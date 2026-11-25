@@ -30,6 +30,7 @@ using UnityEngine;
 // road or a verge or sidewalk on top of a bigger road's strip, or two surfaces at one height (flicker); yellow, paving under the
 // ground; orange, neighbouring paving pixels more than 0.1 apart (a lip); red, the visible surface stepping more than 0.12 (often
 // just a verge's outer edge); white, buildings' outlines. JVIEW_CLEAN=1 leaves the marks and centre lines out (for pictures to show).
+// JVIEW_TEX=1 draws the trunk with its texture's columns (its median, left-turn bays and lines) instead of one colour.
 //
 // "gap" counts cyan pixels, "poke" magenta (on a road's strip), "lip" orange; a street lying wholly along a bigger road is hidden
 // under it but still counted, so read the pictures, not only the numbers.
@@ -43,7 +44,7 @@ internal static class Program
 {
 	const float Tile = 250f;
 	static readonly TerrainGrid Terrain = new TerrainGrid(0, 0, 0, null);
-	static readonly System.Collections.Concurrent.ConcurrentDictionary<long, Lazy<List<(Vector3 a, Vector3 b, Vector3 c, int cat)>>> cache = new System.Collections.Concurrent.ConcurrentDictionary<long, Lazy<List<(Vector3, Vector3, Vector3, int)>>>();
+	static readonly System.Collections.Concurrent.ConcurrentDictionary<long, Lazy<List<(Vector3 a, Vector3 b, Vector3 c, int cat, Vector2 ua, Vector2 ub, Vector2 uc)>>> cache = new System.Collections.Concurrent.ConcurrentDictionary<long, Lazy<List<(Vector3, Vector3, Vector3, int, Vector2, Vector2, Vector2)>>>();
 
 	static int Main(string[] args)
 	{
@@ -361,15 +362,15 @@ internal static class Program
 		return list;
 	}
 
-	static List<(Vector3, Vector3, Vector3, int)> TileTris(int tx, int tz)
+	static List<(Vector3, Vector3, Vector3, int, Vector2, Vector2, Vector2)> TileTris(int tx, int tz)
 	{
 		long key = ((long)tx << 32) | (uint)tz;
-		return cache.GetOrAdd(key, _ => new Lazy<List<(Vector3, Vector3, Vector3, int)>>(() => BuildTile(tx, tz))).Value;
+		return cache.GetOrAdd(key, _ => new Lazy<List<(Vector3, Vector3, Vector3, int, Vector2, Vector2, Vector2)>>(() => BuildTile(tx, tz))).Value;
 	}
 
-	static List<(Vector3, Vector3, Vector3, int)> BuildTile(int tx, int tz)
+	static List<(Vector3, Vector3, Vector3, int, Vector2, Vector2, Vector2)> BuildTile(int tx, int tz)
 	{
-		var list = new List<(Vector3, Vector3, Vector3, int)>();
+		var list = new List<(Vector3, Vector3, Vector3, int, Vector2, Vector2, Vector2)>();
 		RoadMeshData road = RoadMesh.Build(tx, tz, Tile, Terrain, out RoadMeshData verges, out RoadMeshData sidewalks, out RoadMeshData tracks);
 		Vector3 o = new Vector3(tx * Tile, 0, tz * Tile);
 		void Add(RoadMeshData d, int baseCat)
@@ -388,7 +389,7 @@ internal static class Program
 				int[] t = d.Triangles[m];
 				for (int k = 0; k < t.Length; k += 3)
 				{
-					list.Add((d.Vertices[t[k]] + o, d.Vertices[t[k + 1]] + o, d.Vertices[t[k + 2]] + o, baseCat + m));
+					list.Add((d.Vertices[t[k]] + o, d.Vertices[t[k + 1]] + o, d.Vertices[t[k + 2]] + o, baseCat + m, d.Uv[t[k]], d.Uv[t[k + 1]], d.Uv[t[k + 2]]));
 				}
 			}
 		}
@@ -407,6 +408,20 @@ internal static class Program
 	};
 
 	static long Gap, Poke, Lip, Nominal, BigLip;
+	/// <summary>JVIEW_TEX=1: the trunk drawn with its texture's columns (RoadMesh.Trunk's layout, the paint's columns too), to look at its markings.</summary>
+	static readonly bool Textured = Environment.GetEnvironmentVariable("JVIEW_TEX") == "1";
+
+	/// <summary>The trunk texture's colour at (u, v), as RoadMesh.Trunk paints it (no grain): asphalt, the grass median, white and yellow lines.</summary>
+	static int[] TrunkTexel(float u, float v)
+	{
+		int x = Math.Max(0, Math.Min(79, (int)Math.Floor(u * 80f)));
+		int y = (int)Math.Floor((v * RoadMesh.TextureLength) % 40f + 40f) % 40;
+		if (x >= 28 && x < 52) return new[] { 92, 120, 61 };
+		if (x == 3 || x == 76) return new[] { 219, 219, 209 };
+		if ((x == 14 || x == 65) && y < 15) return new[] { 219, 219, 209 };
+		if (x == 26 || x == 53) return new[] { 217, 178, 51 };
+		return new[] { 69, 69, 74 };
+	}
 	static readonly bool Clean = Environment.GetEnvironmentVariable("JVIEW_CLEAN") == "1";
 	static double[,] boxes;
 
@@ -428,7 +443,7 @@ internal static class Program
 	{
 		EnsureBoxes();
 		double x0 = cx - span / 2, z0 = cz - span / 2, step = span / px;
-		var tris = new List<(Vector3 a, Vector3 b, Vector3 c, int cat)>();
+		var tris = new List<(Vector3 a, Vector3 b, Vector3 c, int cat, Vector2 ua, Vector2 ub, Vector2 uc)>();
 		for (int tz = (int)Math.Floor(z0 / Tile) - 1; tz <= (int)Math.Floor((z0 + span) / Tile) + 1; tz++)
 		{
 			for (int tx = (int)Math.Floor(x0 / Tile) - 1; tx <= (int)Math.Floor((x0 + span) / Tile) + 1; tx++)
@@ -436,7 +451,7 @@ internal static class Program
 				tris.AddRange(TileTris(tx, tz));
 			}
 		}
-		float[] top = new float[px * px], second = new float[px * px], shade = new float[px * px];
+		float[] top = new float[px * px], second = new float[px * px], shade = new float[px * px], texU = new float[px * px], texV = new float[px * px];
 		int[] cat = new int[px * px], cat2 = new int[px * px], id = new int[px * px], id2 = new int[px * px];
 		for (int k = 0; k < top.Length; k++)
 		{
@@ -485,6 +500,9 @@ internal static class Program
 					int p = (px - 1 - j) * px + i;
 					if (y > top[p])
 					{
+						Vector2 tuv = tr.ua + (tr.ub - tr.ua) * (float)u + (tr.uc - tr.ua) * (float)v;
+						texU[p] = tuv.x;
+						texV[p] = tuv.y;
 						if (!deep) { if (y > top[p]) { top[p] = y; cat[p] = tr.cat; id[p] = tid; shade[p] = sh; } continue; }
 						second[p] = top[p];
 						cat2[p] = cat[p];
@@ -518,7 +536,7 @@ internal static class Program
 				bool through = false;
 				if (cat[p] >= 0 && top[p] >= g - 0.005)
 				{
-					col = Colours[cat[p]];
+					col = Textured && cat[p] == 0 ? TrunkTexel(texU[p], texV[p]) : Colours[cat[p]];
 					s = shade[p];
 					vis[p] = top[p];
 					roadPx++;

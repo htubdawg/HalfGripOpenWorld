@@ -43,7 +43,7 @@ internal static partial class Program
 		char[] c = new char[(int)(DriveRun / 10.0)];
 		for (int i = 0; i < c.Length; i++)
 		{
-			int st = day.Lights.State(node, arm, w0 + i * 10.0);
+			int st = day.Lights.State(node, arm, -1, w0 + i * 10.0);
 			c[i] = st == TrafficSignals.Green ? 'G' : st == TrafficSignals.Amber ? 'A' : 'R';
 		}
 		return new string(c);

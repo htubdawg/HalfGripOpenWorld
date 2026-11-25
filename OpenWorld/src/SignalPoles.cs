@@ -32,6 +32,8 @@ namespace HalfGripOpenWorld
 			public double[] Heads;
 			/// <summary>On the far side of the junction (false: the near side, at the stop line).</summary>
 			public bool Far;
+			/// <summary>Which of <see cref="Heads"/> is the left-turn bay's arrow head (red, amber and green arrows, lit from the light's arrow phase), or -1.</summary>
+			public int Arrow = -1;
 		}
 
 		/// <summary>From the road's edge to the pole: on the verge or the sidewalk, clear of a car's mirror at the kerb.</summary>
@@ -75,7 +77,7 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>How far right of the road's line the middle of each lane of a way in is: the trunk's two and its median lane; else the lane and the centre line (two heads at least, about 8 ft apart or more).</summary>
+		/// <summary>How far right of the road's line the middle of each lane of a way in is: the trunk's two and its left-turn bay; else the lane and the centre line (two heads at least, about 8 ft apart or more).</summary>
 		internal static double[] Lanes(Network.Road road)
 		{
 			if (road.Kind == RoadKind.Trunk)
@@ -85,6 +87,40 @@ namespace HalfGripOpenWorld
 			}
 			double lane = Traffic.LaneOffset(road);
 			return new[] { lane + 1.5, lane - 6.5 };
+		}
+
+		/// <summary>
+		/// The lanes of the way in along arm <paramref name="k"/> of <paramref name="node"/> that get a head (as <see cref="Lanes(Network.Road)"/>),
+		/// and which is the left-turn bay's arrow head: the trunk's bay only where its light has arrows and a left turn is there to make
+		/// (no bay, and no head over the grass, where the side road is on the right).
+		/// </summary>
+		private static double[] Lanes(int node, int k, Network.Road road, out int arrow)
+		{
+			double[] lanes = Lanes(road);
+			arrow = -1;
+			if (road.Kind != RoadKind.Trunk)
+			{
+				return lanes;
+			}
+			List<int> links = Traffic.Links[node];
+			for (int j = 0; j < links.Count; j++)
+			{
+				if (j != k && TrafficSignals.Arrows(node) && TrafficDay.LeftTurn(node, k, j))
+				{
+					arrow = 2;
+					return lanes;
+				}
+			}
+			return new[] { lanes[0], lanes[1] };
+		}
+
+		private static Mast WithArrow(Mast m, int arrow)
+		{
+			if (m != null)
+			{
+				m.Arrow = arrow;
+			}
+			return m;
 		}
 
 		/// <summary>The mast for the way in along arm <paramref name="k"/> of <paramref name="node"/>, added to <see cref="All"/>: on the far right corner, else across the junction on the line of the way in, else at the stop line; false if nothing is clear.</summary>
@@ -97,7 +133,7 @@ namespace HalfGripOpenWorld
 			TrafficDay.ArmOf(node, k, out double dx, out double dz);
 			// The way the cars come (h) and their right (r): traffic keeps right; x right, z forward, seen from above.
 			double hx = -dx, hz = -dz, rx = hz, rz = -hx;
-			double[] lanes = Lanes(road);
+			double[] lanes = Lanes(node, k, road, out int arrow);
 			Traffic.At(road, e.A == node ? e.Sa : e.Sb, out double _, out double _, out double y);
 
 			// Straight on: the arm most nearly ahead, within 30 degrees.
@@ -131,7 +167,7 @@ namespace HalfGripOpenWorld
 					fx = lx / len;
 					fz = lz / len;
 				}
-				Mast m = Make(node, k, ox, oz, fx, fz, onto.Half + PoleOut, y, lanes, true);
+				Mast m = WithArrow(Make(node, k, ox, oz, fx, fz, onto.Half + PoleOut, y, lanes, true), arrow);
 				if (m != null)
 				{
 					All.Add(m);
@@ -143,7 +179,7 @@ namespace HalfGripOpenWorld
 			// verge of the road crossed, on the line of the way in, the arm along that verge with a head straight ahead of each lane. The
 			// drivers at the stop line look across the junction at them, as at any far-side light; on the right, else on the left.
 			double across = n.Box + 8.0, ax = n.X + hx * across, az = n.Z + hz * across;
-			Mast over = Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true) ?? Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true, true);
+			Mast over = WithArrow(Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true) ?? Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true, true), arrow);
 			if (over != null)
 			{
 				All.Add(over);
@@ -154,7 +190,7 @@ namespace HalfGripOpenWorld
 			// (trafficview fails a way in left so).
 			double back = Math.Min(n.Box + 3.0, e.Length * 0.5);
 			Traffic.At(road, e.A == node ? e.Sa + back : e.Sb - back, out double sx, out double sz, out double _);
-			Mast near = Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false) ?? Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false, true);
+			Mast near = WithArrow(Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false) ?? Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false, true), arrow);
 			if (near == null)
 			{
 				return false;

@@ -92,8 +92,8 @@ namespace HalfGripOpenWorld
 		{
 			if (road.Kind == RoadKind.Trunk)
 			{
-				// The median (5), its shoulder (2), the inner lane (11) and half the outer.
-				return 5.0 + 2.0 + 11.0 + 5.5;
+				// The middle of the outer lane: the median, its shoulder, the inner lane and half the outer (TrunkLanes' cross-section).
+				return TrunkLanes.OuterMid;
 			}
 			if (road.Kind == RoadKind.Drive)
 			{

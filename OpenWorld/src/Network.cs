@@ -119,9 +119,9 @@ namespace HalfGripOpenWorld
 
 		private static readonly Class[] Classes =
 		{
-			// Half widths: a lane is 11 units (a car is about 5.4 wide). Trunk: two carriageways of two lanes and a median, and a paved
-			// shoulder a lane wide outside each (10 ft, as on Pennsylvania's rural four-lane roads): the junctions' deceleration and
-			// acceleration lanes are painted on it (TrunkLanes). 66 across until 0.34.0, a shoulder of 4.
+			// Half widths: a lane is 11 units (a car is about 5.4 wide). Trunk: two carriageways of two lanes either side of a grass
+			// median 24 wide (left-turn bays cut into it at the junctions), a paved shoulder of 4 outside each (TrunkLanes). 66 across
+			// until 0.34.0; then a median of 10 and shoulders a lane wide for the junctions' deceleration and acceleration lanes.
 			new Class { Half = 40.0, Grade = 0.05, Window = 40, Keep = 6, Rounds = 4, Soft = 0.035, Steep = 8.0, Bank = 160.0 },
 			new Class { Half = 14.0, Grade = 0.07, Window = 22, Keep = 4, Rounds = 3, Soft = 0.05, Steep = 5.0, Bank = 120.0 },
 			new Class { Half = 12.0, Grade = 0.09, Window = 14, Keep = 3, Rounds = 3, Soft = 0.07, Steep = 3.0, Bank = 90.0 },
@@ -4807,8 +4807,8 @@ namespace HalfGripOpenWorld
 				trunk.Over[k] = false;
 			}
 			Hold(trunk, Classes[0].Grade, 0, trunk.Count - 1);
-			// Right of the direction of travel: (dz, -dx). The inner lane's centre is the median (5) plus its shoulder (2) plus half a lane.
-			const double lane = 5.0 + 2.0 + 5.5;
+			// Right of the direction of travel: (dz, -dx), in the middle of the inner lane.
+			const double lane = TrunkLanes.InnerMid;
 			SpawnX = trunk.X[i] + SpawnDirZ * lane;
 			SpawnZ = trunk.Z[i] - SpawnDirX * lane;
 			SpawnY = level;

@@ -12,9 +12,12 @@ namespace HalfGripOpenWorld
 	/// its own cars: deterministic like the rest of the day) and records every change, so the physics cars' driver
 	/// (<see cref="TrafficDrive"/>), the drawn lights to come and every machine in a room read the same light from the day's clock.
 	///
-	/// Two phases: the main line's two arms green together, then the side arms (one, or two facing each other at a crossroads). A
-	/// left turn on green is permissive (it gives way to the cars coming the other way on the same green, as at any light). A car may
-	/// go on green, and on amber only if it could not stop comfortably; never on red.
+	/// Phases: the main line's two arms green together (going on and turning right), then, where the main line is the trunk, its left
+	/// turns on a green arrow (protected: both left-turn bays together, every through lane red; the owner, 2026-11-25: "dedicated
+	/// left-turn lanes with lights that have left-turn arrows"), then the side arms (one, or two facing each other at a crossroads).
+	/// The arrow phase and the side phase only come up when a car waits for them. A left turn off the trunk at a light goes only on
+	/// its arrow; elsewhere a left on green is permissive (it gives way to the cars coming the other way on the same green). A car
+	/// may go on green, and on amber only if it could not stop comfortably; never on red.
 	/// </summary>
 	internal static class TrafficSignals
 	{
@@ -23,6 +26,12 @@ namespace HalfGripOpenWorld
 		/// <summary>Seconds: the main line's least green before a waiting side car turns it, the side's least and most green, how long
 		/// with no side car coming ends the side's green, amber, and all red after each amber.</summary>
 		internal const double MainMin = 22.0, SideMin = 7.0, SideMax = 28.0, SideGapOut = 2.5, AmberTime = 3.5, AllRed = 2.0;
+
+		/// <summary>Seconds: the left arrow's least and most green (the bays hold about five cars each).</summary>
+		internal const double ArrowMin = 6.0, ArrowMax = 20.0;
+
+		/// <summary>The phases a movement goes on: the main line going on or turning right, the side arms, the main line's left turns on their arrow.</summary>
+		internal const int MainPhase = 0, SidePhase = 1, ArrowPhase = 2;
 
 		/// <summary>How near its line a side car is seen by the light (a loop in the road), and keeps the side's green going.</summary>
 		internal const double Detect = 70.0;
@@ -97,10 +106,29 @@ namespace HalfGripOpenWorld
 			return arm == a || arm == b ? 0 : 1;
 		}
 
-		/// <summary>Whether two arms of a junction with a light are green at different times (their cars never meet but in the all red).</summary>
-		internal static bool Apart(int node, int armA, int armB)
+		/// <summary>Whether junction <paramref name="node"/>'s light has left arrows: its main line is the trunk (which has left-turn bays).</summary>
+		internal static bool Arrows(int node)
 		{
-			return Has(node) && PhaseOf(node, armA) != PhaseOf(node, armB);
+			if (!Has(node))
+			{
+				return false;
+			}
+			TrafficDay.MainOf(node, out int a, out int b);
+			List<int> links = Traffic.Links[node];
+			return a >= 0 && b >= 0 && KindOf(links[a]) == RoadKind.Trunk && KindOf(links[b]) == RoadKind.Trunk;
+		}
+
+		/// <summary>The phase the movement in along <paramref name="inArm"/> and out along <paramref name="outArm"/> goes on (outArm -1: going on).</summary>
+		internal static int PhaseOf(int node, int inArm, int outArm)
+		{
+			int p = PhaseOf(node, inArm);
+			return p == MainPhase && outArm >= 0 && Arrows(node) && TrafficDay.LeftTurn(node, inArm, outArm) ? ArrowPhase : p;
+		}
+
+		/// <summary>Whether two movements at a junction with a light are green at different times (their cars never meet but in the all red).</summary>
+		internal static bool Apart(int node, int inA, int outA, int inB, int outB)
+		{
+			return Has(node) && PhaseOf(node, inA, outA) != PhaseOf(node, inB, outB);
 		}
 
 		/// <summary>
@@ -113,14 +141,16 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// One day's lights: each one's step in its cycle (0 main green, 1 main amber, 2 all red, 3 side green, 4 side amber, 5 all red),
-		/// run from the day's cars, and every change recorded (the day's clock), so the light at any time can be read back.
+		/// One day's lights: each one's step in its cycle (0 main green, 1 main amber, 2 all red, 3 left arrow green, 4 its amber, 5 all
+		/// red, 6 side green, 7 side amber, 8 all red; the arrow's and the side's steps skipped when nobody waits for them), run from the
+		/// day's cars, and every change recorded (the day's clock, and the step it went to), so the light at any time can be read back.
 		/// </summary>
 		internal sealed class Lights
 		{
 			private readonly int[] step;
-			private readonly double[] since, lastSeen;
+			private readonly double[] since, lastSeen, leftSeen;
 			private readonly List<double>[] changes;
+			private readonly List<byte>[] steps;
 
 			internal Lights()
 			{
@@ -128,12 +158,16 @@ namespace HalfGripOpenWorld
 				step = new int[n];
 				since = new double[n];
 				lastSeen = new double[n];
+				leftSeen = new double[n];
 				changes = new List<double>[n];
+				steps = new List<byte>[n];
 				for (int i = 0; i < n; i++)
 				{
 					since[i] = double.MinValue;
 					lastSeen[i] = double.MinValue;
+					leftSeen[i] = double.MinValue;
 					changes[i] = new List<double>();
+					steps[i] = new List<byte>();
 				}
 			}
 
@@ -153,9 +187,10 @@ namespace HalfGripOpenWorld
 
 			/// <summary>
 			/// The lights a step on at day clock <paramref name="w"/>: <paramref name="waiting"/>[i] whether a car waits at light i's side
-			/// arm (near its line), <paramref name="coming"/>[i] whether one is coming up to it within <see cref="Detect"/>.
+			/// arm (near its line), <paramref name="coming"/>[i] whether one is coming up to it within <see cref="Detect"/>; the same for
+			/// cars turning left off its main line (<paramref name="leftWaiting"/>, <paramref name="leftComing"/>: only lights with arrows).
 			/// </summary>
-			internal void Step(double w, bool[] waiting, bool[] coming)
+			internal void Step(double w, bool[] waiting, bool[] coming, bool[] leftWaiting, bool[] leftComing)
 			{
 				for (int i = 0; i < step.Length; i++)
 				{
@@ -163,37 +198,83 @@ namespace HalfGripOpenWorld
 					{
 						lastSeen[i] = w;
 					}
+					if (leftComing[i] || leftWaiting[i])
+					{
+						leftSeen[i] = w;
+					}
 					double t = w - since[i];
-					bool next;
+					int to = -1;
 					switch (step[i])
 					{
-						case 0: next = waiting[i] && t >= MainMin; break;
-						case 3: next = t >= SideMax || (t >= SideMin && w - lastSeen[i] >= SideGapOut); break;
+						case 0:
+							if ((waiting[i] || leftWaiting[i]) && t >= MainMin)
+							{
+								to = 1;
+							}
+							break;
+						case 3:
+							if (t >= ArrowMax || (t >= ArrowMin && w - leftSeen[i] >= SideGapOut))
+							{
+								to = 4;
+							}
+							break;
+						case 6:
+							if (t >= SideMax || (t >= SideMin && w - lastSeen[i] >= SideGapOut))
+							{
+								to = 7;
+							}
+							break;
 						case 1:
-						case 4: next = t >= AmberTime; break;
-						default: next = t >= AllRed; break;
+						case 4:
+						case 7:
+							if (t >= AmberTime)
+							{
+								to = step[i] + 1;
+							}
+							break;
+						case 2:
+							if (t >= AllRed)
+							{
+								// The arrow if a left turner waits, else the side (which turned the main line), else back to the main line.
+								to = leftWaiting[i] ? 3 : waiting[i] || w - lastSeen[i] < SideGapOut ? 6 : 0;
+							}
+							break;
+						case 5:
+							if (t >= AllRed)
+							{
+								to = waiting[i] || w - lastSeen[i] < SideGapOut ? 6 : 0;
+							}
+							break;
+						default:
+							if (t >= AllRed)
+							{
+								to = 0;
+							}
+							break;
 					}
-					if (next)
+					if (to >= 0)
 					{
-						step[i] = (step[i] + 1) % 6;
+						step[i] = to;
 						since[i] = w;
 						changes[i].Add(w);
+						steps[i].Add((byte)to);
 					}
 				}
 			}
 
 			/// <summary>
-			/// The light arm <paramref name="arm"/> of junction <paramref name="node"/> shows at day clock <paramref name="w"/> (Green, Amber,
-			/// Red; Green where there is no light), as the day ran it.
+			/// The light the movement in along arm <paramref name="arm"/> of junction <paramref name="node"/> and out along
+			/// <paramref name="outArm"/> (-1: the through heads) shows at day clock <paramref name="w"/> (Green, Amber, Red; Green where
+			/// there is no light), as the day ran it.
 			/// </summary>
-			internal int State(int node, int arm, double w)
+			internal int State(int node, int arm, int outArm, double w)
 			{
 				int i = IndexOf(node);
 				if (i < 0)
 				{
 					return Green;
 				}
-				// Changes up to w: the step is their count round the cycle.
+				// Changes up to w: the step is the last one's.
 				List<double> c = changes[i];
 				int lo = 0, hi = c.Count;
 				while (lo < hi)
@@ -208,12 +289,13 @@ namespace HalfGripOpenWorld
 						hi = mid;
 					}
 				}
-				int st = lo % 6;
-				if (PhaseOf(node, arm) == 0)
+				int st = lo == 0 ? 0 : steps[i][lo - 1];
+				switch (PhaseOf(node, arm, outArm))
 				{
-					return st == 0 ? Green : st == 1 ? Amber : Red;
+					case MainPhase: return st == 0 ? Green : st == 1 ? Amber : Red;
+					case ArrowPhase: return st == 3 ? Green : st == 4 ? Amber : Red;
+					default: return st == 6 ? Green : st == 7 ? Amber : Red;
 				}
-				return st == 3 ? Green : st == 4 ? Amber : Red;
 			}
 		}
 	}

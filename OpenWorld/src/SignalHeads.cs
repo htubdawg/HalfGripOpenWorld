@@ -40,9 +40,11 @@ namespace HalfGripOpenWorld
 			public SignalPoles.Mast Mast;
 			public GameObject Go;
 			public float Foot;
-			/// <summary>Red, amber, green lenses.</summary>
+			/// <summary>Red, amber, green lenses; then the arrow head's red, amber, green arrows (none if it has no arrow head).</summary>
 			public MeshRenderer[] Lamps;
-			public int Shown = -1;
+			public int Shown = -1, ShownArrow = -1;
+			/// <summary>The arm a left turn from this way in goes out along (for the arrow's state), or -1.</summary>
+			public int LeftOut = -1;
 		}
 
 		private TrafficCars traffic;
@@ -202,7 +204,7 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				v.Go.transform.position = Origin.Local(m.X, v.Foot, m.Z);
-				int state = day.Lights.State(m.Node, m.Arm, w);
+				int state = day.Lights.State(m.Node, m.Arm, -1, w);
 				int on = state == TrafficSignals.Green ? 2 : state == TrafficSignals.Amber ? 1 : 0;
 				if (on != v.Shown)
 				{
@@ -210,6 +212,19 @@ namespace HalfGripOpenWorld
 					for (int c = 0; c < 3; c++)
 					{
 						v.Lamps[c].sharedMaterial = c == on ? lit[c] : dark[c];
+					}
+				}
+				if (v.Lamps.Length > 3 && v.LeftOut >= 0)
+				{
+					int arrow = day.Lights.State(m.Node, m.Arm, v.LeftOut, w);
+					int onArrow = arrow == TrafficSignals.Green ? 2 : arrow == TrafficSignals.Amber ? 1 : 0;
+					if (onArrow != v.ShownArrow)
+					{
+						v.ShownArrow = onArrow;
+						for (int c = 0; c < 3; c++)
+						{
+							v.Lamps[3 + c].sharedMaterial = c == onArrow ? lit[c] : dark[c];
+						}
 					}
 				}
 			}
@@ -220,7 +235,12 @@ namespace HalfGripOpenWorld
 		{
 			float foot = (float)WorldGen.Height(m.X, m.Z);
 			SignalMesh.Builder b = new SignalMesh.Builder();
-			SignalMesh.Builder[] lamps = { new SignalMesh.Builder(), new SignalMesh.Builder(), new SignalMesh.Builder() };
+			int count = m.Arrow >= 0 ? 6 : 3;
+			SignalMesh.Builder[] lamps = new SignalMesh.Builder[count];
+			for (int c = 0; c < count; c++)
+			{
+				lamps[c] = new SignalMesh.Builder();
+			}
 			float top = SignalMesh.Shape(m, (float)(m.Road + Network.Lift) - foot, b, lamps);
 
 			GameObject go = new GameObject("Traffic light");
@@ -234,9 +254,9 @@ namespace HalfGripOpenWorld
 			BoxCollider box = go.AddComponent<BoxCollider>();
 			box.center = new Vector3(0f, top * 0.5f, 0f);
 			box.size = new Vector3(1.1f, top + 1f, 1.1f);
-			MeshRenderer[] renderers = new MeshRenderer[3];
-			string[] names = { "Red", "Amber", "Green" };
-			for (int c = 0; c < 3; c++)
+			MeshRenderer[] renderers = new MeshRenderer[count];
+			string[] names = { "Red", "Amber", "Green", "Red Arrow", "Amber Arrow", "Green Arrow" };
+			for (int c = 0; c < count; c++)
 			{
 				GameObject l = new GameObject(names[c]);
 				l.transform.SetParent(go.transform, false);
@@ -244,11 +264,23 @@ namespace HalfGripOpenWorld
 				meshes.Add(lm);
 				l.AddComponent<MeshFilter>().sharedMesh = lm;
 				MeshRenderer r = l.AddComponent<MeshRenderer>();
-				r.sharedMaterial = dark[c];
+				r.sharedMaterial = dark[c % 3];
 				r.shadowCastingMode = ShadowCastingMode.Off;
 				renderers[c] = r;
 			}
-			return new View { Mast = m, Go = go, Foot = foot, Lamps = renderers };
+			int leftOut = -1;
+			if (m.Arrow >= 0)
+			{
+				for (int j = 0; j < Traffic.Links[m.Node].Count; j++)
+				{
+					if (j != m.Arm && TrafficDay.LeftTurn(m.Node, m.Arm, j))
+					{
+						leftOut = j;
+						break;
+					}
+				}
+			}
+			return new View { Mast = m, Go = go, Foot = foot, Lamps = renderers, LeftOut = leftOut };
 		}
 
 		private void OnDestroy()
@@ -313,6 +345,28 @@ namespace HalfGripOpenWorld
 				{
 					T.Add(i); T.Add(i + 2); T.Add(i + 1);
 					T.Add(i); T.Add(i + 3); T.Add(i + 2);
+				}
+			}
+
+			/// <summary>A flat triangle a b c facing <paramref name="n"/>.</summary>
+			public void Tri(Vector3 a, Vector3 b, Vector3 c, Vector3 n, Vector2 uv)
+			{
+				int i = V.Count;
+				V.Add(a);
+				V.Add(b);
+				V.Add(c);
+				for (int k = 0; k < 3; k++)
+				{
+					N.Add(n);
+					Uv.Add(uv);
+				}
+				if (Vector3.Dot(Vector3.Cross(b - a, c - a), n) >= 0f)
+				{
+					T.Add(i); T.Add(i + 1); T.Add(i + 2);
+				}
+				else
+				{
+					T.Add(i); T.Add(i + 2); T.Add(i + 1);
 				}
 			}
 
@@ -409,12 +463,19 @@ namespace HalfGripOpenWorld
 				float armY = Mathf.Min(road + (float)SignalPoles.ArmHeight, top - 0.6f), reach = (float)m.Reach, rise = 0.025f;
 				b.Box(new Vector3(0f, armY, 0f), arm, up, face, 0.65f, 0.7f, 0.65f, Colour(Steel));
 				b.Tube(new Vector3(0f, armY, 0f), arm * reach + up * (armY + reach * rise), 0.36f, 0.17f, Colour(Steel));
-				foreach (double d in m.Heads)
+				for (int h = 0; h < m.Heads.Length; h++)
 				{
-					float along = (float)d, armAt = armY + along * rise;
+					float along = (float)m.Heads[h], armAt = armY + along * rise;
 					Vector3 hc = arm * along + up * (armAt - 0.45f - 1.8f);
 					b.Box(arm * along + up * (armAt - 0.35f), arm, up, face, 0.14f, 0.4f, 0.14f, Colour(Dark));
-					Head(b, lamps, hc, face);
+					if (h == m.Arrow && lamps.Length >= 6)
+					{
+						Head(b, new[] { lamps[3], lamps[4], lamps[5] }, hc, face, true);
+					}
+					else
+					{
+						Head(b, lamps, hc, face);
+					}
 				}
 			}
 
@@ -428,9 +489,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// One three-light head centred at <paramref name="c"/>, facing <paramref name="f"/>: a yellow housing, a black backplate with a
-		/// yellow border round its front, and red over amber over green lenses under yellow cap visors.
+		/// yellow border round its front, and red over amber over green lenses under yellow cap visors; or (<paramref name="arrows"/>) a
+		/// left-turn head, each lens dark but for a left arrow (pointing to the drivers' left) lit in its colour.
 		/// </summary>
-		private static void Head(Builder b, Builder[] lamps, Vector3 c, Vector3 f)
+		private static void Head(Builder b, Builder[] lamps, Vector3 c, Vector3 f, bool arrows = false)
 		{
 			Vector3 up = Vector3.up;
 			// Across the face (the arm is, near enough; this keeps the head square to the drivers whatever the arm's angle).
@@ -449,7 +511,18 @@ namespace HalfGripOpenWorld
 			{
 				// Red at the top (0), amber, green at the bottom.
 				Vector3 lens = c + up * (1.2f - i * 1.2f) + f * 0.46f;
-				lamps[i].Disc(lens, f, 0.46f, 12, Vector2.zero);
+				if (arrows)
+				{
+					// A dark lens, the arrow on it. The drivers face the head (looking along -f), so their left is up x f.
+					b.Disc(lens, f, 0.46f, 12, Colour(Black));
+					Vector3 a = lens + f * 0.02f;
+					lamps[i].Quad(a - s * 0.36f - up * 0.08f, a + s * 0.02f - up * 0.08f, a + s * 0.02f + up * 0.08f, a - s * 0.36f + up * 0.08f, f, Vector2.zero);
+					lamps[i].Tri(a + s * 0.38f, a - up * 0.25f, a + up * 0.25f, f, Vector2.zero);
+				}
+				else
+				{
+					lamps[i].Disc(lens, f, 0.46f, 12, Vector2.zero);
+				}
 				b.Box(lens + f * 0.36f + up * 0.53f, s, up, f, 0.55f, 0.03f, 0.36f, Colour(Yellow));
 				b.Box(lens + f * 0.36f + up * 0.2f + s * 0.53f, s, up, f, 0.03f, 0.33f, 0.36f, Colour(Yellow));
 				b.Box(lens + f * 0.36f + up * 0.2f - s * 0.53f, s, up, f, 0.03f, 0.33f, 0.36f, Colour(Yellow));

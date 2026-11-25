@@ -24,7 +24,11 @@ when one is done, delete it here.
   by whether the player is closing on them (refused twice).
 - Traffic lights: their logic is built and they are drawn, American style (mast arms, yellow heads; the owner asked on 2026-11-25). Ask before adding lights anywhere new.
 - A wreck is not a kill (no `EnemyKilled`, combo, lifesteal); traffic cars never get modded items or bodies.
-- No diamond interchanges on the trunk (2026-11-24, "a small rural area"). The highway rework may revisit this: ask.
+- The highway (the owner, 2026-11-25): no overpasses or underpasses anywhere (no interchanges); at-grade junctions, traffic lights
+  where needed are fine. "The median is not meant to be used as a lane": no median lanes to merge from, no cars standing in the
+  median; dedicated left-turn lanes, with left-turn arrows where there is a light. The median stays mostly open so players can cross
+  into the oncoming traffic at will; K-rails here and there; a wide grass median. Keep the general route (it may change a little)
+  and the wrap.
 
 **Deer** (all in 0.28.0 to 0.31.0)
 - Where deer live is drawn fresh each race, like the weather (from `Weather.Seed`, salted), not fixed with the map.
