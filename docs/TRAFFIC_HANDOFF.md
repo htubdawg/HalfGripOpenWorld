@@ -1,5 +1,30 @@
 # Traffic: handoff
 
+## READ THIS FIRST: traffic lights (2026-11-25, `traffic-test-branch`)
+
+The owner: "we have no traffic control at all ... just code it and we will put the lights in later." Built on `traffic-test-branch`
+(which now holds everything of `ccr-02e633e5-fytf3y` below). Not tried in the game; the version is still 0.33.0.
+
+- **Where the jam was:** the towns' junction waiting was nearly all "no room": the Westhaven link queued back from node 5, its junction
+  with the trunk, where side cars could not find the manual's gaps in the trunk's traffic. Town turn lanes would not have fixed that.
+- **`TrafficSignals.cs`:** a light at every junction with a main line that is a primary road or the trunk and a side arm a secondary or
+  bigger (16 on seed 1, the trunk's junctions with the links among them). Actuated: the main line green until a side car waits within
+  70 of its line (22 s at least), the side green 7 to 28 s while its cars keep coming (2.5 s with none ends it), amber 3.5 s, 2 s all
+  red. Left turns on green are permissive. `Yields` is false between arms on different greens.
+- **The day runs the lights** (`TrafficDay.RunLights`, before `Junctions`) and records each change; `TrafficDay.Lights.State(node,
+  arm, w)` reads a light at any time. A car is refused at red, and at amber if it could stop at `AmberBrake`.
+- **Physics cars** (`TrafficDrive.Target`, now given the day's clock): hold at red as the day's cars do. The day's lights only see the
+  day's cars, so a physics car at a side road's red with no day car to call the green gives up after `LightGiveUp` (30 s) and goes as
+  at a give way. They also no longer give way to a car standing at its line (a ring of queues round Kingsbridge's centre).
+  `State.Held` says what holds a car at a junction.
+- **16 seeds (`TV_DRIVE_ONLY=1`):** no trip unfinished (was up to 39); junction waiting 209 to 590 min a day (was 794 to 2,578); the
+  trunk's through cars stopped 3 to 12 min a day. Physics cars stopped over 90 s: 0 on 12 seeds, 1 to 6 on seeds 3, 4, 9, 11 (10 to 24
+  on every seed before).
+- **Still failing:** stop lines on another road's paving (7, inherited); one pair closer than a car's length on 5 seeds and one box
+  crossing on 2 (the day); physics cars "in each other" over the limit on seeds 1, 13, 16 and box crossings on 13.
+- **Next:** draw the lights (heads on poles at each arm's stop line, from `Lights.State`); the failures above; town turn lanes only if
+  still wanted.
+
 ## READ THIS FIRST: right of way and the trunk's junction lanes (2026-11-24, branch `ccr-02e633e5-fytf3y`)
 
 **Branch:** `ccr-02e633e5-fytf3y`. It holds 0.33.0 (`traffic-test-branch`), plus the unfinished crossing fixes of
