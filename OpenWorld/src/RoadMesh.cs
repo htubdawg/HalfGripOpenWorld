@@ -652,24 +652,32 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
+					if ((b - a) * (sb - sa) < 0.05)
+					{
+						continue;
+					}
 					int steps = Math.Max(1, (int)Math.Ceiling((b - a) * (sb - sa) / 20.0));
 					for (int k = 0; k < steps; k++)
 					{
 						double ta = a + (b - a) * k / steps, tb = a + (b - a) * (k + 1) / steps;
+						// Outward: across the road at this step (from the rail's middle to each foot), and up for the top.
+						Vector3 across = RailPoint(m, road, i, ta, 1.0, 0.0) - RailPoint(m, road, i, ta, -1.0, 0.0);
 						for (int side = -1; side <= 1; side += 2)
 						{
-							m.Wall(Concrete, RailPoint(m, road, i, ta, side * RailFoot, 0.0), RailPoint(m, road, i, tb, side * RailFoot, 0.0), RailPoint(m, road, i, ta, side * RailBreak, RailBreakY), RailPoint(m, road, i, tb, side * RailBreak, RailBreakY));
-							m.Wall(Concrete, RailPoint(m, road, i, ta, side * RailBreak, RailBreakY), RailPoint(m, road, i, tb, side * RailBreak, RailBreakY), RailPoint(m, road, i, ta, side * RailTop, RailTopY), RailPoint(m, road, i, tb, side * RailTop, RailTopY));
+							Vector3 outward = across * side;
+							m.Face(Concrete, RailPoint(m, road, i, ta, side * RailFoot, 0.0), RailPoint(m, road, i, tb, side * RailFoot, 0.0), RailPoint(m, road, i, ta, side * RailBreak, RailBreakY), RailPoint(m, road, i, tb, side * RailBreak, RailBreakY), outward);
+							m.Face(Concrete, RailPoint(m, road, i, ta, side * RailBreak, RailBreakY), RailPoint(m, road, i, tb, side * RailBreak, RailBreakY), RailPoint(m, road, i, ta, side * RailTop, RailTopY), RailPoint(m, road, i, tb, side * RailTop, RailTopY), outward);
 						}
-						m.Wall(Concrete, RailPoint(m, road, i, ta, -RailTop, RailTopY), RailPoint(m, road, i, tb, -RailTop, RailTopY), RailPoint(m, road, i, ta, RailTop, RailTopY), RailPoint(m, road, i, tb, RailTop, RailTopY));
+						m.Face(Concrete, RailPoint(m, road, i, ta, -RailTop, RailTopY), RailPoint(m, road, i, tb, -RailTop, RailTopY), RailPoint(m, road, i, ta, RailTop, RailTopY), RailPoint(m, road, i, tb, RailTop, RailTopY), Vector3.up);
 					}
-					// The ends closed off where the rail starts or stops on this piece.
+					// The ends closed off where the rail starts or stops on this piece, facing away along the road.
+					Vector3 along = RailPoint(m, road, i, b, 0.0, 0.0) - RailPoint(m, road, i, a, 0.0, 0.0);
 					foreach (double t in new[] { a, b })
 					{
 						double st = sa + (sb - sa) * t;
 						if (Math.Abs(st - rail.S0) < 0.01 || Math.Abs(st - rail.S1) < 0.01)
 						{
-							m.Wall(Concrete, RailPoint(m, road, i, t, -RailFoot, 0.0), RailPoint(m, road, i, t, RailFoot, 0.0), RailPoint(m, road, i, t, -RailTop, RailTopY), RailPoint(m, road, i, t, RailTop, RailTopY));
+							m.Face(Concrete, RailPoint(m, road, i, t, -RailFoot, 0.0), RailPoint(m, road, i, t, RailFoot, 0.0), RailPoint(m, road, i, t, -RailTop, RailTopY), RailPoint(m, road, i, t, RailTop, RailTopY), t == a ? -along : along);
 						}
 					}
 				}
@@ -931,6 +939,43 @@ namespace HalfGripOpenWorld
 			internal void Wall(int material, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
 			{
 				RoadMesh.Wall(v, n, uv, tris[material], a, b, c, d);
+			}
+
+			/// <summary>
+			/// A quad a, b (one edge) to c, d (the other) seen from one side only, the side toward <paramref name="toward"/>: a solid's
+			/// face (a K-rail's), so its flat top has no copy facing down. Nothing if it has no area (no zero normal: a glow).
+			/// </summary>
+			internal void Face(int material, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 toward)
+			{
+				Vector3 normal = Vector3.Cross(b - a, c - a);
+				if (normal.sqrMagnitude < 1e-8f)
+				{
+					normal = Vector3.Cross(d - b, c - b);
+				}
+				if (normal.sqrMagnitude < 1e-8f)
+				{
+					return;
+				}
+				normal = normal.normalized;
+				if (Vector3.Dot(normal, toward) < 0f)
+				{
+					normal = -normal;
+				}
+				int i = v.Count;
+				v.Add(a);
+				v.Add(b);
+				v.Add(c);
+				v.Add(d);
+				uv.Add(new Vector2(0f, 0f));
+				uv.Add(new Vector2(1f, 0f));
+				uv.Add(new Vector2(0f, 1f));
+				uv.Add(new Vector2(1f, 1f));
+				for (int k = 0; k < 4; k++)
+				{
+					n.Add(normal);
+				}
+				RoadMesh.Triangle(tris[material], v, i, i + 1, i + 2, normal);
+				RoadMesh.Triangle(tris[material], v, i + 2, i + 1, i + 3, normal);
 			}
 
 			/// <summary>A quad a, b, c, d (as <see cref="Wall"/>), seen from both sides, its texture from u0 to u1 along a-b and v0 to v1 up a-c.</summary>

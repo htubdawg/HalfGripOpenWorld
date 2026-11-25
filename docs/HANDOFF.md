@@ -44,7 +44,14 @@ What was done (same 80 units across, so the land, routes and other roads are unc
 - **Checks:** meshcheck `median` (new); jview `JVIEW_TEX=1` draws the trunk's markings. Looked at from above: the Westhaven link's
   junction (11316, -9288) and the rail at (12229, -8922).
 
-Last checks: see the PR / commit message for this session's results (`tools/check.sh`, meshcheck, preview, trafficview on 16 seeds).
+Last checks (2026-11-25, after the rework): `tools/check.sh` builds; the whole meshcheck passes (the new `median` too; `faces` caught the
+K-rails' first, two-sided faces); preview passes. trafficview `TV_DRIVE_ONLY=1` on the 16 seeds: 15 pass, **seed 14 fails one line**,
+4 physics pairs crossing in a box (limit 3), all at Kingsbridge's node 8 (see the leftovers). Junction waiting 294 to 654 min a day
+(seed 1: 436, against 406 before the rework); 84 to 122 cars a day use a left-turn bay; none merge out of the median any more (224 did
+on seed 1 before).
+
+Also fixed: a physics car let go on its green no longer ignores a car on the other phase that is too close to stop for its amber
+(`TrafficDrive`, the `Apart` skip): seed 15's box crossings went from 4 to 2.
 
 Possible next steps (ask the owner):
 - More or longer K-rails, a wider median in places (the width is constant now; varying it changes `Network.HalfAt` and everything
@@ -57,10 +64,14 @@ Possible next steps (ask the owner):
 1. The day's own peak queues round Kingsbridge (nodes 6, 42, 43, 49). Seeds 8 and 9 put physics cars in them for up to 9 minutes, and
    one car stood 900 s on Kingsbridge street at the link (seed 9). Find what holds the head of each queue (`TV_DRIVE_NOTES=1`: `held:`
    and junction waiting by edge). Town turn lanes or a light at node 43 may be the answer (the owner decides on new lights).
-2. Physics cars "in each other": 0 to 2 a seed (limit 6). Seed 9's pairs are a physics car at the very start of its leg with a drawn
+2. **Seed 14 fails** "crossing in a box" (4, limit 3) at node 8 (-2535, -5359), Kingsbridge: a side car (arm 2) goes on its green
+   while a main-road car (arm 0) comes through node 132, only 19 before node 8, too fast to stop. The side car only looks at cars whose
+   next node is node 8 (`TrafficDrive`, `o.Node != me.Node`), so it never sees one still at node 132. The old build failed the same way
+   (seed 15 sat at the limit). Fix: look one junction further back for cars on a short edge into the box (or join nodes 8 and 132).
+3. Physics cars "in each other": 0 to 5 a seed (limit 6). Seed 9's pairs are a physics car at the very start of its leg with a drawn
    car.
-3. A physics car brushed the player's stopped car (seed 11): not looked at.
-4. Then the owner's test in the game (`docs/TESTING.md` 58). Town turn lanes come after; the owner decides when.
+4. A physics car brushed the player's stopped car (seed 11): not looked at.
+5. Then the owner's test in the game (`docs/TESTING.md` 58 and 59). Town turn lanes come after; the owner decides when.
 
 ## How to run the checks here
 

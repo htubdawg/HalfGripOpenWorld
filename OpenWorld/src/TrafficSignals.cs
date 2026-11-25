@@ -235,13 +235,15 @@ namespace HalfGripOpenWorld
 						case 2:
 							if (t >= AllRed)
 							{
-								// The arrow if a left turner waits, else the side (which turned the main line), else back to the main line.
-								to = leftWaiting[i] ? 3 : waiting[i] || w - lastSeen[i] < SideGapOut ? 6 : 0;
+								// The arrow if a left turner waits, else the side (a side car turned the main line; as the lights without
+								// arrows always did).
+								to = leftWaiting[i] ? 3 : 6;
 							}
 							break;
 						case 5:
 							if (t >= AllRed)
 							{
+								// After the arrow, the side only if a side car is there (the arrow alone may have turned the main line).
 								to = waiting[i] || w - lastSeen[i] < SideGapOut ? 6 : 0;
 							}
 							break;

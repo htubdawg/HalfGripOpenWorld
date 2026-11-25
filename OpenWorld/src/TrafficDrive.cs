@@ -699,9 +699,13 @@ namespace HalfGripOpenWorld
 						{
 							continue;
 						}
-						if (!unlit && TrafficSignals.Apart(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm) && o.ToBox > CarLength * 0.5)
+						if (!unlit && TrafficSignals.Apart(me.Node, me.InArm, me.OutArm, o.InArm, o.OutArm) && o.ToBox > CarLength * 0.5
+							&& o.ToBox - CarLength * 0.5 >= o.V * o.V / (2.0 * TrafficSignals.AmberBrake))
 						{
-							// Coming on the other green: its light holds it (only one already in the box, above, keeps this one back).
+							// Coming on the other green: its light holds it (only one already in the box, above, keeps this one back). Not
+							// one too close to stop for its amber (it goes through, as the day's cars do): seen as any car coming. A
+							// main-road car off a short stretch (Kingsbridge's node 8, 19 from the junction before) met a side car let go
+							// on its green in the box.
 							continue;
 						}
 						if (o.ToBox < -0.5 || (o.ToBox < CarLength * 0.5 && o.V > 2.0))
