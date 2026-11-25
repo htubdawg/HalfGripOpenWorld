@@ -20,10 +20,43 @@ The owner: "we have no traffic control at all ... just code it and we will put t
 - **16 seeds (`TV_DRIVE_ONLY=1`):** no trip unfinished (was up to 39); junction waiting 209 to 590 min a day (was 794 to 2,578); the
   trunk's through cars stopped 3 to 12 min a day. Physics cars stopped over 90 s: 0 on 12 seeds, 1 to 6 on seeds 3, 4, 9, 11 (10 to 24
   on every seed before).
-- **Still failing:** stop lines on another road's paving (7, inherited); one pair closer than a car's length on 5 seeds and one box
-  crossing on 2 (the day); physics cars "in each other" over the limit on seeds 1, 13, 16 and box crossings on 13.
-- **Next:** draw the lights (heads on poles at each arm's stop line, from `Lights.State`); the failures above; town turn lanes only if
-  still wanted.
+- **Branch history, so nobody repeats it:** `traffic-test-branch` = 0.33.0, then the crossing fixes reverted and re-applied, then
+  `ccr-02e633e5-fytf3y` merged in (its tree exactly), then the lights (commits `9f603a2` to `e394fd3`). Work only on
+  `traffic-test-branch`; never a new branch. Look at every branch's latest commit (`git for-each-ref --sort=-committerdate
+  refs/remotes`) before starting.
+- **Checks run:** `tools/check.sh` passes (stub HalfGripTools.dll, see the bottom of this file). trafficview over 16 seeds with
+  `TV_DRIVE_ONLY=1` (the full run, parking included, was not rerun after the lights). meshcheck, preview and the sims not rerun (no
+  world, event, deer or room change).
+
+### NEXT: fix the failures, in this order (the owner: fix the mess before anything else; do NOT draw the lights yet)
+
+Reports of the last 16-seed run were in the scratchpad (gone): rerun them. `TV_DRIVE_NOTES=1` prints each physics car stopped over
+90 s with what held it (`held`: 1 light, 2 no room past the box, 3 a car crossing in the box, 4 a committed car, 5 giving way, 6 a car
+there first) and its light's states over the run.
+
+1. **The day: a car pulling out on top of one coming** (seeds 5, 12: "cars on a lane closer than a car's length", gap 13.9 to 14.0 of
+   14). The car ahead is age 2 to 4 steps at in 0 to 1 of seg 0 (just pulled out), the car behind closing at 8 to 23 u/s. In
+   `TrafficDay.StartWaiting` (about line 2040 to 2100) a pull-out is allowed when a car is 40 back or more and not within `pullGap`
+   seconds, or on the let-in / forced paths with `CarLength + 2` only. Look at which path let these out (likely the let-in or
+   `PullOutForce` path with a car just over 16 back still moving) and require room for the car behind to stop.
+2. **The day: two cars into one lane at a junction** (seed 9: lane 66, both just past a node, gap 11.3, the one ahead faster) and **on
+   the trunk's inner lane** (seeds 2, 13: lane key + 2^40, circling cars, the one behind 10 to 14 u/s faster, gap 13.5). Probably a
+   merge out of a median or aux lane (`JunctionLanes`, `Switch`) or a grant into a lane someone else's grant also leaves by. Print the
+   two cars' lanes and grants a few steps before (`OverlapNotes` has the first sighting only).
+3. **The day: a car stalled in a box while a crossing car comes** (seed 1: node 49, a side car 2>1 at 3 into the box at 1.7 u/s, the
+   main car 1>0 at -13 at 47 u/s; seed 15: node 282 on the trunk, a left turn 0>2 at 42 at 1.5 u/s, the oncoming 1>0 at 66). Known since
+   0.33.0: a car let in stalls in the box behind a car stopped on its way out (`Room` checks room by distance). `CrossesTraffic` is the
+   strict rule; find why these got past it.
+4. **Physics cars "in each other" over the limit** (seeds 1, 13, 16: 6 to 8 pairs, at most 6) and **crossing in a box** (seed 13: 5,
+   at most 3). The pairs' notes are in the report (first pair, place, hour). Several were at Kingsbridge's close junctions (nodes 42, 6,
+   44, 2: 85 apart) and at node 8.
+5. **Physics cars stopped over 90 s** (seeds 3, 4, 9, 11: 1 to 6). Mostly `held 2` (no room past the box) at Kingsbridge's cluster:
+   queues round its centre block, each waiting for the next.
+6. **Stop lines on another road's paving** (7 of about 2,240 arms, every seed, inherited: `Traffic.ObliqueBox` caps a box at 75, and
+   slanted lanes need more; first at node 664, -5751, 12853, a Lane arm).
+
+Then: run the full trafficview (not only `TV_DRIVE_ONLY`) on the 16 seeds, then ask the owner before drawing the lights or anything
+else. Town turn lanes are no longer needed for the jam (see above); ask before building them.
 
 ## READ THIS FIRST: right of way and the trunk's junction lanes (2026-11-24, branch `ccr-02e633e5-fytf3y`)
 
