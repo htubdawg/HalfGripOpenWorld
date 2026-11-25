@@ -53,6 +53,27 @@ internal static partial class Program
 				if (!Traffic.ClearOfOthers(n, e.Road, x, z))
 				{
 					bad++;
+					if (Environment.GetEnvironmentVariable("TV_DRIVE_NOTES") != null)
+					{
+						double d = node.Box;
+						while (d < e.Length - 1.0 && d < 400.0)
+						{
+							double sd = e.A == n ? e.Sa + d : e.Sb - d;
+							Traffic.At(road, sd, out double xd, out double zd, out double _);
+							Traffic.Heading(road, sd, out double hxd, out double hzd);
+							if (Traffic.ClearOfOthers(n, e.Road, xd + hzd * sign * off, zd - hxd * sign * off))
+							{
+								break;
+							}
+							d += 1.0;
+						}
+						string others = "";
+						foreach (int ej in links)
+						{
+							others += Network.Roads[Traffic.Edges[ej].Road].Kind + " ";
+						}
+						Console.WriteLine("    stop line: node " + n + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") " + road.Kind + " arm, box " + node.Box.ToString("0") + ", clear at " + d.ToString("0") + " of " + e.Length.ToString("0") + "; arms " + others);
+					}
 					if (first.Length == 0)
 					{
 						first = " (first: node " + n + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + "), a " + road.Kind + " arm, box " + node.Box.ToString("0") + ")";

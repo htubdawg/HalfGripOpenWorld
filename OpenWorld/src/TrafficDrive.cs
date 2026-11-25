@@ -28,11 +28,13 @@ namespace HalfGripOpenWorld
 		/// <summary>Kept waiting this long at a junction, a car gives way only to cars in the box, not to cars still coming (no deadlock);
 		/// three times as long, not to a drawn car standing in the box either (the day holds it there for someone who is a physics car now).</summary>
 		internal const double HoldBreak = 8.0;
+		/// <summary>Seconds off the box a car coming is still let go first by a car tired of waiting (<see cref="HoldBreak"/>).</summary>
+		private const double ImpatientLook = 2.5;
 		/// <summary>Seconds held at a side road's red before a physics car gives up on the light (see <see cref="Target"/>).</summary>
 		internal const double LightGiveUp = 30.0;
 		/// <summary>Seconds more a physics car giving way leaves before a car with the right of way gets to the box, than a day's car does (less as it waits, as the day's margin).</summary>
 		private const double PhysicsGapMore = 1.5;
-		/// <summary>How far ahead of its timetable a car may get before it eases off (none on the last stretch: it waits to be on time).</summary>
+		/// <summary>How far ahead of its timetable a car may get before it eases off (not on the last stretch: it goes back early at its end).</summary>
 		internal const double EarlyMost = 40.0;
 		/// <summary>The time gap a car keeps to the car in front when working out a safe speed (seconds), and to a line it stops at.</summary>
 		private const double FollowGap = 1.0, StopGap = 0.5;
@@ -76,6 +78,8 @@ namespace HalfGripOpenWorld
 			public int Held;
 			/// <summary>Why it is going slower than its profile (for the overlay): 0 free, 1 a car in front, 2 a junction, 3 the trip's end, 4 early.</summary>
 			public int Why;
+			/// <summary>For trafficview's notes: the car in front along its path, and the one standing past the junction's box (-1: none).</summary>
+			public int Front, Blocker;
 		}
 
 		// ---- the line ------------------------------------------------------------------------------------------------------------
@@ -404,12 +408,21 @@ namespace HalfGripOpenWorld
 			return lo;
 		}
 
+		/// <summary>
+		/// A car pulling out of a space across the road turns over the oncoming lane: whether a car <paramref name="along"/> ahead of it
+		/// (along its way out; behind it, negative) and <paramref name="side"/> to the side, in either lane, is in its way or coming into it.
+		/// </summary>
+		internal static bool AcrossItsWay(double along, double side)
+		{
+			return side < 16.0 && along > -30.0 && along < 70.0;
+		}
+
 		/// <summary>Lowers <paramref name="target"/> to a safe speed behind something at (x, z) going <paramref name="lead"/> if it is ahead of <paramref name="me"/> in its lane.</summary>
-		private static void InTheWay(in Mover me, double x, double z, double lead, ref double target, ref int why)
+		private static void InTheWay(in Mover me, double x, double z, double lead, ref double target, ref int why, double sideMore = 0.0)
 		{
 			double dx = x - me.X, dz = z - me.Z;
 			double along = dx * me.Hx + dz * me.Hz, side = Math.Abs(dx * me.Hz - dz * me.Hx);
-			if (along <= 0.0 || along > 80.0 || side > 6.0)
+			if (along <= 0.0 || along > 80.0 || side > 6.0 + sideMore)
 			{
 				return;
 			}
@@ -449,10 +462,15 @@ namespace HalfGripOpenWorld
 			int k0 = SegAt(path, me.P);
 			double nearestP = double.MaxValue, nearestV = 0.0, nearestX = 0.0, nearestZ = 0.0;
 			bool blockedOut = false;
+			st.Front = -1;
+			st.Blocker = -1;
 			double boxOut = me.Node >= 0 ? me.NodeP + Traffic.Nodes[me.Node].Box + CarLength + 4.0 : double.MinValue;
 			foreach (Mover o in others)
 			{
-				if (o.Car == me.Car || o.Edge < 0)
+				// A drawn car pulling out of its space or into one is not on the lane yet (or any more): it is in the way only where it is
+				// drawn (below). Counted on the lane, one held back in its space just past a junction kept the cars behind it waiting
+				// for it, and it for them.
+				if (o.Car == me.Car || o.Edge < 0 || o.Pulling)
 				{
 					continue;
 				}
@@ -480,6 +498,7 @@ namespace HalfGripOpenWorld
 					}
 					if (po < nearestP)
 					{
+						st.Front = o.Car;
 						nearestP = po;
 						nearestV = Math.Max(0.0, o.V);
 						nearestX = o.X;
@@ -488,6 +507,7 @@ namespace HalfGripOpenWorld
 					if (me.Node >= 0 && po < boxOut && po > me.NodeP && o.V < 2.0)
 					{
 						blockedOut = true;
+						st.Blocker = o.Car;
 					}
 					break;
 				}
@@ -534,7 +554,8 @@ namespace HalfGripOpenWorld
 			{
 				if (o.Pulling && o.Car != me.Car)
 				{
-					InTheWay(me, o.X, o.Z, 0.0, ref target, ref why);
+					// Turned across the lane, its nose or tail reaches further to the side than its middle.
+					InTheWay(me, o.X, o.Z, 0.0, ref target, ref why, 0.5 * CarLength * Math.Abs(me.Hx * o.Hz - me.Hz * o.Hx));
 				}
 			}
 
@@ -566,7 +587,7 @@ namespace HalfGripOpenWorld
 						{
 							break;
 						}
-						if (o.Car == me.Car)
+						if (o.Car == me.Car || o.Pulling)
 						{
 							continue;
 						}
@@ -649,6 +670,14 @@ namespace HalfGripOpenWorld
 						}
 						if (!patient)
 						{
+							// Tired of waiting it goes whoever is still coming, but not across a car about to get there: from a standstill
+							// it would still be in the box.
+							if (ov > 2.0 && o.ToBox / ov < ImpatientLook)
+							{
+								hold = true;
+								st.Held = 6;
+								break;
+							}
 							continue;
 						}
 						double oReach = ov * ov / (2.0 * TrafficDay.Brake) + 1.5 * ov + 25.0;
@@ -713,14 +742,15 @@ namespace HalfGripOpenWorld
 				}
 			}
 
-			// Never far ahead of its timetable (it could not go back on it without a jump); on the last stretch, not ahead at all. Easing
-			// off, not stopping (the day's car may be waiting at a junction this one has passed), and never in a box or just before one.
+			// Never far ahead of its timetable. Easing off, not stopping (the day's car may be waiting at a junction this one has passed),
+			// and never in a box or just before one. Not on the last stretch: there it drives on to its trip's end and goes back on the
+			// timetable early (it used to wait there to be on time, on the lane, holding up everyone behind it).
 			bool last = me.P > leg.Length - EndZone - 30.0;
-			double early = last ? 0.0 : EarlyMost;
-			if (me.P > onTimeP + early - 30.0 && me.Back < 0 && (me.Node < 0 || me.ToBox > 15.0))
+			double early = EarlyMost;
+			if (!last && me.P > onTimeP + early - 30.0 && me.Back < 0 && (me.Node < 0 || me.ToBox > 15.0))
 			{
-				// Never below half its road's speed (4 at least) but on the last stretch: a car crawling on the trunk is run into.
-				double cap = Math.Max(last ? 0.0 : Math.Max(4.0, 0.5 * free), Math.Max(0.0, onTimeV) + Math.Max(0.0, onTimeP + early - me.P) * 0.6);
+				// Never below half its road's speed (4 at least): a car crawling on the trunk is run into.
+				double cap = Math.Max(Math.Max(4.0, 0.5 * free), Math.Max(0.0, onTimeV) + Math.Max(0.0, onTimeP + early - me.P) * 0.6);
 				if (cap < target)
 				{
 					target = cap;

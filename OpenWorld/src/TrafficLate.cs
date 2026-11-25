@@ -197,6 +197,16 @@ namespace HalfGripOpenWorld
 				{
 					return day.Driving(e.Leg, t);
 				}
+				if (e.D < 0.0)
+				{
+					// Early (a physics car that got to its trip's end ahead of the day): parked there until the day has it there too.
+					if (now < leg.End)
+					{
+						return leg.Vanishes ? new TrafficDay.Place { State = TrafficDay.State.Away, Leg = e.Leg } : new TrafficDay.Place { State = TrafficDay.State.Parked, X = leg.To.X, Z = leg.To.Z, Leg = e.Leg };
+					}
+					ledger.Remove(car);
+					return day.At(car, w);
+				}
 				// Its late trip is over: parked at its end from leg.End + D. Its stay there is cut short to make the time up, never below
 				// the shortest stay; what is left over makes its next trip late.
 				double arrive = leg.End + e.D;

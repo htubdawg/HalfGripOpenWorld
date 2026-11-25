@@ -29,6 +29,8 @@ internal static partial class Program
 		public float[] Profile;
 		public TrafficDrive.State St;
 		public TrafficDrive.Mover Me;
+		/// <summary>What held it when it had first stood 90 s.</summary>
+		public string StopNote;
 	}
 
 	/// <summary>A light's states over the physics run, every 10 s (G, A, R; - no light).</summary>
@@ -202,10 +204,10 @@ internal static partial class Program
 						continue;
 					}
 					double d = TrafficDrive.Lateness(leg, s.P, w);
-					if (!far && !dark && d < -1.0)
+					if (end && d < -1.0)
 					{
+						// Early at its trip's end: back early (TrafficPhysics), parked there until the day catches up.
 						waitedEnd++;
-						continue;
 					}
 					late.Late(c, s.Leg, w, d, 0.05);
 					if (d >= TrafficLate.Least)
@@ -258,7 +260,7 @@ internal static partial class Program
 						continue;
 					}
 					TrafficDay.Leg al = day.Legs[at.Leg];
-					if (physical.Count > 0 && !al.Appears && (at.T < al.PullOut + 1.0 || at.P <= 1.0) && OnPhysical(day, physical, at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0))
+					if (physical.Count > 0 && !al.Appears && (at.T < al.PullOut + 1.0 || at.P <= 1.0) && OnPhysical(day, physical, at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0, al.FarSide))
 					{
 						late.HoldBack(c, at.Leg, w, 1.0);
 						heldBack++;
@@ -334,7 +336,7 @@ internal static partial class Program
 				}
 				// The game checks this every frame it draws a car, so here every step.
 				TrafficDay.Leg ml = day.Legs[at.Leg];
-				if (physical.Count > 0 && !ml.Appears && (at.T < ml.PullOut + 1.0 || at.P <= 1.0) && OnPhysical(day, physical, at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0))
+				if (physical.Count > 0 && !ml.Appears && (at.T < ml.PullOut + 1.0 || at.P <= 1.0) && OnPhysical(day, physical, at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0, ml.FarSide))
 				{
 					late.HoldBack(c, at.Leg, w, 1.0);
 					heldBack++;
@@ -390,6 +392,10 @@ internal static partial class Program
 				s.P = Math.Min(leg.Length, s.P + s.V * DriveStep);
 				s.Stopped = s.V < 0.5 ? s.Stopped + DriveStep : 0.0;
 				s.MostStopped = Math.Max(s.MostStopped, s.Stopped);
+				if (s.Stopped > 90.0 && s.StopNote == null)
+				{
+					s.StopNote = "at 90 s: " + (3.0 + w / 100.0).ToString("0.00") + " h why " + s.St.Why + " held " + s.St.Held + " node " + s.Me.Node + " arms " + s.Me.InArm + ">" + s.Me.OutArm + " toBox " + s.Me.ToBox.ToString("0") + " target " + target.ToString("0.0") + " | front " + Who(day, late, physical, s.St.Front, w) + " | blocker " + Who(day, late, physical, s.St.Blocker, w);
+				}
 			}
 
 			// Checks: no physics car in another car (physics or drawn) or the player's; no two physics cars crossing in a box.
@@ -468,12 +474,12 @@ internal static partial class Program
 			{
 				TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
 				TrafficDrive.Prepare(day, ref lm);
-				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)));
+				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)) + " || " + s.StopNote);
 			}
 		}
 		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && hitPlayer == 0 && jumps == 0 && (blocked || longWaits == 0);
 		Console.WriteLine("  physics cars, " + name + ", 10 minutes from 17:00: " + made + " made physical, back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
-			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " waits to be on time at a trip's end, " + hidden + " drawn cars hidden on a physics car, " + heldBack + " held back from pulling out onto one; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
+			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " back early at a trip's end, " + hidden + " drawn cars hidden on a physics car, " + heldBack + " held back from pulling out onto one; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
 			+ (crashNote.Length > 0 ? " (first " + crashNote + ")" : "") + ", " + crossed.Count + " pairs crossing in a box (at most " + MostCrossings + ")" + (crossNote.Length > 0 ? " (first " + crossNote + ")" : "") + (blocked ? ", " + hitPlayer + " steps in the player's car" + hitNote : "")
 			+ "; jumps going back: worst " + worstJump.ToString("0.0") + (jumpNote.Length > 0 ? " (" + jumpNote + ")" : "") + ", " + jumps + " over 3; longest stop of the cars still physical " + longest.ToString("0") + " s"
 			+ (blocked ? "" : " (" + longWaits + " over 90 s)") + "; " + (targets > 0 ? targetMs * 1000.0 / targets : 0.0).ToString("0.0") + " us a target" + (ok ? "" : " FAIL"));
@@ -497,19 +503,39 @@ internal static partial class Program
 	}
 
 	/// <summary>Whether a car drawn at (x, z) facing (hx, hz) would be on, or within <paramref name="behind"/> behind, a physics car (as TrafficPhysics tests).</summary>
-	private static bool OnPhysical(TrafficDay day, Dictionary<int, Sim> physical, double x, double z, double hx, double hz, double behind, double before = 0.0)
+	private static bool OnPhysical(TrafficDay day, Dictionary<int, Sim> physical, double x, double z, double hx, double hz, double behind, double before = 0.0, bool farSide = false)
 	{
 		foreach (Sim s in physical.Values)
 		{
 			TrafficDrive.Line(day.Legs[s.Leg], s.P, out double bx, out double bz, out double bhx, out double bhz);
 			double dx = bx - x, dz = bz - z;
 			double along = dx * hx + dz * hz, side = Math.Abs(dx * hz - dz * hx);
-			if ((side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5))
+			if ((side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5) || (farSide && TrafficDrive.AcrossItsWay(along, side)))
 			{
 				return true;
 			}
 		}
 		return false;
+	}
+
+	private static string Who(TrafficDay day, TrafficLate late, Dictionary<int, Sim> physical, int c, double w)
+	{
+		if (c < 0)
+		{
+			return "-";
+		}
+		if (physical.TryGetValue(c, out Sim s))
+		{
+			return "physics " + c + " leg " + s.Leg + " at " + s.P.ToString("0") + " v " + s.V.ToString("0.0") + " why " + s.St.Why + " held " + s.St.Held + " stopped " + s.MostStopped.ToString("0");
+		}
+		TrafficDay.Place at = late.At(c, w, out bool hid);
+		string t = "drawn " + c + " leg " + at.Leg + " state " + at.State + " hid " + hid + " at " + at.P.ToString("0") + " v " + at.Speed.ToString("0.0");
+		if (at.Leg >= 0)
+		{
+			TrafficDay.Leg l = day.Legs[at.Leg];
+			t += " T " + at.T.ToString("0.0") + " pullOut " + l.PullOut.ToString("0.0") + " late " + TrafficDrive.Lateness(l, at.P, w).ToString("0") + " len " + l.Length.ToString("0");
+		}
+		return t;
 	}
 
 	/// <summary>Two cars' bodies overlapping by more than a touch (the shared test, each box half a unit smaller).</summary>

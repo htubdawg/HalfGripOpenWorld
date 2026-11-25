@@ -158,13 +158,10 @@ namespace HalfGripOpenWorld
 				bool fit = b.Alive && !b.Hurt && (dark || (!b.GaveUp && b.transform.up.y > 0.7f && TrafficDrive.OnLane(leg, b.P, x, z, f.x, f.z)));
 				if (fit)
 				{
+					// Early is a negative lateness: drawn where it is and on along the day's way from there, then parked at its trip's end
+					// until the day has it there (the ledger). It no longer waits on the lane at its trip's end to be on time: the day's car
+					// can be minutes behind in a queue, and it held up everyone behind it.
 					double d = TrafficDrive.Lateness(leg, b.P, w);
-					// On the last stretch it waits to be on time rather than be drawn jumping ahead to where the day has it. In a tunnel it
-					// goes now, drawn where it is (early is a negative lateness).
-					if (!far && !dark && d < -1.0)
-					{
-						continue;
-					}
 					if (d >= TrafficLate.Least)
 					{
 						backLate++;
@@ -173,7 +170,7 @@ namespace HalfGripOpenWorld
 					{
 						backOnTime++;
 					}
-					Mod.Info("Traffic: car " + kv.Key + " back on its timetable " + (d >= TrafficLate.Least ? d.ToString("0.0") + " s late" : "on time") + (far ? " (out of reach)" : end ? " (its trip's end)" : " (in a tunnel)"));
+					Mod.Info("Traffic: car " + kv.Key + " back on its timetable " + (d >= TrafficLate.Least ? d.ToString("0.0") + " s late" : d <= -TrafficLate.Least ? (-d).ToString("0.0") + " s early" : "on time") + (far ? " (out of reach)" : end ? " (its trip's end)" : " (in a tunnel)"));
 					acts.Add((kv.Key, b, Leave.Back, LateOp(b.Leg, b.P, w), 0UL));
 					continue;
 				}
@@ -687,12 +684,12 @@ namespace HalfGripOpenWorld
 		private bool choosing;
 
 		/// <summary>Whether a car drawn at (x, z) facing (hx, hz) would be on top of a physics car, within <paramref name="behind"/> behind one or <paramref name="before"/> in front of one.</summary>
-		private bool OnAPhysicsCar(double x, double z, double hx, double hz, double behind, double before = 0.0)
+		private bool OnAPhysicsCar(double x, double z, double hx, double hz, double behind, double before = 0.0, bool farSide = false)
 		{
-			return OnABody(physical, x, z, hx, hz, behind, before) || OnABody(remote, x, z, hx, hz, behind, before);
+			return OnABody(physical, x, z, hx, hz, behind, before, farSide) || OnABody(remote, x, z, hx, hz, behind, before, farSide);
 		}
 
-		private static bool OnABody(Dictionary<int, TrafficBody> bodies, double x, double z, double hx, double hz, double behind, double before)
+		private static bool OnABody(Dictionary<int, TrafficBody> bodies, double x, double z, double hx, double hz, double behind, double before, bool farSide = false)
 		{
 			foreach (TrafficBody b in bodies.Values)
 			{
@@ -707,7 +704,8 @@ namespace HalfGripOpenWorld
 				float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
 				// In its lane close behind or ahead, or in it whichever way either faces (a car pulling in across the road, one passing the
 				// nose of a physics car stopped in a junction). A loose car still in its space only if in it (cars drive past parked ones).
-				if ((!b.InSpace && side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, 0.5))
+				if ((!b.InSpace && side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, 0.5)
+					|| (farSide && !b.InSpace && TrafficDrive.AcrossItsWay(along, side)))
 				{
 					return true;
 				}
@@ -741,7 +739,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			TrafficDay.Leg leg = day.Legs[at.Leg];
-			if (leg.Appears || (at.T >= leg.PullOut + 1.0 && at.P > 1.0) || !OnAPhysicsCar(at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0))
+			if (leg.Appears || (at.T >= leg.PullOut + 1.0 && at.P > 1.0) || !OnAPhysicsCar(at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0, leg.FarSide))
 			{
 				return false;
 			}

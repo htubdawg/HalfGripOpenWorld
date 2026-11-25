@@ -1100,6 +1100,10 @@ namespace HalfGripOpenWorld
 			public List<float> LaneRec;
 			/// <summary>trafficview's notes: how it pulled out (0 the road clear, 1 let in, 2 forced).</summary>
 			public int How;
+			/// <summary>trafficview's notes: what held it back last step.</summary>
+			public string Binding = "";
+			/// <summary>trafficview's notes: why the junction just past the one it waits at would not let it through.</summary>
+			public string NextWhy = "";
 		}
 
 		private sealed class Grant
@@ -1112,6 +1116,8 @@ namespace HalfGripOpenWorld
 			public bool Forced;
 			/// <summary>The speed it will be down to through the box (its turn's): what its clearing is reckoned at.</summary>
 			public double Through;
+			/// <summary>trafficview's notes: when it was let in, how far from the node and how fast.</summary>
+			public double At, AtP, AtV;
 		}
 
 		private struct Request
@@ -1847,7 +1853,8 @@ namespace HalfGripOpenWorld
 					}
 				}
 				Stuck.Add(look + " :: leg " + m.Index + " p " + m.P.ToString("0") + "/" + m.L.Length.ToString("0") + " v " + m.V.ToString("0.0") + " seg " + m.Seg + "/" + path.Length + " lane " + m.Lane
-					+ " u " + m.LaneU.ToString("0") + " " + why + " ahead " + (m.Ahead != null ? m.Ahead.Index + " at " + m.Ahead.LaneU.ToString("0") : "-") + " grants" + grants + " wait " + m.Wait.ToString("0"));
+					+ " u " + m.LaneU.ToString("0") + " " + why + " ahead " + (m.Ahead != null ? m.Ahead.Index + " at " + m.Ahead.LaneU.ToString("0") : "-") + " grants" + grants + " wait " + m.Wait.ToString("0") + " binding " + m.Binding + " ix " + m.Ix + " laneEnd " + (m.LaneEnd < double.MaxValue ? (m.LaneEnd - m.P).ToString("0") : "-")
+					+ (m.Ix >= AuxIx ? " goOn " + GrantsGoOn(m) + " room0 " + RoomIn(LaneKey(path[m.Seg], 0), m) + " room1 " + RoomIn(LaneKey(path[m.Seg], 1), m) + " " + roomWhy + " allow0 " + GrantsAllowIx(m, 0) + " allow1 " + GrantsAllowIx(m, 1) + " " + LastMove(m) : ""));
 			}
 			foreach (Mover m in movers)
 			{
@@ -1950,6 +1957,27 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+		}
+
+		private string GrantNote(Grant g)
+		{
+			string t = "[" + g.M.Binding + " " + g.M.NextWhy + "] " + (now - g.At).ToString("0.0") + " s ago at " + g.AtP.ToString("0") + " v " + g.AtV.ToString("0.0") + " main " + (g.InKey == mainA[g.Node] || g.InKey == mainB[g.Node]) + " light " + TrafficSignals.Has(g.Node);
+			if (lanes.TryGetValue(g.OutLane, out List<Mover> list))
+			{
+				Mover first = null;
+				foreach (Mover o in list)
+				{
+					if (o != g.M && (first == null || o.LaneU < first.LaneU))
+					{
+						first = o;
+					}
+				}
+				if (first != null)
+				{
+					t += " out lane's first at " + first.LaneU.ToString("0") + " v " + first.V.ToString("0.0");
+				}
+			}
+			return t;
 		}
 
 		private static string Grants(Mover m)
@@ -2487,7 +2515,7 @@ namespace HalfGripOpenWorld
 								{
 									clear = gNear;
 								}
-								if (clear + 0.5 < r.Eta)
+								if (clear + 0.5 < r.Eta && HeldIn(g, box) + 0.5 < r.Eta)
 								{
 									continue;
 								}
@@ -2496,6 +2524,8 @@ namespace HalfGripOpenWorld
 							{
 								clear = (g.NodeP + box + Traffic.CarLength - g.M.P) / Math.Max(1.0, Math.Min(g.M.V, g.Through));
 							}
+							// It can't get out sooner than the car in front past the box lets it (standing there: until it moves).
+							clear = Math.Max(clear, HeldIn(g, box));
 							if (clear + 0.5 < r.Eta)
 							{
 								continue;
@@ -2530,17 +2560,21 @@ namespace HalfGripOpenWorld
 						// Cars in the lane it joins move over for it if they can (the trunk's inner lane).
 						joining.Add(r.OutLane);
 					}
-					bool roomless = false;
+					bool roomless = false, stuck = false;
 					if (ok || (force && !crossing))
 					{
 						roomless = !Room(r, granted, box);
-						ok = ok && !roomless;
-						RefusedRoom += roomless ? 1 : 0;
+						// Two junctions closer than their boxes: not into this one while it would stand in it waiting at the next (the
+						// guard below still lets it go after a long wait, two such junctions could otherwise wait on each other; but never
+						// into the trunk's box, where it would stand across a carriageway).
+						stuck = !roomless && !ThroughNext(r, box);
+						ok = ok && !roomless && !stuck;
+						RefusedRoom += roomless || stuck ? 1 : 0;
 					}
 					// The guard against a car kept waiting for ever by the order: after a long wait the order is let go, never a car
 					// in the box and never the room on its way out.
 					bool forced = false;
-					if (!ok && force && !crossing && !roomless)
+					if (!ok && force && !crossing && !roomless && !(stuck && twoLaneMain[node]))
 					{
 						ok = true;
 						forced = true;
@@ -2548,7 +2582,7 @@ namespace HalfGripOpenWorld
 					}
 					if (ok)
 					{
-						Grant g = new Grant { M = r.M, Node = node, SegIndex = r.SegIndex, InLane = r.InLane, OutLane = r.OutLane, InKey = r.InArm, OutKey = r.OutArm, NodeP = r.NodeP, Forced = forced, Through = Math.Min(DesiredAt(r.M.L.Profile, r.NodeP), DesiredAt(r.M.L.Profile, r.NodeP + box)) };
+						Grant g = new Grant { M = r.M, Node = node, SegIndex = r.SegIndex, InLane = r.InLane, OutLane = r.OutLane, InKey = r.InArm, OutKey = r.OutArm, NodeP = r.NodeP, Forced = forced, At = now, AtP = r.M.P - r.NodeP, AtV = r.M.V, Through = Math.Min(DesiredAt(r.M.L.Profile, r.NodeP), DesiredAt(r.M.L.Profile, r.NodeP + box)) };
 						granted.Add(g);
 						if (granted.Count == 1)
 						{
@@ -2557,7 +2591,7 @@ namespace HalfGripOpenWorld
 						r.M.Grants.Add(g);
 						r.M.Wait = 0.0;
 					}
-					else if (!roomless)
+					else if (!roomless && !stuck)
 					{
 						// Refused for crossing someone: it keeps its place, and nobody after it who crosses it goes first. A car only
 						// waiting for room on its way out holds nobody else up (it would hold the road it is waiting to join).
@@ -3516,15 +3550,56 @@ namespace HalfGripOpenWorld
 			return any;
 		}
 
+		/// <summary>
+		/// The first car on the lane that lane <paramref name="lane"/> (beside mover <paramref name="m"/>) goes on into past the junction at
+		/// its end, within reach: where it is reckoned along <paramref name="lane"/> (past its end) and its speed. False if none.
+		/// </summary>
+		private bool AheadAcross(long lane, Mover m, out double u, out double v)
+		{
+			u = 0.0;
+			v = 0.0;
+			Seg[] path = m.L.Path;
+			Seg s = path[m.Seg];
+			double left = s.P0 + s.Len - m.P;
+			if (m.Seg + 1 >= path.Length || left > 150.0)
+			{
+				return false;
+			}
+			Seg next = path[m.Seg + 1];
+			long ix = (lane - LaneOf(s)) / InnerKey;
+			if (!lanes.TryGetValue(LaneKey(next, (int)ix), out List<Mover> list) || list.Count == 0)
+			{
+				return false;
+			}
+			Mover first = null;
+			foreach (Mover o in list)
+			{
+				if (o != m && (first == null || o.LaneU < first.LaneU))
+				{
+					first = o;
+				}
+			}
+			if (first == null)
+			{
+				return false;
+			}
+			u = m.LaneU + left + (first.LaneU - LaneU(next, next.P0));
+			v = first.V;
+			return true;
+		}
+
+		private string roomWhy = "";
+
 		private bool RoomIn(long lane, Mover m)
 		{
+			roomWhy = "";
 			Neighbours(lane, m, out Mover ahead, out Mover behind);
 			if (ahead != null)
 			{
 				double gap = ahead.LaneU - Traffic.CarLength - m.LaneU;
 				if (gap < MinGap + Math.Max(0.0, m.V - ahead.V) * MoveOverTime || Interaction(m.V, gap, ahead.V) < -ChangeBrake)
 				{
-					return false;
+					roomWhy = "ahead"; return false;
 				}
 			}
 			if (behind != null)
@@ -3532,7 +3607,16 @@ namespace HalfGripOpenWorld
 				double gap = m.LaneU - Traffic.CarLength - behind.LaneU;
 				if (gap < MinGap + Math.Max(0.0, behind.V - m.V) * MoveOverTime || Interaction(behind.V, gap, m.V) < -ChangeBrake)
 				{
-					return false;
+					roomWhy = "behind"; return false;
+				}
+			}
+			// Just short of a junction, a car just past it in the lane going on is ahead of it too, though on the next lane's list.
+			if (ahead == null && AheadAcross(lane, m, out double au, out double av))
+			{
+				double gap = au - Traffic.CarLength - m.LaneU;
+				if (gap < MinGap + Math.Max(0.0, m.V - av) * MoveOverTime || Interaction(m.V, gap, av) < -ChangeBrake)
+				{
+					roomWhy = "across"; return false;
 				}
 			}
 			// Just past a junction, a car still coming through it into the lane is behind it too, though not yet on the lane's list.
@@ -3541,18 +3625,20 @@ namespace HalfGripOpenWorld
 				double gap = m.LaneU - Traffic.CarLength - cu;
 				if (gap < MinGap + Math.Max(0.0, cv - m.V) * MoveOverTime || Interaction(cv, gap, m.V) < -ChangeBrake)
 				{
-					return false;
+					roomWhy = "coming"; return false;
 				}
 			}
 			Mover before = m.Ahead;
 			if (before != null && before.LaneU - Traffic.CarLength - m.LaneU < MinGap + Math.Max(0.0, m.V - before.V) * MoveOverTime)
 			{
-				return false;
+				roomWhy = "before"; return false;
 			}
 			Neighbours(m.Lane, m, out Mover _, out Mover after);
-			if (after != null && m.LaneU - Traffic.CarLength - after.LaneU < MinGap + Math.Max(0.0, after.V - m.V) * MoveOverTime)
+			// (A car standing close behind in a queue is no bar: it is not closing on it. Counted, a merging car at the head of a standing
+			// queue in a median lane waited there for ever.)
+			if (after != null && after.V > 0.5 && m.LaneU - Traffic.CarLength - after.LaneU < MinGap + Math.Max(0.0, after.V - m.V) * MoveOverTime)
 			{
-				return false;
+				roomWhy = "after"; return false;
 			}
 			return true;
 		}
@@ -3637,6 +3723,101 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether the way out has room past the box for this car and those already let in ahead of it: never block a junction.</summary>
+		/// <summary>
+		/// Whether request <paramref name="r"/> can go on through the next junction too, where that junction's stop line is so close that
+		/// a car waiting there would still be in this one's box: its light green, nobody let in there crossing its way, and room past it
+		/// (not the cars coming there it would give way to: they come and go, and waiting for all of them jammed two such junctions). "Do not enter an intersection if there are vehicles blocking your way" (PA Driver's Manual
+		/// p. 46): two junctions closer than their boxes are one for that. True where the next stop line is clear of this box.
+		/// </summary>
+		/// <summary>
+		/// How long granted car <paramref name="g"/> is held in its box by the car in front on its way out, standing or crawling too close
+		/// past it (0: none; MaxValue: standing): until that one has moved on far enough, at its speed.
+		/// </summary>
+		private double HeldIn(Grant g, double box)
+		{
+			if (!g.M.L.Vanishes && g.M.L.Length < g.NodeP + box + Traffic.CarLength)
+			{
+				// Its trip ends just past the node: it stops there to pull into its space, still in the box.
+				return double.MaxValue;
+			}
+			if (!lanes.TryGetValue(g.OutLane, out List<Mover> list))
+			{
+				return 0.0;
+			}
+			Seg[] path = g.M.L.Path;
+			Seg o = path[g.SegIndex + 1];
+			double u = LaneU(o, o.P0) - (o.P0 - g.M.P), clearU = LaneU(o, o.P0) + box + Traffic.CarLength;
+			double held = 0.0;
+			foreach (Mover f in list)
+			{
+				double short_ = clearU - (f.LaneU - Traffic.CarLength - MinGap);
+				if (f != g.M && f.LaneU > u && short_ > 0.0 && f.V < TurnSpeed)
+				{
+					held = Math.Max(held, f.V < 0.5 ? double.MaxValue : short_ / f.V);
+				}
+			}
+			return held;
+		}
+
+		private bool ThroughNext(Request r, double box)
+		{
+			Seg[] path = r.M.L.Path;
+			int k = r.SegIndex + 1;
+			if (k + 1 >= path.Length || path[k].Edge < 0 || path[k + 1].Edge < 0 || path[k].Edge == path[k + 1].Edge)
+			{
+				return true;
+			}
+			int next = NodeAfter(path, k);
+			if (next < 0 || next == r.Node)
+			{
+				return true;
+			}
+			double nextBox = Traffic.Nodes[next].Box;
+			if (path[k].Len - nextBox >= box + Traffic.CarLength + 4.0)
+			{
+				return true;
+			}
+			double nodeP = path[k].P0 + path[k].Len;
+			Request q = new Request
+			{
+				M = r.M, Node = next, SegIndex = k, NodeP = nodeP,
+				InArm = LinkIndex(next, path[k].Edge), OutArm = LinkIndex(next, path[k + 1].Edge),
+				InLane = r.OutLane, OutLane = TwoLane(path[k]) ? LaneOf(r.M, path[k + 1]) : LaneKey(path[k + 1], EntryIx(path, k)),
+				Eta = ArriveTime(r.M.V, nodeP - nextBox - r.M.P, Math.Max(r.M.V, DesiredAt(r.M.L.Profile, nodeP - nextBox))),
+			};
+			if (q.InArm < 0 || q.OutArm < 0)
+			{
+				return true;
+			}
+			if (TrafficSignals.Has(next) && Lights.State(next, q.InArm, now) != TrafficSignals.Green)
+			{
+				r.M.NextWhy = "light at " + next;
+				return false;
+			}
+			if (nodeGrants.TryGetValue(next, out List<Grant> there))
+			{
+				foreach (Grant g in there)
+				{
+					if (g.M != r.M && g.M.P < g.NodeP + nextBox + Traffic.CarLength && Conflict(next, g.InKey, g.OutKey, g.InLane, g.OutLane, q.InArm, q.OutArm, q.InLane, q.OutLane)
+						&& !Yields(next, g.InKey, g.OutKey, q.InArm, q.OutArm))
+					{
+						r.M.NextWhy = "grant at " + next + " " + g.InKey + ">" + g.OutKey + " v " + g.M.V.ToString("0.0") + " at " + (g.M.P - g.NodeP).ToString("0") + " vs " + q.InArm + ">" + q.OutArm;
+						return false;
+					}
+				}
+			}
+			else
+			{
+				there = new List<Grant>();
+			}
+			if (!Room(q, there, nextBox))
+			{
+				r.M.NextWhy = "room at " + next + " box " + nextBox.ToString("0") + " seg " + path[k].Len.ToString("0");
+				return false;
+			}
+			return true;
+		}
+
 		private bool Room(Request r, List<Grant> granted, double box)
 		{
 			int pending = 0;
@@ -3755,7 +3936,8 @@ namespace HalfGripOpenWorld
 						if (ConflictNotes.Count < 14 && !conflictPairs.Contains(((long)Math.Min(ga.M.Index, gb.M.Index) << 32) | (uint)Math.Max(ga.M.Index, gb.M.Index)))
 						{
 							ConflictNotes.Add("node " + node + " arms " + Traffic.Links[node].Count + " box " + box.ToString("0") + ": leg " + ga.M.Index + " " + ga.InKey + ">" + ga.OutKey + " at " + (ga.M.P - ga.NodeP).ToString("0") + " v " + ga.M.V.ToString("0.0") + " forced " + ga.Forced
-								+ " / leg " + gb.M.Index + " " + gb.InKey + ">" + gb.OutKey + " at " + (gb.M.P - gb.NodeP).ToString("0") + " v " + gb.M.V.ToString("0.0") + " forced " + gb.Forced);
+								+ " / leg " + gb.M.Index + " " + gb.InKey + ">" + gb.OutKey + " at " + (gb.M.P - gb.NodeP).ToString("0") + " v " + gb.M.V.ToString("0.0") + " forced " + gb.Forced
+								+ " | let in " + GrantNote(ga) + " / " + GrantNote(gb));
 						}
 						BoxConflicts++;
 						conflictPairs.Add(((long)Math.Min(ga.M.Index, gb.M.Index) << 32) | (uint)Math.Max(ga.M.Index, gb.M.Index));
@@ -3806,12 +3988,13 @@ namespace HalfGripOpenWorld
 				a = Math.Min(a, d > 0.5 ? (vs * vs - v * v) / (2.0 * d) : -Brake);
 			}
 			double worst = 0.0;
+			m.Binding = "";
 			// The car in front along this car's own path.
 			bool found = false;
 			if (m.Ahead != null)
 			{
 				double gap = m.Ahead.LaneU - Traffic.CarLength - m.LaneU;
-				worst = Math.Min(worst, Interaction(v, gap, m.Ahead.V));
+				{ double t_ = Interaction(v, gap, m.Ahead.V); if (t_ < worst) { worst = t_; m.Binding = "ahead"; } }
 				found = true;
 			}
 			for (int k = m.Seg + 1; !found && k < path.Length && path[k].P0 - m.P < Ahead; k++)
@@ -3832,7 +4015,7 @@ namespace HalfGripOpenWorld
 						break;
 					}
 					double gap = path[k].P0 - m.P + (o.LaneU - u0) - Traffic.CarLength;
-					worst = Math.Min(worst, Interaction(v, gap, o.V));
+					{ double t_ = Interaction(v, gap, o.V); if (t_ < worst) { worst = t_; m.Binding = "nextlane"; } }
 					found = true;
 					break;
 				}
@@ -3847,7 +4030,7 @@ namespace HalfGripOpenWorld
 				double room = u - Traffic.CarLength - 2.0 - m.LaneU;
 				if (room > 0.0 && room < 80.0 && v * v / (2.0 * Brake) < room && (m.Ahead == null || m.Ahead.LaneU > u))
 				{
-					worst = Math.Min(worst, Interaction(v, room + MinGap - 1.0, 0.0));
+					{ double t_ = Interaction(v, room + MinGap - 1.0, 0.0); if (t_ < worst) { worst = t_; m.Binding = "letin"; } }
 				}
 			}
 			// A car beside it waiting to come into this lane for its turn, in a slow queue: leave it room, if it can stop for it gently.
@@ -3860,7 +4043,7 @@ namespace HalfGripOpenWorld
 				double room = u - Traffic.CarLength - 2.0 - m.LaneU;
 				if (room > 0.0 && room < 60.0 && v * v / (2.0 * 0.5 * Brake) < room && (m.Ahead == null || m.Ahead.LaneU > u))
 				{
-					worst = Math.Min(worst, Interaction(v, room + MinGap - 1.0, 0.0));
+					{ double t_ = Interaction(v, room + MinGap - 1.0, 0.0); if (t_ < worst) { worst = t_; m.Binding = "zipper"; } }
 				}
 			}
 			// A junction it has not been let into: stop at the box's edge.
@@ -3869,7 +4052,7 @@ namespace HalfGripOpenWorld
 			{
 				int node = NodeAfter(path, ask);
 				double stop = path[ask].P0 + path[ask].Len - Traffic.Nodes[node].Box;
-				worst = Math.Min(worst, Interaction(v, stop + MinGap - 1.0 - m.P, 0.0));
+				{ double t_ = Interaction(v, stop + MinGap - 1.0 - m.P, 0.0); if (t_ < worst) { worst = t_; m.Binding = "junction"; } }
 				if (v < 0.5)
 				{
 					m.Wait += Step;
@@ -3891,7 +4074,7 @@ namespace HalfGripOpenWorld
 				if (tail < double.MaxValue)
 				{
 					// Standing a little further back than behind a car in its own lane, so the move in asks nothing hard of it.
-					worst = Math.Min(worst, Interaction(v, tail - Traffic.CarLength - MinGap - 6.0 - m.LaneU, 0.0));
+					{ double t_ = Interaction(v, tail - Traffic.CarLength - MinGap - 6.0 - m.LaneU, 0.0); if (t_ < worst) { worst = t_; m.Binding = "turnqueue"; } }
 				}
 			}
 			// The end of the junction lane it is to merge from: no further (it waits there for a gap, out of everyone's way).
@@ -3900,7 +4083,7 @@ namespace HalfGripOpenWorld
 				double left = m.LaneEnd - m.P;
 				if (left < v * v / (2.0 * 0.6 * Brake) + 30.0)
 				{
-					worst = Math.Min(worst, Interaction(v, left + MinGap - 1.0, 0.0));
+					{ double t_ = Interaction(v, left + MinGap - 1.0, 0.0); if (t_ < worst) { worst = t_; m.Binding = "laneend"; } }
 				}
 			}
 			// The end: stop at the spot.
@@ -3908,7 +4091,7 @@ namespace HalfGripOpenWorld
 			{
 				if (leg.Length - m.P < 200.0)
 				{
-					worst = Math.Min(worst, Interaction(v, leg.Length + MinGap - 0.5 - m.P, 0.0));
+					{ double t_ = Interaction(v, leg.Length + MinGap - 0.5 - m.P, 0.0); if (t_ < worst) { worst = t_; m.Binding = "end"; } }
 				}
 			}
 			return Math.Max(-30.0, Math.Min(Accel, a + worst));
