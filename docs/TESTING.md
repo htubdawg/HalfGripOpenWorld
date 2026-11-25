@@ -209,3 +209,12 @@ owner has reported on it.
      arrows. Left turns go only on the green arrow (both left-turn lanes together, every through lane red), and the arrow only comes
      up when a car waits in a left-turn lane. Say if a car turns left on a red arrow, or the arrow never comes.
    - The highway event's grid and start box are in the moved lanes (the carriageway's middle is further out now).
+60. The owner's report on the highway (2026-11-25, `traffic-test-branch`, not released).
+   - The paved median at the junction openings and in the left-turn lanes has the same fine asphalt grain as the lanes beside it (it
+     was drawn as coarse stripes across the road).
+   - Every way into a junction with lights has a white stop line across its side of the road, where the cars stop (on the highway
+     across the left-turn lane too). Say if one is missing, under the road, floating, or where cars stop well past or short of it.
+   - The highway's white edge line is broken across each side road's mouth. A left-turn lane's white line is dotted over its taper
+     and its first stretch (where you move into it), then solid up to the junction.
+   - Traffic is drawn out to about 450 m (moving) and 230 m (parked), against 270 m and 140 m before: cars should no longer pop in
+     close. `ShowCoords` on: say the frame time and the traffic line's numbers on the highway and in Kingsbridge's centre.

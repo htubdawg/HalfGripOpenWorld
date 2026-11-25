@@ -242,6 +242,8 @@ namespace HalfGripOpenWorld
 				lamps[c] = new SignalMesh.Builder();
 			}
 			float top = SignalMesh.Shape(m, (float)(m.Road + Network.Lift) - foot, b, lamps);
+			// The stop line for the same way in, in the mast's frame (drawn while the mast is).
+			SignalMesh.StopLine(m, foot, b);
 
 			GameObject go = new GameObject("Traffic light");
 			go.transform.SetParent(transform, false);
@@ -303,7 +305,7 @@ namespace HalfGripOpenWorld
 	internal static class SignalMesh
 	{
 		/// <summary>Colours in the palette texture, one texel each.</summary>
-		internal const int Steel = 0, Yellow = 1, Black = 2, Concrete = 3, Dark = 4, PaletteSize = 5;
+		internal const int Steel = 0, Yellow = 1, Black = 2, Concrete = 3, Dark = 4, Paint = 5, PaletteSize = 6;
 
 		internal static readonly Color[] Palette =
 		{
@@ -312,6 +314,7 @@ namespace HalfGripOpenWorld
 			new Color(0.05f, 0.05f, 0.05f),
 			new Color(0.66f, 0.65f, 0.62f),
 			new Color(0.30f, 0.31f, 0.32f),
+			new Color(0.86f, 0.86f, 0.82f),
 		};
 
 		/// <summary>A mesh being built, in the mast's frame (its foot at 0, the world's axes).</summary>
@@ -437,6 +440,39 @@ namespace HalfGripOpenWorld
 				m.RecalculateBounds();
 				return m;
 			}
+		}
+
+		/// <summary>How far over the road the stop line is drawn: over the road mesh's own paint, so it never fights with it.</summary>
+		private const double StopLift = 0.07;
+
+		/// <summary>
+		/// The stop line for mast <paramref name="m"/>'s way in (<see cref="SignalPoles.StopLine"/>) into <paramref name="b"/>, in the
+		/// mast's frame (its foot <paramref name="foot"/> high): white paint on the road's surface, in short pieces across so it follows
+		/// the road's camber.
+		/// </summary>
+		internal static void StopLine(SignalPoles.Mast m, float foot, Builder b)
+		{
+			if (!SignalPoles.StopLine(m.Node, m.Arm, out int r, out double s0, out double s1, out double lo, out double hi))
+			{
+				return;
+			}
+			Network.Road road = Network.Roads[r];
+			int n = Math.Max(1, (int)Math.Ceiling((hi - lo) / 6.0));
+			for (int k = 0; k < n; k++)
+			{
+				double o0 = lo + (hi - lo) * k / n, o1 = lo + (hi - lo) * (k + 1) / n;
+				Vector3 a = OnRoad(road, s0, o0, m, foot), c = OnRoad(road, s1, o1, m, foot);
+				Vector3 bb = OnRoad(road, s1, o0, m, foot), d = OnRoad(road, s0, o1, m, foot);
+				b.Quad(a, bb, c, d, Vector3.up, Colour(Paint));
+			}
+		}
+
+		/// <summary>The point <paramref name="off"/> left of road's line at <paramref name="s"/> along it, on its surface, in mast <paramref name="m"/>'s frame.</summary>
+		private static Vector3 OnRoad(Network.Road road, double s, double off, SignalPoles.Mast m, float foot)
+		{
+			Network.Locate(road, s, out int i, out double t);
+			Network.Point(road, i, t, off / Network.HalfAt(road, s), 0.0, out double x, out double z, out double y);
+			return new Vector3((float)(x - m.X), (float)(y + Network.Lift + StopLift - foot), (float)(z - m.Z));
 		}
 
 		internal static Vector2 Colour(int i)

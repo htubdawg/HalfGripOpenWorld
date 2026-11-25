@@ -4,12 +4,12 @@ using HalfGripOpenWorld;
 
 // The highway's traffic as a player on it meets it (docs/research/PERFORMANCE.md, "How to find out"): the owner found the trunk "barely" busier
 // with 100 circling cars than with 10. Reported, not failed: the gaps between the circling cars along the loop each way at three hours
-// (evenly spread, or bunched into platoons with long empty stretches), and how many cars are within the drawn reach (900 units) of a
+// (evenly spread, or bunched into platoons with long empty stretches), and how many cars are within the drawn reach (1500 units) of a
 // player driving the trunk at 168 km/h and at 85 km/h, averaged over ten minutes from each hour: what "busier" means in numbers.
 internal static partial class Program
 {
 	/// <summary>Moving cars are drawn this near the player (TrafficCars.MovingReach).</summary>
-	private const double HighwayReach = 900.0;
+	private const double HighwayReach = 1500.0;
 
 	private static void Highway(TrafficDay day)
 	{

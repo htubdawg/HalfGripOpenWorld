@@ -117,9 +117,11 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>How far moving and parked cars are drawn (units: about 270 m and 140 m), and at most how many.</summary>
-		private const float MovingReach = 900f, ParkedReach = 450f;
-		private const int MostDrawn = 160;
+		/// <summary>How far moving and parked cars are drawn (units: about 450 m and 230 m), and at most how many. Out to 450 m (the
+		/// traffic lights' reach) since the owner's 2026-11-25 report that cars popped in too near (they were 270 m and 140 m, 160 cars);
+		/// past 250 units they are drawn far (<see cref="TrafficFar"/>: instanced, no shadows), so the extra cars cost little.</summary>
+		private const float MovingReach = 1500f, ParkedReach = 750f;
+		private const int MostDrawn = 240;
 
 		/// <summary>Moving cars are chosen as if this much nearer than they are, so a town's parked cars never crowd out the road's.</summary>
 		private const float MovingWeight = 0.4f;

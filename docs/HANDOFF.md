@@ -14,7 +14,29 @@ Last written 2026-11-25.
   `SignalPoles.cs` and `SignalHeads.cs`), right of way fixes, lanes no longer laid on lanes (`Network.Throughs`, meshcheck
   `alongside`), late drawn cars let off a stand with nothing to stand for (`TrafficLate.SkipStand`), and now **the highway reworked**
   (below). **The world changed** since 0.33.0, so everyone in a room needs the same build. Bump the version with the next release.
-- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 and 59).
+- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 60). The owner has seen the reworked highway in
+  a screenshot (2026-11-25) and asked for the four fixes below.
+
+## The owner's highway report (2026-11-25)
+
+From a screenshot of a lit junction on the trunk (around (1267, -10269)):
+- **The paved median looked wrong** (coarse stripes across the road): `RoadMesh.Paint` stretched one texture column across the
+  openings and bays, so each row's grain ran right across. Now `RoadMesh.Pave` cuts the asphalt into strips under 10 wide, each
+  sampling the texture's plain columns 4 to 13 at a texel a unit, as the lanes beside it.
+- **Stop lines at the lights**: `SignalPoles.StopLine` (pure) gives each way in's line: 2 wide (24 in), its far edge a unit inside the
+  box's edge (`TrafficDrive` holds a car's front a unit short of the box), across the cars' side of the road (centre line to a unit
+  short of the edge; on the trunk from the median's yellow line, or from the bay's far side where there is a bay, to the edge line).
+  `SignalMesh.StopLine` draws it into the mast's mesh (white palette texel), so it shows with the mast. trafficview fails a way in with
+  a mast and no stop line. A way in with no mast (none now) would get no line. Where the edge is shorter than the box (Kingsbridge's
+  node 8, 19 past node 132) the line runs back along the same road, inside node 132's box, where the cars stop.
+- **No solid lines where drivers cross them**: the trunk's white edge line is paved over across each side road's mouth (the side
+  road's half width plus 8 each way, both sides at a crossroads); a bay's white line is dotted (3 on, 9 off) over the taper and 60 more,
+  solid from there to the junction. The lane dashes still run through the junctions (dashed, as a guide).
+- **Traffic popped in too near**: `TrafficCars.MovingReach` 900 to 1500 (450 m), `ParkedReach` 450 to 750 (230 m), `MostDrawn` 160 to
+  240; trafficview's copies (`Lateness`, `Highway`) follow. Far cars are instanced, so the cost should be small: ask the owner for
+  the frame line (`docs/TESTING.md` 60).
+- Looked at from above with `JVIEW_TEX=1` (jview draws texture columns without grain, so it can't show the first fix): the edge line's
+  gap at the Westhaven link (11316, -9288) and the dotted taper east of it.
 
 ## The highway reworked (2026-11-25)
 

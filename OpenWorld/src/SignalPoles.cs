@@ -279,6 +279,58 @@ namespace HalfGripOpenWorld
 			return null;
 		}
 
+		/// <summary>A stop line's width along the road (about 0.6 m, 24 in, as the MUTCD's widest).</summary>
+		internal const double StopLineWidth = 2.0;
+
+		/// <summary>
+		/// The stop line for the way in along arm <paramref name="k"/> of <paramref name="node"/>: on road <paramref name="road"/>, from
+		/// <paramref name="s0"/> to <paramref name="s1"/> along it, between offsets <paramref name="lo"/> and <paramref name="hi"/> from
+		/// its line (left of the way its distance grows positive). Where the cars stop: across their side of the road at the box's edge
+		/// (<see cref="TrafficDrive"/> holds a car's front a little short of it), from the centre line to the edge; on the trunk from the
+		/// median's yellow line, or across the left-turn bay too where there is one, to the edge line. False for an unpaved way in.
+		/// </summary>
+		internal static bool StopLine(int node, int k, out int road, out double s0, out double s1, out double lo, out double hi)
+		{
+			Traffic.Edge e = Traffic.Edges[Traffic.Links[node][k]];
+			road = e.Road;
+			Network.Road r = Network.Roads[e.Road];
+			s0 = s1 = lo = hi = 0.0;
+			if (Network.Unpaved(r.Kind) || r.Kind == RoadKind.Path)
+			{
+				return false;
+			}
+			double box = Traffic.Nodes[node].Box;
+			// Coming in the way the distance grows (the edge's B end at the junction) the cars keep to the right: negative offsets.
+			int dir = e.B == node ? 1 : -1;
+			double at = e.B == node ? e.Sb - box : e.Sa + box;
+			// Where the edge is shorter than the box (node 8 in Kingsbridge, 19 past node 132) the cars stop on the road before it: the
+			// line stays on the road, past the edge's end.
+			if (at - StopLineWidth < 0.0 || at + StopLineWidth > r.S[r.Count - 1])
+			{
+				return false;
+			}
+			s0 = at - StopLineWidth * 0.5;
+			s1 = at + StopLineWidth * 0.5;
+			double inner, outer;
+			if (r.Kind == RoadKind.Trunk)
+			{
+				outer = TrunkLanes.EdgeLine;
+				inner = TrunkLanes.Find(e.Road, TrunkLanes.Median, dir, at - dir * 8.0) >= 0 ? TrunkLanes.BayOut : TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder;
+			}
+			else
+			{
+				inner = 0.4;
+				outer = r.Half - 1.0;
+			}
+			if (outer <= inner)
+			{
+				return false;
+			}
+			lo = dir > 0 ? -outer : inner;
+			hi = dir > 0 ? -inner : outer;
+			return true;
+		}
+
 		/// <summary>Whether a pole may stand at (x, z): off every road's paving, out of the water, not on a sign.</summary>
 		internal static bool Clear(double x, double z)
 		{

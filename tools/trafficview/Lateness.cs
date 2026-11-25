@@ -10,7 +10,7 @@ using HalfGripOpenWorld;
 internal static partial class Program
 {
 	private const double LateStep = 0.4, LateRun = 600.0;
-	private const double MovingReach = 900.0, ParkedReach = 450.0, TileSize = 250.0;
+	private const double MovingReach = 1500.0, ParkedReach = 750.0, TileSize = 250.0;
 	private const int TileRadius = 5;
 
 	private static bool Lateness(TrafficDay day)

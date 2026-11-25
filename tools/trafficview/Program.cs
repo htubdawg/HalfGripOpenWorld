@@ -166,14 +166,30 @@ internal static partial class Program
 				}
 			}
 		}
+		// Each way in with a mast has its stop line (the owner, 2026-11-25: "we need stop-lines for lights"), across its own side of the
+		// road a little behind where the cars' fronts stop, never wider than its road.
+		int noLine = 0;
+		foreach ((int node, int arm) in byWay.Keys)
+		{
+			if (!SignalPoles.StopLine(node, arm, out int lr, out double s0, out double s1, out double lo, out double hi) || hi - lo < 5.0
+				|| Math.Max(Math.Abs(lo), Math.Abs(hi)) > Network.Roads[lr].Half)
+			{
+				noLine++;
+				if (noLine <= 8)
+				{
+					Traffic.Node n = Traffic.Nodes[node];
+					Console.WriteLine("    no stop line: node " + node + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ") arm " + arm);
+				}
+			}
+		}
 		foreach ((int sn, int sa) in SignalPoles.SkippedAt)
 		{
 			Traffic.Node node = Traffic.Nodes[sn];
 			Console.WriteLine("    no mast: node " + sn + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") arm " + sa + " (" + Network.Roads[Traffic.Edges[Traffic.Links[sn][sa]].Road].Kind + "), box " + node.Box.ToString("0"));
 		}
-		bool ok = unseen == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0;
+		bool ok = unseen == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0 && noLine == 0;
 		Console.WriteLine("  traffic lights drawn: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads; ways in with no mast " + SignalPoles.Skipped
-			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
+			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", ways in with no stop line " + noLine + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
 	}
 
 	/// <summary>
