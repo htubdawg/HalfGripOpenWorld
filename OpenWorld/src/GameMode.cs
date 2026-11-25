@@ -19,8 +19,8 @@ namespace HalfGripOpenWorld
 	/// only: it is kept on this component, which goes with the scene, so every race starts with the spawn again and nothing is saved.
 	///
 	/// The events at the courses are <see cref="EventRace"/>'s: solo time trials for now; a wreck in one goes back to its last gate.
-	/// Later, events a room runs together, each with its own entrants, timing and results, several at once in different places while
-	/// the rest of the room roams (docs/PLAN.md).
+	/// Also events a room runs together, each with its own entrants, timing and results, several at once in different places while
+	/// the rest of the room roams (built: EventRoom).
 	/// </summary>
 	internal sealed class GameMode : MonoBehaviour
 	{

@@ -6,7 +6,7 @@ using HalfGripOpenWorld;
 // Builds the traffic's map (Traffic.cs: the driving graph, the households and their cars, the places that draw trips) without the game
 // and reports what it holds; checks that every household and place is on the main road network and that routes join up (not yet that
 // it builds the same twice: Traffic builds once a process). More checks and pictures come with each
-// race's day of trips (see docs/TRAFFIC_HANDOFF.md). Exits 1 if a check fails.
+// race's day of trips. Exits 1 if a check fails.
 //   dotnet run -c Release --project tools/trafficview [--near <road>]
 // --near lists the roads that come within 30 of a road (gap, heights, driven or not) and the graph's edges along it: for finding why a
 // road is cut off. With TV_MEET set in the environment, every meeting of two moving cars as drawn is printed (cars, edges, way, road
@@ -351,7 +351,7 @@ internal static partial class Program
 		return ok ? 0 : 1;
 	}
 
-	/// <summary>Builds race <paramref name="seed"/>'s day of traffic twice and checks it (docs/TRAFFIC_HANDOFF.md, "Checks").</summary>
+	/// <summary>Builds race <paramref name="seed"/>'s day of traffic twice and checks it (the checks are listed in CLAUDE.md).</summary>
 	private static bool Day(int seed, string picture, string[] closeup)
 	{
 		bool ok = true;

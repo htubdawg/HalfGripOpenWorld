@@ -1,7 +1,7 @@
 """The buck's antlers: one classic set, a typical eight-pointer (on each side a main beam sweeping up, out and back over the ears
 and then forward and in, a short brow tine and two long tines standing up from the beam). Rigid on the head: every vertex weighted
 wholly to the `head` bone, so the doe's skeleton, poses and painted coat all carry over and the buck is the doe's mesh with these
-added (the owner's choice: one good set, no procedural antlers; decision 8 in docs/DEER_HANDOFF.md keeps deer.json frozen).
+added (the owner's choice: one good set, no procedural antlers; docs/PLAN.md, "Standing decisions", keeps deer.json frozen).
 
 Each tine is a low-poly tube round a smooth curve, tapering to a point, its base buried in the beam (or, for the beam, in the skull)
 so the joins need no welding. They have a texture of their own in the game: `v` runs from the burr (0) to the tips (1) and the

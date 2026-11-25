@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using HalfGripOpenWorld;
 
-// The highway's traffic as a player on it meets it (docs/PERF_HANDOFF.md, "How to find out"): the owner found the trunk "barely" busier
+// The highway's traffic as a player on it meets it (docs/research/PERFORMANCE.md, "How to find out"): the owner found the trunk "barely" busier
 // with 100 circling cars than with 10. Reported, not failed: the gaps between the circling cars along the loop each way at three hours
 // (evenly spread, or bunched into platoons with long empty stretches), and how many cars are within the drawn reach (900 units) of a
 // player driving the trunk at 168 km/h and at 85 km/h, averaged over ten minutes from each hour: what "busier" means in numbers.

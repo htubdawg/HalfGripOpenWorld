@@ -19,7 +19,7 @@ namespace HalfGripOpenWorld
 	}
 
 	/// <summary>
-	/// The deer's reactions (step 3 of the plan in docs/PLAN.md), pure as the calm deer are: a reaction (<see cref="Reaction"/>, settled
+	/// The deer's reactions (step 3 of the deer plan; docs/research/DEER.md has the research), pure as the calm deer are: a reaction (<see cref="Reaction"/>, settled
 	/// by the room's host, <see cref="DeerRoom"/>) overrides what the calm day says a group does from its race time on, and every machine
 	/// plays it the same from the same start, so nothing but the reaction itself is sent.
 	///

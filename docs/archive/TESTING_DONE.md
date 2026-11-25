@@ -1,0 +1,364 @@
+# Tests done (archive)
+
+In-game tests moved out of `docs/TESTING.md` once reported on or superseded (2026-11-25 cleanup). Kept for reference: numbers are unchanged, so old logs and notes still match. Not read at the start of a session.
+
+1. The race loads on the road into Kingsbridge, just outside the town, facing it; none of Tokyo's arena, city or train is left.
+2. Drive along the trunk road and into Kingsbridge: tiles, roads and ground textures appear ahead before you reach them, with no gaps
+   or seams between tiles. Where roads meet, the smaller one stops at the bigger one's edge with a flared mouth, level with it (no
+   lip, no flicker, nothing poking through); the same where two streets cross. More junctions and dead ends: 24.
+3. Cross rivers on bridges (concrete sides and parapets), small streams too: no water over the road anywhere. Follow a river and its
+   tributaries, in the lowland and up in the mountains: the water's edge meets the bank everywhere, never hanging in the air with
+   ground or sky showing under it. The bridge at world 0.208, -2.517 (thousands of units, as ShowCoords shows) (a main road in a cutting over a river in a gorge): no ground
+   pokes through the deck at either end. Drive into a river or the sea and check you are put back on a road.
+4. The gravel verges either side of the paved roads: no step at the road's edge or where they meet the grass, a little less grip
+   than the road, none on bridges. In Kingsbridge and the villages, sidewalks instead (no bump from the road, a kerb at their back,
+   none in front of a car park or forecourt). A farm track, and a footpath out of the end of a town street: crisp ruts and gravel
+   (not blocky), no ground showing through them or at their edges, no flicker where a path ends on a track, no grass tufts or
+   trees on it, looser grip than the grass beside it.
+5. In Kingsbridge: houses line the streets, none stand on a road, you cannot drive through them. In the country: woods of pines (you
+   hit their trunks), grass round the car, wheat in the wheat fields. The log has `Forest trees captured: ...` (if it says simple pines
+   stand in, the main menu's trees were not found). In Kingsbridge's middle, the glass towers (setbacks, plant on the roofs); along
+   its main roads, shopfronts in four colours; in a village, the church and its spire.
+6. The retail park at Kingsbridge's south-west edge, about 200 m north of the spawn, and a filling station or workshop at a
+   village's edge: drive on and off the car park from the road with no bump at its edge, the bay lines crisp (not blocky), no grass
+   or trees on it, no ground poking through it, no flicker; hit a lamp post and a canopy post (solid).
+7. Teleport (F7) to Kingsbridge Park and the others: a striped lawn up to the back of the sidewalk, no houses on it, a pond with
+   its water's edge meeting the bank all round (no edge hanging in the air), the path round it and the paths in from the streets
+   meeting it, benches beside them (solid, standing on the ground), clumps of trees, no trees or grass in the pond. Kingsbridge
+   Riverside: the walk along the river's east bank. A lake trail (teleport to `Lake trail 1`): a gravel path round the shore, no
+   water over it, benches facing the lake. Grass and trees nowhere in a river's bed or a lake's shallows.
+8. The workshops (teleport to `... workshop`): the metal cladding in clear vertical ribs and the roof in rows, no fine pinkish
+   stripes or shimmer from near or far; the same on the retail park's walls and the farm barns' roofs.
+9. The circuit (teleport to `Circuit (grid)`): drive a lap. The track, kerbs and pit lane lie flat on the ground with no lip at
+   their edges and no ground or grass showing through; the kerbs are red and white blocks, a little raised; the gravel traps slow
+   the car right down; the barrier is solid. The gantry over the start line faces the grid, the garages' doors face the pit lane,
+   and the three grandstands face the track with their seats rising away from it. `Circuit (paddock)`: drive out of the gate onto
+   the circuit road, no step where it leaves the paddock. No trees on the run-off.
+10. The rally stage (teleport to `Rally stage (start)`): drive a lap. Gravel all the way, with the two worn lines down it, looser than
+   tarmac; no ground showing through it and no step at its edges; forest close on both sides but no trunk on the road; no seam where
+   the lap comes back onto the straight. The straw bales on the outside of the tight corners are solid and stand on the ground. The
+   arches over the start and finish lines stand clear of the road. `Rally stage (service area)`: the gravel yard, vans and awnings,
+   no bump onto the stage; drive out along the track at its back to the lane, where the track ends at the lane's edge (it does not
+   run on across or under it).
+11. The hill climb (teleport to `Hill climb (start)`): drive up. Tarmac like a lane, no ground showing through it and no step at its
+   edges or where cut into the hillside; the bends and the hairpin near the top have a real radius, no kink. The start arch stands
+   clear of the road; the paddock beside the start straight lies flat with no bump onto the road. Turn round at the bottom and drive
+   down the lane: no seam or step where the lane runs into the climb's foot. `Hill climb (finish)`: the finish arch, then the
+   turning area beside the end of the road, flat and big enough to turn round on.
+12. Road signs: drive into Kingsbridge from the spawn and out to a village. A white name sign stands on the left at the edge of each
+   place, facing you, its name crisp and readable from a few car lengths, not mirrored, its back plain grey; none on the trunk road.
+   At a junction of main roads (teleport to a village and follow its main road out), the fingerpost stands back from the road, each
+   finger pointing along its road, readable from both sides (name at the left, miles at the right), none reaching over the road;
+   brown fingers on the way to the circuit, the rally stage and the hill climb. Follow the fingers to a place: the miles count down.
+   Out in the country, a fingerpost at most junctions of lanes and minor roads, outside the towns and villages.
+   Posts are solid, no house or tree stands in a sign. The log has a `Road signs:` line.
+13. Country lanes, tracks and footpaths: follow a few out from a farm or hamlet. Most run on to another road rather than stopping
+   in a field; where one was carried on, no kink or step where the old road ends and the new one begins, and its far end meets the
+   road it joins with a mouth like any other junction.
+14. The trunk road along the coast (east of the spawn, and west towards the edge): no sea water drawn over it anywhere; it runs on a
+   low bank above the shore.
+15. Past 1000 units (about 300 m, `ShiftDistance`) the log says `Origin shift 1` and the overlay's scene position jumps back near 0 while the world position keeps
+   counting. Watch for a visible hitch, a jump of the car or camera, or tyre marks and smoke left behind.
+16. Teleport (F7) round the key places, several of them 10,000 to 15,000 units (3 to 4.5 km) out. The car should drive exactly as at the spawn: no jitter in the suspension or camera,
+   and the hand, cursor and cockpit controls as steady as at the spawn (the log's shift lines say how many cockpit objects were kept).
+17. Reset (0.23.9). Hold R: (a) in a field within about 75 m of a road: on the road, in the right-hand lane, facing the way the car
+   faced (on the trunk road on a carriageway, not the median); (b) in open country further from a road: where it is, upright; (c)
+   in the woods or against a building far from a road: on the nearest clear patch close by (tens of metres at most, never off to a
+   far road), not inside a tree or a wall; (d) on a
+   road, a farm track, the circuit and the rally stage: where it is; (e) in an event's race off the course: never onto another road;
+   (f) drive into a lake: back on the bank or a road. With `VerboseLog` on, each logs `Reset: ...` with what it chose.
+17b. Get wrecked (into a wall at speed, or the dev console's `kill player` or `hp 0`): `WRECKED`, the car burns, and after 3 seconds (`RespawnSeconds`)
+   it is at the start, on the spawn's grid slot facing up the road, at full health, driving normally (it accelerates, no flames);
+   `BACK AT THE START` shows. Get wrecked far out (teleport first): the same, and the ground round the start is there. The race does
+   not end. Pause while wrecked: the respawn waits. Hold R: still resets in place. In a Multiplayer room set to Demolition or "out,
+   watch", with AI RIVALS above 0: no AI cars on the grid; a wrecked player respawns after the room's time at the start, the others
+   see the car come back there, and nobody is put out. Two players wrecked together, or one waiting on the grid: the second lands on
+   the next slot back, not on top.
+18. Drive into a mountain valley more than 100 m below the spawn: no automatic "fell under the map" reset.
+19. Multiplayer, two players: drive apart several kilometres, then back together. Each should see the other in the right place the
+   whole time, including after teleports and resets.
+20. Frame time while driving fast across new ground (the log's `Tiles: ... ms each` line with `VerboseLog`).
+21. Day, night and storms (0.17.0), in a Multiplayer room. The log has `Weather: <day> by day, <night> by night (from the room's
+   seed)` and `Sky: the race starts at hh:mm, a day lasts 40 minutes; storms: a ... day, wind ..., snow above ...`. With `ShowCoords`
+   the overlay's last line gives the time, the sun's height, the rain, cloud, wetness and grip at the car and the nearest storm; both
+   players should see the same time and, at the same place, the same storm. Turn on `WeatherSkip` and press the Weather skip key (F5) through a whole day (or toggle the Weather fast key, F2, for 10x)
+   (8 presses a day): the shadows swing from east to west, the light goes gold at dusk, the sky darkens and the night sky comes in,
+   the cockpit dims at night (the cabin is not lit at midnight), the headlights go on at dusk and off after dawn, and nothing jumps
+   or flickers at the swaps (the light fades out and back round sunset and sunrise). Note whether the ambient light changes at
+   all (the world's shadows go blue and dark at night): if it stays as bright as day, the probe override did not take. Drive
+   towards the nearest storm: the sky and fog darken first, then rain starts and grows (the sound with it), the road darkens and
+   shines, and the overlay's grip drops; drive out the other side: the rain stops, the road stays wet and dries over about 10
+   minutes. In the rain, the drops reach the ground and splash on it,
+   on the road and on buildings, on high ground and down in a valley alike, with no drops stopping or splashing in mid-air (the
+   log says `Sky: rain and snow land on 1 collision plane(s)`). Teleport about (origin shifts) while it rains, and drive up and down
+   a long hill in the rain: the rain stays, and the drops splash on the road round the car, uphill and downhill. Up in the northern mountains above the snow line it snows instead. Frame time with heavy rain (the graphics budget
+   still cuts the rain on a low setting).
+22. Garages, alone and in a Multiplayer room. The log says `Garages: 20 (...)`. The map (MiniMap) shows a big cyan dot (wider than the trunk road) at each
+   filling station, workshop, the circuit's pits, the rally service area and the hill climb paddock (one dot for the three pits, and one where a filling station and a workshop face each other), and `GARAGE` floats over each
+   circle within about 70 m. Drive into a circle: the line at the bottom says to stop and shift into neutral; do it and the garage
+   opens when you let go of the shifter (standing in neutral still holding it does not, nor does shifting through neutral while rolling). While it is open the controls and the gun do nothing, the cursor is free,
+   crashes, hazards and other players' shots do no damage, and the health shown stays put. Drag an item from the list onto a slot (the slots it fits light up), or right-click it: it is on the
+   car at once (the new gun, wheel or shifter in the cockpit, the body's look outside), ammo and nitro full a moment later. Every
+   gun (the game's and the modded M1911, Minigun, RPG, Sniper Rifle, Railgun) swaps and fires as at the start of a race, with its own
+   held model; swapping away from the Minigun takes its roof gun off the car (seen from outside and by others) and leaves no remote,
+   and fitting it again gives one roof gun, not two. In a room, an RPG fitted here fires rockets the others see fly and explode, and
+   the Multiplayer mod's banned items (slow motion, rerolls) are not in the lists. Dragging a fitted item off its slot, or right-clicking it (in the slot or the list), takes it off; dragging one
+   medium item onto the other medium slot swaps them; an item dropped on a slot it does not fit says so. Repair fills the health;
+   Refill the ammo and nitro.
+   Esc or Close closes it; it does not open again until you shift into gear or leave the circle. The next race starts with the
+   loadout from the menu or the room, not the garage's (the log says `Garage: the race's own loadout is back`).
+22b. Respawn at a garage (0.16.0), alone and in a Multiplayer room. The garage window's bottom right says `Respawn after a wreck: the
+   start`. Press Respawn here: `A wreck comes back here`, the log says `Respawn point: <garage>`, the button reads Respawn at start
+   and the bottom right `this garage`; another garage's window says `another garage`. Close, drive off, get wrecked: after the wait
+   the car is in that garage's circle, facing out of the lot (along the pit lane to its exit in the pits), repaired, on its wheels,
+   `BACK AT THE GARAGE`; the garage does not open until you shift into gear and back to neutral. In a room, with another player's
+   car parked in that circle: you come back at the start instead. Press Respawn at start and get wrecked: back at the start. Wrecked
+   in an event: still back at the last checkpoint. Start the next race (or a new run): a wreck goes back to the start again.
+23. Events, solo (0.15.3; since 0.23.0 the box opens a panel first, see 30). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps; Rally stage 4.9 km, 16 gates; Hill climb 1.4 km,
+   5 gates`. Out of an event the cockpit's board (top right) is tucked into the screen's right edge with a sliver showing; the hand
+   over the sliver slides it out with the cars in the race (`cars 1` solo, `players N` in a room, on the lap counter), and it goes
+   back when the hand leaves. An orange ring is in the circuit's pit lane past the last garage, in the rally service area and in the
+   hill climb paddock (beside the garage's circle), off the course, with orange `EVENT` over it from up to about 70 m, and a
+   chequered disc in an orange ring on the map (MiniMap) at each, a little larger than a garage's and over the one beside it. Drive
+   into one: a panel like the garage's (`EVENT  Circuit`, the length, laps, checkpoints and best, `Stop and shift into neutral to
+   start`) shows under the middle of the screen; the board stays tucked away. Stop in it in neutral and let go of the shifter (holding it in neutral does nothing): the panel goes, the car is put
+   on the grid (pole on the circuit, just behind the start arch elsewhere), facing up the course, and the board slides out; the
+   start lights hang over the start line facing the car, and go red, amber, both, then green with 3, 2, 1, GO in the cockpit's
+   text, each on time. Before green, shift into gear and floor it: the car stays on its spot (the wheels may spin, the car should
+   not slide or turn, and the log has no `Origin shift ... NaN`) and leaves on the green. An `Origin shift` logged just after
+   `Event: signed on` (the grid is often far enough from the box for one) must leave the car on its spot. Drive the course: the first
+   orange gate (posts and a bar, no collision) stands across the road ahead with the next one beyond it, each gate passed moves the
+   pair on, the board counts the checkpoints (the lap counter the lap on the circuit, with each lap's time on the board), the finish
+   gate is white. Cut a corner past a gate: `MISSED A CHECKPOINT`, the run finishes with no best time. A clean run: `NEW BEST`, and
+   `halfgrip.openworld.cfg` has the time under `[Best times]`; a slower one shows the gap in red. Get wrecked mid-event: after the
+   respawn the car is just past the last gate passed, facing on along the course, `BACK AT THE LAST CHECKPOINT`, and the clock ran
+   on. Drive far off the course: `BACK TO THE COURSE`, then `EVENT OVER` after 10 s; teleport mid-event: `EVENT OVER`. Pause: the
+   clock stops. In a Multiplayer room the same works for yourself.
+24. Junctions and dead ends (0.17.1). With `ShowCoords`, drive to these (world, in thousands of units, as ShowCoords shows) and look round each, from the car and from
+   outside: no ground, grass or verge showing in a mouth, no wedge of ground where a road meets another at a slant (on either side),
+   no sidewalk or verge lying across a mouth, no step or flicker where the surfaces meet, nothing of one road poking through
+   another.
+   - A street meeting a street at a slant in Westhaven (11.482, -10.303), and Kingsbridge's streets round (-1.802, -4.088).
+   - Two farm lanes carrying on end to end (-9.333, -9.646): one road round the bend, no notch or seam, the verges unbroken.
+   - Main roads ending in a village, their streets carrying on: Northcote (-1.486, 5.487), Kestrel (12.082, -4.155), and
+     (7.710, -4.893). The main road narrows smoothly into the street, no square end standing out across it.
+   - Redford's middle (-6.838, -5.281), where two main roads and two streets end at one place.
+   - Villages where three or more roads end at one point (0.17.2), by the teleport: Ashby, Carrow, Elmsted, Kestrel, Millbrook
+     (and Westhaven's centre). One plain asphalt plate joins them: each road stops square at its edge, the corners between them
+     curved with the sidewalk or verge carried round, no ground in the middle, no road's square end across another, no step
+     where a road meets the plate. At Kestrel the main road's old hook west of the village is gone (grass there).
+   - A farm track meeting a lane that meets the trunk road (-12.822, 2.269): the track is under the lane's surface, not over it.
+   - Dead ends: a Kingsbridge street (-2.135, -3.547) and a lane (-7.894, 4.300) end rounded off, the sidewalk or verge carried
+     round the end down to the grass (no square edge standing over the ground); a farm track (-0.282, 2.578) narrows to a point
+     into the grass. Drive off each end: no bump.
+25. The painted sky (0.18.0). With `VerboseLog` the log says `Sky: painted sky on a copy of FS002_Rainy (Skybox/Panoramic)` (or
+   another panoramic sky), and there is no `could not make the painted sky` or `painted sky stopped` warning. With `WeatherSkip`, the
+   Weather fast key (F2) or skip key (F5), go through a day: by day a blue sky, paler at the horizon, with a white sun disc and a
+   glow round it, standing where the shadows say the light comes from (shadows point away from it) and moving with them; the sun
+   goes orange and the sky round it gold and red as it sets in the west, the disc going down behind the horizon; the sky goes deep
+   blue, then black, the stars come out (small pixel squares, not stretched, also straight overhead) and turn slowly, and the moon
+   (a grey disc with darker patches) rises in the east opposite where the sun set and crosses the sky. Nothing jumps: no cut between
+   a day sky and a night sky. The distant ground in fog meets the sky at the horizon without a band of a different colour, at every
+   hour. A few clouds by day (more on a wet day, see the log's `showery`/`wet`), which slide across slowly and stay over the same
+   land as you drive (drive a kilometre: they pass overhead); under a storm the whole sky is grey cloud and the sun and stars are
+   hidden. Look straight up and all round: no seam or smear in the sky (the picture's edges meet in the west), no stretched stars at
+   the top. The frame rate is as before (the painting costs about 0.7 ms a frame).
+26. The far view and storms seen from afar (0.19.0). The log says `Far view on (the world's grid built in ... ms)` within a few
+   seconds of the race starting, and no `Far view failed` or `chunk ... could not be made` warning. On a clear day (`ShowCoords`: cloud
+   near 0), from the spawn and from the mountain pass and the hill climb's finish (teleport): the country goes on past the loaded
+   ground to the horizon, fading into the sky's colour with no band between: the mountains in the north with snow and rock, the woods
+   standing up dark green, fields, lakes and the sea in the south going on past the coast to the horizon, the main roads as thin grey
+   lines. Where the loaded ground ends (about 1,400 units, some 420 m, out with TileRadius 5) there is no gap, no sky showing through, no step, no
+   flicker; buildings and trees appear there (that is expected). Drive a few kilometres fast and teleport: the far ground follows
+   with no hole opening for a frame and nothing poking through the road or the ground near the car. Far mountains and coast do not
+   flicker or shimmer (z-fighting at a distance would show as stripes; report a screenshot if so). Under cloud and in the rain the
+   view closes in smoothly (a few hundred metres in a downpour) and opens again as it clears. With `FarView` off in the cfg, the fog
+   ends at the loaded ground as before. Storms (a showery or wet day in the log; `WeatherSkip` and F2 to find one): a storm some
+   way off shows as dark lumpy cloud over its place, grey at its edge, with grey streaked rain hanging under it down to the horizon;
+   it grows as it comes, and it is overhead when the rain starts; one behind you is behind you (turn round). Away from storms the
+   sky is as in 0.18.0. The frame rate is about as before (with `VerboseLog`, `Tiles: ... ms each` unchanged).
+   In the free-flight view too (0.19.1): the country goes on past the loaded ground to the horizon. With `ShowCoords`, the last line
+   says `far view: N chunks, fog A to B, <camera> draws to C` with C a little over B (thousands on a clear day), in every view.
+27. The land past the far view painted into the sky (0.20.0). The log says `Sky: the land past the far view painted into the sky (N
+   texels, M ms a build)` a few seconds into the race, and no `the land past the far view stopped`. On a clear day (`ShowCoords`:
+   cloud near 0; its last line now `fog A to B, <camera> draws to C` with C about `FarViewDistance` and B up to 40000), from the
+   highest road near the coast looking north and from the spawn: the mountains in the north stand on the horizon past where the far
+   view ends, hazy and lit from the same side as the near hills, their snow lighter. Where the far view ends (14,000 units, about 4 km, out) there
+   is no line, no band of sky, no step in brightness or colour; take a screenshot of it from high ground. Drive along: the far
+   mountains keep their places (they do not slide with the car) and do not flicker. The near country is a little clearer than in 0.19.
+   At sunset and at night the painted land darkens with the meshes. A storm between you and the mountains hides them behind its rain.
+   As the rain closes in, the far mountains go first, smoothly. Look south from high ground over the sea: the sea goes on past the far
+   view's edge with no seam (its shine there is a guess; report a screenshot if the far sea is brighter or darker than the near).
+   With `FarSkyline=false`: the fog ends at the far view's edge as in 0.19.1. The frame rate is about as before.
+28. The far view's costs (0.20.1). The sky looks and moves as in 0.20.0: the sun, clouds and storms change smoothly (a new picture
+   about five times a second), nothing torn or half painted, no `the painted sky stopped` in the log. Start a race with the far view
+   on: no hitch when `Far view on` shows in the log (a fraction of a second after the grid is built), and when it comes on the far
+   view is there all at once, with no chunk missing and no hole near the car.
+   The frame rate a little better than 0.20.0, most of all on a slow CPU.
+29. The highway event (0.21.0). The log says `Events: ...; Highway 10.1 km, 33 gates`. Teleport to `Highway (start)`: the car is on the
+   eastbound (south) carriageway at the west edge, facing east, the tunnel mouth behind. Turn round: an orange ring on the westbound
+   carriageway between the start line and the tunnel, `EVENT` over it, and a chequered disc on the map (MiniMap) at the west end of
+   the trunk road. Drive into it from the east (as a car driving west to the world's end would): the panel says `EVENT  Highway`,
+   10.1 km, 33 checkpoints. Stop in neutral and let go of the shifter: the car is put on the grid on the eastbound carriageway facing
+   east, the start lights over the road at the start line, red, amber, both, green. Drive east: the orange gates span both
+   carriageways, posts outside the shoulders; none stands on a bridge with its respawn there. Get wrecked mid-race: back just past
+   the last gate, on the eastbound carriageway, facing east. The finish gate (white) is just short of the east tunnel mouth, before
+   it; the best time goes under `[Best times]` as `Highway_33427_1`.
+30. Events in lobbies, alone (0.23.0). The log says `Events: Circuit 8.6 km, 27 gates, 3 laps, 12 on the grid; ...`. Teleport to
+   `Circuit (paddock)` and drive into the orange box in the pit lane: the line under the screen says `EVENT  Circuit` and to stop and
+   shift into neutral. Stop, neutral, let go of the shifter: the **panel** opens (the log says `Event: the Circuit's panel is open
+   (alone)`), the cursor free, `START A SOLO RUN` with Guns and Melee buttons and **Start**. Esc closes it (no pause menu); drive out
+   and back in to open it again. Press Start: the car goes to the grid's pole slot (the log says `Event: created a lobby at the
+   Circuit` then `Event: on the grid at the Circuit, slot 1`), the lights count down about 5 s later, and the race runs as before.
+   The strip under the board disappears as the car goes onto the grid and stays away through the race and the results (0.23.1):
+   only the board. Race to the finish: the board shows the time and best, then about 15 s later the strip is back saying
+   `WAITING: start when ready`. Point the hand at **Start**: the hand shows over the strip (0.23.1), not under it; grab to race
+   again. Grab **Leave** while waiting: out of the lobby, the board tucked away.
+31. Events in a room, two players (0.23.0). Both in the Open World in one Multiplayer room. Player A opens the circuit's panel:
+   `No lobby here yet`; **Create lobby** with Guns off. A's car moves to a waiting spot beside the box (further along the pit
+   lane); B sees `A OPENED A LOBBY AT THE CIRCUIT`, and `EVENT  1 LOBBY` over the box. B opens the panel: A's lobby, 1/12, Guns
+   off Melee on, Waiting, **Join**. B joins: B's car moves to another waiting spot (not onto A's), A hears `B JOINED`, both boards
+   list `A, B`, both strips `2/12`; A's strip has **Start**, B's only Leave. A grabs Start: both cars go onto the grid (A pole, B
+   second, beside and behind), both lights go green at about the same moment. Race: each board shows `P1/2` or `P2/2` and changes
+   when one passes the other at a gate. A finishes: B's board shows `Cut-off 0:45` counting down. If B finishes, the results show at
+   once on both boards (`Results`, names and times), the log lists them; if not, at the cut-off B is out (`OUT: THE CUT-OFF`). 15
+   s later both strips say waiting again. While A's lobby races, B leaves and creates a second lobby at the circuit: its Start reads
+   `Race on` until A's results are done. Driving away from the course mid-race (more than 150 m for 10 s): that player is a DNF in the
+   results. Send `LogOutput.log` from both.
+32. Leaving a race early (0.23.2). Alone: start a solo run and drive more than 150 m off the course for 10 s (or teleport, F7):
+   `EVENT OVER`, the log says `Event: left the lobby at the Circuit (out of the race)`, and the strip never comes back (the lobby is
+   closed; `EVENT` over the box shows no lobby). Two players: A creates, B joins, A starts, then A drives off the course: B's strip
+   (after B's race) shows `Host B`, A's never comes back, and B's results list A as DNF. Then B starts again and drives off: the
+   lobby closes at once and `EVENT` over the box no longer says `RACE ON`.
+33. The trees' cost (0.21.1). Teleport to `Rally stage (start)` and drive through the woods: the frame rate much better than 0.21.0,
+   no hitch as tiles load or the origin shifts (`Origin shift` lines under 6 ms or so in the verbose log). Woods look as before out
+   to the loaded tiles' edge, nothing popping in or out as you turn the camera (1/3, the mirror) or as you drive; trees near the car
+   cast shadows, and their shadows still fall into view from trees just off screen. Hit a tree trunk: solid, at a standstill and at
+   speed, on the tile you are on and the next. `TreeShadowReach=0`: no tree shadows, faster still.
+34. Events with three or more players (0.23.3). Three or more in one room. Each opens the circuit's panel and joins one lobby: each
+   car goes to its own waiting spot in the pit lane (two abreast, further along with each player), none on another. The Host
+   starts: all go onto the grid in join order (pole, second beside and behind, third behind pole...), the lights go green together,
+   each board shows `Pn/N` with N the number racing and the positions change as cars pass at gates. Let one finish, one run out the
+   cut-off and one drive off the course: the results list a time, `OUT: THE CUT-OFF` and DNF, the same on every machine. Do the same
+   at the hill climb's paddock (8 spots, 4 rows of two clear of the vans). Send `LogOutput.log` from every machine.
+35. Guns after a garage refit (0.23.7, log 0.23.8). Teleport a few times first (F7, so the origin shifts: `Origin shift` lines in the verbose
+   log), then at any garage with the shotgun fitted take it off and put it back, and fit a chassis: close the garage after each and
+   the gun is still in the cockpit, grabs, aims and fires. Then drive or teleport far again, come back to a garage and swap guns
+   once more: still there. With `VerboseLog` on, each refit logs `Garage: ShotgunAssembly on after a refit, grip ready, n of n
+   sprites drawn, parts within` a few units; a warning `its art is away from the gun` must never appear.
+36. No ash (0.24.0). Start a few races (or rooms) until the verbose log says `Weather: StadiumAsh by day` or `RedForrest by day`:
+   no ash falls, anywhere, all race; the light and fog still look like that weather. Rain and snow come only with a storm (the overlay's
+   `rain` above 0), never on a dry stretch.
+37. Back roads (0.26.0). The log's `World layout:` line names the back road links (about 90). Drive the lanes out in the country
+   (teleport to a farm, or drive north from Kingsbridge): they run on from farm to farm and village to village, through woods and
+   over streams, hardly ever ending in nothing; no lane hooks round in a U back to the road beside it. A bridge on a lane over a
+   stream is a covered bridge: red board walls with an open band under the eaves, a shingle roof, a gable over each portal; drive
+   through it (no bump onto or off the deck, the roof well clear of the car, you hit the walls). Along the lanes and minor roads,
+   now and then a house set back on a gravel drive with a mailbox by the road (solid, off the verge, standing on the ground); a farm
+   at the end of a short lane has the lane as its drive. Drive up a drive: no ground through the gravel, no step where it meets the
+   lane, tarmac grip on the lane and track grip on the drive. On MiniMap's map the drives are pale gravel, the lanes white.
+38. Towns laid out ring by ring (0.26.0). Teleport to `Kingsbridge market place` and `Westhaven market place`: a paved square beside
+   the high street, level with it (no bump driving on, no ground or grass through the paving, no flicker), the stone cross on its
+   steps and the stalls solid, the shops facing it along its back with their fronts to it; no street or house on it. Drive round
+   both towns: the old town's back lanes behind the high street and the short lanes to them, patches of straight terraced streets
+   (crossroads in them meet level, no lip or flicker), the ring road bending round, crescents and closes past it, Westhaven's
+   seafront along the top of the beach with houses on its landward side only; streets meet the roads they end on square, with
+   flared mouths as before, and footpaths and alleys between streets have no step where two meet end to end.
+39. Two players (0.26.4). A waits at the spawn; B teleports (F7) round to `Spawn`: B lands beside or along the road from A, never on
+   top of A (the log says `another car there so 30 along...`), and a knock in the first 2 s does no damage. Both spawn and respawn
+   with full health: the log's `Car spawned: health 100 of 100` (any warning `the stats are not in yet` or `Health was the game's 1%
+   fallback ... filled` is worth sending). B wrecks and respawns: on A's leaderboard B is back at once, with the laps B had (the
+   Multiplayer mod does this from 1.1.0; from 0.27.1 Open World no longer does it itself, and warns in the log if the Multiplayer mod
+   is older). Send `LogOutput.log` from both machines.
+40. Events in a room with two or more players (0.27.0; everyone needs 0.27.0). Lobby notices: A creates a lobby at a course; on B's
+   screen a panel at the top left lists it (course, A, 1/12) at once, and that course's start box turns white. B joins it: the line
+   reads 2/12 on both screens. The panel's `<` button, pressed with the hand, slides it into the left edge leaving a tab with the
+   count; A creates or leaves while it is minimised and only the count changes; the tab brings it back. B quits to the menu and
+   loads the Open World again while A's lobby waits: B's panel lists it within a few seconds of the world being built (the log's
+   `Events: every lobby is here`). The grid: B teleports (F7) a few times and opens a garage just before A presses Start; both cars
+   are put on the grid, the board reads `Grid 0/2`, then `Grid 1/2`, for a second or two with no lights, then the lights count down
+   and go green on both screens at the same moment (record both if you can), and both clocks read about the same at each
+   checkpoint. Each log has `Event: settled on the grid ... s after the teleport (tiles in, 10 frames under ... ms)` and `Event:
+   green dealt at the ..., 2 of 2 entrant(s) synced on the grid; this machine's clock ... from the host's`, and with `VerboseLog`
+   on, B's has `the arbiter has settled on the grid` and `synced with the arbiter: its clock ... give or take ... ms`. Send `LogOutput.log`
+   from both machines with `VerboseLog` on.
+41. Slow motion in an event (0.27.1; Multiplayer 1.1.0 or newer, with the Slow-Mo item fitted on C). A and B race a course; C, roaming
+   elsewhere, pulls the slow-motion lever partway through: every car slows to half speed for a few seconds. A's and B's clocks on the
+   board slow with their cars (they do not run on at full speed), so a run with C's slow motion in it gives about the same time as
+   one without, driven the same way. The countdown's green still comes at the same moment on both screens.
+51. Contact physics (0.32.0; the owner, 2026-11-23: works (tyre marks, lamps and the parked cars' wheels fixed); see `docs/TRAFFIC_HANDOFF.md`,
+   "Contact physics: as built"). New config `World` / `TrafficLoose` (default 6). Everyone in a room needs the same build (the traffic's
+   messages changed). With `ShowCoords` on, the overlay's `traffic:` line adds `loose N/6 (made N, back N, retired N)` after the
+   physics part. With `VerboseLog`, the log says `Traffic: car N loose (parked)` / `(moving at N km/h)`, `loose car N back as it was
+   (untouched)` / `(N s late)`, `loose car N retired (knocked)` / `(damaged)` / `(wrecked)`, and at the start three `a physics car's
+   body made` lines (the pool woken ahead of need, one a frame).
+   - Drive gently into a parked car (a drive, the kerb, a car park): it is a real car, barely moved (its brakes are on); it is not a
+     wall. Hit one hard: it slides and spins. Shoot one: it smokes, then is wrecked (no kill counted).
+   - Drive away from one you knocked: it stays where it ended up while you are near, and is gone once you are about 150 m away; drive
+     back: it is not there (its household goes without it for the rest of the race), and nothing else stands in its space wrongly.
+   - Drive slowly past parked cars along a narrow town street without touching them: the overlay's `made` should not go up for each
+     car you pass (a few is fine). Stop next to one without touching it, drive off: after about 18 m it is drawn again where it was
+     (`back as it was (untouched)`), no jump.
+   - Drive into a car pulling out of its space, or pulling in, or one turning at a junction near you: it brakes to a stop where it was
+     and is a real car (before, these were walls). Leave it untouched and drive away: it carries on later from where it stopped
+     (`N s late`), no jump; the cars behind it waited or were not drawn (none drove through it).
+   - Physics cars driving near a parked loose car (still in its space) pass it as before; one knocked into the road, they stop for.
+   - No tyre-mark streaks when a car turns loose, turns physical, or a stand-in appears or jumps (second fix: the body is teleported
+     and its marks kept off for 0.3 s after any move).
+   - Parked (static) cars stand on fully extended wheels, not squatted; one turning loose doesn't pop up on its wheels, and no tyre
+     mark is painted from anywhere to it. Physics cars have four wheels where they belong (one build put them all in the middle).
+   - A parked car turning loose should no longer bob on its springs (after the first few physics cars of the race: the log says
+     `body model N stands ... over the ground` once its rest height is known; before that line a small drop is still expected).
+   - A parked car that turns loose keeps its lamps dark (no brake lights, no glowing head lamps), in a room on both screens. A moving
+     car that brakes to a stop keeps its lights.
+   - Frame time in a busy town street (Kingsbridge at about 5 pm) with `TrafficLoose` 0 and 6, nudging parked cars: please send the
+     numbers. Any hitch the moment a car turns loose (the first few, most of all) is worth a note.
+   - In a room (A host, B): B nudging a parked car near A: on both screens it is a real car, B's (A sees it as a stand-in, its headlight off at night).
+     A car B knocked is gone for both once B is well away. On B the first touch may still be a wall for a moment (the room's grant is
+     a round trip; B's sweep looks 0.5 s ahead to cover it); say if it is often.
+   - Send `LogOutput.log` and a screenshot of a car you knocked out of its space.
+52. Fixes from the owner's 0.32.0 drive (0.32.1).
+   - Follow a highway car into a tunnel (`Teleport` to the trunk, keep close behind one): it keeps its speed into the dark, never
+     braking at the mouth, and comes out of the far tunnel ahead of you. The log has `Traffic: car N back on its timetable ... (in a
+     tunnel)`, and no `loose` line for it.
+   - The highway is busier: 100 cars circle it (10 before). A car each way in sight most of the time; say if it is too many or too few.
+   - World 7.548, -9.002 (the trunk by the sea): no strip of water along the foot of the cutting south of the road.
+   - `ShowCoords`: the overlay shows every line (none cut off at the bottom), and the height is metres above the sea (about 0 on
+     the trunk there, which runs at sea level, not -19).
+
+53. The frame rate on the highway (0.32.3; see `docs/PERF_HANDOFF.md`).
+   - Same room seed, route, hour and weather as the 0.32.1 drive: from the spawn east along the trunk at speed. Say the frame rate
+     against the 135 before 0.32.1 and the 100 on it.
+   - `ShowCoords` on: the overlay's last line is `frame N ms (F fps); traffic ... ms a frame (choose, draw, bubble, contact,
+     movers), physics steps ..., bodies switched ...; drawn ...; physics live ..., bodies taken ... and given back ... in the last
+     minute`, each part averaged over the last second. The same line is in the log every 10 s as `Traffic timings: ...`: send the log.
+   - Drawn traffic cars stand on the ground as the physics cars do: no drop when one turns into a physics car (0.32.2 lacked `main`'s
+     rest on the springs).
+   - Tyre marks: watch traffic cars near you over origin shifts (the log's `Origin shift N` lines) and as cars become physics cars:
+     no streak across the country, from anywhere.
+
+54. Where the frame goes (0.32.4; see `docs/PERF_HANDOFF.md`, "Done in 0.32.4"). `ShowCoords` on (and `VerboseLog` on for the
+   `Frame timings on: ...` line saying what this build of the game gives).
+   - The overlay ends with four lines, averaged over the last second: `frame N ms (F fps), worst W ms, H over twice the average; GPU
+     ..., render thread ..., main thread ...`; `Unity's slowest steps: ...` (six steps of Unity's frame by name, and the time between
+     frames); `ours: wrap, origin, streaming, tiles made, far view, foliage, sky, deer, traffic` (ms a frame, and tiles made in the
+     second); `drawn: ... draw calls, ... batches, ... set-pass calls, ...k triangles, ... shadow casters; GC ... KB a frame`. "n/a"
+     where the game's build does not give a number.
+   - Drive the same route as test 53 (from the spawn east along the trunk at speed), then stand still on the trunk, then in
+     Kingsbridge's centre, a few seconds each. Send `LogOutput.log`: every 10 s it has `Frame timings: ...` and every step of Unity's
+     frame (`Frame timings, every step of Unity's frame: ...`). A screenshot of the overlay where the frame rate is lowest helps.
+   - With `ShowCoords` off the frame rate is as on 0.32.3 (the markers come out of Unity's frame).
+
+55. The frame rate after 0.32.5 (trees drawn in blocks, flat surfaces casting no shadows, the overlay made 4 times a second).
+   - `ShowCoords` off: the frame rate driving from the spawn east along the trunk, read with the Steam overlay's counter, against
+     0.32.4's. Then `ShowCoords` on, the same drive, and send `LogOutput.log` (its `Frame timings` lines: the draw calls should be
+     several hundred fewer, `PostLateUpdate.FinishFrameRendering` and foliage lower).
+   - The woods look as before: trees everywhere they were, shadows from the near ones, none missing at block edges (every 1,000 units,
+     about 300 m) or flickering as the car crosses a tile or the origin shifts.
+   - Shadows: buildings, bridges, the covered bridges, trees and cars still cast them; the ground under a hill at a low sun no longer
+     shadows itself (say if that is missed).
+   - Optional, to see what is not ours: the same drive with only Open World and Multiplayer enabled in the mod manager.
+
+56. The ground's shadows back (0.32.6). A low sun (early morning or evening; `WeatherSkip` to get there): hills shadow the land behind
+   them as before 0.32.5. The frame rate driving as in test 55 (about 135 on 0.32.5): say if it is lower.
+

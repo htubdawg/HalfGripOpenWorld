@@ -8,7 +8,7 @@ namespace HalfGripOpenWorld
 	/// race's seed over the traffic's map (<see cref="Traffic"/>). The day runs from 03:00 (the quietest hour) round to 03:00 again in
 	/// <see cref="Traffic.DaySeconds"/> and repeats; a race starting at any hour joins it there (<see cref="SimTime"/>).
 	///
-	/// How a day is made (docs/TRAFFIC_HANDOFF.md):
+	/// How a day is made:
 	/// - The day: a weekend day with probability 2/7, else a weekday.
 	/// - Tours: each household gets that day's candidate tours (work, shopping, errands, visits) from the survey's rates, a leaving time
 	///   from the purpose's hour table and a stay; a place by gravity (nearer and bigger draws more). Then every tour is kept with one
@@ -77,7 +77,7 @@ namespace HalfGripOpenWorld
 		/// <summary>How long past the day's end the last cars are driven home.</summary>
 		private const double Tail = 2400.0;
 
-		// ---- the day's figures (docs/PLAN.md, "Traffic: what the studies say") -------------------------------------------------
+		// ---- the day's figures (docs/research/TRAFFIC_STUDIES.md) -------------------------------------------------
 
 		/// <summary>Tours a household makes in a day, by purpose: work per worker, the rest per household (weekday, weekend).</summary>
 		private static readonly double[] RateWeekday = { 0.86, 0.45, 0.6, 0.5 };

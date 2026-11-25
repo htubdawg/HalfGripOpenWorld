@@ -11,11 +11,11 @@ namespace HalfGripOpenWorld
 	///
 	/// Built once after the layout, with plain arithmetic and ties broken by index, under the same rules as <see cref="Network"/>, so every
 	/// machine gets the same households and the same graph. No Unity types: <c>tools/trafficview</c> builds and checks it.
-	/// Each race's day of trips and the cars driving them come next (docs/TRAFFIC_HANDOFF.md).
+	/// Each race's day of trips and the cars driving them are <see cref="TrafficDay"/>.
 	/// </summary>
 	internal static class Traffic
 	{
-		// ---- real-world figures (see docs/PLAN.md, "Traffic: what the studies say") -------------------------------------------
+		// ---- real-world figures (see docs/research/TRAFFIC_STUDIES.md) -------------------------------------------
 
 		/// <summary>Game units in a mile an hour: 0.44704 m/s at 3.3 units a metre.</summary>
 		internal const double Mph = 0.44704 * 3.3;
