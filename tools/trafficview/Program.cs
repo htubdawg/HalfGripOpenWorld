@@ -95,17 +95,19 @@ internal static partial class Program
 	private static void SignalChecks()
 	{
 		SignalPoles.Build();
-		int heads = 0, unseen = 0, tooFar = 0, onPaving = 0, together = 0, far = 0, shared = 0, ways = 0;
+		int heads = 0, unseen = 0, tooFar = 0, onPaving = 0, together = 0, far = 0, shared = 0, ways = 0, spans = 0, boards = 0;
 		double near = 40.0 * 0.3048 * 3.3, most = 180.0 * 0.3048 * 3.3, cone = Math.Tan(20.0 * Math.PI / 180.0);
 		for (int i = 0; i < SignalPoles.All.Count; i++)
 		{
 			SignalPoles.Mast m = SignalPoles.All[i];
 			far += m.Far ? 1 : 0;
 			heads += m.Heads.Length + 1;
-			if (!SignalPoles.Clear(m.X, m.Z))
+			if (!SignalPoles.Clear(m.X, m.Z) || (m.Span > 0.0 && !SignalPoles.Clear(m.X2, m.Z2)))
 			{
 				onPaving++;
 			}
+			spans += m.Span > 0.0 ? 1 : 0;
+			boards += SignalPoles.Board(m) != null ? 1 : 0;
 			for (int j = 0; j < i; j++)
 			{
 				SignalPoles.Mast o = SignalPoles.All[j];
@@ -187,9 +189,29 @@ internal static partial class Program
 			Traffic.Node node = Traffic.Nodes[sn];
 			Console.WriteLine("    no mast: node " + sn + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") arm " + sa + " (" + Network.Roads[Traffic.Edges[Traffic.Links[sn][sa]].Road].Kind + "), box " + node.Box.ToString("0"));
 		}
-		bool ok = unseen == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0 && noLine == 0;
+		// The signs take a junction to have lights by the roads' classes alone (they are laid out long before the traffic): where they
+		// disagree, a lit junction keeps its fingerpost in front of the poles (the owner, 2026-11-25), or an unlit one loses it.
+		int litNoSign = 0, signNoLight = 0;
+		foreach (int node in TrafficSignals.Nodes)
+		{
+			Traffic.Node n = Traffic.Nodes[node];
+			if (!Signs.LitAt.Exists(p => (p.x - n.X) * (p.x - n.X) + (p.z - n.Z) * (p.z - n.Z) < 40.0 * 40.0))
+			{
+				litNoSign++;
+				Console.WriteLine("    lights the signs don't know of (a fingerpost there): node " + node + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ")");
+			}
+		}
+		foreach ((double x, double z) in Signs.LitAt)
+		{
+			if (!TrafficSignals.Nodes.Exists(node => (Traffic.Nodes[node].X - x) * (Traffic.Nodes[node].X - x) + (Traffic.Nodes[node].Z - z) * (Traffic.Nodes[node].Z - z) < 40.0 * 40.0))
+			{
+				signNoLight++;
+				Console.WriteLine("    no fingerpost but no lights either: (" + x.ToString("0") + ", " + z.ToString("0") + ")");
+			}
+		}
+		bool ok = unseen == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0 && noLine == 0 && litNoSign == 0 && signNoLight == 0;
 		Console.WriteLine("  traffic lights drawn: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads; ways in with no mast " + SignalPoles.Skipped
-			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", ways in with no stop line " + noLine + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
+			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", ways in with no stop line " + noLine + ", spans " + spans + ", green boards " + boards + ", lit junctions with a fingerpost " + litNoSign + ", without lights or fingerpost " + signNoLight + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
 	}
 
 	/// <summary>

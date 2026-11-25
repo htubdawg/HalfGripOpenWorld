@@ -1576,7 +1576,7 @@ internal static class Program
 
 	private static bool SignChecks()
 	{
-		int onRoad = 0, wet = 0, crowded = 0, undrawn = 0;
+		int onRoad = 0, wet = 0, crowded = 0, undrawn = 0, misplaced = 0;
 		foreach (Signs.Sign sign in Signs.All)
 		{
 			// A name sign stands behind the verge; a finger may reach over a verge (it is over a car's roof) but never over a road.
@@ -1612,7 +1612,9 @@ internal static class Program
 					Console.WriteLine("  a building (" + x.ToString("0.0") + ", " + z.ToString("0.0") + ", radius " + r.ToString("0.0") + ") on the sign at (" + sign.X.ToString("0.0") + ", " + sign.Z.ToString("0.0") + ")");
 				}
 			}
-			undrawn += own && d.Mesh != null && d.Mesh.Triangles[Buildings.Board].Length > 0 ? 0 : 1;
+			undrawn += sign.Hidden || (own && d.Mesh != null && d.Mesh.Triangles[Buildings.Board].Length > 0) ? 0 : 1;
+			// A fingerpost is hidden only at a junction with lights, where its places hang on the mast arms (the owner, 2026-11-25).
+			misplaced += sign.Hidden && !Signs.LitAt.Exists(q => (q.x - sign.X) * (q.x - sign.X) + (q.z - sign.Z) * (q.z - sign.Z) < 80.0 * 80.0) ? 1 : 0;
 		}
 		// The faces: inside the atlas and apart.
 		List<Signs.Face> faces = new List<Signs.Face>();
@@ -1646,8 +1648,8 @@ internal static class Program
 				overlap += p.X < q.X + q.W && q.X < p.X + p.W && p.Y < q.Y + q.H && q.Y < p.Y + p.H ? 1 : 0;
 			}
 		}
-		Console.WriteLine("signs:   " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts (" + Signs.Fingers + " fingers): " + onRoad + " points over a road, " + wet + " posts in water, " + crowded + " buildings on a sign, " + undrawn + " not drawn; " + distinct.Count + " faces, " + outside + " outside the atlas, " + overlap + " overlapping");
-		return Signs.NameSigns > 0 && Signs.Fingerposts > 0 && onRoad == 0 && wet == 0 && crowded == 0 && undrawn == 0 && outside == 0 && overlap == 0;
+		Console.WriteLine("signs:   " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts (" + Signs.Fingers + " fingers): " + onRoad + " points over a road, " + wet + " posts in water, " + crowded + " buildings on a sign, " + undrawn + " not drawn; " + Signs.Hidden + " fingerposts at lights left for the masts' " + Signs.Overheads.Count + " junctions' green boards (" + misplaced + " away from lights); " + distinct.Count + " faces, " + outside + " outside the atlas, " + overlap + " overlapping");
+		return Signs.NameSigns > 0 && Signs.Fingerposts > 0 && onRoad == 0 && wet == 0 && crowded == 0 && undrawn == 0 && misplaced == 0 && outside == 0 && overlap == 0;
 	}
 
 	/// <summary>

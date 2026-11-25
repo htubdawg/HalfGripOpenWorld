@@ -34,7 +34,16 @@ namespace HalfGripOpenWorld
 			public bool Far;
 			/// <summary>Which of <see cref="Heads"/> is the left-turn bay's arrow head (red, amber and green arrows, lit from the light's arrow phase), or -1.</summary>
 			public int Arrow = -1;
+			/// <summary>
+			/// A span over the whole road (two poles and a truss between them, as over a wide road's lanes; the owner, 2026-11-25) instead of
+			/// a mast arm: the second pole's distance out along the arm from the first, or 0 for a mast arm. Its foot is at (X2, Z2).
+			/// </summary>
+			public double Span;
+			public double X2, Z2;
 		}
+
+		/// <summary>Heads reaching further out than this (the trunk's, over two lanes and the bay) hang from a span across the road if its far verge is clear.</summary>
+		internal const double SpanFrom = 30.0;
 
 		/// <summary>From the road's edge to the pole: on the verge or the sidewalk, clear of a car's mirror at the kerb.</summary>
 		internal const double PoleOut = 3.5;
@@ -167,7 +176,7 @@ namespace HalfGripOpenWorld
 					fx = lx / len;
 					fz = lz / len;
 				}
-				Mast m = WithArrow(Make(node, k, ox, oz, fx, fz, onto.Half + PoleOut, y, lanes, true), arrow);
+				Mast m = WithArrow(Make(node, k, ox, oz, fx, fz, onto.Half + PoleOut, y, lanes, true, false, true), arrow);
 				if (m != null)
 				{
 					All.Add(m);
@@ -208,7 +217,7 @@ namespace HalfGripOpenWorld
 		/// (the cars' way), its pole <paramref name="side"/> to the right; slid a little away from the junction or out where that spot is
 		/// paving, water or a sign (a fingerpost often stands on the corner), or put on another way in's pole on the corner; null if nowhere near is clear.
 		/// </summary>
-		private static Mast Make(int node, int k, double cx, double cz, double fx, double fz, double side, double road, double[] lanes, bool far, bool left = false)
+		private static Mast Make(int node, int k, double cx, double cz, double fx, double fz, double side, double road, double[] lanes, bool far, bool left = false, bool canSpan = false)
 		{
 			// The pole's side of the road (r): the cars' right, or their left as a last resort, its arm reaching back across.
 			double sign = left ? -1.0 : 1.0, rx = fz * sign, rz = -fx * sign;
@@ -220,6 +229,10 @@ namespace HalfGripOpenWorld
 			{
 				x = cx + rx * (side + out_) + wx * along;
 				z = cz + rz * (side + out_) + wz * along;
+				if (SpanPoleNear(x, z))
+				{
+					continue;
+				}
 				Mast shared = PoleNear(x, z);
 				if (shared != null)
 				{
@@ -248,8 +261,27 @@ namespace HalfGripOpenWorld
 				heads[i] = used - sign * lanes[i];
 				reach = Math.Max(reach, heads[i]);
 			}
+			// Over a wide road, a span to a second pole on the far verge, straight across (else the mast arm).
+			double span = 0.0, x2 = 0.0, z2 = 0.0;
+			if (canSpan && reach > SpanFrom)
+			{
+				foreach (double out_ in new[] { 0.0, 2.5, 5.0 })
+				{
+					double d = used + side + out_, px = x - rx * d, pz = z - rz * d;
+					if (Clear(px, pz) && PoleNear(px, pz) == null && !SpanPoleNear(px, pz))
+					{
+						span = d;
+						x2 = px;
+						z2 = pz;
+						break;
+					}
+				}
+			}
 			return new Mast
 			{
+				Span = span,
+				X2 = x2,
+				Z2 = z2,
 				Node = node,
 				Arm = k,
 				X = x,
@@ -277,6 +309,44 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return null;
+		}
+
+		/// <summary>The green board for mast <paramref name="m"/>'s way in: the lit junction's (<see cref="Signs.OverheadNear"/>) way most nearly along its arm, or null.</summary>
+		internal static Signs.OverheadWay Board(SignalPoles.Mast m)
+		{
+			Traffic.Node n = Traffic.Nodes[m.Node];
+			Signs.Overhead over = Signs.OverheadNear(n.X, n.Z);
+			if (over == null)
+			{
+				return null;
+			}
+			TrafficDay.ArmOf(m.Node, m.Arm, out double dx, out double dz);
+			Signs.OverheadWay best = null;
+			double bd = 0.8;
+			foreach (Signs.OverheadWay w in over.Ways)
+			{
+				double d = w.Dx * dx + w.Dz * dz;
+				if (d > bd)
+				{
+					bd = d;
+					best = w;
+				}
+			}
+			return best;
+		}
+
+		/// <summary>Whether a span's second pole stands within 3.5 of (x, z) (no other pole goes there).</summary>
+		private static bool SpanPoleNear(double x, double z)
+		{
+			foreach (Mast other in All)
+			{
+				double dx = other.X2 - x, dz = other.Z2 - z;
+				if (other.Span > 0.0 && dx * dx + dz * dz < 3.5 * 3.5)
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/// <summary>A stop line's width along the road (about 0.6 m, 24 in, as the MUTCD's widest).</summary>
@@ -342,7 +412,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			return !Signs.Near(x, z, 2.0);
+			return !Signs.Near(x, z, 2.0, true);
 		}
 	}
 }

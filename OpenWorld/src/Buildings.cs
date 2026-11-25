@@ -321,6 +321,12 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
+				if (sign.Hidden)
+				{
+					// At a junction with lights: on the mast arms instead, its ground kept clear.
+					data.Footprints.Add((sign.X, sign.Z, sign.Radius));
+					continue;
+				}
 				float foot = (float)WorldGen.Height(sign.X, sign.Z);
 				Signs.Face post = sign.Finger ? Signs.WhitePatch : Signs.GreyPatch;
 				foreach (Signs.Post p in sign.Posts)
@@ -1737,7 +1743,7 @@ namespace HalfGripOpenWorld
 		/// The road signs' lettering atlas (<see cref="Signs.Atlas"/>), point-filtered so the letters stay crisp pixels close up, with
 		/// mipmaps so they fade rather than shimmer far off.
 		/// </summary>
-		private static Texture2D SignAtlas()
+		internal static Texture2D SignAtlas()
 		{
 			if (Signs.Atlas == null || Signs.AtlasW == 0)
 			{

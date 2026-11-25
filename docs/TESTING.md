@@ -218,3 +218,12 @@ owner has reported on it.
      and its first stretch (where you move into it), then solid up to the junction.
    - Traffic is drawn out to about 450 m (moving) and 230 m (parked), against 270 m and 140 m before: cars should no longer pop in
      close. `ShowCoords` on: say the frame time and the traffic line's numbers on the highway and in Kingsbridge's centre.
+61. The owner's report on the traffic lights (2026-11-25, `traffic-test-branch`, not released).
+   - No fingerpost stands at a junction with lights any more. Instead each way in's mast arm carries a green board (white letters
+     and border, as Pennsylvania's) with the places the fingerpost gave: an arrow for each (left, ahead, right as you come in), the
+     name and the miles. Stopped at the line, read it: say if an arrow points the wrong way, a place is missing, or a board hangs in
+     front of a head. The log's `Road signs:` line says `green boards for the lights at 16 junctions`.
+   - On the highway, the lights hang from a steel truss spanning the whole road on two poles (9 of them) instead of a single mast
+     arm. Say if a pole stands in a building or the road, or the truss looks wrong.
+   - The left-turn lane's head shows bold left arrows (red, amber, green), not round lamps.
+   - The red lamp is a deep red, not orange; it glows a little less than the amber and green.

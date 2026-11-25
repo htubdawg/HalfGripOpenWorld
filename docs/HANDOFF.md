@@ -14,8 +14,28 @@ Last written 2026-11-25.
   `SignalPoles.cs` and `SignalHeads.cs`), right of way fixes, lanes no longer laid on lanes (`Network.Throughs`, meshcheck
   `alongside`), late drawn cars let off a stand with nothing to stand for (`TrafficLate.SkipStand`), and now **the highway reworked**
   (below). **The world changed** since 0.33.0, so everyone in a room needs the same build. Bump the version with the next release.
-- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 60). The owner has seen the reworked highway in
-  a screenshot (2026-11-25) and asked for the four fixes below.
+- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 61). The owner has seen the reworked highway in
+  a screenshot (2026-11-25) and asked for the four fixes below, then for the four lights changes after them.
+
+## The owner's lights report (2026-11-25)
+
+From a screenshot at the Kingsbridge - Fenwick primary road's T on the trunk (node 10, (1053, -10213)), stopped on the primary:
+- **No signs in front of the lights; green PA signs on the masts instead.** A fingerpost stood in front of the side road's pole.
+  Now `Signs.Lit` (the lights' rule on road classes alone: 3 or 4 ways, the second best a primary or better, the third a secondary or
+  better; the lights themselves are only known once a day is built, long after the signs) marks a lit junction. Its fingerpost is
+  still laid out but `Hidden` (not drawn, its ground kept): **dropping it outright let one house in, which moved every day of traffic
+  and turned 4 more seeds of trafficview red** (Kingsbridge's queues, leftovers 1 and 2), so the world is left exactly as it was.
+  Its places go on a green board per way in (`Signs.Overheads`: white letters, border and 7 px arrows on green, left then ahead then
+  right as the drivers see them, at most 5 lines, 0.12 a pixel), which `SignalPoles.Board` matches to each mast and `SignalMesh.Board`
+  hangs under the arm: beside the pole if it fits, else past the last head (the arm made longer), on a span in the widest gap.
+  trafficview fails a lit junction with a fingerpost or a hidden one with no lights (0 and 0: the rule agrees with all 16).
+- **Spans** (`Mast.Span`): where the heads reach past 30 (the trunk's), a level box truss on two poles across the whole road (87
+  units) if the far verge is clear: 9 of the 16 trunk ways in. No other pole stands on a span's far pole.
+- **Arrows**: the bay head's arrows were drawn but too thin to read; now bold, filling the lens. The heads in the screenshot were the
+  side road's (one lane, no bay), which have round lamps like any single-lane way in: ask the owner if they want arrows there too.
+- **Red**: `(1, 0, 0.03)` glowing 1.9 (was `(1, 0.10, 0.06)` at 3.2, which went orange on screen).
+- `SignalMesh` moved out of `SignalHeads.cs` into `SignalMesh.cs` (meshcheck compiles it now). The meshes were looked at with a
+  throwaway software renderer from the stop lines (not committed); not yet seen in the game.
 
 ## The owner's highway report (2026-11-25)
 
@@ -66,7 +86,10 @@ What was done (same 80 units across, so the land, routes and other roads are unc
 - **Checks:** meshcheck `median` (new); jview `JVIEW_TEX=1` draws the trunk's markings. Looked at from above: the Westhaven link's
   junction (11316, -9288) and the rail at (12229, -8922).
 
-Last checks (2026-11-25, after the rework): `tools/check.sh` builds; the whole meshcheck passes (the new `median` too; `faces` caught the
+Last checks (2026-11-25, after the lights report): `tools/check.sh` builds; meshcheck passes (signs: 16 hidden fingerposts, all at
+lights); trafficview `TV_DRIVE_ONLY=1` on the 16 seeds: exactly as before, 15 pass, seed 14 fails its known node 8 line.
+
+Checks after the rework (2026-11-25): `tools/check.sh` builds; the whole meshcheck passes (the new `median` too; `faces` caught the
 K-rails' first, two-sided faces); preview passes. trafficview `TV_DRIVE_ONLY=1` on the 16 seeds: 15 pass, **seed 14 fails one line**,
 4 physics pairs crossing in a box (limit 3), all at Kingsbridge's node 8 (see the leftovers). Junction waiting 294 to 654 min a day
 (seed 1: 436, against 406 before the rework); 84 to 122 cars a day use a left-turn bay; none merge out of the median any more (224 did

@@ -58,6 +58,8 @@ namespace HalfGripOpenWorld
 			White = 0,
 			/// <summary>White letters and border on brown: the way to a race course.</summary>
 			Brown = 1,
+			/// <summary>White letters, arrows and border on green: a guide sign on a traffic light's mast arm, as Pennsylvania's.</summary>
+			Green = 2,
 		}
 
 		/// <summary>A board's face in the atlas, in texels from its top-left corner.</summary>
@@ -110,9 +112,44 @@ namespace HalfGripOpenWorld
 			public readonly List<Board> Boards = new List<Board>();
 			/// <summary>What it says, for the log and the checks.</summary>
 			public string Text;
+			/// <summary>
+			/// A fingerpost at a junction with lights, not drawn: its places are on the mast arms' green boards (<see cref="Overhead"/>).
+			/// It is still laid out and its ground kept, so the houses, the trees and the other signs stand where they did (and the traffic,
+			/// which counts the houses, is the same).
+			/// </summary>
+			public bool Hidden;
 		}
 
 		internal static readonly List<Sign> All = new List<Sign>();
+
+		/// <summary>
+		/// A junction with traffic lights (<see cref="Lit"/>): no fingerpost on its corner, where it stood in front of the poles (the owner,
+		/// 2026-11-25: "make sure there's not signs in front of traffic lights ... classic green PA signage on the light masts"), but a
+		/// green board for each way in, hung on that way's mast arm by <see cref="SignalHeads"/>: the places each other way leads, with an
+		/// arrow (left, ahead, right as the drivers coming in see it) and the miles.
+		/// </summary>
+		internal sealed class Overhead
+		{
+			public double X;
+			public double Z;
+			public readonly List<OverheadWay> Ways = new List<OverheadWay>();
+		}
+
+		/// <summary>One way in's green board: the way out along it from the junction (unit), its face and size in the world.</summary>
+		internal sealed class OverheadWay
+		{
+			public double Dx;
+			public double Dz;
+			public Face Face;
+			public double W;
+			public double H;
+			public string Text;
+		}
+
+		internal static readonly List<Overhead> Overheads = new List<Overhead>();
+
+		/// <summary>World units to a pixel of a mast arm's green board: capitals about 25 cm (10 in), as a mast arm's guide sign.</summary>
+		internal const double OverheadPixel = 0.12;
 
 		/// <summary>Every board's face, RGBA, rows from the bottom (as a Unity texture's), <see cref="AtlasW"/> by <see cref="AtlasH"/>.</summary>
 		internal static byte[] Atlas;
@@ -130,6 +167,8 @@ namespace HalfGripOpenWorld
 		internal static int NameSigns;
 		internal static int Fingerposts;
 		internal static int Fingers;
+		/// <summary>Fingerposts laid out at junctions with lights and not drawn (<see cref="Sign.Hidden"/>).</summary>
+		internal static int Hidden;
 
 		// ---- the road graph ----------------------------------------------------------------------------------------
 
@@ -761,6 +800,8 @@ namespace HalfGripOpenWorld
 			public int H;
 			public Look Look;
 			public List<(string name, string miles)> Lines;
+			/// <summary>A green board's arrow before each line (-1 left, 0 ahead, 1 right), or null.</summary>
+			public int[] Arrows;
 			public int Tip;
 			public bool Name;
 			public int Plain = -1;
@@ -786,12 +827,15 @@ namespace HalfGripOpenWorld
 			return (h + 1) / 2;
 		}
 
-		private static Request Ask(Look look, List<(string name, string miles)> lines, int tip, bool name)
+		/// <summary>An arrow's width in pixels, and the space after it.</summary>
+		private const int ArrowW = 7, ArrowGap = 4;
+
+		private static Request Ask(Look look, List<(string name, string miles)> lines, int tip, bool name, int[] arrows = null)
 		{
 			string key = (int)look + "|" + tip + "|" + (name ? "N" : "F");
-			foreach ((string a, string b) in lines)
+			for (int k = 0; k < lines.Count; k++)
 			{
-				key += "|" + a + "\u0001" + b;
+				key += "|" + lines[k].name + "\u0001" + lines[k].miles + (arrows != null ? "\u0002" + arrows[k] : "");
 			}
 			if (requested.TryGetValue(key, out Request found))
 			{
@@ -800,10 +844,10 @@ namespace HalfGripOpenWorld
 			int text = 0;
 			foreach ((string a, string b) in lines)
 			{
-				text = Math.Max(text, Lettering.Width(a) + (b.Length > 0 ? 6 + Lettering.Width(b) : 0));
+				text = Math.Max(text, (arrows != null ? ArrowW + ArrowGap : 0) + Lettering.Width(a) + (b.Length > 0 ? 6 + Lettering.Width(b) : 0));
 			}
 			int h = FaceHeight(lines.Count);
-			Request q = new Request { Look = look, Lines = lines, Tip = tip, Name = name, H = h, W = text + 2 * (Border + Margin) + (tip != 0 ? TipWidth(h) : 0) };
+			Request q = new Request { Look = look, Lines = lines, Arrows = arrows, Tip = tip, Name = name, H = h, W = text + 2 * (Border + Margin) + (tip != 0 ? TipWidth(h) : 0) };
 			requests.Add(q);
 			requested[key] = q;
 			return q;
@@ -818,12 +862,12 @@ namespace HalfGripOpenWorld
 
 		private static (byte r, byte g, byte b) Paper(Look look)
 		{
-			return look == Look.Brown ? ((byte)118, (byte)64, (byte)32) : ((byte)236, (byte)236, (byte)230);
+			return look == Look.Brown ? ((byte)118, (byte)64, (byte)32) : look == Look.Green ? ((byte)18, (byte)106, (byte)62) : ((byte)236, (byte)236, (byte)230);
 		}
 
 		private static (byte r, byte g, byte b) Ink(Look look)
 		{
-			return look == Look.Brown ? ((byte)240, (byte)238, (byte)230) : ((byte)24, (byte)24, (byte)26);
+			return look != Look.White ? ((byte)240, (byte)238, (byte)230) : ((byte)24, (byte)24, (byte)26);
 		}
 
 		private static readonly (byte r, byte g, byte b) Grey = (130, 132, 134);
@@ -922,9 +966,39 @@ namespace HalfGripOpenWorld
 					Lettering.Draw(Atlas, AtlasW, AtlasH, true, f.X + (f.W - Lettering.Width(name)) / 2, top, name, 1, ink.r, ink.g, ink.b);
 					continue;
 				}
-				// The name at the left and the miles at the right, on both faces, so each reads the usual way.
-				Lettering.Draw(Atlas, AtlasW, AtlasH, true, f.X + left, top, name, 1, ink.r, ink.g, ink.b);
+				// The name at the left and the miles at the right, on both faces, so each reads the usual way; a green board's arrow first.
+				int pen = left;
+				if (q.Arrows != null)
+				{
+					DrawArrow(f.X + pen, top + (Lettering.Rows - Lettering.Cap) / 2 - 1, q.Arrows[k], ink);
+					pen += ArrowW + ArrowGap;
+				}
+				Lettering.Draw(Atlas, AtlasW, AtlasH, true, f.X + pen, top, name, 1, ink.r, ink.g, ink.b);
 				Lettering.Draw(Atlas, AtlasW, AtlasH, true, f.X + right - Lettering.Width(miles), top, miles, 1, ink.r, ink.g, ink.b);
+			}
+		}
+
+		/// <summary>A green board's arrows, 7 by 7 pixels: left, ahead (up the board), right.</summary>
+		private static readonly string[][] Arrows =
+		{
+			new[] { "...#...", "..##...", ".######", "#######", ".######", "..##...", "...#..." },
+			new[] { "...#...", "..###..", ".#####.", "#######", "..###..", "..###..", "..###.." },
+			new[] { "...#...", "...##..", "######.", "#######", "######.", "...##..", "...#..." },
+		};
+
+		/// <summary>Draws arrow <paramref name="way"/> (-1 left, 0 ahead, 1 right) with its top-left at (x, y) of the atlas.</summary>
+		private static void DrawArrow(int x, int y, int way, (byte r, byte g, byte b) c)
+		{
+			string[] rows = Arrows[way + 1];
+			for (int row = 0; row < rows.Length; row++)
+			{
+				for (int col = 0; col < rows[row].Length; col++)
+				{
+					if (rows[row][col] == '#')
+					{
+						Lettering.Set(Atlas, AtlasW, AtlasH, true, x + col, y + row, c.r, c.g, c.b);
+					}
+				}
 			}
 		}
 
@@ -957,9 +1031,11 @@ namespace HalfGripOpenWorld
 		internal static void Build()
 		{
 			All.Clear();
+			Overheads.Clear();
+			LitAt.Clear();
 			requests.Clear();
 			requested.Clear();
-			NameSigns = Fingerposts = Fingers = 0;
+			NameSigns = Fingerposts = Fingers = Hidden = 0;
 			CircuitBox();
 			System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 			Graph();
@@ -989,6 +1065,11 @@ namespace HalfGripOpenWorld
 				}
 				List<Arm> arms = Arms(n);
 				List<Finger> fingers = FingersAt(n, arms);
+				bool lit = Lit(arms);
+				if (lit)
+				{
+					OverheadAt(n, arms, fingers, uses);
+				}
 				if (fingers.Count < 2 || Crowded(nodes[n].x, nodes[n].z, 120.0))
 				{
 					continue;
@@ -1026,7 +1107,7 @@ namespace HalfGripOpenWorld
 						{
 							continue;
 						}
-						Sign sign = new Sign { Finger = true, X = px, Z = pz, Radius = reach + PostSide };
+						Sign sign = new Sign { Finger = true, X = px, Z = pz, Radius = reach + PostSide, Hidden = lit };
 						double y = FingerLowest;
 						// Stacked from the bottom: brown fingers lowest, then white (the main ways at the top).
 						for (int k = sized.Count - 1; k >= 0; k--)
@@ -1050,7 +1131,7 @@ namespace HalfGripOpenWorld
 							uses.Add((back, face => board.Back = face));
 							sign.Boards.Add(board);
 							y += h + FingerGap;
-							Fingers++;
+							Fingers += lit ? 0 : 1;
 						}
 						sign.Posts.Add(new Post { X = px, Z = pz, Top = y + 0.4 });
 						sign.Text = "fingerpost:";
@@ -1062,7 +1143,8 @@ namespace HalfGripOpenWorld
 							}
 						}
 						All.Add(sign);
-						Fingerposts++;
+						Fingerposts += lit ? 0 : 1;
+						Hidden += lit ? 1 : 0;
 						placed = true;
 					}
 					if (placed)
@@ -1071,6 +1153,102 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+		}
+
+		/// <summary>
+		/// Whether a junction with these ways out gets traffic lights, by <see cref="TrafficSignals.Build"/>'s rule on the classes alone
+		/// (the lights are worked out with the traffic, long after the signs; trafficview checks the two agree): three or four ways, the
+		/// main line (the two best) a primary road or the trunk, the best of the rest a secondary road or bigger.
+		/// </summary>
+		internal static bool Lit(List<RoadKind> kinds)
+		{
+			if (kinds.Count < 3 || kinds.Count > 4)
+			{
+				return false;
+			}
+			List<RoadKind> k = new List<RoadKind>(kinds);
+			k.Sort();
+			return k[1] <= RoadKind.Primary && k[2] <= RoadKind.Secondary;
+		}
+
+		private static bool Lit(List<Arm> arms)
+		{
+			return Lit(arms.ConvertAll(a => a.Kind));
+		}
+
+		/// <summary>The junctions the signs take to have lights (for trafficview's check against <see cref="TrafficSignals"/>).</summary>
+		internal static readonly List<(double x, double z)> LitAt = new List<(double, double)>();
+
+		/// <summary>
+		/// A lit junction's green boards (<see cref="Overhead"/>): for each way in, the other ways' places (the first finger's lines and a
+		/// race course), left first, then ahead, then right, each with its arrow; none if no way leads anywhere signed.
+		/// </summary>
+		private static void OverheadAt(int n, List<Arm> arms, List<Finger> fingers, List<(Request q, Action<Face> set)> uses)
+		{
+			LitAt.Add((nodes[n].x, nodes[n].z));
+			Overhead over = new Overhead { X = nodes[n].x, Z = nodes[n].z };
+			foreach (Arm into in arms)
+			{
+				// The drivers coming in head back along this way; their left is (-hz, hx).
+				double hx = -into.Dx, hz = -into.Dz;
+				List<(int way, double turn, string name, string miles)> lines = new List<(int, double, string, string)>();
+				foreach (Finger f in fingers)
+				{
+					if (f.Dx == into.Dx && f.Dz == into.Dz)
+					{
+						continue;
+					}
+					double ahead = f.Dx * hx + f.Dz * hz, left = -hz * f.Dx + hx * f.Dz;
+					int way = ahead > 0.82 ? 0 : left > 0.0 ? -1 : 1;
+					// Sorted left to right as the drivers see them.
+					double turn = Network.Atan2(-left, ahead);
+					int take = f.Look == Look.Brown ? 1 : 2;
+					for (int k = 0; k < f.Lines.Count && k < take; k++)
+					{
+						lines.Add((way, turn + (f.Look == Look.Brown ? 0.001 : 0.0), f.Lines[k].name, f.Lines[k].miles));
+					}
+				}
+				if (lines.Count == 0)
+				{
+					continue;
+				}
+				lines.Sort((a, b) => a.turn != b.turn ? a.turn.CompareTo(b.turn) : string.CompareOrdinal(a.name, b.name));
+				if (lines.Count > 5)
+				{
+					lines.RemoveRange(5, lines.Count - 5);
+				}
+				List<(string, string)> text = lines.ConvertAll(l => (l.name, l.miles));
+				int[] arrows = lines.ConvertAll(l => l.way).ToArray();
+				Request q = Ask(Look.Green, text, 0, false, arrows);
+				OverheadWay w = new OverheadWay { Dx = into.Dx, Dz = into.Dz, W = q.W * OverheadPixel, H = q.H * OverheadPixel, Text = "overhead:" };
+				foreach ((int way, double _, string name, string miles) in lines)
+				{
+					w.Text += " " + (way < 0 ? "<" : way > 0 ? ">" : "^") + " " + name + " " + miles + ";";
+				}
+				uses.Add((q, face => w.Face = face));
+				over.Ways.Add(w);
+			}
+			if (over.Ways.Count > 0)
+			{
+				Overheads.Add(over);
+			}
+		}
+
+		/// <summary>The green boards for the traffic light junction at (x, z) (within 40), or null.</summary>
+		internal static Overhead OverheadNear(double x, double z)
+		{
+			Overhead best = null;
+			double bd = 40.0 * 40.0;
+			foreach (Overhead o in Overheads)
+			{
+				double d = (o.X - x) * (o.X - x) + (o.Z - z) * (o.Z - z);
+				if (d < bd)
+				{
+					bd = d;
+					best = o;
+				}
+			}
+			return best;
 		}
 
 		/// <summary>A bench's footprint, as <see cref="Buildings"/> gives it.</summary>
@@ -1218,11 +1396,15 @@ namespace HalfGripOpenWorld
 
 		// ---- for the buildings and trees --------------------------------------------------------------------------
 
-		/// <summary>Whether a sign's parts reach within <paramref name="radius"/> of (x, z): buildings keep off them.</summary>
-		internal static bool Near(double x, double z, double radius)
+		/// <summary>Whether a sign's parts reach within <paramref name="radius"/> of (x, z): buildings keep off them (off the hidden ones' ground too; <paramref name="shownOnly"/>: only the drawn ones).</summary>
+		internal static bool Near(double x, double z, double radius, bool shownOnly = false)
 		{
 			foreach (Sign s in All)
 			{
+				if (shownOnly && s.Hidden)
+				{
+					continue;
+				}
 				double dx = s.X - x, dz = s.Z - z, r = radius + s.Radius;
 				if (dx * dx + dz * dz < r * r)
 				{
