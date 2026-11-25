@@ -227,3 +227,15 @@ owner has reported on it.
      arm. Say if a pole stands in a building or the road, or the truss looks wrong.
    - The left-turn lane's head shows bold left arrows (red, amber, green), not round lamps.
    - The red lamp is a deep red, not orange; it glows a little less than the amber and green.
+62. Kingsbridge's left-turn lane (2026-11-25, `traffic-test-branch`, not released; the world changed: everyone in a room needs the
+   same build). Teleport to Kingsbridge and drive south down the town's link road towards the trunk, past the lane on the right, to
+   the lights where the road to Pinewick goes off left (about (-2388, -4337)).
+   - The road widens by a lane over the last stretch before those lights (from just before the lane junction), the two lanes moving
+     out; between them two yellow lines, and up to the lights a left-turn lane in the middle: white line dotted where you move in,
+     then solid, a white left arrow painted near the stop line, a stop line across the turn lane and your lane. South of the lights
+     the road narrows back. Say if the paving, the verges, a sidewalk or the lines look wrong, or a building or pole stands on it.
+   - The cars turning left for Pinewick move into the turn lane and wait there; the cars going on pass them.
+   - The mast over your way in has a third head over the turn lane with arrows: a flashing yellow arrow while the main road is green
+     (turn when there is a gap), a green arrow when a car has waited there a while, red otherwise.
+   - Drive up from the trunk in the morning (around 8:00 game time): say if the queue into Kingsbridge on the link is long.
+

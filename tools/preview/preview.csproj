@@ -18,6 +18,7 @@
     <Compile Include="../../OpenWorld/src/Places.cs" />
     <Compile Include="../../OpenWorld/src/Network.cs" />
     <Compile Include="../../OpenWorld/src/TrunkLanes.cs" />
+    <Compile Include="../../OpenWorld/src/TurnBays.cs" />
     <Compile Include="../../OpenWorld/src/Wrap.cs" />
     <Compile Include="../../OpenWorld/src/TownPlan.cs" />
     <Compile Include="../../OpenWorld/src/LandUse.cs" />

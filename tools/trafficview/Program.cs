@@ -174,7 +174,7 @@ internal static partial class Program
 		foreach ((int node, int arm) in byWay.Keys)
 		{
 			if (!SignalPoles.StopLine(node, arm, out int lr, out double s0, out double s1, out double lo, out double hi) || hi - lo < 5.0
-				|| Math.Max(Math.Abs(lo), Math.Abs(hi)) > Network.Roads[lr].Half)
+				|| Math.Max(Math.Abs(lo), Math.Abs(hi)) > Network.Widened(Network.Roads[lr], (s0 + s1) * 0.5))
 			{
 				noLine++;
 				if (noLine <= 8)
@@ -275,6 +275,16 @@ internal static partial class Program
 		TrafficDay.MainTurnsGiveWay = Environment.GetEnvironmentVariable("TV_TURNS") == "1";
 		// TV_ROR=1: right turns on red (off in the game), to measure.
 		TrafficDay.RightOnRedOn = Environment.GetEnvironmentVariable("TV_ROR") == "1";
+		// TV_ARROWDELAY=s: seconds a left turner waits in a bay off the trunk before it calls the arrow (to measure; 1e9 for no arrow).
+		if (double.TryParse(Environment.GetEnvironmentVariable("TV_ARROWDELAY"), out double arrowDelay))
+		{
+			TrafficSignals.BayArrowDelay = arrowDelay;
+		}
+		// TV_NOBAYS=1: no left-turn bays off the trunk (to measure against).
+		if (Environment.GetEnvironmentVariable("TV_NOBAYS") == "1")
+		{
+			TurnBays.Sites = new (double, double)[0];
+		}
 		// TV_CIRCLING=N: N cars circling the trunk instead of the day's number (to measure more highway traffic).
 		TrafficDay.CirclingTry = int.TryParse(Environment.GetEnvironmentVariable("TV_CIRCLING"), out int circling) ? circling : 0;
 		// The cars at rest on their springs first: no map needed.
@@ -715,6 +725,38 @@ internal static partial class Program
 			ok &= day.StoppedAcrossCars == 0;
 			foreach (string note in day.StoppedAcrossNotes) Console.WriteLine("    across: " + note);
 			Console.WriteLine("  junction lanes: " + day.IntoJunctionLanes + " into one to turn off, " + day.Merged + " merged out of one, " + day.Missed + " turns missed (went on and round)");
+			{
+				// The left-turn bays off the trunk: each at a junction with a light whose arrow is for the bay's way in, a main-line arm
+				// turning left there; and used.
+				int good = 0;
+				foreach (TurnBays.Bay bay in TurnBays.Bays)
+				{
+					for (int node = 0; node < Traffic.Nodes.Count; node++)
+					{
+						int arm = TrafficSignals.BayArm(node);
+						if (arm < 0)
+						{
+							continue;
+						}
+						Traffic.Edge e = Traffic.Edges[Traffic.Links[node][arm]];
+						double js = e.B == node ? e.Sb : e.Sa;
+						TrafficDay.MainArms(node, out int ma, out int mb);
+						bool left = false;
+						for (int j = 0; j < Traffic.Links[node].Count; j++)
+						{
+							left |= j != arm && TrafficDay.LeftTurn(node, arm, j) && TrafficSignals.Permissive(node, arm, j);
+						}
+						if (e.Road == bay.Road && Math.Abs(js - bay.Junction) < 30.0 && TrafficSignals.Arrows(node) && (arm == ma || arm == mb) && left)
+						{
+							good++;
+							Console.WriteLine("    bay at node " + node + " arm " + arm + ", " + (bay.S1 - bay.S0).ToString("0") + " long");
+						}
+					}
+				}
+				bool baysOk = good == TurnBays.Bays.Count && TurnBays.Bays.Count == TurnBays.Sites.Length && day.IntoBays > 0;
+				Console.WriteLine("  left-turn bays off the trunk: " + TurnBays.Bays.Count + " (sites " + TurnBays.Sites.Length + "), " + good + " at a light with an arrow for them; " + day.IntoBays + " cars into one" + (baysOk ? "  ok" : "  FAIL"));
+				ok &= baysOk;
+			}
 			Console.WriteLine("  the trunk's two lanes: " + day.Overtakes + " overtakes, " + day.MovedOver + " moved over for a car joining, " + day.KeptRight + " back to the outer lane");
 			// Not none: a car let out with time to clear may still be slower through the box than reckoned (it slows for its turn, or
 			// for a car on its way out). First come first served gave about 650 a day (TV_FCFS=1).

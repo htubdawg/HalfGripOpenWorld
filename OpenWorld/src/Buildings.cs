@@ -522,7 +522,9 @@ namespace HalfGripOpenWorld
 				double dx = p.Dx, dz = p.Dz;
 				if (p.Towers)
 				{
-					Tower(b, data, r, p.Px, p.Pz, dx * side, dz * side, p.Nx, p.Nz, road.Half, p.From, h);
+					// Back from the paving's edge all along its front (a road widened for a bay widens under a tower's 40 or so).
+					double at = p.K * p.Spacing, half = Math.Max(Network.Widened(road, at), Math.Max(Network.Widened(road, at - 25.0), Network.Widened(road, at + 25.0)));
+					Tower(b, data, r, p.Px, p.Pz, dx * side, dz * side, p.Nx, p.Nz, half, p.From, h);
 					continue;
 				}
 				bool terrace = p.Terrace, high = p.High, village = p.Village, thatched = p.Thatched;

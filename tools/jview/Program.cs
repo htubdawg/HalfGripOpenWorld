@@ -17,6 +17,7 @@ using UnityEngine;
 //   deadends <outdir> <count> <seed>   the same for dead ends
 //   measure [outdir]                   every paved junction end and crossing at 60 across: the totals and the worst 25
 //   hubs                               every hub (Network.Hub): place, arms, cuts, outline points, triangles, class
+//   bays                               every left-turn bay off the trunk (TurnBays): road, way, stretch, junction, the widening
 //   places                             every town, village and hamlet: name, kind, x, z (the teleport's villages are among them)
 //   near <x> <z> <radius>              the roads within radius: kind, samples, ends, gaps (each edge's cuts), length, joints, name
 //   dump <road> <from> <to>            a road's samples: x, z, height, distance along, side, cross-fall, drawn half width
@@ -30,7 +31,8 @@ using UnityEngine;
 // road or a verge or sidewalk on top of a bigger road's strip, or two surfaces at one height (flicker); yellow, paving under the
 // ground; orange, neighbouring paving pixels more than 0.1 apart (a lip); red, the visible surface stepping more than 0.12 (often
 // just a verge's outer edge); white, buildings' outlines. JVIEW_CLEAN=1 leaves the marks and centre lines out (for pictures to show).
-// JVIEW_TEX=1 draws the trunk with its texture's columns (its median, left-turn bays and lines) instead of one colour.
+// JVIEW_TEX=1 draws the trunk and the main roads with their textures' columns (the trunk's median, left-turn bays and lines; a main
+// road's lines and a bay off the trunk's paint) instead of one colour.
 //
 // "gap" counts cyan pixels, "poke" magenta (on a road's strip), "lip" orange; a street lying wholly along a bigger road is hidden
 // under it but still counted, so read the pictures, not only the numbers.
@@ -73,6 +75,17 @@ internal static class Program
 		if (mode == "hubs")
 		{
 			foreach (var h in Network.Hubs) Console.WriteLine(h.X.ToString("0") + " " + h.Z.ToString("0") + " arms " + h.Arm.Length + " cuts " + string.Join(",", h.Cut.Select(c => c.ToString("0"))) + " pts " + h.PX.Length + " tris " + (h.Tris == null ? 0 : h.Tris.Length / 3) + " kind " + h.Kind);
+			return 0;
+		}
+		if (mode == "bays")
+		{
+			// The left-turn bays off the trunk (TurnBays) and their roads' widening.
+			foreach (TurnBays.Bay b in TurnBays.Bays)
+			{
+				Network.Road rd = Network.Roads[b.Road];
+				Network.Edge(rd, b.Junction, 0, 0.0, out double jx, out double jz, out double _);
+				Console.WriteLine("bay on road " + b.Road + " '" + rd.Name + "' dir " + b.Dir + " from " + b.S0.ToString("0") + " to " + b.S1.ToString("0") + " junction " + b.Junction.ToString("0") + " at (" + jx.ToString("0") + ", " + jz.ToString("0") + ") into road " + b.Other + " '" + Network.Roads[b.Other].Name + "'; behind " + b.Back.ToString("0") + "; widened " + rd.WideA0.ToString("0") + " / " + rd.WideA1.ToString("0") + " / " + rd.WideB0.ToString("0") + " / " + rd.WideB1.ToString("0"));
+			}
 			return 0;
 		}
 		if (mode == "places")
@@ -422,6 +435,14 @@ internal static class Program
 		if (x == 26 || x == 53) return new[] { 217, 178, 51 };
 		return new[] { 69, 69, 74 };
 	}
+	/// <summary>The main road's texture (RoadMesh's TwoLane(28)): white edge lines in 2 from each side, the centre line dashed 25 of 40.</summary>
+	static int[] PrimaryTexel(float u, float v)
+	{
+		int x = Math.Max(0, Math.Min(27, (int)Math.Floor(u * 28f)));
+		int y = (int)Math.Floor((v * RoadMesh.TextureLength) % 40f + 40f) % 40;
+		if (x == 2 || x == 25 || (x == 14 && y < 25)) return new[] { 219, 219, 209 };
+		return new[] { 74, 74, 79 };
+	}
 	static readonly bool Clean = Environment.GetEnvironmentVariable("JVIEW_CLEAN") == "1";
 	static double[,] boxes;
 
@@ -536,7 +557,7 @@ internal static class Program
 				bool through = false;
 				if (cat[p] >= 0 && top[p] >= g - 0.005)
 				{
-					col = Textured && cat[p] == 0 ? TrunkTexel(texU[p], texV[p]) : Colours[cat[p]];
+					col = Textured && cat[p] == 0 ? TrunkTexel(texU[p], texV[p]) : Textured && cat[p] == 1 ? PrimaryTexel(texU[p], texV[p]) : Colours[cat[p]];
 					s = shade[p];
 					vis[p] = top[p];
 					roadPx++;

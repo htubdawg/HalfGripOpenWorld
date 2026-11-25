@@ -29,6 +29,10 @@ when one is done, delete it here.
   median; dedicated left-turn lanes, with left-turn arrows where there is a light. The median stays mostly open so players can cross
   into the oncoming traffic at will; K-rails here and there; a wide grass median. Keep the general route (it may change a little)
   and the wrap.
+- Kingsbridge's node 6 (the owner, 2026-11-25: "install the actual turn lane"): a real left-turn lane, the road widened and painted,
+  with a left arrow at its light. More bays at other T's only if the owner asks (`TurnBays.Sites`).
+- Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not
+  help, so it is off (`TrafficDay.RightOnRedOn`); measure again after traffic changes (trafficview `TV_ROR=1`).
 
 **Deer** (all in 0.28.0 to 0.31.0)
 - Where deer live is drawn fresh each race, like the weather (from `Weather.Seed`, salted), not fixed with the map.

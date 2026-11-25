@@ -471,7 +471,8 @@ namespace HalfGripOpenWorld
 			// Left of the road's way is (-tz, tx); a car on the left faces against the road's way. Far enough out that a car driving past
 			// in the lane clears it (the day's traffic does not see parked cars): on a town street two wheels up on the sidewalk. Never past
 			// the sidewalk's back, where a terrace's front stands (on a narrow lane that leaves it touching a passing car's side).
-			double off = Math.Min(Math.Max(road.Half - KerbIn, Traffic.LaneOffset(road) + CarWide + KerbClear), road.Half + Network.Verge - CarWide * 0.5 - 0.1);
+			double half = Network.Widened(road, s), wide = half - road.Half;
+			double off = Math.Min(Math.Max(half - KerbIn, Traffic.LaneOffset(road) + wide + CarWide + KerbClear), half + Network.Verge - CarWide * 0.5 - 0.1);
 			return new Spot { X = x - tz * off * side, Z = z + tx * off * side, Hx = tx * -side, Hz = tz * -side };
 		}
 

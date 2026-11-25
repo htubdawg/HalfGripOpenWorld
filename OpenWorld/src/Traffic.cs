@@ -396,11 +396,14 @@ namespace HalfGripOpenWorld
 			{
 				Edge e = Edges[ei];
 				Network.Road road = Network.Roads[e.Road];
-				double off = LaneOffset(road), sign = e.A == n ? -1.0 : 1.0;
+				double sign = e.A == n ? -1.0 : 1.0;
 				double d = node.Box;
 				while (d < BoxMost && d < e.Length - 1.0)
 				{
 					double s = e.A == n ? e.Sa + d : e.Sb - d;
+					// (The lane's own place: where the road is widened for a bay the lane is out a little further, which would push the
+					// whole junction's box back by the bay's own length.)
+					double off = LaneOffset(road);
 					At(road, s, out double x, out double z, out double _);
 					Heading(road, s, out double hx, out double hz);
 					x += hz * sign * off;
@@ -428,10 +431,13 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				Network.Road other = Network.Roads[f.Road];
-				double need = other.Half + StopClear;
 				double sNode = f.A == n ? f.Sa : f.Sb, lo = Math.Max(0.0, sNode - 150.0), hi = Math.Min(other.S[other.Count - 1], sNode + 150.0);
 				for (double q = lo; q <= hi; q += 2.0)
 				{
+					// (Its own width, not a bay's widening: the box is the whole junction's, so a side road meeting a road widened for a bay
+					// at a slant pushed every way in's stop line back, 29 against 23 at Kingsbridge's node 6, and the junction held each car
+					// longer. A car waiting there stands a little onto the widened shoulder, clear of the lane.)
+					double need = other.Half + StopClear;
 					At(other, q, out double ox, out double oz, out double _);
 					if ((ox - x) * (ox - x) + (oz - z) * (oz - z) < need * need)
 					{

@@ -4,59 +4,72 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-25.
+Last written 2026-11-25 (later the same day).
 
 ## Where things stand
 
 - **Branch: `traffic-test-branch`.** Work and push only there; never start a new branch. Before starting, look at every branch's
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
-- **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights (logic in `TrafficSignals.cs`, drawn American style by
-  `SignalPoles.cs` and `SignalHeads.cs`), right of way fixes, lanes no longer laid on lanes (`Network.Throughs`, meshcheck
-  `alongside`), late drawn cars let off a stand with nothing to stand for (`TrafficLate.SkipStand`), **the highway reworked**,
-  and the queues' fixes (below: close junctions as pairs, the lights seeing the whole queue). **The world changed** since 0.33.0, so everyone in a room needs the same build. Bump the version with the next release.
-- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 61). The owner has seen the reworked highway in
-  a screenshot (2026-11-25) and asked for the four fixes below, then for the four lights changes after them, then for the long
-  queues to be looked into.
+- **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights, right of way fixes, lanes no longer laid on lanes,
+  late drawn cars let off a stand, **the highway reworked**, the queues' fixes, and now (below) **Kingsbridge's left-turn lane**, two
+  room fixes and right on red measured and left off. **The world changed** since 0.33.0 (node 6's road is a lane wider; the
+  traffic's day too), so everyone in a room needs the same build. Bump the version with the next release.
+- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 62).
 
-## The queues (2026-11-25, the owner: "investigate that", then items 1 to 5)
+## Node 6's turn lane and right on red (2026-11-25, the owner: "For node 6, install the actual turn lane" and "I'd like to keep right on red when it helps")
 
-Waits are in real seconds: the traffic runs in real time and a game hour is 100 s (`Traffic.DaySeconds` 2400), so "900 s" is 9
-game hours. Traced with a throwaway copy of `TrafficDay` that logs why each car near a node is refused each step (not committed: the
-patch is easy to redo, see the end). What held the heads of the queues:
-- **Short stretches let cars through one at a time.** `Room` wants a car's length clear past the box; Kingsbridge's nodes 132 and 8
-  are 19 apart, so each car started from a stop: about 16 cars per 100 s (580 an hour) through the pair, the queue behind it from
-  17:00 past midnight (seed 9). Fixed: `TrafficDay.PairedNext`, two junctions closer than their boxes where the car has the right of
-  way at the second (or it has a light, or either is the trunk) are one: the room counted is past the second and the car is let in at
-  both at once (the chain the trunk already had). `TrafficDrive` sees a car on such a stretch as coming to the second
-  (`Mover.Then`): seed 14's known failure at node 8 is gone.
-- **The lights ended the side's green with the queue still coming.** `RunLights` saw only a car asking for that node (within its
-  grant reach, not yet let in), so the car held one junction back (Westhaven's link: two cars fit between node 233 and the trunk's
-  stop line at node 5) came too late: 7 to 8 s of green, 6 cars per 100 s. Now any car within `Detect` of the stop line, across a
-  junction in between and let in or not. (A first try counted a car stopped a hair past its line as through: a left turner at node
-  18 never called its arrow and the trunk locked up; now past only 3 units into the box.)
-- A car let in behind one that parks just past the box (`Room`'s `parking`) and, in `TrafficDrive`, the way out blocked by the
-  player's car round the corner (`blockedOut` now looks along the way out for obstacles): both stood across other cars' ways in the box
-  once the timing moved (seeds 8 and 13).
-- Tried and dropped: the main line's green running on while its cars keep coming, up to 40 s (worse on seeds 1 and 8: 439 and 468
-  minutes against 386 and 346).
-- **Right on red** (PA allows it after a stop): in, but off (`TrafficDay.RightOnRedOn`, trafficview `TV_ROR=1`). Over seeds 1, 8, 9:
-  386, 346, 435 minutes against 417, 342, 382, and seed 1's main line held up 104 times (limit 100). Ask the owner.
-- Blinking lights at night (the owner asked): not needed for these queues (the midnight one was the one-at-a-time crawl, not red
-  lights; the actuated lights rest on the main line's green already). Realism only; offer later.
+What was built (`TurnBays.cs`, new):
+- **The road**: `Network.Bays` (before `Junctions`, so mouths are cut against it) finds the T of main roads at each of
+  `TurnBays.Sites` (only node 6, (-2388, -4337)) and widens the Kingsbridge link by a lane (`Road.Wide`, `WideA0..WideB1`,
+  `Network.WideAt`, `Network.Widened`; `HalfAt` includes it): full from just north of node 42 (the lane junction 85 behind) to just
+  past the T, tapers 92 north and 50 south, fitted between the neighbouring junctions. The road index's paving tests use the widened
+  width, so the side roads' mouths meet its edge; plots, lots, towers, kerb spaces and poles stand back from it.
+- **Drawn** (`RoadMesh.WideStrip`, `BayPaint`): the texture's two halves pushed out to the edges, plain asphalt in the middle at the
+  texture's scale; two yellow lines (a painted median) coming together over the tapers; the bay from past node 42 to the stop line
+  (43 long: two cars) with its white line dotted 20 then solid and a white left arrow; no lines across the mouths. Looked at from
+  above with `JVIEW_TEX=1` (jview now textures main roads; `jview bays` lists the bays).
+- **Driven** (`TrafficDay`): `Laned` (the trunk, or the way up to a bay) gives the bay its own lane key (`MedianIx`); `IntoBay` moves
+  a car turning left at the bay's junction into it when there is room (it never moves back out; a car finding it full keeps to the
+  through lane and tries again). Drawn cars: through lanes half the widening out (`OnPath`), the bay on the centre line (`BayLane`).
+  `TrafficDrive` uses `Laned` too.
+- **Lights** (`TrafficSignals`): `BayArm` per lit node; the bay's left is on `ArrowPhase` but **protected and permissive**
+  (`Permissive`: it also goes on the main line's green, giving way; `State` green then, `Protected` false; `Apart` keeps it with the
+  main line); the arrow is called only after a left turner has stood waiting `BayArrowDelay` (8 s). `SignalPoles` hangs three heads
+  over the way in (two for the through lane, the arrow head over the bay), the stop line across the bay; `SignalHeads` shows a
+  flashing yellow arrow while permissive.
+- **Checks**: meshcheck `bays` (each site has its bay, a lane wider all along it, no other road meeting the widened stretch);
+  trafficview reports the bay (at a light with an arrow for it, cars into it; `TV_NOBAYS=1` drops it, `TV_ARROWDELAY=s` to measure).
 
-All 16 seeds after (`TV_DRIVE_ONLY=1`): **all pass** (before: seed 14 failed). Against the build before, all 16 seeds: junction
-waiting 5,559 minutes in all against 7,347 (-24%; every seed down, 231 to 508 a day against 294 to 654); but trips with a stand over
-300 s 271 against 284 and over 600 s 63 against 64: **the long stands moved, they did not go**. Down a lot on seeds 2, 6, 8, 10, 13,
-14, 15; up on 1, 4, 5, 9, 16, all at Kingsbridge's node 6 (below).
+Also fixed on the way (found tracing the gridlocks the bay set off):
+- **`Room`**: a car let in needs room to stop clear of the box behind the car in front with the standstill gap (`MinGap`, 7; it was
+  4), and the room ends at the next junction's stop line (it counted the whole edge). Two cars let into node 42 one behind the other
+  stood one short of node 6's line, the second in node 42's box, and nodes 42 and 6 locked each other up for the rest of the day.
+- Not done: the junction's box is one size for all its ways in; widening the link pushed node 6's to 29 (the side road meets it at a
+  slant), and that alone cost seed 1 about 250 minutes, so `Traffic.ClearOfOthers` keeps the road's own width: a car waiting on the
+  road to Pinewick stands about 2 onto the widened shoulder in the acute corner, clear of the lane. A stop distance per way in would
+  fix it properly (about 30 uses of `Node.Box`).
 
-**What is left: node 6's light, Kingsbridge.** Every stand over 600 s is now at node 43 ((-2509, -4169), a lane junction) feeding
-node 42, which is 85 from node 6 (a light, three primaries). The stretch 42 to 6 holds two or three cars; over half the cars on it
-turn left at 6 (toward Pinewick) and wait for the oncoming cars in the only lane, the cars going on stuck behind them; the side road's
-cars at 42 then have no room. A left-turn lane with an arrow at node 6 is the owner's idea and fits; it needs the road widened and
-painted there (`RoadMesh`, `Network.HalfAt`), the day's lanes (`TrafficDay`: a bay as on the trunk), `TrafficDrive`, `SignalPoles`'
-heads and the arrow phase for a light that is not the trunk's (`TrafficSignals.Arrows`). Asked the owner how they want it (a drawn
-lane, or the lights alone giving that approach its own green). At node 6 the busiest movements turn the corner (42 to 45, 45 to 47)
-rather than go along the main line chosen (42 to 47).
+The numbers, all 16 seeds (`TV_DRIVE_ONLY=1`), junction waiting / trips with a stand over 300 s / over 600 s:
+- before today: 5,559 / 271 / 63, all pass;
+- the room fixes alone (no bay, no right on red): 6,087 / 280 / 59;
+- **as committed (bay with its arrow, right on red off): 7,204 / 154 / 57**; 4 seeds fail one line, main-line cars held up by a car
+  giving way 102, 107, 114, 115 (limit 100; seed 16 was at 106 with the room fixes alone): mostly node 5's (a side car still in the
+  box when the trunk's green comes, as before) and node 6's permissive lefts;
+- the bay with permissive lefts only (no arrow): about the same as no bay (6,524 / 283 / 73 with right on red on);
+- the arrow at once (no delay): gridlocked seed 1 before the room fixes; worse than the delay after.
+So the bay halves the long stands but adds about 18% junction waiting: with it the southbound lefts get served, and that green
+comes out of the northbound morning commute up the link (the queue now backs up through nodes 44, 49, 67). **Ask the owner** which
+they prefer, and whether node 6's main line should be the busiest pair (42 to 45, the town to Pinewick) rather than the link.
+
+**Right on red**: measured on 16 seeds in each setting (also turning only into a gap 1.5 s more than a give way's, and counting the
+cars standing at the main line's stop line, so none is let go in the all red and caught by the main line's green): it never helped
+in total (6,347 against 6,087 without the bay, 6,851 against 6,524 with the permissive bay) and held main-line cars up over the limit
+on more seeds. Seed by seed it helps some (6, 10, 13, 15, 16) and costs others (1, 4, 8, 12). So it is **off**
+(`TrafficDay.RightOnRedOn`), its fixes kept; trafficview `TV_ROR=1` measures it. Tell the owner.
+
+Next (ask the owner first): a longer bay (it holds two cars; through node 42 as a two-way centre lane, the widening taper moved north
+toward node 2), a through green with the arrow for the bay's way in, more bays (`Sites`: node 8, Northcote's T), a stop distance per
+way in, then the leftovers below.
 
 ## The owner's lights report (2026-11-25)
 
@@ -141,11 +154,11 @@ Possible next steps (ask the owner):
 - More or longer K-rails, a wider median in places (the width is constant now; varying it changes `Network.HalfAt` and everything
   under it), rumble strips, a turn arrow painted in each bay.
 - Right-turn bays at the lit junctions (none now: a right turner slows in the outer lane).
-- Node 6's turn lane (above); then more circling cars in steps (300 choked the side roads' joins before the rework: measure again).
+- More circling cars in steps (300 choked the side roads' joins before the rework: measure again).
 
 ## Traffic leftovers
 
-1. Node 6 (above).
+1. Node 6's trade-off and the main-line hold-ups over the limit on 4 seeds (above).
 2. Physics cars "in each other": 0 to 4 a seed (limit 6).
 3. A physics car brushed the player's stopped car (seed 11): not looked at.
 4. Then the owner's test in the game (`docs/TESTING.md` 58 and 59).

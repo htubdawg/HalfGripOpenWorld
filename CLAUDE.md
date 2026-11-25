@@ -32,6 +32,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the back roads joined up (links where the way by road is a long detour, through ways from dead ends), drives and their homes, the ground's road beds |
 | `TownPlan.cs` | The towns' streets ring by ring (seafront, old roads, back lanes, ring roads, terrace patches, crescents and closes), streets meeting square, ground kept for the retail park and market place (part of `Network`) |
 | `TrunkLanes.cs` | The trunk's cross-section (a grass median 24 wide, flush, two lanes each way, narrow shoulders) and what is laid in its median, worked out once from the layout (built at the end of `Network.Build`): at each side road the median opening and a left-turn bay for the carriageway turning left there (no shoulder lanes, no median lanes to merge from: the owner, "the median is not meant to be used as a lane"), and K-rail on a few stretches clear of junctions. Paint and rails: `RoadMesh` draws them (`TrunkPaint`, `KRail`), `TrafficDay` drives the bays. No Unity types |
+| `TurnBays.cs` | Left-turn bays off the trunk, at the T's of main roads listed in `Sites` (Kingsbridge's node 6): `Network.Bays` lays each out before the junctions are cut and widens its road by a lane (`Road.Wide`, `Network.WideAt`, `Network.Widened`: the through lanes half a lane out each, a painted median between them that becomes the bay); `RoadMesh` draws and paints it (`WideStrip`, `BayPaint`: yellow lines, the bay's white line, a turn arrow), `TrafficDay` drives it (`IntoBay`, `Laned`), `TrafficSignals` gives it an arrow (protected and permissive, called after `BayArrowDelay`), `SignalPoles` hangs the arrow head. No Unity types |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track, drive and footpath, and water meshes and their pixel-art textures; covered bridges on the lanes; the trunk's junction paint (`TrunkPaint`: openings and bays paved at the texture's scale, the edge line broken at side roads, bay lines dotted where cars move in) |
 | `Destinations.cs` | The key places the debug teleport goes round |
@@ -145,13 +146,15 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   positions never in deep water, over a drop or on a road but at their crossing, the buck's antlers clear of the body and the ground in every pose, fawns few and only in families, dead deer's bodies coming to rest on the ground, fleeing deer never in deep water, on another road or jumping (deer), the highway's wrap: the trunk's tunnels paired, every lane landing in its lane, the tunnel floors clear of the ground (wrap), the
   sea's ring of water kept off the foot of the trunk's cutting at 7,548, -9,002 (seastrip), the trunk's median no lane: every junction
   lane a left-turn bay ending at a junction where its carriageway turns left, K-rail on a few stretches clear of junctions and bays
-  (median);
+  (median), a left-turn bay off the trunk at each site, its road a lane wider all along it and no other road meeting the widened stretch
+  (bays);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
   marking ground in a mouth (cyan), surfaces poking through (magenta), paving under the ground (yellow) and steps; other modes draw a
   list of points, random junctions or dead ends, list hubs, places or the roads near a point (see the top of its `Program.cs`);
-  `JVIEW_TEX=1` draws the trunk with its markings (median, bays, lines).
+  `JVIEW_TEX=1` draws the trunk and the main roads with their markings (median, bays, lines; a bay off the trunk); `bays` lists the
+  bays off the trunk.
   Look at the junctions an owner reports with it, and before and after any change to junctions, cuts or `RoadMesh`.
 - `dotnet run -c Release --project tools/eventsim -- [seed]` drives `EventRoom` on pretend machines over a pretend network with
   delays (joins, leaves, the Host leaving, creates and Starts at once, cut-off, time limit, leaving mid-race, a late joiner, the

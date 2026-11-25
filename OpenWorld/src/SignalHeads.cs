@@ -259,6 +259,12 @@ namespace HalfGripOpenWorld
 				{
 					int arrow = day.Lights.State(m.Node, m.Arm, v.LeftOut, w);
 					int onArrow = arrow == TrafficSignals.Green ? 2 : arrow == TrafficSignals.Amber ? 1 : 0;
+					if (arrow == TrafficSignals.Green && !day.Lights.Protected(m.Node, m.Arm, v.LeftOut, w))
+					{
+						// A permissive left (a bay off the trunk, on the main line's green): the flashing yellow arrow, once a second
+						// (the MUTCD's permissive indication), all dark between flashes.
+						onArrow = w - Math.Floor(w) < 0.5 ? 1 : -1;
+					}
 					if (onArrow != v.ShownArrow)
 					{
 						v.ShownArrow = onArrow;

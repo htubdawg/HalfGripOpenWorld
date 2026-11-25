@@ -130,6 +130,7 @@ internal static class Program
 			("deer", DeerChecks),
 			("wrap", WrapChecks),
 			("median", MedianChecks),
+			("bays", BayChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -634,6 +635,82 @@ internal static class Program
 	/// trunk's cutting south of the road. The tile's lake and sea quads (four vertices at one height, larger than a pond's) are sampled
 	/// every unit over x 7,500 to 7,700 and z -9,012 to -9,000: none may be above the ground.
 	/// </summary>
+	/// <summary>
+	/// The left-turn bays off the trunk (TurnBays): one at each site asked for; the road a lane wider all along the bay; and no road but
+	/// the bay's own two (the side road at its T, the junction behind) meeting the road anywhere on its widened stretch or its tapers, where
+	/// the widening would run through a junction it was not laid out for.
+	/// </summary>
+	private static bool BayChecks()
+	{
+		int unmatched = 0, narrow = 0, others = 0;
+		foreach ((double X, double Z) site in TurnBays.Sites)
+		{
+			int found = 0;
+			foreach (TurnBays.Bay b in TurnBays.Bays)
+			{
+				Network.Edge(Network.Roads[b.Road], b.Junction, 0, 0.0, out double jx, out double jz, out double _);
+				found += Math.Abs(jx - site.X) < TurnBays.SiteReach + 5.0 && Math.Abs(jz - site.Z) < TurnBays.SiteReach + 5.0 ? 1 : 0;
+			}
+			if (found != 1)
+			{
+				unmatched++;
+				Console.WriteLine("  bays: " + found + " bays at the site (" + site.X.ToString("0") + ", " + site.Z.ToString("0") + ")");
+			}
+		}
+		foreach (TurnBays.Bay b in TurnBays.Bays)
+		{
+			Network.Road road = Network.Roads[b.Road];
+			for (double s = b.S0; s <= b.S1; s += 1.0)
+			{
+				if (Math.Abs(Network.WideAt(road, s) - TurnBays.Extra) > 1e-6)
+				{
+					narrow++;
+					Console.WriteLine("  bays: road " + b.Road + " not a lane wider at " + s.ToString("0") + " along it, in its bay");
+					break;
+				}
+			}
+			for (int q = 0; q < Network.Roads.Count; q++)
+			{
+				Network.Road other = Network.Roads[q];
+				if (q == b.Road || q == b.Other || other.Kind > RoadKind.Lane || other.Count < 2)
+				{
+					continue;
+				}
+				for (int k = 0; k < other.Count; k++)
+				{
+					double best = double.MaxValue, bs = 0.0;
+					for (int i = 0; i + 1 < road.Count; i++)
+					{
+						if (road.S[i + 1] < road.WideA0 || road.S[i] > road.WideB1)
+						{
+							continue;
+						}
+						Lines.Project(road.X, road.Z, i, other.X[k], other.Z[k], out double t, out double d);
+						if (d < best)
+						{
+							best = d;
+							bs = road.S[i] + (road.S[i + 1] - road.S[i]) * t;
+						}
+					}
+					if (best > Network.Widened(road, bs) + other.Half + 1.0 || bs <= road.WideA0 || bs >= road.WideB1)
+					{
+						continue;
+					}
+					bool own = Math.Abs(bs - b.Back) < b.BackHalf + other.Half + 20.0;
+					if (!own)
+					{
+						others++;
+						Console.WriteLine("  bays: road " + q + " (" + other.Kind + ") meets road " + b.Road + " at " + bs.ToString("0") + " along it, on its widened stretch " + road.WideA0.ToString("0") + " to " + road.WideB1.ToString("0"));
+						break;
+					}
+				}
+			}
+		}
+		bool ok = unmatched == 0 && narrow == 0 && others == 0;
+		Console.WriteLine("bays: " + TurnBays.Bays.Count + " left-turn bays off the trunk at " + TurnBays.Sites.Length + " sites; sites without one " + unmatched + ", bays not a lane wider all along " + narrow + ", other roads meeting a widened stretch " + others + (ok ? "  ok" : "  FAIL"));
+		return ok;
+	}
+
 	private static bool MedianChecks()
 	{
 		int notBay = 0, through = 0, loose = 0, shortBays = 0, railNear = 0, railOnBay = 0;

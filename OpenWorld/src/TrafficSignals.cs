@@ -16,8 +16,11 @@ namespace HalfGripOpenWorld
 	/// turns on a green arrow (protected: both left-turn bays together, every through lane red; the owner, 2026-11-25: "dedicated
 	/// left-turn lanes with lights that have left-turn arrows"), then the side arms (one, or two facing each other at a crossroads).
 	/// The arrow phase and the side phase only come up when a car waits for them. A left turn off the trunk at a light goes only on
-	/// its arrow; elsewhere a left on green is permissive (it gives way to the cars coming the other way on the same green). A car
-	/// may go on green, and on amber only if it could not stop comfortably; never on red.
+	/// its arrow; elsewhere a left on green is permissive (it gives way to the cars coming the other way on the same green). A left-turn
+	/// bay off the trunk (<see cref="TurnBays"/>, Kingsbridge's node 6) has an arrow too, protected and permissive: its cars turn on the
+	/// main line's green giving way (drawn as a flashing yellow arrow), and one that has waited <see cref="BayArrowDelay"/> without a
+	/// gap calls the arrow. A car may go on green, and on amber only if it could not stop comfortably; never on red (but a right turn
+	/// from a side road after a stop: <see cref="TrafficDay"/>'s right on red).
 	/// </summary>
 	internal static class TrafficSignals
 	{
@@ -29,6 +32,13 @@ namespace HalfGripOpenWorld
 
 		/// <summary>Seconds: the left arrow's least and most green (the bays hold about five cars each).</summary>
 		internal const double ArrowMin = 6.0, ArrowMax = 20.0;
+
+		/// <summary>
+		/// Seconds a left turner must have stood waiting in a bay off the trunk (its left permissive on the main line's green) before it calls
+		/// the arrow: the detector's delay, as at real permissive bays, so the arrow (which holds the main line red both ways) comes up only
+		/// for a car that cannot find a gap, not for every car that slows for one. The trunk's arrows are called at once (no permissive left).
+		/// </summary>
+		internal static double BayArrowDelay = 8.0;
 
 		/// <summary>The phases a movement goes on: the main line going on or turning right, the side arms, the main line's left turns on their arrow.</summary>
 		internal const int MainPhase = 0, SidePhase = 1, ArrowPhase = 2;
@@ -45,6 +55,9 @@ namespace HalfGripOpenWorld
 		/// <summary>The junctions with a light, in node order (for trafficview, and the lights to be drawn).</summary>
 		internal static readonly List<int> Nodes = new List<int>();
 
+		/// <summary>Per node: the main-line arm with a left-turn bay off the trunk up to it (<see cref="TurnBays"/>), or -1.</summary>
+		private static int[] bayArm = new int[0];
+
 		/// <summary>
 		/// Which junctions get a light: three or more arms with a main line, where the main line is a primary road or the trunk and the
 		/// busiest side arm a secondary road or bigger (the links into the towns meeting the trunk, the towns' main roads meeting each
@@ -54,10 +67,12 @@ namespace HalfGripOpenWorld
 		{
 			int n = Traffic.Nodes.Count;
 			index = new int[n];
+			bayArm = new int[n];
 			Nodes.Clear();
 			for (int node = 0; node < n; node++)
 			{
 				index[node] = -1;
+				bayArm[node] = -1;
 				List<int> links = Traffic.Links[node];
 				TrafficDay.MainOf(node, out int a, out int b);
 				if (links.Count < 3 || a < 0)
@@ -79,7 +94,23 @@ namespace HalfGripOpenWorld
 				}
 				index[node] = Nodes.Count;
 				Nodes.Add(node);
+				// A left-turn bay on a main arm, ending at this junction, for the cars coming in along it.
+				foreach (int arm in new[] { a, b })
+				{
+					Traffic.Edge e = Traffic.Edges[links[arm]];
+					double js = e.B == node ? e.Sb : e.Sa, from = e.B == node ? e.Sa : e.Sb;
+					if (TurnBays.At(e.Road, js > from ? 1 : -1, js) >= 0)
+					{
+						bayArm[node] = arm;
+					}
+				}
 			}
+		}
+
+		/// <summary>The main-line arm of junction <paramref name="node"/> with a left-turn bay off the trunk up to it, or -1.</summary>
+		internal static int BayArm(int node)
+		{
+			return node >= 0 && node < bayArm.Length ? bayArm[node] : -1;
 		}
 
 		private static RoadKind KindOf(int edge)
@@ -106,8 +137,15 @@ namespace HalfGripOpenWorld
 			return arm == a || arm == b ? 0 : 1;
 		}
 
-		/// <summary>Whether junction <paramref name="node"/>'s light has left arrows: its main line is the trunk (which has left-turn bays).</summary>
+		/// <summary>Whether junction <paramref name="node"/>'s light has left arrows: its main line is the trunk (which has left-turn bays), or a
+		/// main arm has a bay off the trunk (<see cref="BayArm"/>).</summary>
 		internal static bool Arrows(int node)
+		{
+			return TrunkArrows(node) || (Has(node) && BayArm(node) >= 0);
+		}
+
+		/// <summary>Whether junction <paramref name="node"/>'s main line is the trunk, with arrows for its bays (protected only).</summary>
+		private static bool TrunkArrows(int node)
 		{
 			if (!Has(node))
 			{
@@ -122,13 +160,37 @@ namespace HalfGripOpenWorld
 		internal static int PhaseOf(int node, int inArm, int outArm)
 		{
 			int p = PhaseOf(node, inArm);
-			return p == MainPhase && outArm >= 0 && Arrows(node) && TrafficDay.LeftTurn(node, inArm, outArm) ? ArrowPhase : p;
+			if (p != MainPhase || outArm < 0 || !TrafficDay.LeftTurn(node, inArm, outArm))
+			{
+				return p;
+			}
+			return TrunkArrows(node) || (Has(node) && BayArm(node) == inArm) ? ArrowPhase : p;
+		}
+
+		/// <summary>
+		/// Whether the movement is a left turn from a bay off the trunk: on its arrow, and also on the main line's green, giving way to
+		/// the cars coming the other way (protected and permissive, as most American left-turn bays with arrows at a T: the arrow only
+		/// comes up when a car waits in the bay). The trunk's lefts go only on their arrow (four lanes to cross).
+		/// </summary>
+		internal static bool Permissive(int node, int inArm, int outArm)
+		{
+			return !TrunkArrows(node) && Has(node) && BayArm(node) == inArm && outArm >= 0 && TrafficDay.LeftTurn(node, inArm, outArm);
 		}
 
 		/// <summary>Whether two movements at a junction with a light are green at different times (their cars never meet but in the all red).</summary>
 		internal static bool Apart(int node, int inA, int outA, int inB, int outB)
 		{
-			return Has(node) && PhaseOf(node, inA, outA) != PhaseOf(node, inB, outB);
+			if (!Has(node))
+			{
+				return false;
+			}
+			int a = PhaseOf(node, inA, outA), b = PhaseOf(node, inB, outB);
+			// A permissive left is green with the main line too.
+			if ((Permissive(node, inA, outA) && b == MainPhase) || (Permissive(node, inB, outB) && a == MainPhase))
+			{
+				return false;
+			}
+			return a != b;
 		}
 
 		/// <summary>
@@ -148,7 +210,7 @@ namespace HalfGripOpenWorld
 		internal sealed class Lights
 		{
 			private readonly int[] step;
-			private readonly double[] since, lastSeen, leftSeen;
+			private readonly double[] since, lastSeen, leftSeen, leftSince;
 			private readonly List<double>[] changes;
 			private readonly List<byte>[] steps;
 
@@ -159,6 +221,7 @@ namespace HalfGripOpenWorld
 				since = new double[n];
 				lastSeen = new double[n];
 				leftSeen = new double[n];
+				leftSince = new double[n];
 				changes = new List<double>[n];
 				steps = new List<byte>[n];
 				for (int i = 0; i < n; i++)
@@ -166,6 +229,7 @@ namespace HalfGripOpenWorld
 					since[i] = double.MinValue;
 					lastSeen[i] = double.MinValue;
 					leftSeen[i] = double.MinValue;
+					leftSince[i] = double.MaxValue;
 					changes[i] = new List<double>();
 					steps[i] = new List<byte>();
 				}
@@ -202,12 +266,15 @@ namespace HalfGripOpenWorld
 					{
 						leftSeen[i] = w;
 					}
+					// A bay off the trunk's left turner calls its arrow only once it has stood waiting for the detector's delay.
+					leftSince[i] = !leftWaiting[i] ? double.MaxValue : Math.Min(leftSince[i], w);
+					bool leftCalls = leftWaiting[i] && (BayArm(Nodes[i]) < 0 || w - leftSince[i] >= BayArrowDelay);
 					double t = w - since[i];
 					int to = -1;
 					switch (step[i])
 					{
 						case 0:
-							if ((waiting[i] || leftWaiting[i]) && t >= MainMin)
+							if ((waiting[i] || leftCalls) && t >= MainMin)
 							{
 								to = 1;
 							}
@@ -237,7 +304,7 @@ namespace HalfGripOpenWorld
 							{
 								// The arrow if a left turner waits, else the side (a side car turned the main line; as the lights without
 								// arrows always did).
-								to = leftWaiting[i] ? 3 : 6;
+								to = leftCalls ? 3 : 6;
 							}
 							break;
 						case 5:
@@ -277,6 +344,37 @@ namespace HalfGripOpenWorld
 					return Green;
 				}
 				// Changes up to w: the step is the last one's.
+				int st = StepAt(i, w);
+				switch (PhaseOf(node, arm, outArm))
+				{
+					case MainPhase: return st == 0 ? Green : st == 1 ? Amber : Red;
+					case ArrowPhase:
+						if (Permissive(node, arm, outArm) && st <= 1)
+						{
+							// On the main line's green (giving way), and its amber.
+							return st == 0 ? Green : Amber;
+						}
+						return st == 3 ? Green : st == 4 ? Amber : Red;
+					default: return st == 6 ? Green : st == 7 ? Amber : Red;
+				}
+			}
+
+			/// <summary>Whether the movement's green or amber at day clock <paramref name="w"/> is its protected arrow (false: permissive on the
+			/// main line's green, drawn as a flashing yellow arrow, or not green at all).</summary>
+			internal bool Protected(int node, int arm, int outArm, double w)
+			{
+				int i = IndexOf(node);
+				if (i < 0 || PhaseOf(node, arm, outArm) != ArrowPhase)
+				{
+					return false;
+				}
+				int st = StepAt(i, w);
+				return st == 3 || st == 4;
+			}
+
+			/// <summary>Light <paramref name="i"/>'s step at day clock <paramref name="w"/>: the last change's up to then.</summary>
+			private int StepAt(int i, double w)
+			{
 				List<double> c = changes[i];
 				int lo = 0, hi = c.Count;
 				while (lo < hi)
@@ -291,13 +389,7 @@ namespace HalfGripOpenWorld
 						hi = mid;
 					}
 				}
-				int st = lo == 0 ? 0 : steps[i][lo - 1];
-				switch (PhaseOf(node, arm, outArm))
-				{
-					case MainPhase: return st == 0 ? Green : st == 1 ? Amber : Red;
-					case ArrowPhase: return st == 3 ? Green : st == 4 ? Amber : Red;
-					default: return st == 6 ? Green : st == 7 ? Amber : Red;
-				}
+				return lo == 0 ? 0 : steps[i][lo - 1];
 			}
 		}
 	}

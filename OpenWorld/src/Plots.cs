@@ -122,7 +122,8 @@ namespace HalfGripOpenWorld
 						}
 						// A terrace stands at the back of the sidewalk.
 						p.Setback = terrace ? Network.Verge + 0.5 : 6.0 + 8.0 * Unit(h, 4);
-						double off = road.Half + p.Setback + p.Depth * 0.5;
+						// (Back from the paving's edge where the road is widened for a left-turn bay too.)
+						double off = Network.Widened(road, k * spacing) + p.Setback + p.Depth * 0.5;
 						p.Cx = px + p.Nx * off;
 						p.Cz = pz + p.Nz * off;
 					}

@@ -413,7 +413,7 @@ namespace HalfGripOpenWorld
 				m.Dir = s.Dir;
 				m.S = s.S0 + s.Dir * Math.Max(0.0, Math.Min(s.Len, m.P - s.P0));
 			}
-			m.Lane = TrafficDay.TwoLane(s) ? TrafficDay.LaneAt(day.Legs[m.Leg], m.P) : 0.0;
+			m.Lane = TrafficDay.Laned(s) ? TrafficDay.LaneAt(day.Legs[m.Leg], m.P) : 0.0;
 			// In the box of the junction just passed; and the next one, wherever it is.
 			if (k > 0)
 			{
@@ -563,7 +563,7 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					if (TrafficDay.TwoLane(s) && Math.Abs(o.Lane - (j == k0 ? me.Lane : TrafficDay.LaneAt(leg, s.P0 + (o.S - s.S0) * s.Dir))) > 0.6)
+					if (TrafficDay.Laned(s) && Math.Abs(o.Lane - (j == k0 ? me.Lane : TrafficDay.LaneAt(leg, s.P0 + (o.S - s.S0) * s.Dir))) > 0.6)
 					{
 						// The trunk's other lane: beside it or passing, not in front.
 						break;

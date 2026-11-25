@@ -379,6 +379,8 @@ namespace HalfGripOpenWorld
 		private static double[][] bend;
 		/// <summary>Per edge, whether it is the trunk's (two lanes each way); per portal, whether its road is.</summary>
 		private static bool[] twoLaneEdge, twoLanePortal;
+		/// <summary>Per edge, the left-turn bay on it (index in <see cref="TurnBays.Bays"/>), or -1.</summary>
+		private static int[] bayEdge;
 		/// <summary>Per node, per link (as <see cref="Traffic.Links"/>): its place round the junction (0 the first by angle) and the way out along it (unit).</summary>
 		private static int[][] armRank;
 		private static double[][] armX, armZ;
@@ -465,6 +467,21 @@ namespace HalfGripOpenWorld
 				for (int e = 0; e < Traffic.Edges.Count; e++)
 				{
 					twoLaneEdge[e] = Network.Roads[Traffic.Edges[e].Road].Kind == RoadKind.Trunk;
+				}
+				// The left-turn bays off the trunk: each on the edge that runs up to its junction.
+				bayEdge = new int[Traffic.Edges.Count];
+				for (int e = 0; e < Traffic.Edges.Count; e++)
+				{
+					bayEdge[e] = -1;
+					Traffic.Edge ed = Traffic.Edges[e];
+					for (int b = 0; b < TurnBays.Bays.Count; b++)
+					{
+						TurnBays.Bay bay = TurnBays.Bays[b];
+						if (bay.Road == ed.Road && bay.S0 >= Math.Min(ed.Sa, ed.Sb) - 1.0 && bay.S1 <= Math.Max(ed.Sa, ed.Sb) + 1.0)
+						{
+							bayEdge[e] = b;
+						}
+					}
 				}
 				twoLanePortal = new bool[Network.Portals.Count];
 				for (int q = 0; q < Network.Portals.Count; q++)
@@ -1170,7 +1187,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Lane <paramref name="ix"/> of seg <paramref name="s"/> (0 on a road with one lane each way).</summary>
 		private static long LaneKey(Seg s, int ix)
 		{
-			return LaneOf(s) + (TwoLane(s) ? ix * InnerKey : 0L);
+			return LaneOf(s) + (Laned(s) ? ix * InnerKey : 0L);
 		}
 
 		/// <summary>The lane index of the trunk's left-turn bays (<see cref="TrunkLanes"/>).</summary>
@@ -2047,9 +2064,9 @@ namespace HalfGripOpenWorld
 		private void AddToLane(Mover m)
 		{
 			Seg s = m.L.Path[m.Seg];
-			if (m.Ix != 0 && !TwoLane(s))
+			if (m.Ix != 0 && !Laned(s))
 			{
-				// Off the trunk: its one lane (the move over is drawn through the junction's curve).
+				// Off the trunk (or past a bay): its one lane (the move over is drawn through the junction's curve).
 				m.Ix = 0;
 				m.LaneEnd = double.MaxValue;
 			}
@@ -2695,7 +2712,8 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			double margin = GiveWayAfter(r.M.Wait);
+			// Turning right on red: only into a gap that holds nobody up (the main line has the green and is not to wait for it).
+			double margin = GiveWayAfter(r.M.Wait) + (onRed ? RedMargin : 0.0);
 
 			// Its own pull-away through the box, as it will drive it: past the near half, and out of the box at what speed.
 			double farP = r.NodeP + box + Traffic.CarLength;
@@ -2716,13 +2734,13 @@ namespace HalfGripOpenWorld
 				(int edge, int toward, double before, int depth) = lookBack[i];
 				Traffic.Edge e = Traffic.Edges[edge];
 				long lane0 = edge * 2L + (e.B == toward ? 1 : 0);
-				for (int sub = 0; sub < (twoLaneEdge[edge] ? 4 : 1); sub++)
+				for (int sub = 0; sub < (twoLaneEdge[edge] || bayEdge[edge] >= 0 ? 4 : 1); sub++)
 				{
 				if (lanes.TryGetValue(lane0 + sub * InnerKey, out List<Mover> list))
 				{
 					foreach (Mover o in list)
 					{
-						if (o == r.M || o.V < 1.0)
+						if (o == r.M || (o.V < 1.0 && !onRed))
 						{
 							// Standing (queued, waiting to be let in, pulling out): not coming. Once it moves off it asks for the junction
 							// itself, and whoever has the box first then decides.
@@ -2736,6 +2754,13 @@ namespace HalfGripOpenWorld
 								continue;
 							}
 							int inA = LinkIndex(node, path[k].Edge), outA = LinkIndex(node, path[k + 1].Edge);
+							if (o.V < 1.0 && k != o.Seg)
+							{
+								// Turning right on red, a car standing at the main line's stop line counts as about to move off, whatever its
+								// light shows now (let go in the main line's all red, a car still in the box when its green came held it up);
+								// one standing further back does not.
+								break;
+							}
 							long oOut = TwoLane(path[k]) ? LaneOf(o, path[k + 1]) : LaneOf(path[k + 1]);
 							if (inA == r.InArm || HasGrant(o, k) || !Conflict(node, r.InArm, r.OutArm, r.InLane, r.OutLane, inA, outA, LaneOf(o, path[k]), oOut) || !(onRed ? YieldsUnlit(node, r.InArm, r.OutArm, inA, outA) : Yields(node, r.InArm, r.OutArm, inA, outA)))
 							{
@@ -2984,6 +3009,23 @@ namespace HalfGripOpenWorld
 			return ix == 1 ? 1f : ix == MedianIx ? (float)TrunkLanes.MedianLane : 0f;
 		}
 
+		/// <summary>As <see cref="LaneValue(int)"/> on seg <paramref name="s"/>: a left-turn bay off the trunk is on the widened road's centre line.</summary>
+		private static float LaneValue(int ix, Seg s)
+		{
+			if (ix == MedianIx && !TwoLane(s) && s.Edge >= 0)
+			{
+				return (float)BayLane(Network.Roads[Traffic.Edges[s.Edge].Road]);
+			}
+			return LaneValue(ix);
+		}
+
+		/// <summary>How far left of the through lane a left-turn bay's middle is on road <paramref name="road"/>, in lane widths: the through lane is half
+		/// the widening out from its own place, the bay on the centre line.</summary>
+		internal static double BayLane(Network.Road road)
+		{
+			return (Traffic.LaneOffset(road) + TurnBays.Extra * 0.5) / LaneWidth;
+		}
+
 		/// <summary>Distance along the trunk road at path distance <paramref name="p"/> on seg <paramref name="s"/>.</summary>
 		private static double RoadS(Seg s, double p)
 		{
@@ -3088,6 +3130,11 @@ namespace HalfGripOpenWorld
 			{
 				Seg[] path = m.L.Path;
 				Seg s = path[m.Seg];
+				if (!TwoLane(s) && Laned(s))
+				{
+					any |= IntoBay(m, w);
+					continue;
+				}
 				if (!TwoLane(s) || s.Edge < 0 || w < m.HoldUntil || w - m.Changed < JunctionLaneKeep)
 				{
 					continue;
@@ -3180,6 +3227,39 @@ namespace HalfGripOpenWorld
 			}
 			return any;
 		}
+
+		/// <summary>
+		/// A car on the way up to a left-turn bay off the trunk (<see cref="TurnBays"/>) that turns left at its junction moves into it once
+		/// beside it, given room, and waits there out of the through lane; the bay runs to the stop line, so it never moves back out.
+		/// If the bay is full it keeps to the through lane, and tries again each step as the queue moves up.
+		/// </summary>
+		private bool IntoBay(Mover m, double w)
+		{
+			Seg[] path = m.L.Path;
+			Seg s = path[m.Seg];
+			if (m.Ix != 0 || w < m.HoldUntil || w - m.Changed < JunctionLaneKeep || m.Seg + 1 >= path.Length)
+			{
+				return false;
+			}
+			TurnBays.Bay bay = TurnBays.Bays[bayEdge[s.Edge]];
+			double rs = RoadS(s, m.P), end = RoadS(s, s.P0 + s.Len);
+			int node = NodeAfter(path, m.Seg);
+			if (rs < bay.S0 || rs > bay.S1 || node < 0 || Math.Abs(end - bay.Junction) > 30.0 || !LeftTurn(node, LinkIndex(node, s.Edge), LinkIndex(node, path[m.Seg + 1].Edge)))
+			{
+				return false;
+			}
+			long target = LaneKey(s, MedianIx);
+			if (!RoomIn(target, m) || !GrantsAllowIx(m, MedianIx))
+			{
+				return false;
+			}
+			IntoBays++;
+			Switch(m, target, MedianIx, w);
+			return true;
+		}
+
+		/// <summary>Cars into a left-turn bay off the trunk (counted for trafficview).</summary>
+		internal int IntoBays;
 
 		/// <summary>
 		/// For mover <paramref name="m"/>, in the lane next to the junction lane it turns off from (the outer beside a deceleration lane,
@@ -3404,7 +3484,7 @@ namespace HalfGripOpenWorld
 			}
 			m.LaneRec.Add((float)m.P);
 			m.LaneRec.Add((float)Math.Min(s.P0 + s.Len, m.P + Math.Max(30.0, m.V * MoveOverTime)));
-			m.LaneRec.Add(LaneValue(ix));
+			m.LaneRec.Add(LaneValue(ix, s));
 		}
 
 		/// <summary>As <see cref="GrantsAllow"/>, into lane index <paramref name="ix"/>.</summary>
@@ -3905,10 +3985,17 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Off: over seeds 1, 8 and 9 it saved as much waiting on one as it cost on another (386, 346, 435 minutes against 417, 342, 382),
-		/// and its cars held main-line cars up more. trafficview's TV_ROR=1 turns it on, to measure again.
+		/// Off: it does not help here. The owner (2026-11-25): "keep right on red when it helps". Over all 16 seeds (with the room fixes of
+		/// that day) it added waiting, 6,347 minutes against 6,087 without the bay, 6,851 against 6,524 with it, and held main-line cars up
+		/// over trafficview's limit on four or five seeds, even turning only into a gap with <see cref="RedMargin"/> to spare and counting
+		/// the cars standing at the main line's stop line. Seed by seed it helps some (6, 10, 13, 15, 16) and costs others (1, 4, 8, 12).
+		/// trafficview's TV_ROR=1 turns it on, to measure again.
 		/// </summary>
 		internal static bool RightOnRedOn = false;
+
+		/// <summary>Seconds more a car turning right on red wants in its gap than a car at a give way: it goes only where nobody on the green
+		/// has to slow for it.</summary>
+		private const double RedMargin = 1.5;
 
 		/// <summary>Cars let into the junction just past the trunk's box as they were let into the trunk's (counted for trafficview).</summary>
 		internal int Chained;
@@ -3933,9 +4020,19 @@ namespace HalfGripOpenWorld
 				// Behind a car let in that will stop just past the box to park: it would stand across the traffic it crosses.
 				return false;
 			}
-			double need = box + Traffic.CarLength + 4.0 + pending * (Traffic.CarLength + 4.0);
+			// Room to stop clear of the box, its back and all, behind the last car there (and those let in before it): its hold on the
+			// junction ends only then (Release). With 4 for the gap (less than the standstill gap, MinGap) a car let in on a short stretch
+			// (Kingsbridge's nodes 42 and 6) stood three short of it, in node 42's box, and the two junctions locked each other up.
+			double need = box + Traffic.CarLength + MinGap + pending * (Traffic.CarLength + MinGap);
 			Seg outSeg = r.M.L.Path[r.SegIndex + 1];
 			double outLength = outSeg.Edge >= 0 ? Traffic.Edges[outSeg.Edge].Length : outSeg.Len;
+			// Up to the next junction's stop line, where the cars let in queue if it holds them (two let in at node 42 onto the empty 85
+			// to node 6 stood one behind the other short of node 6's line, the second in node 42's box).
+			int next = NodeAfter(r.M.L.Path, r.SegIndex + 1);
+			if (next >= 0)
+			{
+				outLength -= Traffic.Nodes[next].Box;
+			}
 			if (!lanes.TryGetValue(r.OutLane, out List<Mover> list) || list.Count == 0)
 			{
 				return pending == 0 || outLength >= need;
@@ -4295,9 +4392,10 @@ namespace HalfGripOpenWorld
 				at.Dir = s.Dir;
 				at.S = sr;
 				at.InTunnel = false;
-				off = Traffic.LaneOffset(road);
+				// Where the road is widened for a bay, its through lanes are half the widening further out.
+				off = Traffic.LaneOffset(road) + Network.WideAt(road, sr) * 0.5;
 			}
-			if (TwoLane(s))
+			if (Laned(s))
 			{
 				off -= LaneWidth * LaneAt(leg, p);
 			}
@@ -4376,6 +4474,12 @@ namespace HalfGripOpenWorld
 		internal static bool TwoLane(Seg s)
 		{
 			return s.Edge >= 0 ? twoLaneEdge[s.Edge] : s.Portal >= 0 && twoLanePortal[s.Portal];
+		}
+
+		/// <summary>Whether seg <paramref name="s"/> has more than one lane its way: on the trunk, or up to a left-turn bay (<see cref="TurnBays"/>).</summary>
+		internal static bool Laned(Seg s)
+		{
+			return TwoLane(s) || (s.Edge >= 0 && bayEdge[s.Edge] >= 0 && TurnBays.Bays[bayEdge[s.Edge]].Dir == (s.Dir > 0 ? 1 : -1));
 		}
 
 		/// <summary>How far over to the trunk's inner lane leg <paramref name="leg"/>'s car is at path distance <paramref name="p"/>: 0 in the outer lane, 1 in the inner, between while moving over.</summary>

@@ -109,6 +109,14 @@ namespace HalfGripOpenWorld
 			arrow = -1;
 			if (road.Kind != RoadKind.Trunk)
 			{
+				if (TrafficSignals.BayArm(node) == k && TrafficSignals.Arrows(node))
+				{
+					// Up to a bay off the trunk: the through lane half the widening out, its two heads (the lane's and one over the
+					// line beside the bay), and the bay's arrow head over its middle, on the centre line.
+					double lane = Traffic.LaneOffset(road) + TurnBays.Extra * 0.5;
+					arrow = 2;
+					return new[] { lane + 1.5, lane - 6.0, 0.0 };
+				}
 				return lanes;
 			}
 			List<int> links = Traffic.Links[node];
@@ -176,7 +184,7 @@ namespace HalfGripOpenWorld
 					fx = lx / len;
 					fz = lz / len;
 				}
-				Mast m = WithArrow(Make(node, k, ox, oz, fx, fz, onto.Half + PoleOut, y, lanes, true, false, true), arrow);
+				Mast m = WithArrow(Make(node, k, ox, oz, fx, fz, Network.Widened(onto, o.A == node ? o.Sa + into : o.Sb - into) + PoleOut, y, lanes, true, false, true), arrow);
 				if (m != null)
 				{
 					All.Add(m);
@@ -188,7 +196,8 @@ namespace HalfGripOpenWorld
 			// verge of the road crossed, on the line of the way in, the arm along that verge with a head straight ahead of each lane. The
 			// drivers at the stop line look across the junction at them, as at any far-side light; on the right, else on the left.
 			double across = n.Box + 8.0, ax = n.X + hx * across, az = n.Z + hz * across;
-			Mast over = WithArrow(Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true) ?? Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true, true), arrow);
+			double wide = Network.Widened(road, e.A == node ? e.Sa : e.Sb);
+			Mast over = WithArrow(Make(node, k, ax, az, hx, hz, wide + PoleOut, y, lanes, true) ?? Make(node, k, ax, az, hx, hz, wide + PoleOut, y, lanes, true, true), arrow);
 			if (over != null)
 			{
 				All.Add(over);
@@ -199,7 +208,8 @@ namespace HalfGripOpenWorld
 			// (trafficview fails a way in left so).
 			double back = Math.Min(n.Box + 3.0, e.Length * 0.5);
 			Traffic.At(road, e.A == node ? e.Sa + back : e.Sb - back, out double sx, out double sz, out double _);
-			Mast near = WithArrow(Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false) ?? Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false, true), arrow);
+			double nearHalf = Network.Widened(road, e.A == node ? e.Sa + back : e.Sb - back);
+			Mast near = WithArrow(Make(node, k, sx, sz, hx, hz, nearHalf + PoleOut, y, lanes, false) ?? Make(node, k, sx, sz, hx, hz, nearHalf + PoleOut, y, lanes, false, true), arrow);
 			if (near == null)
 			{
 				return false;
@@ -389,8 +399,11 @@ namespace HalfGripOpenWorld
 			}
 			else
 			{
-				inner = 0.4;
-				outer = r.Half - 1.0;
+				// Where the road is widened for a bay (TurnBays), the middle between the through lanes is a painted median, or the bay:
+				// the line runs across the bay too where it is this way in's.
+				double middle = TurnBays.MiddleHalf(r, at);
+				inner = TurnBays.At(e.Road, dir, e.B == node ? e.Sb : e.Sa) >= 0 ? -middle : middle > 0.0 ? middle : 0.4;
+				outer = Network.Widened(r, at) - 1.0;
 			}
 			if (outer <= inner)
 			{
