@@ -87,8 +87,8 @@ handoff, in order. trafficview (`TV_DRIVE_ONLY=1`) over the 16 seeds (1 to 15, 2
    see. A late car standing with nothing in front of it could be let catch up (a ledger change): not done.
 6. **Stop lines on another road's paving (7 arms, every seed): not fixed, a layout fault.** At those nodes (664, 672, 686, 1258) the
    arm is clear only at its far end (79 of 80, 91 of 92, 137 of 137, 128 of 128): country lanes laid along each other. jview at node
-   1258 (7796, -10404) shows one road where four Lane arms meet. Fixing it is a world change (the lanes' layout in `Network`): ask the
-   owner.
+   1258 (7796, -10404) shows one road where four Lane arms meet. Fixing it is a world change (the lanes' layout in `Network`): the
+   next job (below).
 
 **trafficview's notes** (`TV_DRIVE_NOTES=1`): overlaps say how each car pulled out and what last moved it between lanes (with its
 grants and lane changes); box conflicts say when each was let in, what was braking it (`Binding`) and why the next junction would not
@@ -98,8 +98,29 @@ what held it at the moment it had stood 90 s, the car in front and the car stand
 **Checks run:** `tools/check.sh` passes (stub HalfGripTools.dll); trafficview on 16 seeds with `TV_DRIVE_ONLY=1`; the full trafficview
 (parking, the ledger, contact, early entries) on seeds 1, 7, 9 and 13: all pass but the stop lines. meshcheck, preview and the sims not run (no world, event, deer or room change).
 
-**Next:** ask the owner (before drawing the lights or building anything else): the lights drawn, the stop-line layout fault, town turn
-lanes (no longer needed for the jam). Then the owner's test in the game of this branch (lights' logic, the physics cars' early parking).
+**NEXT, in this order (do not ask the owner whether to fix a bug: fix it):**
+1. **Fix the overlapping lanes behind the stop-line failure** (item 6). Country lanes laid along each other at nodes 664 (-5751,
+   12853), 672 (-12858, -10046), 686 (1729, 3957) and 1258 (7796, -10404): only one road shows where three or four Lane arms meet.
+   Start with `jview near <x> <z> 160` and `jview at` on each to see which roads they are and where they run together, then find in
+   `Network` (the grown lanes and tracks, the back roads joined up: links and through ways) what lays a lane on top of another, and
+   stop it (merge them, or don't build the duplicate). It changes the world: everyone in a room needs the same build. Then run
+   meshcheck (all of it: `clear`, `homes`, `backroads`, `joints`, `hubs`, `poke` at least), preview, and trafficview on the 16 seeds:
+   "stop lines on another road's paving" must be 0. Add a check for it (meshcheck or preview: no two roads' centre lines within
+   their half widths along a stretch).
+2. **The leftovers of the 16-seed run** (run 11 above): seed 2's three physics cars stopped over 90 s at Kingsbridge's cluster
+   (nodes 49 and 50: `TV_DRIVE_NOTES=1`, read the `at 90 s:` notes, the head of the queue first); seed 4's car stopped at the edge of
+   node 33's box (-47 of 47) behind a car going through (the day stops it a hair inside the box, or the check counts the edge);
+   late drawn cars replaying a stop the day made in a queue that is gone (seeds 4 and 12 in earlier runs): let a late car standing
+   with nothing in front of it catch up (a ledger change); the physics car that brushed the player's stopped car (seed 11, run 9).
+3. Rerun the 16 seeds after each change: every fix here moved the day and turned up a different single failure somewhere else.
+   Keep going until all 16 pass.
+4. Then: the owner's test in the game of this branch (the lights' logic, the physics cars parking early). Drawing the lights and town
+   turn lanes come after; the owner decides when.
+
+**How the runs were done:** build trafficview, copy `tools/trafficview/bin/Release/net8.0` to the scratchpad, and run the copy on
+the 16 seeds 4 at a time in the background (`TV_DRIVE_ONLY=1 TV_DRIVE_NOTES=1 dotnet <copy>/trafficview.dll --seed N > sN.txt`),
+about 20 minutes for all 16 on this container; one line per seed from each report: junction waiting, overlaps, box conflicts, stopped
+across, physics pairs, physics box crossings, stops over 90 s, the FAIL count.
 
 ## READ THIS FIRST: right of way and the trunk's junction lanes (2026-11-24, branch `ccr-02e633e5-fytf3y`)
 
