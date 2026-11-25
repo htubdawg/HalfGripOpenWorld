@@ -119,6 +119,7 @@ internal static class Program
 			("homes", Homes),
 			("clear", ClearOfRoads),
 			("backroads", BackRoads),
+			("laneoverlap", LaneOverlap),
 			("deer", DeerChecks),
 			("wrap", WrapChecks),
 		};
@@ -3358,6 +3359,51 @@ internal static class Program
 	private static bool Wet(double x, double z)
 	{
 		return Rivers.Water(x, z, out double level) && WorldGen.Height(x, z) - Network.Lift < level + 0.5;
+	}
+
+	// Country lanes can cross, but should not share the same strip of paving for 60 units.
+	private static bool LaneOverlap()
+	{
+		int overlaps = 0;
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (road.Kind != RoadKind.Lane)
+			{
+				continue;
+			}
+			var runs = new Dictionary<int, (int start, int last)>();
+			for (int i = 0; i < road.Count; i++)
+			{
+				foreach ((int q, int j) in Near(road.X[i], road.Z[i]))
+				{
+					Network.Road other = Network.Roads[q];
+					if (q >= r || other.Kind != RoadKind.Lane)
+					{
+						continue;
+					}
+					Lines.Project(other.X, other.Z, j, road.X[i], road.Z[i], out double _, out double distance);
+					if (distance > Math.Min(road.Half, other.Half))
+					{
+						continue;
+					}
+					bool seen = runs.TryGetValue(q, out var run);
+					if (seen && run.last == i)
+					{
+						continue;
+					}
+					int start = seen && run.last == i - 1 ? run.start : i;
+					runs[q] = (start, i);
+					if (i > start && road.S[i] - road.S[start] >= 60 && road.S[i - 1] - road.S[start] < 60)
+					{
+						overlaps++;
+						Console.WriteLine("  overlapping lanes: " + road.Name + " and " + other.Name + " at " + road.X[start] + ", " + road.Z[start]);
+					}
+				}
+			}
+		}
+		Console.WriteLine("laneoverlap: " + overlaps + " shared stretches");
+		return overlaps == 0;
 	}
 
 	private static bool BackRoads()

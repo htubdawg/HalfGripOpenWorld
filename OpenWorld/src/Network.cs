@@ -1394,23 +1394,23 @@ namespace HalfGripOpenWorld
 		/// Turns a routed path into roads: every stretch of the path not on a road already built becomes a road, from where it leaves the
 		/// network (or the start) to where it joins it again (or the end). Ends that join the network are moved onto the nearest point of
 		/// the road there, and pinned to its height. With <paramref name="level"/>, the start's height is held that far along (the circuit's
-		/// road leaves its paddock level, or its bed and banks would rise through the paddock's edge). With <paramref name="fromStart"/>,
-		/// the first stretch starts at (ax, az) though that is on a road (a through way from a road's dead end).
+		/// road leaves its paddock level, or its bed and banks would rise through the paddock's edge). With <paramref name="parent"/>,
+		/// the first stretch starts at (ax, az) on that parent road (a through way from a road's dead end).
 		/// </summary>
-		private static List<Road> Build(RoadKind kind, string name, List<int> path, double ax, double az, double bx, double bz, double level = 0.0, bool fromStart = false)
+		private static List<Road> Build(RoadKind kind, string name, List<int> path, double ax, double az, double bx, double bz, double level = 0.0, int parent = -1)
 		{
 			List<Road> made = new List<Road>();
 			int n = path.Count;
 			int k = 0;
 			while (k < n)
 			{
-				if (router.OnRoad(path[k]) && !(fromStart && k == 0))
+				if (router.OnRoad(path[k]) && !(parent >= 0 && k == 0))
 				{
 					k++;
 					continue;
 				}
 				int s = k;
-				while (k < n && (!router.OnRoad(path[k]) || (fromStart && k == 0)))
+				while (k < n && (!router.OnRoad(path[k]) || (parent >= 0 && k == 0)))
 				{
 					k++;
 				}
@@ -1447,6 +1447,12 @@ namespace HalfGripOpenWorld
 				}
 				else if (SnapJoin(router.X(path[e + 1]), router.Z(path[e + 1]), 140.0, out double px3, out double pz3, out double py3))
 				{
+					// A through way routed back onto the lane it left can use that lane up to
+					// this cell. Build only the later stretches where the route leaves it again.
+					if (s == 0 && parent >= 0 && segments.Hit == parent)
+					{
+						continue;
+					}
 					ToEnd(kind, ref px3, ref pz3, ref py3);
 					pts.Add((px3, pz3));
 					pinEnd = py3;
@@ -4461,7 +4467,7 @@ namespace HalfGripOpenWorld
 							List<int> path = router.Find(RoadKind.Lane, x, z, tx, tz, -1, LinkShare, true);
 							if (path != null && PathLength(path) < dist * 1.8 + 200.0)
 							{
-								Build(RoadKind.Lane, road.Name + " on", path, x, z, double.NaN, 0.0, 0.0, true);
+								Build(RoadKind.Lane, road.Name + " on", path, x, z, double.NaN, 0.0, 0.0, r);
 							}
 							break;
 						}
