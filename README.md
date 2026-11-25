@@ -46,8 +46,8 @@ generated from a fixed seed (the same for every player) the way real country com
   car the same colour every race), their lamps off when parked, and at night the nearest few light the road. At junctions the
   main road has the right of way (the higher class, or the road that carries on through): cars from a side road wait for a gap,
   and nobody on the main road stops for them. Where two busy roads meet (16 junctions: the towns' links at the highway, the main
-  roads in the towns) there are traffic lights, American style: a steel mast arm over each way in with a yellow three-light head
-  over each lane and one more on the pole. The side road's green comes when a car waits there; the cars stop on red and go on
+  roads in the towns) there are traffic lights, American style: a steel mast arm for each way in, across the junction so you see it
+  from the stop line, with a yellow three-light head for each lane and one more on the pole. The side road's green comes when a car waits there; the cars stop on red and go on
   green, and everyone in a room sees the same lights. On the highway (two lanes each way) cars overtake in the inner lane, move over to
   let a car join, and are back in the outer lane before their exit. Cars past about 75 m are drawn together and cheaply (no
   shadows, wheels still). Near you (within about 90 m) the moving cars are real

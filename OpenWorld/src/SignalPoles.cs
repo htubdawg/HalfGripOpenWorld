@@ -5,11 +5,11 @@ namespace HalfGripOpenWorld
 {
 	/// <summary>
 	/// Where the traffic lights (<see cref="TrafficSignals"/>) stand, American style: one steel mast arm for each paved way into a junction
-	/// with a light, standing on the far right corner as the drivers coming see it (across the junction, on the right of the road they
-	/// go on into, so the heads are straight ahead of them from the stop line, as the MUTCD wants), its arm reaching out over their lanes
-	/// with a three-light head over each lane (two at least), and one more head on the pole. Where the far corner is another road's paving
-	/// or water, or there is no road ahead to reach over (the stem of a T), the mast stands on the near right corner at the stop line
-	/// instead, and across a T a pedestal on the far verge carries the far-side head. Only where they are: <see cref="SignalHeads"/> draws
+	/// with a light, always across the junction from the drivers coming (far side, as the MUTCD wants: from the stop line they look ahead
+	/// at the heads, not up at them overhead). Where a road carries on ahead, on its right just past the junction, the arm reaching back
+	/// over their lanes; at the stem of a T, on the far verge of the road crossed, the arm along that verge with a head straight ahead of
+	/// each lane; on the left where the right is not clear. A three-light head for each lane (two at least) and one more on the pole. Only
+	/// where nothing on the far side is clear does a mast stand at the stop line. Only where they are: <see cref="SignalHeads"/> draws
 	/// them and lights them from the day. No Unity types (trafficview checks them).
 	/// </summary>
 	internal static class SignalPoles
@@ -28,7 +28,7 @@ namespace HalfGripOpenWorld
 			public double Road;
 			/// <summary>The arm's length, from the pole.</summary>
 			public double Reach;
-			/// <summary>How far out along the arm each head hangs, one over each lane (none: a pedestal, its one head on the pole).</summary>
+			/// <summary>How far out along the arm each head hangs, one for each lane.</summary>
 			public double[] Heads;
 			/// <summary>On the far side of the junction (false: the near side, at the stop line).</summary>
 			public bool Far;
@@ -87,7 +87,7 @@ namespace HalfGripOpenWorld
 			return new[] { lane + 1.5, lane - 6.5 };
 		}
 
-		/// <summary>The mast for the way in along arm <paramref name="k"/> of <paramref name="node"/>, added to <see cref="All"/>: on the far right corner, else the near right one (with a pedestal across a T); false if neither is clear.</summary>
+		/// <summary>The mast for the way in along arm <paramref name="k"/> of <paramref name="node"/>, added to <see cref="All"/>: on the far right corner, else across the junction on the line of the way in, else at the stop line; false if nothing is clear.</summary>
 		private static bool Place(int node, int k)
 		{
 			List<int> links = Traffic.Links[node];
@@ -139,27 +139,27 @@ namespace HalfGripOpenWorld
 				}
 			}
 
-			// The near right corner, at the stop line: where there is no road ahead to reach over (the stem of a T) or no clear far corner.
+			// Across the junction where there is no road ahead to reach over (the stem of a T) or its far corner is not clear: on the far
+			// verge of the road crossed, on the line of the way in, the arm along that verge with a head straight ahead of each lane. The
+			// drivers at the stop line look across the junction at them, as at any far-side light; on the right, else on the left.
+			double across = n.Box + 8.0, ax = n.X + hx * across, az = n.Z + hz * across;
+			Mast over = Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true) ?? Make(node, k, ax, az, hx, hz, road.Half + PoleOut, y, lanes, true, true);
+			if (over != null)
+			{
+				All.Add(over);
+				return true;
+			}
+
+			// The last resort, the near right (else left) corner at the stop line: the heads over the drivers, hard to see from the line
+			// (trafficview fails a way in left so).
 			double back = Math.Min(n.Box + 3.0, e.Length * 0.5);
 			Traffic.At(road, e.A == node ? e.Sa + back : e.Sb - back, out double sx, out double sz, out double _);
-			// On the left only where the right is all paving (a road meeting the trunk at a slant): an arm reaching right over the lanes.
 			Mast near = Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false) ?? Make(node, k, sx, sz, hx, hz, road.Half + PoleOut, y, lanes, false, true);
 			if (near == null)
 			{
 				return false;
 			}
 			All.Add(near);
-			if (ahead < 0)
-			{
-				// Across a T, a pedestal on the far verge straight ahead of the lane, its head on the pole: the drivers at the stop line
-				// see it over the road crossed, as the MUTCD's far-side head (the arm's are over them).
-				double across = n.Box + 8.0;
-				Mast pedestal = Make(node, k, n.X + hx * across, n.Z + hz * across, hx, hz, lanes[0], y, new double[0], true);
-				if (pedestal != null)
-				{
-					All.Add(pedestal);
-				}
-			}
 			return true;
 		}
 
@@ -229,13 +229,13 @@ namespace HalfGripOpenWorld
 			};
 		}
 
-		/// <summary>The mast whose pole stands within 3.5 of (x, z), if any (not a pedestal's: it has no room for an arm).</summary>
+		/// <summary>The mast whose pole stands within 3.5 of (x, z), if any.</summary>
 		private static Mast PoleNear(double x, double z)
 		{
 			foreach (Mast other in All)
 			{
 				double dx = other.X - x, dz = other.Z - z;
-				if (other.Heads.Length > 0 && dx * dx + dz * dz < 3.5 * 3.5)
+				if (dx * dx + dz * dz < 3.5 * 3.5)
 				{
 					return other;
 				}

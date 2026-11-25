@@ -8,8 +8,8 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// The traffic lights drawn, American style (<see cref="SignalPoles"/> says where): a galvanized steel pole on a concrete footing with
 	/// a tapered mast arm over the lanes, a federal-yellow three-light head over each lane (red over amber over green, 12-inch lenses
-	/// under cap visors, on a black backplate with a yellow reflective border), and one more head on the pole; across a T, a short
-	/// pedestal with its head on the pole, facing the side road. Each lamp shows what the
+	/// under cap visors, on a black backplate with a yellow reflective border), and one more head on the pole, all across the junction
+	/// from the drivers they face. Each lamp shows what the
 	/// race's day of traffic ran (<see cref="TrafficSignals.Lights"/>, read at the day's clock), so the lights are the ones the cars obey,
 	/// the same on every machine in a room. Built once the day is (it decides which junctions have lights); each mast shown while its
 	/// ground is loaded and near enough. World positions are kept as doubles and turned into the scene's every frame, so an origin shift
@@ -398,15 +398,13 @@ namespace HalfGripOpenWorld
 		{
 			Vector3 up = Vector3.up, arm = new Vector3((float)m.Ax, 0f, (float)m.Az), face = new Vector3((float)m.Fx, 0f, (float)m.Fz);
 
-			// The footing, a little proud of the ground, and the pole from under it to its top with a cap (a pedestal's is short).
-			bool pedestal = m.Heads.Length == 0;
-			float top = pedestal ? Mathf.Max(road + (float)SignalPoles.PoleHeadClear + 4.2f, 5.5f) : Mathf.Max(road + (float)SignalPoles.PoleTop, 9f);
+			// The footing, a little proud of the ground, and the pole from under it to its top with a cap.
+			float top = Mathf.Max(road + (float)SignalPoles.PoleTop, 9f);
 			b.Tube(new Vector3(0f, -0.8f, 0f), new Vector3(0f, 0.35f, 0f), 1.0f, 1.0f, Colour(Concrete));
 			b.Box(new Vector3(0f, 0.45f, 0f), arm, up, face, 0.75f, 0.1f, 0.75f, Colour(Dark));
-			b.Tube(new Vector3(0f, 0.4f, 0f), new Vector3(0f, top, 0f), pedestal ? 0.35f : 0.55f, pedestal ? 0.3f : 0.38f, Colour(Steel));
+			b.Tube(new Vector3(0f, 0.4f, 0f), new Vector3(0f, top, 0f), 0.55f, 0.38f, Colour(Steel));
 
 			// The mast arm, rising a little toward its end (as real ones do), clamped to the pole.
-			if (!pedestal)
 			{
 				float armY = Mathf.Min(road + (float)SignalPoles.ArmHeight, top - 0.6f), reach = (float)m.Reach, rise = 0.025f;
 				b.Box(new Vector3(0f, armY, 0f), arm, up, face, 0.65f, 0.7f, 0.65f, Colour(Steel));
@@ -420,7 +418,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 
-			// The head on the pole, at a driver's eye from the stop line, on a bracket toward the road (a pedestal's on its top).
+			// The head on the pole, at a driver's eye from the stop line, on a bracket toward the road.
 			Vector3 pc = arm * 1.35f + up * Mathf.Min(road + (float)SignalPoles.PoleHeadClear + 1.8f, top - 2.4f);
 			b.Box(arm * 0.75f + up * pc.y, arm, up, face, 0.35f, 0.12f, 0.12f, Colour(Dark));
 			b.Box(arm * 0.75f + up * (pc.y - 1.2f), arm, up, face, 0.35f, 0.12f, 0.12f, Colour(Dark));

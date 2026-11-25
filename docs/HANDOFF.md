@@ -19,9 +19,11 @@ Last written 2026-11-25.
 - None of the unreleased work has been tried in the game (`docs/TESTING.md` 58).
 - Last checks: `tools/check.sh`, the whole meshcheck and preview pass. trafficview passes on all 16 seeds (`TV_DRIVE_ONLY=1`, seeds 1
   to 15 and 20261122) and in full on seeds 1, 7, 9 and 13. trafficsim passes.
-- **Traffic lights drawn** (2026-11-25, the owner: "American style"): `SignalPoles` lays out 64 masts at the 16 junctions with lights
-  (47 on the far corner, 3 sharing a pole, pedestals across the T's), `SignalHeads` draws them (mesh in `SignalMesh`) and lights each
-  lamp from `day.Lights.State`. trafficview's `traffic lights drawn` line checks them (seed 1 `TV_DRIVE_ONLY=1`: ok, no other FAIL).
+- **Traffic lights drawn** (2026-11-25, the owner: "American style"): `SignalPoles` lays out 48 masts at the 16 junctions with lights,
+  every one across the junction from its drivers (the owner, on the first version: arms over the stop line at the T's could only be
+  seen from 50 to 100 ft back; a T's stem now has its arm on the far verge of the road it meets). `SignalHeads` draws them (mesh in
+  `SignalMesh`) and lights each lamp from `day.Lights.State`. trafficview's `traffic lights drawn` line checks them, two heads within
+  20 degrees ahead and 40 ft or more past the stop line for every way in (seed 1 `TV_DRIVE_ONLY=1`: ok; the first layout failed 17 of 48).
   The mesh was looked at outside the game (the heads, visors and backplates from a driver's eye and behind) but not yet in it. Not
   done: no lights where the traffic failed to build (the day picks the junctions), no street name signs or "signal ahead" signs, poles
   not kept off houses or trees (none checked; houses stand back from the corners).

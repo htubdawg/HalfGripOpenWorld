@@ -87,19 +87,21 @@ internal static partial class Program
 
 	/// <summary>
 	/// The drawn traffic lights' masts (<see cref="SignalPoles"/>): every paved way into a junction with a light has one; no pole on a
-	/// road's paving, in the water or in another pole; every head hangs over paving; the far heads no more than 180 ft (the MUTCD's
-	/// most) past the stop line.
+	/// road's paving, in the water or in another pole; and the drivers can see them from the stop line (the owner, on the first drawn
+	/// lights: heads over the stop line were seen only from 50 to 100 ft back): from the middle of the outer lane at the line, at least two
+	/// heads within 20 degrees of straight ahead and at least 40 ft past the line (the MUTCD's cone of vision and nearest far-side head);
+	/// heads more than 180 ft past it (its most) are reported.
 	/// </summary>
 	private static void SignalChecks()
 	{
 		SignalPoles.Build();
-		int heads = 0, offRoad = 0, tooFar = 0, onPaving = 0, together = 0, far = 0, shared = 0;
-		string first = "";
-		double most = 180.0 * 0.3048 * 3.3;
+		int heads = 0, unseen = 0, tooFar = 0, onPaving = 0, together = 0, far = 0, shared = 0, ways = 0;
+		double near = 40.0 * 0.3048 * 3.3, most = 180.0 * 0.3048 * 3.3, cone = Math.Tan(20.0 * Math.PI / 180.0);
 		for (int i = 0; i < SignalPoles.All.Count; i++)
 		{
 			SignalPoles.Mast m = SignalPoles.All[i];
 			far += m.Far ? 1 : 0;
+			heads += m.Heads.Length + 1;
 			if (!SignalPoles.Clear(m.X, m.Z))
 			{
 				onPaving++;
@@ -115,29 +117,52 @@ internal static partial class Program
 				}
 				shared += dd <= 1e-6 ? 1 : 0;
 			}
-			Traffic.Node node = Traffic.Nodes[m.Node];
-			foreach (double d in m.Heads)
+		}
+		// Each way in: what its drivers see from the stop line.
+		var byWay = new Dictionary<(int, int), List<SignalPoles.Mast>>();
+		foreach (SignalPoles.Mast m in SignalPoles.All)
+		{
+			if (!byWay.TryGetValue((m.Node, m.Arm), out List<SignalPoles.Mast> l))
 			{
-				heads++;
-				double hx = m.X + m.Ax * d, hz = m.Z + m.Az * d;
-				// Over paving: some road's edge is past it.
-				if (Network.Claims(hx, hz, -1, 0.0, 0.0))
+				byWay[(m.Node, m.Arm)] = l = new List<SignalPoles.Mast>();
+			}
+			l.Add(m);
+		}
+		foreach (KeyValuePair<(int, int), List<SignalPoles.Mast>> kv in byWay)
+		{
+			ways++;
+			(int node, int arm) = kv.Key;
+			Traffic.Node n = Traffic.Nodes[node];
+			Network.Road road = Network.Roads[Traffic.Edges[Traffic.Links[node][arm]].Road];
+			TrafficDay.ArmOf(node, arm, out double dx, out double dz);
+			double hx = -dx, hz = -dz, rx = hz, rz = -hx, lane = SignalPoles.Lanes(road)[0];
+			double sx = n.X + dx * n.Box + rx * lane, sz = n.Z + dz * n.Box + rz * lane;
+			int seen = 0;
+			double closest = double.MaxValue;
+			foreach (SignalPoles.Mast m in kv.Value)
+			{
+				var at = new List<double>(m.Heads) { 1.35 };
+				foreach (double d in at)
 				{
-					offRoad++;
-					if (offRoad <= 8)
+					double px = m.X + m.Ax * d - sx, pz = m.Z + m.Az * d - sz;
+					double along = px * hx + pz * hz, side = Math.Abs(px * rx + pz * rz);
+					closest = Math.Min(closest, along);
+					if (along >= near && side <= along * cone)
 					{
-						Console.WriteLine("    head not over paving: node " + m.Node + " arm " + m.Arm + " (" + Network.Roads[Traffic.Edges[Traffic.Links[m.Node][m.Arm]].Road].Kind + ") " + (m.Far ? "far" : "near") + " side, pole (" + m.X.ToString("0") + ", " + m.Z.ToString("0") + "), head " + d.ToString("0") + " out at (" + hx.ToString("0") + ", " + hz.ToString("0") + ")");
+						seen++;
 					}
-					if (first.Length == 0)
+					if (along > most)
 					{
-						first = " (first: node " + m.Node + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + "), head at (" + hx.ToString("0") + ", " + hz.ToString("0") + "))";
+						tooFar++;
 					}
 				}
-				// From the stop line (the box's edge on the way in) to the head.
-				double ahead = (hx - node.X) * -m.Fx + (hz - node.Z) * -m.Fz + node.Box;
-				if (ahead > most)
+			}
+			if (seen < 2)
+			{
+				unseen++;
+				if (unseen <= 8)
 				{
-					tooFar++;
+					Console.WriteLine("    lights not seen from the stop line: node " + node + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ") arm " + arm + " (" + road.Kind + "), " + seen + " heads in view, the nearest " + (closest / 3.3 / 0.3048).ToString("0") + " ft past the line");
 				}
 			}
 		}
@@ -146,9 +171,9 @@ internal static partial class Program
 			Traffic.Node node = Traffic.Nodes[sn];
 			Console.WriteLine("    no mast: node " + sn + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") arm " + sa + " (" + Network.Roads[Traffic.Edges[Traffic.Links[sn][sa]].Road].Kind + "), box " + node.Box.ToString("0"));
 		}
-		bool ok = offRoad == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0;
-		Console.WriteLine("  traffic lights drawn: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads over the lanes; ways in with no mast " + SignalPoles.Skipped
-			+ ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", heads not over paving " + offRoad + first + ", far heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
+		bool ok = unseen == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0;
+		Console.WriteLine("  traffic lights drawn: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads; ways in with no mast " + SignalPoles.Skipped
+			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
 	}
 
 	/// <summary>
