@@ -31,6 +31,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
 | `Places.cs` | Settlement scores and placement in tiers; softening the land under places; farmland reach |
 | `Network.cs` | The road hierarchy: routing, sharing, junctions, profiles, bridges, grown streets and tracks, the back roads joined up (links where the way by road is a long detour, through ways from dead ends), drives and their homes, the ground's road beds |
 | `TownPlan.cs` | The towns' streets ring by ring (seafront, old roads, back lanes, ring roads, terrace patches, crescents and closes), streets meeting square, ground kept for the retail park and market place (part of `Network`) |
+| `TrunkLanes.cs` | The trunk's junction lanes, worked out once from the layout (built at the end of `Network.Build`): a deceleration and an acceleration lane on the outer shoulder at each side road, a left-turn lane and a merge lane in the median, overlapping ones joined into one, back-to-back median lanes sharing the median. Paint only: `RoadMesh` draws them (`TrunkPaint`), `TrafficDay` drives them. No Unity types |
 | `LandUse.cs` | What the ground is at a point (fields, woods, meadow, town...), as a colour |
 | `RoadMesh.cs`, `WaterMesh.cs` | Per-tile road, verge, sidewalk, track, drive and footpath, and water meshes and their pixel-art textures; covered bridges on the lanes |
 | `Destinations.cs` | The key places the debug teleport goes round |
