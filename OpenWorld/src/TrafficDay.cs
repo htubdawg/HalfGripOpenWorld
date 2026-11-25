@@ -283,32 +283,39 @@ namespace HalfGripOpenWorld
 			Array.Clear(leftComing, 0, n);
 			foreach (Mover m in movers)
 			{
-				int k = Asking(m);
-				if (k < 0)
-				{
-					continue;
-				}
+				// The first light ahead whose stop line is within the loop's reach, past any junction in between and whether or not the
+				// car is let in yet: a queue held a junction back, or let in and still coming to the line, keeps the side's green (it
+				// used to see only a car asking there, so a green ended with the queue behind the last car let in still to come).
 				Seg[] path = m.L.Path;
-				int node = NodeAfter(path, k);
-				int i = TrafficSignals.IndexOf(node);
-				if (i < 0 || k + 1 >= path.Length)
+				for (int k = m.Seg; k + 1 < path.Length; k++)
 				{
-					continue;
-				}
-				int phase = TrafficSignals.PhaseOf(node, LinkIndex(node, path[k].Edge), LinkIndex(node, path[k + 1].Edge));
-				if (phase == TrafficSignals.MainPhase)
-				{
-					continue;
-				}
-				bool[] seen = phase == TrafficSignals.ArrowPhase ? leftComing : lightComing, stopped = phase == TrafficSignals.ArrowPhase ? leftWaiting : lightWaiting;
-				double toLine = path[k].P0 + path[k].Len - Traffic.Nodes[node].Box - m.P;
-				if (toLine < TrafficSignals.Detect)
-				{
-					seen[i] = true;
-					if (m.V < 3.0)
+					if (path[k].P0 - m.P > TrafficSignals.Detect)
 					{
-						stopped[i] = true;
+						break;
 					}
+					int node = NodeAfter(path, k);
+					int i = node >= 0 ? TrafficSignals.IndexOf(node) : -1;
+					if (i < 0)
+					{
+						continue;
+					}
+					double toLine = path[k].P0 + path[k].Len - Traffic.Nodes[node].Box - m.P;
+					// (Stopped at the line it may stand a hair past it: past only once its front is well into the box.)
+					if (toLine < -3.0 || toLine >= TrafficSignals.Detect)
+					{
+						break;
+					}
+					int phase = TrafficSignals.PhaseOf(node, LinkIndex(node, path[k].Edge), LinkIndex(node, path[k + 1].Edge));
+					if (phase != TrafficSignals.MainPhase)
+					{
+						bool[] seen = phase == TrafficSignals.ArrowPhase ? leftComing : lightComing, stopped = phase == TrafficSignals.ArrowPhase ? leftWaiting : lightWaiting;
+						seen[i] = true;
+						if (m.V < 3.0 && !HasGrant(m, k))
+						{
+							stopped[i] = true;
+						}
+					}
+					break;
 				}
 			}
 			Lights.Step(w, lightWaiting, lightComing, leftWaiting, leftComing);
@@ -1126,6 +1133,8 @@ namespace HalfGripOpenWorld
 			public int InKey, OutKey;
 			public double NodeP;
 			public bool Forced;
+			/// <summary>Turning right on red: it gave way to everybody as at a junction with no light (<see cref="RightOnRed"/>).</summary>
+			public bool OnRed;
 			/// <summary>The speed it will be down to through the box (its turn's): what its clearing is reckoned at.</summary>
 			public double Through;
 			/// <summary>trafficview's notes: when it was let in, how far from the node and how fast.</summary>
@@ -2475,12 +2484,18 @@ namespace HalfGripOpenWorld
 				for (int i = start; i < end; i++)
 				{
 					Request r = requests[i];
+					onRed = false;
 					if (TrafficSignals.Has(node) && !TrafficSignals.MayGo(Lights.State(node, r.InArm, r.OutArm, now), r.M.V, r.NodeP - box - r.M.P))
 					{
-						// Its light is red (or amber it can stop for): it stops at the line. It holds up nobody on the
-						// other green, so it is not kept in the refused list.
-						RefusedSignal++;
-						continue;
+						if (!RightOnRed(r, box))
+						{
+							// Its light is red (or amber it can stop for): it stops at the line. It holds up nobody on the
+							// other green, so it is not kept in the refused list.
+							RefusedSignal++;
+							continue;
+						}
+						// Stopped at the line to turn right from a side road: it may go on red, giving way to everybody as with no light.
+						onRed = true;
 					}
 					bool ok = true, crossing = false;
 					bool force = r.M.Wait > ForceAfter;
@@ -2508,7 +2523,7 @@ namespace HalfGripOpenWorld
 							{
 								continue;
 							}
-							if (Yields(node, r.InArm, r.OutArm, g.InKey, g.OutKey))
+							if (onRed ? YieldsUnlit(node, r.InArm, r.OutArm, g.InKey, g.OutKey) : Yields(node, r.InArm, r.OutArm, g.InKey, g.OutKey))
 							{
 								// Giving way to it: the same reckoning as for a car still coming.
 								if (!pulled)
@@ -2529,7 +2544,7 @@ namespace HalfGripOpenWorld
 							// there (a gap taken, as a driver waiting at the line takes one): reckoned from a standstill for this one, and
 							// as if the other speeds up a fifth, with a second to spare. A car that gives way to this one was let in only
 							// with time to clear before it: reckoned pulling away, as it does.
-							bool gGives = Yields(node, g.InKey, g.OutKey, r.InArm, r.OutArm);
+							bool gGives = g.OnRed ? YieldsUnlit(node, g.InKey, g.OutKey, r.InArm, r.OutArm) : Yields(node, g.InKey, g.OutKey, r.InArm, r.OutArm);
 							double clear;
 							if (gGives)
 							{
@@ -2583,22 +2598,26 @@ namespace HalfGripOpenWorld
 						// Cars in the lane it joins move over for it if they can (the trunk's inner lane).
 						joining.Add(r.OutLane);
 					}
-					bool roomless = false, stuck = false;
+					bool roomless = false, stuck = false, pair = false;
 					Request chain = default;
 					if (ok || (force && !crossing))
 					{
-						roomless = !Room(r, granted, box);
+						// Two junctions closer than their boxes where it has the right of way at the next too (or the next has a light): one
+						// junction, let in at both at once, so the room that counts is past the next (no space between them to stand in), and
+						// a queue goes through the pair together instead of a car at a time.
+						pair = PairedNext(r, box);
+						roomless = !pair && !Room(r, granted, box);
 						// Two junctions closer than their boxes: not into this one while it would stand in it waiting at the next (the
 						// guard below still lets it go after a long wait, two such junctions could otherwise wait on each other; but never
-						// into the trunk's box, where it would stand across a carriageway).
-						stuck = !roomless && !ThroughNext(r, box, out chain);
+						// into the trunk's box, where it would stand across a carriageway, nor into a pair).
+						stuck = !roomless && !ThroughNext(r, box, pair, out chain);
 						ok = ok && !roomless && !stuck;
 						RefusedRoom += roomless || stuck ? 1 : 0;
 					}
 					// The guard against a car kept waiting for ever by the order: after a long wait the order is let go, never a car
 					// in the box and never the room on its way out.
 					bool forced = false;
-					if (!ok && force && !crossing && !roomless && !(stuck && twoLaneMain[node]))
+					if (!ok && force && !crossing && !roomless && !(stuck && (twoLaneMain[node] || pair)))
 					{
 						ok = true;
 						forced = true;
@@ -2606,8 +2625,9 @@ namespace HalfGripOpenWorld
 					}
 					if (ok)
 					{
-						Grant g = new Grant { M = r.M, Node = node, SegIndex = r.SegIndex, InLane = r.InLane, OutLane = r.OutLane, InKey = r.InArm, OutKey = r.OutArm, NodeP = r.NodeP, Forced = forced, At = now, AtP = r.M.P - r.NodeP, AtV = r.M.V, Through = Math.Min(DesiredAt(r.M.L.Profile, r.NodeP), DesiredAt(r.M.L.Profile, r.NodeP + box)) };
+						Grant g = new Grant { M = r.M, Node = node, SegIndex = r.SegIndex, InLane = r.InLane, OutLane = r.OutLane, InKey = r.InArm, OutKey = r.OutArm, NodeP = r.NodeP, Forced = forced, OnRed = onRed, At = now, AtP = r.M.P - r.NodeP, AtV = r.M.V, Through = Math.Min(DesiredAt(r.M.L.Profile, r.NodeP), DesiredAt(r.M.L.Profile, r.NodeP + box)) };
 						granted.Add(g);
+						RightsOnRed += onRed ? 1 : 0;
 						if (granted.Count == 1)
 						{
 							grantNodes.Add(node);
@@ -2717,7 +2737,7 @@ namespace HalfGripOpenWorld
 							}
 							int inA = LinkIndex(node, path[k].Edge), outA = LinkIndex(node, path[k + 1].Edge);
 							long oOut = TwoLane(path[k]) ? LaneOf(o, path[k + 1]) : LaneOf(path[k + 1]);
-							if (inA == r.InArm || HasGrant(o, k) || !Conflict(node, r.InArm, r.OutArm, r.InLane, r.OutLane, inA, outA, LaneOf(o, path[k]), oOut) || !Yields(node, r.InArm, r.OutArm, inA, outA))
+							if (inA == r.InArm || HasGrant(o, k) || !Conflict(node, r.InArm, r.OutArm, r.InLane, r.OutLane, inA, outA, LaneOf(o, path[k]), oOut) || !(onRed ? YieldsUnlit(node, r.InArm, r.OutArm, inA, outA) : Yields(node, r.InArm, r.OutArm, inA, outA)))
 							{
 								break;
 							}
@@ -3770,7 +3790,34 @@ namespace HalfGripOpenWorld
 			return held;
 		}
 
-		private bool ThroughNext(Request r, double box, out Request chain)
+		/// <summary>
+		/// Whether request <paramref name="r"/>'s next junction is so close that this one and it are one (its stop line inside this box)
+		/// and the car need not give way there: a light (it goes on green), the trunk, or coming in on the next one's main line. Such a pair
+		/// lets a car in at both at once (<see cref="ThroughNext"/>). One where it gives way at the next stays two junctions: let in there
+		/// with no gap would hold the main line up.
+		/// </summary>
+		private bool PairedNext(Request r, double box)
+		{
+			Seg[] path = r.M.L.Path;
+			int k = r.SegIndex + 1;
+			if (k + 1 >= path.Length || path[k].Edge < 0 || path[k + 1].Edge < 0 || path[k].Edge == path[k + 1].Edge)
+			{
+				return false;
+			}
+			int next = NodeAfter(path, k);
+			if (next < 0 || next == r.Node || path[k].Len - Traffic.Nodes[next].Box >= box + Traffic.CarLength + 4.0)
+			{
+				return false;
+			}
+			if (TrafficSignals.Has(next) || twoLaneMain[r.Node] || twoLaneMain[next])
+			{
+				return true;
+			}
+			int arm = LinkIndex(next, path[k].Edge);
+			return mainA[next] >= 0 && (arm == mainA[next] || arm == mainB[next]);
+		}
+
+		private bool ThroughNext(Request r, double box, bool pair, out Request chain)
 		{
 			chain = default;
 			Seg[] path = r.M.L.Path;
@@ -3833,13 +3880,35 @@ namespace HalfGripOpenWorld
 				r.M.NextWhy = "room at " + next + " box " + nextBox.ToString("0") + " seg " + path[k].Len.ToString("0");
 				return false;
 			}
-			// Let in at both at once where it would cross a carriageway of the trunk at either (see the caller).
-			if (twoLaneMain[r.Node] || twoLaneMain[next])
+			// Let in at both at once where it would cross a carriageway of the trunk at either, or the two are a pair (see the caller).
+			if (pair || twoLaneMain[r.Node] || twoLaneMain[next])
 			{
 				chain = q;
 			}
 			return true;
 		}
+
+		/// <summary>The request being looked at turns right on red (<see cref="RightOnRed"/>): it gives way as at a junction with no light.</summary>
+		private bool onRed;
+		/// <summary>Cars let in turning right on red (counted for trafficview).</summary>
+		internal int RightsOnRed;
+
+		/// <summary>
+		/// Whether request <paramref name="r"/>, at its red, may turn right on it: "Unless a sign tells you otherwise, you may turn right on a
+		/// red light after coming to a full stop" and yielding to traffic and pedestrians (PA Driver's Manual). Only from a side arm (the
+		/// main line's rights go on its green), stopped at the line.
+		/// </summary>
+		private bool RightOnRed(Request r, double box)
+		{
+			return RightOnRedOn && TrafficSignals.PhaseOf(r.Node, r.InArm) == TrafficSignals.SidePhase && RightTurn(r.Node, r.InArm, r.OutArm)
+				&& r.M.V < 0.5 && r.NodeP - box - r.M.P < 3.0;
+		}
+
+		/// <summary>
+		/// Off: over seeds 1, 8 and 9 it saved as much waiting on one as it cost on another (386, 346, 435 minutes against 417, 342, 382),
+		/// and its cars held main-line cars up more. trafficview's TV_ROR=1 turns it on, to measure again.
+		/// </summary>
+		internal static bool RightOnRedOn = false;
 
 		/// <summary>Cars let into the junction just past the trunk's box as they were let into the trunk's (counted for trafficview).</summary>
 		internal int Chained;
@@ -3847,6 +3916,7 @@ namespace HalfGripOpenWorld
 		private bool Room(Request r, List<Grant> granted, double box)
 		{
 			int pending = 0;
+			bool parking = false;
 			foreach (Grant g in granted)
 			{
 				// Let in and not yet through, unless it is behind this car in the same lane (a car let in or pulled out in front of
@@ -3854,7 +3924,14 @@ namespace HalfGripOpenWorld
 				if (g.OutLane == r.OutLane && g.M != r.M && g.M.P < g.NodeP && !(g.InLane == r.InLane && g.M.Lane == r.M.Lane && g.M.LaneU < r.M.LaneU))
 				{
 					pending++;
+					// Its trip ends just past the box: it stops there to pull into its space (as HeldIn reckons).
+					parking |= !g.M.L.Vanishes && g.M.L.Length < g.NodeP + box + 2.0 * Traffic.CarLength + 30.0;
 				}
+			}
+			if (parking && CrossesTraffic(r.Node, r.InArm, r.OutArm))
+			{
+				// Behind a car let in that will stop just past the box to park: it would stand across the traffic it crosses.
+				return false;
 			}
 			double need = box + Traffic.CarLength + 4.0 + pending * (Traffic.CarLength + 4.0);
 			Seg outSeg = r.M.L.Path[r.SegIndex + 1];

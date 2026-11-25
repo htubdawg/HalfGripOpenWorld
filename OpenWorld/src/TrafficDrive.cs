@@ -63,6 +63,13 @@ namespace HalfGripOpenWorld
 			public double NodeP, ToBox;
 			/// <summary>The junction whose box's far half it is in (-1: none), with its arms: two junctions can be closer than their boxes.</summary>
 			public int Back, BackIn, BackOut;
+			/// <summary>
+			/// Filled by <see cref="Prepare"/>: the junction after the one ahead where the stretch between them is shorter than a car past
+			/// the first's box (-1: none), with its arms and how far to its box: a car there is as good as at the second already (Kingsbridge's
+			/// nodes 132 and 8, 19 apart).
+			/// </summary>
+			public int Then, ThenIn, ThenOut;
+			public double ThenToBox;
 		}
 
 		/// <summary>Something in the way with no path (the player's car, a wreck, a car knocked off its road): where it is and its velocity.</summary>
@@ -392,6 +399,7 @@ namespace HalfGripOpenWorld
 			m.Edge = -1;
 			m.Node = -1;
 			m.Back = -1;
+			m.Then = -1;
 			if (m.Leg < 0)
 			{
 				return;
@@ -423,6 +431,19 @@ namespace HalfGripOpenWorld
 				if (node >= 0 && path[j].Edge != path[j + 1].Edge)
 				{
 					SetNode(ref m, path, j, node);
+					// The pair's second junction (as the day lets a car through both at once: TrafficDay.PairedNext).
+					int j2 = j + 1;
+					if (j2 + 1 < path.Length && path[j2].Edge >= 0 && path[j2 + 1].Edge >= 0 && path[j2].Edge != path[j2 + 1].Edge)
+					{
+						int then = TrafficDay.NodeAfter(path, j2);
+						if (then >= 0 && then != node && path[j2].Len - Traffic.Nodes[then].Box < Traffic.Nodes[node].Box + CarLength + 4.0)
+						{
+							m.Then = then;
+							m.ThenIn = TrafficDay.LinkIndex(then, path[j2].Edge);
+							m.ThenOut = TrafficDay.LinkIndex(then, path[j2 + 1].Edge);
+							m.ThenToBox = path[j2].P0 + path[j2].Len - Traffic.Nodes[then].Box - m.P;
+						}
+					}
 					return;
 				}
 				if (path[j].P0 + path[j].Len > m.P + LookAhead)
@@ -598,6 +619,26 @@ namespace HalfGripOpenWorld
 					st.Blocker = slowCar;
 				}
 			}
+			if (!blockedOut && me.Node >= 0 && me.ToBox > 0.0 && me.ToBox < 60.0 && obstacles.Count > 0)
+			{
+				// Something with no path (the player's car, a wreck) standing on its way through the box or just past it: no room either.
+				// Seen only straight ahead, a car turning into the junction found the player's car round the corner once in the box, and
+				// stood there across the other cars' ways (seed 13, the player's car stopped across a lane).
+				double near = 0.5 * CarLength + 3.0;
+				for (double p = me.NodeP - Traffic.Nodes[me.Node].Box; p <= boxOut && !blockedOut; p += 4.0)
+				{
+					Line(leg, p, out double lx, out double lz, out double _, out double _);
+					foreach (Obstacle ob in obstacles)
+					{
+						double dx = ob.X - lx, dz = ob.Z - lz;
+						if (ob.Vx * ob.Vx + ob.Vz * ob.Vz < 16.0 && dx * dx + dz * dz < near * near)
+						{
+							blockedOut = true;
+							break;
+						}
+					}
+				}
+			}
 			if (nearestP < double.MaxValue)
 			{
 				// Along the path, and in a straight line: round a sharp turn the car in front is nearer than its distance along the way.
@@ -673,11 +714,20 @@ namespace HalfGripOpenWorld
 					bool patient = st.WaitNode != me.Node || st.Waited < HoldBreak;
 					// Past braking to a stop short of the box: committed, it goes whoever else is coming.
 					bool meCommitted = me.ToBox < v * v / (2.0 * TrafficDay.Brake) + 2.0;
-					foreach (Mover o in others)
+					foreach (Mover o0 in others)
 					{
 						if (hold)
 						{
 							break;
+						}
+						Mover o = o0;
+						if (o.Node >= 0 && o.Node != me.Node && o.Then == me.Node && o.Back != me.Node)
+						{
+							// Coming to the junction just before this one, over a stretch too short to stop on: seen as coming to this one.
+							o.Node = o.Then;
+							o.InArm = o.ThenIn;
+							o.OutArm = o.ThenOut;
+							o.ToBox = o.ThenToBox;
 						}
 						if (o.Car == me.Car || o.Pulling)
 						{

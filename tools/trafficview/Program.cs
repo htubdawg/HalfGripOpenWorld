@@ -273,6 +273,8 @@ internal static partial class Program
 		TrafficDay.NoRightOfWay = Environment.GetEnvironmentVariable("TV_FCFS") == "1";
 		// TV_TURNS=1: cars turning off the main line give way to oncoming main-line cars too.
 		TrafficDay.MainTurnsGiveWay = Environment.GetEnvironmentVariable("TV_TURNS") == "1";
+		// TV_ROR=1: right turns on red (off in the game), to measure.
+		TrafficDay.RightOnRedOn = Environment.GetEnvironmentVariable("TV_ROR") == "1";
 		// TV_CIRCLING=N: N cars circling the trunk instead of the day's number (to measure more highway traffic).
 		TrafficDay.CirclingTry = int.TryParse(Environment.GetEnvironmentVariable("TV_CIRCLING"), out int circling) ? circling : 0;
 		// The cars at rest on their springs first: no map needed.
@@ -690,6 +692,7 @@ internal static partial class Program
 		ok &= day.OverlapPairs == 0;
 		Console.WriteLine("  crossing cars in a junction box together: " + day.ConflictPairs + " pairs (" + day.BoxConflicts + " steps)" + (day.ConflictPairs == 0 ? "  ok" : "  FAIL"));
 		ok &= day.ConflictPairs == 0;
+		Console.WriteLine("  right turns on red: " + day.RightsOnRed);
 		Console.WriteLine("  let go of the queue's order after 45 s: " + day.Forced + " (never into a car in the box, never without room past it, never across a car with the right of way); let in at the junction just past the trunk's box with it: " + day.Chained);
 		{
 			int lines = 0, three = 0, four = 0, many = 0;
