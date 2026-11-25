@@ -35,15 +35,15 @@ handoff, in order. trafficview (`TV_DRIVE_ONLY=1`) over the 16 seeds (1 to 15, 2
 
 | | before | after |
 |---|---|---|
-| cars on a lane closer than a car's length | 6 seeds | RESULT_OVL |
-| crossing cars in a box together (the day) | 2 seeds (1, 15) | RESULT_BOX |
-| stopped across a trunk carriageway | 0 | 0 |
-| physics cars "in each other" (at most 6) | 1 to 6 | RESULT_PHYS |
-| physics cars crossing in a box (at most 3) | 0 to 5 (5 on seed 13) | RESULT_PBOX |
-| physics cars stopped over 90 s | 1 to 6 on seeds 3, 4, 9, 11 | RESULT_STOP |
+| cars on a lane closer than a car's length | 6 seeds | 0 |
+| crossing cars in a box together (the day) | 2 seeds (1, 15) | 0 |
+| stopped across a trunk carriageway | 0 | 1 (seed 4, see the last row) |
+| physics cars "in each other" (at most 6) | 1 to 6 | 0 to 4 |
+| physics cars crossing in a box (at most 3) | 0 to 5 (5 on seed 13) | 0 to 3 |
+| physics cars stopped over 90 s | 1 to 6 on seeds 3, 4, 9, 11 | 3 on seed 2 (else 0) |
 | trips unfinished | 0 | 0 |
-| junction waiting, min a day | 209 to 590 | RESULT_WAIT |
-| seeds failing only the stop lines | 3 | RESULT_ONLY |
+| junction waiting, min a day | 209 to 590 | 222 to 600 |
+| seeds failing only the stop lines | 3 | 14 (seed 2: physics stops; seed 4: one car stopped at the very edge of a trunk box, node 33, -47 of box 47, behind a car going through) |
 
 **What was wrong, and the fix** (`TrafficDay` unless said):
 1. **Pull-outs on top of a car coming:** the forced pull-out (after 300 s) needed only a car's length clear, and on a 25 mph street the
