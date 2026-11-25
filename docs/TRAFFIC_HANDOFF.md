@@ -96,7 +96,7 @@ let it through (`NextWhy`); a car stuck at the day's end says why it can't merge
 what held it at the moment it had stood 90 s, the car in front and the car standing past the box (drawn: its lateness and leg).
 
 **Checks run:** `tools/check.sh` passes (stub HalfGripTools.dll); trafficview on 16 seeds with `TV_DRIVE_ONLY=1`; the full trafficview
-(parking, the ledger, contact) on seed FULL_SEEDS. meshcheck, preview and the sims not run (no world, event, deer or room change).
+(parking, the ledger, contact, early entries) on seeds 1, 7, 9 and 13: all pass but the stop lines. meshcheck, preview and the sims not run (no world, event, deer or room change).
 
 **Next:** ask the owner (before drawing the lights or building anything else): the lights drawn, the stop-line layout fault, town turn
 lanes (no longer needed for the jam). Then the owner's test in the game of this branch (lights' logic, the physics cars' early parking).
