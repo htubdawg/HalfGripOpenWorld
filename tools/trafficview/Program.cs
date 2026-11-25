@@ -86,6 +86,72 @@ internal static partial class Program
 	}
 
 	/// <summary>
+	/// The drawn traffic lights' masts (<see cref="SignalPoles"/>): every paved way into a junction with a light has one; no pole on a
+	/// road's paving, in the water or in another pole; every head hangs over paving; the far heads no more than 180 ft (the MUTCD's
+	/// most) past the stop line.
+	/// </summary>
+	private static void SignalChecks()
+	{
+		SignalPoles.Build();
+		int heads = 0, offRoad = 0, tooFar = 0, onPaving = 0, together = 0, far = 0, shared = 0;
+		string first = "";
+		double most = 180.0 * 0.3048 * 3.3;
+		for (int i = 0; i < SignalPoles.All.Count; i++)
+		{
+			SignalPoles.Mast m = SignalPoles.All[i];
+			far += m.Far ? 1 : 0;
+			if (!SignalPoles.Clear(m.X, m.Z))
+			{
+				onPaving++;
+			}
+			for (int j = 0; j < i; j++)
+			{
+				SignalPoles.Mast o = SignalPoles.All[j];
+				// One pole shared by two arms stands at the same spot; two poles nearly touching is the fault.
+				double dd = (o.X - m.X) * (o.X - m.X) + (o.Z - m.Z) * (o.Z - m.Z);
+				if (dd < 2.5 * 2.5 && dd > 1e-6)
+				{
+					together++;
+				}
+				shared += dd <= 1e-6 ? 1 : 0;
+			}
+			Traffic.Node node = Traffic.Nodes[m.Node];
+			foreach (double d in m.Heads)
+			{
+				heads++;
+				double hx = m.X + m.Ax * d, hz = m.Z + m.Az * d;
+				// Over paving: some road's edge is past it.
+				if (Network.Claims(hx, hz, -1, 0.0, 0.0))
+				{
+					offRoad++;
+					if (offRoad <= 8)
+					{
+						Console.WriteLine("    head not over paving: node " + m.Node + " arm " + m.Arm + " (" + Network.Roads[Traffic.Edges[Traffic.Links[m.Node][m.Arm]].Road].Kind + ") " + (m.Far ? "far" : "near") + " side, pole (" + m.X.ToString("0") + ", " + m.Z.ToString("0") + "), head " + d.ToString("0") + " out at (" + hx.ToString("0") + ", " + hz.ToString("0") + ")");
+					}
+					if (first.Length == 0)
+					{
+						first = " (first: node " + m.Node + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + "), head at (" + hx.ToString("0") + ", " + hz.ToString("0") + "))";
+					}
+				}
+				// From the stop line (the box's edge on the way in) to the head.
+				double ahead = (hx - node.X) * -m.Fx + (hz - node.Z) * -m.Fz + node.Box;
+				if (ahead > most)
+				{
+					tooFar++;
+				}
+			}
+		}
+		foreach ((int sn, int sa) in SignalPoles.SkippedAt)
+		{
+			Traffic.Node node = Traffic.Nodes[sn];
+			Console.WriteLine("    no mast: node " + sn + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") arm " + sa + " (" + Network.Roads[Traffic.Edges[Traffic.Links[sn][sa]].Road].Kind + "), box " + node.Box.ToString("0"));
+		}
+		bool ok = offRoad == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0;
+		Console.WriteLine("  traffic lights drawn: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads over the lanes; ways in with no mast " + SignalPoles.Skipped
+			+ ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", heads not over paving " + offRoad + first + ", far heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
+	}
+
+	/// <summary>
 	/// The longest a car of the day stands in one place on a trip (past pulling out, short of pulling in), and how many stand over 5 and
 	/// 10 minutes of sim time: a car on Kingsbridge street stood at the link from 17:40 to 02:30 (seed 9), the link jammed back from the
 	/// trunk. Reported, not failed (the day's queues are its junction waiting, above); the worst is named.
@@ -409,6 +475,7 @@ internal static partial class Program
 			}
 			waits.Sort((x, y) => y.Value.CompareTo(x.Value));
 			Console.WriteLine("    waiting at junctions: " + (all / 60.0).ToString("0") + " min in all; refused: behind a refused car " + day.RefusedOrder + ", crossing a grant " + day.RefusedCross + ", no room " + day.RefusedRoom + ", at a red light " + day.RefusedSignal + " (" + TrafficSignals.Nodes.Count + " junctions with lights, " + day.Lights.Changes + " changes)");
+			SignalChecks();
 			for (int i = 0; i < Math.Min(12, waits.Count); i++)
 			{
 				int n = waits[i].Key;

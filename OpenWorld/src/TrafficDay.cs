@@ -1357,6 +1357,13 @@ namespace HalfGripOpenWorld
 			b = mainB[node];
 		}
 
+		/// <summary>The way out of node <paramref name="node"/> along its arm <paramref name="arm"/> (unit), once the map is prepared (for <see cref="SignalPoles"/>).</summary>
+		internal static void ArmOf(int node, int arm, out double x, out double z)
+		{
+			x = armX[node][arm];
+			z = armZ[node][arm];
+		}
+
 		/// <summary>Whether a movement through node <paramref name="node"/> crosses a carriageway of the trunk: a turn left there, or straight across it from side to side.</summary>
 		private static bool CrossesCarriageway(int node, int inA, int outA)
 		{

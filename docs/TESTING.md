@@ -189,7 +189,11 @@ owner has reported on it.
    highway's own items (57's first point) wait for the highway rework (`docs/HANDOFF.md`).
    - No small white glowing patches in the trunk's median (they were at (-2643, -9813) and all along it); the markings of the
      deceleration and acceleration lanes show on both carriageways.
-   - Traffic lights are not drawn yet, but the junctions where a primary road or the trunk meets a secondary or bigger road take
+   - Traffic lights are drawn, American style, at the 16 junctions where a primary road or the trunk meets a secondary or bigger
+     road: a grey steel mast arm over each way in with a yellow head over each lane and one on the pole (across a T, a short pedestal
+     facing the side road). The lamp lit is the one the cars obey: red, amber, green as the cars stop and go; it glows at night. Say if
+     a pole stands in a building, a tree or the road, if a head faces the wrong way, or if a car goes on a red. The log says
+     `Traffic lights: 16 junctions, 64 mast arms`. The junctions where a primary road or the trunk meets a secondary or bigger road take
      turns: side-road cars wait, then several go together while the main road stops. Say if a main road seems to stop for nothing.
    - No physics car stands for minutes behind a drawn car that is stopped for no visible reason.
    - No country lane is laid on top of another (Farm lanes near (7796, -10404) and (-5751, 12853)): one road, not two in one.

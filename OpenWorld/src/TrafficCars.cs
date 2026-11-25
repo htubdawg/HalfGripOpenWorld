@@ -850,6 +850,9 @@ namespace HalfGripOpenWorld
 			FramePerf.Add(FramePerf.Part.Traffic, started);
 		}
 
+		/// <summary>The player's car (null before the race has one).</summary>
+		internal CarControllerNew PlayerCar => tm != null ? tm.playerCarController : null;
+
 		/// <summary>The day's clock now: the room's (the host's race clock; alone, this machine's), from the hour the race started.</summary>
 		private double SimNow()
 		{

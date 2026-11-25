@@ -22,7 +22,7 @@ when one is done, delete it here.
   stop signs needed; painted lines or signs later, as looks only.
 - Every moving car near the player stays a physics car, oncoming ones included. Never propose limiting physics cars by direction or
   by whether the player is closing on them (refused twice).
-- Traffic lights: their logic is built; drawing them waits until the owner says so. Ask before adding lights anywhere new.
+- Traffic lights: their logic is built and they are drawn, American style (mast arms, yellow heads; the owner asked on 2026-11-25). Ask before adding lights anywhere new.
 - A wreck is not a kill (no `EnemyKilled`, combo, lifesteal); traffic cars never get modded items or bodies.
 - No diamond interchanges on the trunk (2026-11-24, "a small rural area"). The highway rework may revisit this: ask.
 
@@ -49,7 +49,6 @@ when one is done, delete it here.
 
 **Traffic**
 - Turn lanes on the towns' roads (agreed 2026-11-24, not started).
-- Draw the traffic lights (when the owner says).
 - Stage 2's leftovers: lamps and a painted pool of light for the cars past the nearest 6. A car whose kerb space is down the street
   drives along to it a little fast. Moving traffic drives past parked cars at the kerb, not round them.
 - Eight short town streets (three in Kingsbridge, five in Westhaven, about 110 houses) are joined to nothing but footpaths, so traffic

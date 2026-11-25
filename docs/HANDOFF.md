@@ -10,7 +10,7 @@ Last written 2026-11-25.
 
 - **Branch: `traffic-test-branch`.** Work and push only there; never start a new branch. Before starting, look at every branch's
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
-- **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights' logic (`TrafficSignals.cs`, not drawn), the trunk's
+- **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights (logic in `TrafficSignals.cs`, drawn American style by `SignalPoles.cs` and `SignalHeads.cs`), the trunk's
   junction lanes (`TrunkLanes.cs`: deceleration and acceleration lanes on the shoulder, left-turn and merge lanes in the median),
   right of way fixes, and lanes no longer laid on lanes (`Network.Throughs`, meshcheck `alongside`). Late and early drawn cars are let
   off a stand with nothing to stand for (`TrafficLate.SkipStand`), and the median paint no longer glows (`RoadMesh.Quad`). **The world
@@ -19,6 +19,12 @@ Last written 2026-11-25.
 - None of the unreleased work has been tried in the game (`docs/TESTING.md` 58).
 - Last checks: `tools/check.sh`, the whole meshcheck and preview pass. trafficview passes on all 16 seeds (`TV_DRIVE_ONLY=1`, seeds 1
   to 15 and 20261122) and in full on seeds 1, 7, 9 and 13. trafficsim passes.
+- **Traffic lights drawn** (2026-11-25, the owner: "American style"): `SignalPoles` lays out 64 masts at the 16 junctions with lights
+  (47 on the far corner, 3 sharing a pole, pedestals across the T's), `SignalHeads` draws them (mesh in `SignalMesh`) and lights each
+  lamp from `day.Lights.State`. trafficview's `traffic lights drawn` line checks them (seed 1 `TV_DRIVE_ONLY=1`: ok, no other FAIL).
+  The mesh was looked at outside the game (the heads, visors and backplates from a driver's eye and behind) but not yet in it. Not
+  done: no lights where the traffic failed to build (the day picks the junctions), no street name signs or "signal ahead" signs, poles
+  not kept off houses or trees (none checked; houses stand back from the corners).
 
 ## Next: rework the highway's layout
 
@@ -67,7 +73,7 @@ want it to be before designing anything.** The questions below are a starting po
 2. Physics cars "in each other": 0 to 2 a seed (limit 6). Seed 9's pairs are a physics car at the very start of its leg with a drawn
    car.
 3. A physics car brushed the player's stopped car (seed 11): not looked at.
-4. Then the owner's test in the game (`docs/TESTING.md` 58). Drawing the lights and town turn lanes come after; the owner decides when.
+4. Then the owner's test in the game (`docs/TESTING.md` 58). Town turn lanes come after; the owner decides when.
 
 ## How to run the checks here
 
