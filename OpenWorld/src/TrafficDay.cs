@@ -1538,6 +1538,12 @@ namespace HalfGripOpenWorld
 				}
 				Seg s = path[k];
 				double limit = s.Speed;
+				// A lower limit starting before the next sample holds from this one: braking back from the next sample alone let a car
+				// reach the boundary at up to sqrt(v² + 2 Brake Sample), 13% over a drive's 10 mph carrying straight on from a 35 mph lane.
+				for (int q = k + 1; q < path.Length && path[q].P0 < p + Sample; q++)
+				{
+					limit = Math.Min(limit, path[q].Speed);
+				}
 				if (s.Edge >= 0)
 				{
 					int r = Traffic.Edges[s.Edge].Road;
@@ -1744,6 +1750,10 @@ namespace HalfGripOpenWorld
 					{
 						Speeding++;
 						MaxOver = Math.Max(MaxOver, m.V / limit);
+						if (SpeedNotes.Count < 8)
+						{
+							SpeedNotes.Add("w " + (step * Step).ToString("0.0") + " leg " + m.Index + " seg " + m.Seg + "/" + path.Length + " edge " + path[m.Seg].Edge + " in " + (m.P - path[m.Seg].P0).ToString("0.0") + " of " + path[m.Seg].Len.ToString("0") + " limit " + limit.ToString("0.0") + " v " + m.V.ToString("0.0") + " a " + a.ToString("0.00") + " prev limit " + (m.Seg > 0 ? path[m.Seg - 1].Speed.ToString("0.0") : "-") + " how " + m.How + " lane " + m.Lane);
+						}
 					}
 					if (m.V < 0.5)
 					{
@@ -3902,6 +3912,9 @@ namespace HalfGripOpenWorld
 		internal int StoppedAcrossCars => stoppedAcross.Count;
 		private readonly HashSet<int> stoppedAcross = new HashSet<int>();
 		internal readonly List<string> StoppedAcrossNotes = new List<string>();
+
+		/// <summary>The first few steps over the limit, for trafficview's notes.</summary>
+		internal readonly List<string> SpeedNotes = new List<string>();
 
 		/// <summary>Grants end once the car is a car's length past the box.</summary>
 		private void Release()

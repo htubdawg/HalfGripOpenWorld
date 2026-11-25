@@ -60,6 +60,9 @@ using UnityEngine;
 //  27. backroads: the back roads joined up (Network.Links, Throughs, Drives): few lane dead ends out in the country (a farm at the
 //                end of a long lane boxed in by water or hills), no through way hooking round on itself, and no main road (trunk,
 //                primary, secondary) ending anywhere but on another road or at the map's edge
+//  27b. alongside: no paved road lying along another (its centre line within the wider one's half width for 40 units or more,
+//                running the same way): a lane's through way routed straight back along its own lane was laid on top of it
+//                (Network.Build), five farms' lanes doubled, their junctions' stop lines on the other's paving
 //  28. deer:    the deer's mesh (weights summing to one, no broken faces, bones and vertices in range); for three race seeds, every
 //                group's spots and the legs between them on the drawn ground, never in water above a deer's belly nor over a drop,
 //                every crossing place on the road it crosses, and every deer followed over half an hour of race time never deep in
@@ -119,6 +122,7 @@ internal static class Program
 			("homes", Homes),
 			("clear", ClearOfRoads),
 			("backroads", BackRoads),
+			("alongside", Alongside),
 			("deer", DeerChecks),
 			("wrap", WrapChecks),
 		};
@@ -3408,6 +3412,71 @@ internal static class Program
 		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round; "
 			+ mainDead + " main road dead ends");
 		return dead <= 10 && hooks == 0 && mainDead == 0;
+	}
+
+	/// <summary>Paved roads lying along each other (see the list at the top, 27b).</summary>
+	private static bool Alongside()
+	{
+		int pairs = 0, checkedRoads = 0;
+		HashSet<long> seen = new HashSet<long>();
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (Network.Unpaved(road.Kind) || road.Count < 2)
+			{
+				continue;
+			}
+			checkedRoads++;
+			// For each other road, the run of this road's samples (by distance along) whose point is on it, running the same way.
+			Dictionary<int, (double start, double last)> runs = new Dictionary<int, (double, double)>();
+			HashSet<int> on = new HashSet<int>();
+			for (int i = 0; i < road.Count; i++)
+			{
+				int a = Math.Max(0, i - 1), b = Math.Min(road.Count - 1, i + 1);
+				double tx = road.X[b] - road.X[a], tz = road.Z[b] - road.Z[a], tl = Math.Sqrt(tx * tx + tz * tz);
+				on.Clear();
+				foreach ((int o, int k) in Near(road.X[i], road.Z[i]))
+				{
+					if (o == r || on.Contains(o))
+					{
+						continue;
+					}
+					Network.Road other = Network.Roads[o];
+					double sx = other.X[k + 1] - other.X[k], sz = other.Z[k + 1] - other.Z[k], sl = sx * sx + sz * sz;
+					if (sl <= 0.0 || tl <= 0.0)
+					{
+						continue;
+					}
+					double u = Math.Max(0.0, Math.Min(1.0, ((road.X[i] - other.X[k]) * sx + (road.Z[i] - other.Z[k]) * sz) / sl));
+					double dx = road.X[i] - other.X[k] - sx * u, dz = road.Z[i] - other.Z[k] - sz * u;
+					double cos = Math.Abs(tx * sx + tz * sz) / (tl * Math.Sqrt(sl));
+					double wide = Math.Max(road.Half, other.Half);
+					if (dx * dx + dz * dz < wide * wide && cos > 0.9)
+					{
+						on.Add(o);
+					}
+				}
+				foreach (int o in on)
+				{
+					bool carries = i > 0 && runs.TryGetValue(o, out (double start, double last) run) && run.last == road.S[i - 1];
+					(double start, double last) now = (carries ? runs[o].start : road.S[i], road.S[i]);
+					runs[o] = now;
+					long key = ((long)Math.Min(r, o) << 32) | (uint)Math.Max(r, o);
+					if (now.last - now.start >= 40.0 && seen.Add(key))
+					{
+						pairs++;
+						if (pairs <= 10)
+						{
+							Network.Road other = Network.Roads[o];
+							Console.WriteLine("  " + road.Kind + " '" + road.Name + "' (" + r + ") along " + other.Kind + " '" + other.Name + "' (" + o + ") from " + now.start.ToString("0") + " at ("
+								+ road.X[i].ToString("0") + ", " + road.Z[i].ToString("0") + ")");
+						}
+					}
+				}
+			}
+		}
+		Console.WriteLine("alongside: " + checkedRoads + " paved roads, " + pairs + " pairs lying along each other for 40 units or more" + (pairs == 0 ? "" : "  FAIL"));
+		return pairs == 0;
 	}
 
 	/// <summary>The highway's wrap round (see the list at the top, 29).</summary>

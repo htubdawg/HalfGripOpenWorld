@@ -56,6 +56,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Counts for the log and the overlay: made late, caught up in the background, hidden for an overlap, retired.</summary>
 		internal int MadeLate, CaughtUp, HiddenCount, Retired;
 
+		/// <summary>Late cars let off a stand the day had them make (<see cref="SkipStand"/>).</summary>
+		internal int Unstuck;
+
 		internal TrafficLate(TrafficDay day)
 		{
 			this.day = day;
@@ -143,6 +146,68 @@ namespace HalfGripOpenWorld
 			ledger[car] = new Entry { Leg = leg, D = d, FromW = w, FromT = t };
 			MadeLate++;
 		}
+
+		/// <summary>
+		/// A late car standing where the day had it stand (queued, or waiting at a junction) that long ago, with nothing there now to stand
+		/// for (<see cref="TrafficDrive.NothingToStandFor"/>): its lateness cut by the rest of that stand, so it goes on now. It stands
+		/// still all the while, so its place does not change: no jump. The cars it queued behind in the day are drawn elsewhere now
+		/// (on time), so it stood for minutes for no reason the player could see, and the physics cars behind it with it (seed 8: one
+		/// stood 557 s behind a car drawn 129 s late). The same for an early car: one back early 45 s from its trip's end was drawn where
+		/// the day would have it, standing in a queue the day had there only later, and six physics cars stood behind it (seed 9). Not
+		/// while pulling out or in. False if there was nothing to cut; else the new
+		/// entry's leg and lateness (a room sends them), and a lateness cut below <see cref="Least"/> puts it back on time.
+		/// </summary>
+		internal bool SkipStand(int car, double w, out int leg, out double d)
+		{
+			leg = -1;
+			d = 0.0;
+			if (!ledger.TryGetValue(car, out Entry e) || e.Gone || e.Leg < 0 || hidden.Contains(car))
+			{
+				return false;
+			}
+			TrafficDay.Leg l = day.Legs[e.Leg];
+			double now = e.FromT + Since(e.FromW, w);
+			double t = now - e.D;
+			if (t - l.Start < l.PullOut + 1.0 || t > l.End - l.PullIn - 1.0)
+			{
+				return false;
+			}
+			TrafficDay.Place p0 = day.Driving(e.Leg, t);
+			if (p0.Speed >= 0.5)
+			{
+				return false;
+			}
+			// The day's last moment of this stand: for a late car, it still stands now at the latest (then it is back on time where it
+			// stands); an early one (a physics car back early near its trip's end, drawn where the day will have it) only gets earlier,
+			// and from its trip's end it is drawn parked there until the day gets there (<see cref="At"/>).
+			double end = t, limit = l.End - l.PullIn - 1.0;
+			if (e.D > 0.0)
+			{
+				limit = Math.Min(now, limit);
+			}
+			while (end + StandStep <= limit && Math.Abs(day.Driving(e.Leg, end + StandStep).P - p0.P) < 0.3)
+			{
+				end += StandStep;
+			}
+			if (end - t < StandStep)
+			{
+				return false;
+			}
+			bool had = ledger.ContainsKey(car);
+			leg = e.Leg;
+			d = now - end;
+			Late(car, e.Leg, w, d);
+			if (had && ledger.ContainsKey(car))
+			{
+				// The same lateness made smaller, not a car made late again.
+				MadeLate--;
+			}
+			Unstuck++;
+			return true;
+		}
+
+		/// <summary>How finely <see cref="SkipStand"/> looks for the end of a stand (seconds).</summary>
+		private const double StandStep = 0.5;
 
 		/// <summary>Car <paramref name="car"/> is wrecked: away for the rest of the race.</summary>
 		internal void Retire(int car, double w)
@@ -377,15 +442,20 @@ namespace HalfGripOpenWorld
 			return seen(car, p);
 		}
 
-		/// <summary>Sim time gone from <paramref name="from"/> to <paramref name="w"/>, across the day's wrap (lateness lasts far less than a day).</summary>
+		/// <summary>
+		/// Sim time gone from <paramref name="from"/> to <paramref name="w"/>, across the day's wrap. An entry is read after it was made (a
+		/// room's clocks put that a few seconds either way), and may be read for most of a day: a car early by 1,193 s (the day's own car
+		/// stood 15 game hours in a jam on Kingsbridge street, seed 9) was read at its trip's end 1,207 s on, past half a day, which
+		/// wrapped round to before the entry was made and drew it driving again. So up to three quarters of a day on, a quarter back.
+		/// </summary>
 		private static double Since(double from, double w)
 		{
 			double d = w - from;
-			if (d < -Traffic.DaySeconds * 0.5)
+			if (d < -Traffic.DaySeconds * 0.25)
 			{
 				d += Traffic.DaySeconds;
 			}
-			else if (d > Traffic.DaySeconds * 0.5)
+			else if (d > Traffic.DaySeconds * 0.75)
 			{
 				d -= Traffic.DaySeconds;
 			}

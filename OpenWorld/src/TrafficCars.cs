@@ -947,6 +947,7 @@ namespace HalfGripOpenWorld
 			Perf.Add(Perf.Part.Contact, touched);
 			long moved = Perf.Now;
 			BuildMovers();
+			LetStandsGo(w);
 			Perf.Add(Perf.Part.Movers, moved);
 			if (Mod.ShowCoords.Value)
 			{

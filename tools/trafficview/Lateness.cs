@@ -66,7 +66,7 @@ internal static partial class Program
 	{
 		TrafficLate late = new TrafficLate(day);
 		int tried = 0, jumps = 0, notParked = 0, back = 0;
-		string note = "";
+		string note = "", backNote = "";
 		for (int c = 0; c < day.Cars.Count && tried < 200; c++)
 		{
 			TrafficDay.Place at = day.At(c, w0);
@@ -105,9 +105,13 @@ internal static partial class Program
 			{
 				back++;
 			}
+			else if (backNote.Length == 0)
+			{
+				backNote = " (first not: car " + c + " leg " + at.Leg + " d " + d.ToString("0.00") + ", drawn " + a.State + " leg " + a.Leg + " at " + a.X.ToString("0.0") + ", " + a.Z.ToString("0.0") + ", the day " + dd.State + " leg " + dd.Leg + " at " + dd.X.ToString("0.0") + ", " + dd.Z.ToString("0.0") + "; leg " + leg.Start.ToString("0") + " to " + leg.End.ToString("0") + " length " + leg.Length.ToString("0") + ", now at " + at.P.ToString("0") + " T " + at.T.ToString("0") + ")";
+			}
 		}
 		bool ok = jumps == 0 && notParked == 0 && back == tried;
-		Console.WriteLine("  early entries (a physics car back early at its trip's end): " + tried + " tried, " + jumps + " jumps" + note + ", " + notParked + " not parked at its end before the day gets there, " + back + " back on the day after" + (ok ? "  ok" : "  FAIL"));
+		Console.WriteLine("  early entries (a physics car back early at its trip's end): " + tried + " tried, " + jumps + " jumps" + note + ", " + notParked + " not parked at its end before the day gets there, " + back + " back on the day after" + backNote + (ok ? "  ok" : "  FAIL"));
 		return ok;
 	}
 

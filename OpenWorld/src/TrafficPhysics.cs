@@ -825,6 +825,29 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// A late drawn car standing where the day had it queue that long ago, with nothing here to stand for, goes on now
+		/// (<see cref="TrafficLate.SkipStand"/>): the physics cars behind it stood with it for minutes.
+		/// </summary>
+		private void LetStandsGo(double w)
+		{
+			if (!AnyBodies)
+			{
+				return;
+			}
+			foreach (TrafficDrive.Mover m in Movers)
+			{
+				if (m.Physical || m.V >= 0.5 || !late.Has(m.Car) || !TrafficDrive.NothingToStandFor(day, m, Movers, Obstacles, w))
+				{
+					continue;
+				}
+				if (late.SkipStand(m.Car, w, out int leg, out double d))
+				{
+					SendLate(m.Car, leg, w, d);
+				}
+			}
+		}
+
 		private static TrafficDrive.Obstacle ObstacleOf(Rigidbody rb)
 		{
 			Origin.World(rb.position, out double x, out double z);

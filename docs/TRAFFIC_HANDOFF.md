@@ -1,5 +1,71 @@
 # Traffic: handoff
 
+## READ THIS FIRST: the doubled lanes and the 16 seeds' leftovers (2026-11-25, `traffic-test-branch`)
+
+Worked through "NEXT" below, items 1 to 3. Still 0.33.0, not tried in the game. **The world changed** (four farm lanes): everyone
+in a room needs this build.
+
+**What was wrong, and the fix:**
+1. **Lanes laid on top of lanes (the stop lines on another road's paving).** `Network.Throughs` routes a lane's through way from its
+   dead end with `Build(..., fromStart: true)`, which builds the route's first cell as a new stretch though it is on a road. Where the
+   route went straight back along the lane itself (its second cell on the lane too), that one-cell stretch snapped its far end back
+   onto the same lane, and a lane ("Farm N lane on") was laid along the first one for 80 to 200 units: Farm 18, 59, 82, 103 and 114.
+   Now nothing is built there (`Build`: the snapped end on the road the through way starts from, `EndsAt`). Those lanes are honest
+   dead ends now, so four of them became farm drives (the later pass turns dead-end farm lanes into drives) and Farm 59's stays a
+   lane (backroads: 6 lane dead ends in the country, was 4; at most 10). **meshcheck `alongside`** (new): no paved road lying along
+   another (its centre within the wider one's half width for 40 units, the same way); it finds all five on the old world.
+2. **A deer fled over a lane 40 units from its crossing** (meshcheck `deer`, turned up by the world change moving the groups):
+   `Reactions` took the deer's side from the road's line (`DeerSide`), which past the lane's end (it carries on as the hill climb)
+   clamps and put a deer standing at its own side's spot on the other side; it ran straight to a spot over the lane. Now a deer at
+   one of its group's spots takes that spot's side (`SideAt`).
+3. **Over the speed limit (7 seeds after the lane fix):** the profile is sampled every 10 units and the sample before a lower limit
+   took the faster road's, so braking back from the next sample let a car reach the boundary at up to sqrt(v² + 2·Brake·10): 13%
+   over a farm drive's 10 mph that now carries straight on from a 35 mph lane. `TrafficDay.Profile`: a sample takes the lowest limit
+   starting before the next one. trafficview's notes list the first steps over (`speeding:`).
+4. **Physics cars stopped for minutes behind a drawn car standing for nothing** (the leftover named below): a late car replays a stop
+   the day made in a queue that is drawn elsewhere now; an early car (a physics car back early near its trip's end) is drawn where
+   the day will have it, standing in a queue the day only builds later (seed 9: six physics cars behind one 45 s early).
+   `TrafficLate.SkipStand`: a late or early drawn car standing with nothing there to stand for (`TrafficDrive.NothingToStandFor`:
+   its lane clear for 40 ahead, its light green, nobody in or coming into the box it is at) has the rest of that stand cut from its
+   lateness; it stands still all the while, so no jump. In the game `TrafficPhysics.LetStandsGo` after the movers are built (only
+   with physics cars about), sent to the room as a ledger change (`TrafficShared.SendLate`). trafficview does the same each step
+   ("late drawn cars let off a stand": 41 to 133 a run).
+5. **The check "physics cars stopped over 90 s" changed:** it fails only a physics car that stood over 90 s **and 30 s longer than the
+   day had the same car stand** over the run. After the fixes, every one left (seeds 8 and 9) stood as long as the day's own car
+   (557 s against 558; 371 against 371; ...): Kingsbridge's junctions (nodes 6, 42, 43, 49) queue for minutes at the 5 pm peak on
+   some seeds, and a physics car in that queue stands where the player sees why. They are reported ("in the day's own queue"). The
+   long-stop notes give the day's car's stop beside each, and a car held by a car pulling in or out names it.
+
+6. **The ledger's clock across the day's wrap** (`TrafficLate.Since`): it took an entry read more than half a day (1,200 s of sim)
+   after it was made as read before it. trafficview's early entries check on seed 9 had a car 1,193 s early (the day's own car stood
+   870 s on Kingsbridge street at the link, 17:40 to 02:30) read at its trip's end 1,207 s on: drawn driving again instead of back on
+   the day. Now up to three quarters of a day on, a quarter back (entries are read after they are made; a room's clocks are seconds
+   apart). The check's note names the first car not back on the day.
+7. **New report (not failed): cars standing in one place on a trip** (trafficview, the day): the longest stand past pulling out and
+   short of pulling in, and the trips with one over 300 and 600 s. Not new with these changes: the old code had 955 s on seed 1 (now
+   570) and 785 on seed 9 (now 900). They are all round Kingsbridge (-2400 to -2500, -4100 to -5050) in the afternoon and evening.
+
+**16 seeds (`TV_DRIVE_ONLY=1`, seeds 1 to 15 and 20261122): all 16 pass** (before: all 16 failed, on the stop lines at least).
+Junction waiting 294 to 555 min a day; stop lines on another road's paving 0 of 2236 arms; over the limit 0; physics cars in each
+other 0 to 2 (at most 6), crossing in a box 0 to 3 (at most 3); physics cars stopped over 90 s and 30 s longer than the day's car 0
+on every seed (1 on seed 8 and 6 on seed 9 in the day's own queue); late drawn cars let off a stand 7 to 133 a run. The full
+trafficview (parking, the ledger, contact, early entries) on seeds 1, 7, 9 and 13: all pass. (The 16 ran before item 6, which can
+only change an entry read over 600 s after it was made; the full runs were after it.)
+
+**Checks run:** `tools/check.sh` passes (stub HalfGripTools.dll); meshcheck all of it (passes, `alongside` and `deer` included);
+preview (repeatable; 6 country lanes' dead ends); trafficview as above; trafficsim (639 checks pass). deersim and eventsim not run
+(no change to `DeerRoom` or `EventRoom`).
+
+**NEXT, in this order:**
+1. **The day's own peak queues round Kingsbridge** (nodes 6, 42, 43, 49; seeds 8 and 9 show physics cars in them for up to 9 minutes;
+   the new "standing in one place" report: a car stood 900 s on Kingsbridge street at the link on seed 9, 26 trips over 300 s):
+   find what holds the head of each (`TV_DRIVE_NOTES=1`, the day's `held:` and junction waiting by edge), as was done for the
+   Westhaven link before the lights. Town turn lanes or a light at node 43 may be what it needs (the owner decides on new lights).
+2. Physics cars "in each other" are within the limit (at most 3 of 6) but not 0: seed 9's pairs are a physics car at the very start
+   of its leg (P 0 to 64) with a drawn car; look at them with the notes.
+3. The physics car that brushed the player's stopped car (seed 11, run 9 of the last handoff): not looked at.
+4. Then the owner's test in the game of this branch (the lights' logic, the physics cars parking early, late cars let off a stand).
+
 ## READ THIS FIRST: traffic lights (2026-11-25, `traffic-test-branch`)
 
 The owner: "we have no traffic control at all ... just code it and we will put the lights in later." Built on `traffic-test-branch`

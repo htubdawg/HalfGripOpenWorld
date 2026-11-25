@@ -85,6 +85,58 @@ internal static partial class Program
 		return bad == 0;
 	}
 
+	/// <summary>
+	/// The longest a car of the day stands in one place on a trip (past pulling out, short of pulling in), and how many stand over 5 and
+	/// 10 minutes of sim time: a car on Kingsbridge street stood at the link from 17:40 to 02:30 (seed 9), the link jammed back from the
+	/// trunk. Reported, not failed (the day's queues are its junction waiting, above); the worst is named.
+	/// </summary>
+	private static void LongStands(TrafficDay day)
+	{
+		double worst = 0.0, worstAt = 0.0;
+		int worstLeg = -1, over300 = 0, over600 = 0;
+		double wx = 0.0, wz = 0.0;
+		for (int li = 0; li < day.Legs.Count; li++)
+		{
+			TrafficDay.Leg l = day.Legs[li];
+			if (l.Start < 0.0 || l.End <= l.Start)
+			{
+				continue;
+			}
+			double t0 = l.Start + (l.Appears ? 0.0 : l.PullOut + 1.0), t1 = l.End - (l.Vanishes ? 0.0 : l.PullIn + 1.0);
+			double since = double.NaN, lastP = double.NaN, most = 0.0, mostAt = 0.0;
+			double mx = 0.0, mz = 0.0;
+			for (double t = t0; t < t1; t += 5.0)
+			{
+				TrafficDay.Place p = day.Driving(li, t);
+				if (p.InTunnel || double.IsNaN(lastP) || Math.Abs(p.P - lastP) > 0.5)
+				{
+					since = t;
+					lastP = p.P;
+					continue;
+				}
+				if (t - since > most)
+				{
+					most = t - since;
+					mostAt = since;
+					mx = p.X;
+					mz = p.Z;
+				}
+			}
+			over300 += most > 300.0 ? 1 : 0;
+			over600 += most > 600.0 ? 1 : 0;
+			if (most > worst)
+			{
+				worst = most;
+				worstAt = mostAt;
+				worstLeg = li;
+				wx = mx;
+				wz = mz;
+			}
+		}
+		Console.WriteLine("  cars standing in one place on a trip: the longest " + worst.ToString("0") + " s" + (worstLeg >= 0 ? " (leg " + worstLeg + " from " + (3.0 + worstAt / 100.0).ToString("0.00") + " h at " + wx.ToString("0") + ", " + wz.ToString("0") + ")" : "")
+			+ ", " + over300 + " trips with a stand over 300 s, " + over600 + " over 600 s  (reported)");
+	}
+
 	private static int Main(string[] args)
 	{
 		bool ok = true;
@@ -536,11 +588,13 @@ internal static partial class Program
 			Console.WriteLine("  cars with the right of way refused at a junction for a car giving way to them: " + day.MainHeld + " (at most " + MostMainHeld + ")" + (day.MainHeld <= MostMainHeld ? "  ok" : "  FAIL"));
 			ok &= day.MainHeld <= MostMainHeld;
 			foreach (string n in day.MainHeldNotes) Console.WriteLine("    held: " + n);
+			foreach (string n in day.SpeedNotes) Console.WriteLine("    speeding: " + n);
 		}
 		foreach (string n in day.OverlapNotes) Console.WriteLine("    overlap: " + n);
 		foreach (string n in day.ConflictNotes) Console.WriteLine("    conflict: " + n);
 		Console.WriteLine("  over the limit + 5%: " + day.Speeding + " steps" + (day.Speeding > 0 ? ", worst " + (100.0 * (day.MaxOver - 1.0)).ToString("0") + "% over" : "") + (day.Speeding == 0 ? "  ok" : "  FAIL"));
 		ok &= day.Speeding == 0;
+		LongStands(day);
 		Console.WriteLine("  pull-outs forced after a minute: " + day.PullOutsForced);
 
 		// Counts: vehicles past each edge's middle in a game day x 36, by road class, against PennDOT.

@@ -139,7 +139,7 @@ internal static partial class Program
 		List<TrafficDrive.Obstacle> obstacles = new List<TrafficDrive.Obstacle>();
 		List<int> keys = new List<int>();
 		HashSet<long> crashed = new HashSet<long>(), crossed = new HashSet<long>();
-		int made = 0, backOnTime = 0, backLate = 0, waitedEnd = 0, hidden = 0, heldBack = 0, hitPlayer = 0, jumps = 0, targets = 0;
+		int made = 0, unstuck = 0, backOnTime = 0, backLate = 0, waitedEnd = 0, hidden = 0, heldBack = 0, hitPlayer = 0, jumps = 0, targets = 0;
 		double worstJump = 0.0, mostLate = 0.0, sumLate = 0.0, targetMs = 0.0;
 		string crashNote = "", crossNote = "", jumpNote = "", hitNote = "";
 		Stopwatch watch = new Stopwatch();
@@ -365,6 +365,17 @@ internal static partial class Program
 			{
 				obstacles.Add(new TrafficDrive.Obstacle { X = ox, Z = oz });
 			}
+			// A late drawn car standing as the day had it, with nothing here to stand for, goes on (TrafficPhysics.LetStandsGo).
+			if (physical.Count > 0)
+			{
+				for (int i = 0; i < drawnCount; i++)
+				{
+					if (movers[i].V < 0.5 && late.Has(movers[i].Car) && TrafficDrive.NothingToStandFor(day, movers[i], movers, obstacles, w) && late.SkipStand(movers[i].Car, w, out int _, out double _))
+					{
+						unstuck++;
+					}
+				}
+			}
 
 			// Each physics car drives a step.
 			foreach (int c in keys)
@@ -464,25 +475,38 @@ internal static partial class Program
 				}
 			}
 		}
-		int longWaits = 0;
+		// A physics car stopped over 90 s fails only if it stood well longer than the day had the same car stand over the run: one in
+		// the day's own queue (Kingsbridge's junctions at the 5 pm peak, minutes on some seeds) stands where the player sees why, the
+		// cars in front standing too, and that queue is the day's (its junction waiting, above).
+		int longWaits = 0, dayQueue = 0;
 		double longest = 0.0;
 		foreach (Sim s in physical.Values)
 		{
 			longest = Math.Max(longest, s.MostStopped);
-			longWaits += s.MostStopped > 90.0 ? 1 : 0;
+			if (s.MostStopped > 90.0)
+			{
+				if (s.MostStopped > DayStop(day, s.Car, w0) + 30.0)
+				{
+					longWaits++;
+				}
+				else
+				{
+					dayQueue++;
+				}
+			}
 			if (s.MostStopped > 90.0 && Environment.GetEnvironmentVariable("TV_DRIVE_NOTES") != null)
 			{
 				TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
 				TrafficDrive.Prepare(day, ref lm);
-				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)) + " || " + s.StopNote);
+				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s (the day's own car: " + DayStop(day, s.Car, w0).ToString("0") + " s) lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)) + " || " + s.StopNote);
 			}
 		}
 		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && hitPlayer == 0 && jumps == 0 && (blocked || longWaits == 0);
 		Console.WriteLine("  physics cars, " + name + ", 10 minutes from 17:00: " + made + " made physical, back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
-			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " back early at a trip's end, " + hidden + " drawn cars hidden on a physics car, " + heldBack + " held back from pulling out onto one; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
+			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " back early at a trip's end, " + hidden + " drawn cars hidden on a physics car, " + heldBack + " held back from pulling out onto one, " + unstuck + " late drawn cars let off a stand; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
 			+ (crashNote.Length > 0 ? " (first " + crashNote + ")" : "") + ", " + crossed.Count + " pairs crossing in a box (at most " + MostCrossings + ")" + (crossNote.Length > 0 ? " (first " + crossNote + ")" : "") + (blocked ? ", " + hitPlayer + " steps in the player's car" + hitNote : "")
 			+ "; jumps going back: worst " + worstJump.ToString("0.0") + (jumpNote.Length > 0 ? " (" + jumpNote + ")" : "") + ", " + jumps + " over 3; longest stop of the cars still physical " + longest.ToString("0") + " s"
-			+ (blocked ? "" : " (" + longWaits + " over 90 s)") + "; " + (targets > 0 ? targetMs * 1000.0 / targets : 0.0).ToString("0.0") + " us a target" + (ok ? "" : " FAIL"));
+			+ (blocked ? "" : " (" + longWaits + " over 90 s and 30 s longer than the day's car, " + dayQueue + " over 90 s in the day's own queue)") + "; " + (targets > 0 ? targetMs * 1000.0 / targets : 0.0).ToString("0.0") + " us a target" + (ok ? "" : " FAIL"));
 		return ok;
 	}
 
@@ -518,6 +542,24 @@ internal static partial class Program
 		return false;
 	}
 
+	/// <summary>The day's own car's longest stop while driving over the run (for the notes: a physics car standing as long is in the day's queue).</summary>
+	private static double DayStop(TrafficDay day, int c, double w0)
+	{
+		double most = 0.0, run = 0.0;
+		for (double t = 0.0; t < DriveRun; t += 1.0)
+		{
+			double w = w0 + t;
+			if (w >= Traffic.DaySeconds)
+			{
+				w -= Traffic.DaySeconds;
+			}
+			TrafficDay.Place at = day.At(c, w);
+			run = at.State == TrafficDay.State.Driving && at.Speed < 0.5 ? run + 1.0 : 0.0;
+			most = Math.Max(most, run);
+		}
+		return most;
+	}
+
 	private static string Who(TrafficDay day, TrafficLate late, Dictionary<int, Sim> physical, int c, double w)
 	{
 		if (c < 0)
@@ -533,7 +575,7 @@ internal static partial class Program
 		if (at.Leg >= 0)
 		{
 			TrafficDay.Leg l = day.Legs[at.Leg];
-			t += " T " + at.T.ToString("0.0") + " pullOut " + l.PullOut.ToString("0.0") + " late " + TrafficDrive.Lateness(l, at.P, w).ToString("0") + " len " + l.Length.ToString("0");
+			t += " T " + at.T.ToString("0.0") + " of " + (l.End - l.Start).ToString("0.0") + " pullOut " + l.PullOut.ToString("0.0") + " pullIn " + l.PullIn.ToString("0.0") + " ledger " + (late.TryGet(c, out TrafficLate.Entry e) ? e.D.ToString("0.0") : "-") + " late " + TrafficDrive.Lateness(l, at.P, w).ToString("0") + " len " + l.Length.ToString("0");
 		}
 		return t;
 	}

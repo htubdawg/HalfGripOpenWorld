@@ -71,6 +71,54 @@ namespace HalfGripOpenWorld
 			public double X, Z, Vx, Vz;
 		}
 
+		/// <summary>
+		/// Whether drawn car <paramref name="m"/>, standing (as the day had it, when it is late: <see cref="TrafficLate.SkipStand"/>), has
+		/// nothing here and now to stand for: no car or obstacle in front of it on its lane within <see cref="StandClear"/>, no red or amber
+		/// light at the junction ahead, and at a junction it is close to, nobody else in its box or about to come into it.
+		/// </summary>
+		internal static bool NothingToStandFor(TrafficDay day, in Mover m, List<Mover> movers, List<Obstacle> obstacles, double w)
+		{
+			if (m.Physical || m.Pulling || m.V >= 0.5 || m.Back >= 0)
+			{
+				return false;
+			}
+			bool atJunction = m.Node >= 0 && m.ToBox < StandClear;
+			if (atJunction && TrafficSignals.Has(m.Node) && day.Lights.State(m.Node, m.InArm, w) != TrafficSignals.Green)
+			{
+				return false;
+			}
+			foreach (Mover o in movers)
+			{
+				if (o.Car == m.Car)
+				{
+					continue;
+				}
+				double dx = o.X - m.X, dz = o.Z - m.Z;
+				double along = dx * m.Hx + dz * m.Hz, side = Math.Abs(dx * m.Hz - dz * m.Hx);
+				if (along > -2.0 && along < StandClear && side < 4.5)
+				{
+					return false;
+				}
+				if (atJunction && (o.Back == m.Node || (o.Node == m.Node && o.ToBox < 20.0)))
+				{
+					return false;
+				}
+			}
+			foreach (Obstacle o in obstacles)
+			{
+				double dx = o.X - m.X, dz = o.Z - m.Z;
+				double along = dx * m.Hx + dz * m.Hz, side = Math.Abs(dx * m.Hz - dz * m.Hx);
+				if (along > -2.0 && along < StandClear + (atJunction ? m.ToBox + 2.0 * Traffic.Nodes[m.Node].Box : 0.0) && side < (atJunction ? StandClear : 4.5))
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/// <summary>How far ahead a standing drawn car must have its lane clear to have nothing to stand for.</summary>
+		internal const double StandClear = 40.0;
+
 		/// <summary>What a driver keeps from step to step.</summary>
 		internal struct State
 		{
@@ -593,7 +641,13 @@ namespace HalfGripOpenWorld
 				if (o.Pulling && o.Car != me.Car)
 				{
 					// Turned across the lane, its nose or tail reaches further to the side than its middle.
+					double before = target;
 					InTheWay(me, o.X, o.Z, 0.0, ref target, ref why, 0.5 * CarLength * Math.Abs(me.Hx * o.Hz - me.Hz * o.Hx));
+					if (target < before && target < 0.5)
+					{
+						// (For the notes: what holds it is a car pulling in or out.)
+						st.Front = o.Car;
+					}
 				}
 			}
 

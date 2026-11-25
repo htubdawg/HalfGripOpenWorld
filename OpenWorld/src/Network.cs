@@ -1447,6 +1447,13 @@ namespace HalfGripOpenWorld
 				}
 				else if (SnapJoin(router.X(path[e + 1]), router.Z(path[e + 1]), 140.0, out double px3, out double pz3, out double py3))
 				{
+					// A through way whose route goes straight back along the road it starts from (its first cell the dead end, its next
+					// on that road): the forced first stretch would snap back onto that road and lie on top of it, a second lane laid
+					// along the first (four farms' lanes, their junctions' stop lines on the other's paving). Nothing to build there.
+					if (fromStart && s == 0 && segments.Hit >= 0 && EndsAt(Roads[segments.Hit], ax, az))
+					{
+						continue;
+					}
 					ToEnd(kind, ref px3, ref pz3, ref py3);
 					pts.Add((px3, pz3));
 					pinEnd = py3;
@@ -1478,6 +1485,13 @@ namespace HalfGripOpenWorld
 				made.Add(road);
 			}
 			return made;
+		}
+
+		/// <summary>Whether one of the road's ends is within a unit of (x, z).</summary>
+		private static bool EndsAt(Road road, double x, double z)
+		{
+			int last = road.Count - 1;
+			return Math.Abs(road.X[0] - x) + Math.Abs(road.Z[0] - z) < 1.0 || Math.Abs(road.X[last] - x) + Math.Abs(road.Z[last] - z) < 1.0;
 		}
 
 		/// <summary>

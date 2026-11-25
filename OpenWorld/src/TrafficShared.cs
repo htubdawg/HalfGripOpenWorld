@@ -375,6 +375,18 @@ namespace HalfGripOpenWorld
 			room.Ledger(opsOut);
 		}
 
+		/// <summary>A late car's lateness cut here (<see cref="TrafficLate.SkipStand"/>): sent to the room, so every machine draws it so.</summary>
+		private void SendLate(int car, int leg, double w, double d)
+		{
+			if (room == null || !EventLink.InRoom)
+			{
+				return;
+			}
+			opsOut.Clear();
+			opsOut.Add((car, Math.Abs(d) < TrafficLate.Least ? new TrafficRoom.Op { Kind = TrafficRoom.OpKind.OnTime, Leg = -1, W = w } : new TrafficRoom.Op { Kind = TrafficRoom.OpKind.Late, Leg = leg, W = w, D = d }));
+			room.Ledger(opsOut);
+		}
+
 		/// <summary>On the host in a room: the cars it caught up in the background, sent so every machine puts them back on the day.</summary>
 		private void SendCaughtUp(List<int> cars, double w)
 		{
