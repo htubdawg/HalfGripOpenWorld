@@ -508,7 +508,7 @@ internal static partial class Program
 		ok &= day.OverlapPairs == 0;
 		Console.WriteLine("  crossing cars in a junction box together: " + day.ConflictPairs + " pairs (" + day.BoxConflicts + " steps)" + (day.ConflictPairs == 0 ? "  ok" : "  FAIL"));
 		ok &= day.ConflictPairs == 0;
-		Console.WriteLine("  let go of the queue's order after 45 s: " + day.Forced + " (never into a car in the box, never without room past it, never across a car with the right of way)");
+		Console.WriteLine("  let go of the queue's order after 45 s: " + day.Forced + " (never into a car in the box, never without room past it, never across a car with the right of way); let in at the junction just past the trunk's box with it: " + day.Chained);
 		{
 			int lines = 0, three = 0, four = 0, many = 0;
 			for (int n = 0; n < Traffic.Nodes.Count; n++)

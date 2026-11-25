@@ -28,35 +28,78 @@ The owner: "we have no traffic control at all ... just code it and we will put t
   `TV_DRIVE_ONLY=1` (the full run, parking included, was not rerun after the lights). meshcheck, preview and the sims not rerun (no
   world, event, deer or room change).
 
-### NEXT: fix the failures, in this order (the owner: fix the mess before anything else; do NOT draw the lights yet)
+### The failures fixed (2026-11-25, `traffic-test-branch`; still 0.33.0, not tried in the game)
 
-Reports of the last 16-seed run were in the scratchpad (gone): rerun them. `TV_DRIVE_NOTES=1` prints each physics car stopped over
-90 s with what held it (`held`: 1 light, 2 no room past the box, 3 a car crossing in the box, 4 a committed car, 5 giving way, 6 a car
-there first) and its light's states over the run.
+The owner: fix the mess before anything else; do NOT draw the lights yet. Worked through the six failures listed in the last
+handoff, in order. trafficview (`TV_DRIVE_ONLY=1`) over the 16 seeds (1 to 15, 20261122), before and after; the stop lines fail on all 16 both times (6 below) (reports in the scratchpad, gone: rerun):
 
-1. **The day: a car pulling out on top of one coming** (seeds 5, 12: "cars on a lane closer than a car's length", gap 13.9 to 14.0 of
-   14). The car ahead is age 2 to 4 steps at in 0 to 1 of seg 0 (just pulled out), the car behind closing at 8 to 23 u/s. In
-   `TrafficDay.StartWaiting` (about line 2040 to 2100) a pull-out is allowed when a car is 40 back or more and not within `pullGap`
-   seconds, or on the let-in / forced paths with `CarLength + 2` only. Look at which path let these out (likely the let-in or
-   `PullOutForce` path with a car just over 16 back still moving) and require room for the car behind to stop.
-2. **The day: two cars into one lane at a junction** (seed 9: lane 66, both just past a node, gap 11.3, the one ahead faster) and **on
-   the trunk's inner lane** (seeds 2, 13: lane key + 2^40, circling cars, the one behind 10 to 14 u/s faster, gap 13.5). Probably a
-   merge out of a median or aux lane (`JunctionLanes`, `Switch`) or a grant into a lane someone else's grant also leaves by. Print the
-   two cars' lanes and grants a few steps before (`OverlapNotes` has the first sighting only).
-3. **The day: a car stalled in a box while a crossing car comes** (seed 1: node 49, a side car 2>1 at 3 into the box at 1.7 u/s, the
-   main car 1>0 at -13 at 47 u/s; seed 15: node 282 on the trunk, a left turn 0>2 at 42 at 1.5 u/s, the oncoming 1>0 at 66). Known since
-   0.33.0: a car let in stalls in the box behind a car stopped on its way out (`Room` checks room by distance). `CrossesTraffic` is the
-   strict rule; find why these got past it.
-4. **Physics cars "in each other" over the limit** (seeds 1, 13, 16: 6 to 8 pairs, at most 6) and **crossing in a box** (seed 13: 5,
-   at most 3). The pairs' notes are in the report (first pair, place, hour). Several were at Kingsbridge's close junctions (nodes 42, 6,
-   44, 2: 85 apart) and at node 8.
-5. **Physics cars stopped over 90 s** (seeds 3, 4, 9, 11: 1 to 6). Mostly `held 2` (no room past the box) at Kingsbridge's cluster:
-   queues round its centre block, each waiting for the next.
-6. **Stop lines on another road's paving** (7 of about 2,240 arms, every seed, inherited: `Traffic.ObliqueBox` caps a box at 75, and
-   slanted lanes need more; first at node 664, -5751, 12853, a Lane arm).
+| | before | after |
+|---|---|---|
+| cars on a lane closer than a car's length | 6 seeds | RESULT_OVL |
+| crossing cars in a box together (the day) | 2 seeds (1, 15) | RESULT_BOX |
+| stopped across a trunk carriageway | 0 | 0 |
+| physics cars "in each other" (at most 6) | 1 to 6 | RESULT_PHYS |
+| physics cars crossing in a box (at most 3) | 0 to 5 (5 on seed 13) | RESULT_PBOX |
+| physics cars stopped over 90 s | 1 to 6 on seeds 3, 4, 9, 11 | RESULT_STOP |
+| trips unfinished | 0 | 0 |
+| junction waiting, min a day | 209 to 590 | RESULT_WAIT |
+| seeds failing only the stop lines | 3 | RESULT_ONLY |
 
-Then: run the full trafficview (not only `TV_DRIVE_ONLY`) on the 16 seeds, then ask the owner before drawing the lights or anything
-else. Town turn lanes are no longer needed for the jam (see above); ask before building them.
+**What was wrong, and the fix** (`TrafficDay` unless said):
+1. **Pull-outs on top of a car coming:** the forced pull-out (after 300 s) needed only a car's length clear, and on a 25 mph street the
+   3 s gap could be shorter than the car behind needs to stop. Now every pull-out (clear, let in or forced) needs the car behind able to
+   stop (`CanStopBehind`: a second to see it, the least gap). `PullOutsForced` is still 40 to 90 a day on the busy seeds (after 300 s
+   waiting): a sign the streets near Westhaven and Kingsbridge are full at the peak.
+2. **Two cars into one lane:** a car merging out of a junction lane just past a node did not see a car still coming through the node
+   into that lane (it is on the lane's list only once past the node): `ComingInto`. And the mirror: just short of a node, the car just
+   past it in the lane carrying on (`AheadAcross`). Both in `RoomIn`.
+3. **A car stalled in a box while a crossing car comes:** three causes.
+   - The next junction's stop line inside this box (node 282 and 287 on the trunk, 82 apart, boxes 45): the car was let in, then
+     waited in the box for the next one. `ThroughNext`: not let in unless it could go on through the next one (its light green, nobody
+     let in there across its way, room past it; out of the trunk's box, a gap at the next one too). The 45 s guard still lets it go
+     (two such junctions could wait on each other: seed 5 gridlocked when it could not, and when every car waited for a gap at the
+     next one), but never into the trunk's box. Where either is a trunk junction the car is let in at both at once (`Chained`), so
+     nobody let in at the next one later stands in its way while it is still in the trunk's box.
+   - Two cars let into one lane out from different lanes in (the trunk's outer lane and its deceleration lane into one exit) saw
+     each other only once both were on it: a car let into a junction now follows any car let in there into the same lane out that is
+     nearer the node (`Acceleration`, binding "merge").
+   - A car with the right of way let in across a car that could not get out (the car in front past the box crawling): `HeldIn` now
+     limits the other car's clearing by the car in front of it, instead of its pull-away on a free road.
+   - A car whose trip ends just past the node slows to park in the box: `HeldIn` counts it as there until it parks.
+4. **Physics cars in each other:**
+   - A drawn car pulling out of a space across the road swings over the oncoming lane: it is now held back while a physics car is
+     coming in either lane (`TrafficDrive.AcrossItsWay`, in `TrafficPhysics.OnABody` and trafficview).
+   - A drawn car pulling out or in is in a physics car's way only where it is drawn (with its nose and tail counted across the lane),
+     not on the lane: counted on the lane, one held back in its space just past a junction kept the physics cars waiting for it, and it
+     for them.
+   - A physics car tired of waiting at a junction (`HoldBreak`) still lets a car about to get there (2.5 s) go first.
+   - A physics car goes into a box only if the queue past it, up to the first car standing or crawling (under 4 u/s) within 120,
+     has room for it behind the cars ahead of it (those short of the node too), its back out of the box. Its old test (a stopped car
+     within a car's length and 4 past the box) let it follow a moving queue in and stop with its back in the box: on seed 9, 24 cars
+     stood for minutes round Kingsbridge's ring of close junctions (nodes 42, 6, 44, 2), each queue held by a car in the next box.
+5. **Physics cars stopped over 90 s:** the worst (seed 7: 23 cars, 7 minutes) was a physics car ahead of its timetable standing on the
+   lane at its trip's end, waiting for the day's car (minutes behind in the day's queue) to catch up. Now it drives to its trip's end
+   and goes back on the timetable early: the ledger takes a negative lateness and draws the car parked at its trip's end until the day
+   has it there (`TrafficLate.At`), then back on the day. trafficview checks it ("early entries"). A merging car at the head of a
+   standing queue in a median lane waited for ever (seed 11): a car standing behind it is no longer a bar. What is left is physics cars
+   behind a drawn late car replaying a stop the day had it make in a queue (seed 4, node 2: car 649 drawn 268 s late, standing 26
+   before its trip's end) while the cars it queued behind in the day are drawn elsewhere now: it stands for no reason the player can
+   see. A late car standing with nothing in front of it could be let catch up (a ledger change): not done.
+6. **Stop lines on another road's paving (7 arms, every seed): not fixed, a layout fault.** At those nodes (664, 672, 686, 1258) the
+   arm is clear only at its far end (79 of 80, 91 of 92, 137 of 137, 128 of 128): country lanes laid along each other. jview at node
+   1258 (7796, -10404) shows one road where four Lane arms meet. Fixing it is a world change (the lanes' layout in `Network`): ask the
+   owner.
+
+**trafficview's notes** (`TV_DRIVE_NOTES=1`): overlaps say how each car pulled out and what last moved it between lanes (with its
+grants and lane changes); box conflicts say when each was let in, what was braking it (`Binding`) and why the next junction would not
+let it through (`NextWhy`); a car stuck at the day's end says why it can't merge (`roomWhy`); each physics car stopped over 90 s says
+what held it at the moment it had stood 90 s, the car in front and the car standing past the box (drawn: its lateness and leg).
+
+**Checks run:** `tools/check.sh` passes (stub HalfGripTools.dll); trafficview on 16 seeds with `TV_DRIVE_ONLY=1`; the full trafficview
+(parking, the ledger, contact) on seed FULL_SEEDS. meshcheck, preview and the sims not run (no world, event, deer or room change).
+
+**Next:** ask the owner (before drawing the lights or building anything else): the lights drawn, the stop-line layout fault, town turn
+lanes (no longer needed for the jam). Then the owner's test in the game of this branch (lights' logic, the physics cars' early parking).
 
 ## READ THIS FIRST: right of way and the trunk's junction lanes (2026-11-24, branch `ccr-02e633e5-fytf3y`)
 

@@ -28,6 +28,10 @@ namespace HalfGripOpenWorld
 		/// <summary>Kept waiting this long at a junction, a car gives way only to cars in the box, not to cars still coming (no deadlock);
 		/// three times as long, not to a drawn car standing in the box either (the day holds it there for someone who is a physics car now).</summary>
 		internal const double HoldBreak = 8.0;
+		/// <summary>How far past the room a car needs beyond a junction's box it looks for the end of a queue there.</summary>
+		private const double QueueLook = 120.0;
+		/// <summary>Where the cars past the junction's box are (reused: the drivers run on one thread).</summary>
+		[ThreadStatic] private static List<double> pastBox;
 		/// <summary>Seconds off the box a car coming is still let go first by a car tired of waiting (<see cref="HoldBreak"/>).</summary>
 		private const double ImpatientLook = 2.5;
 		/// <summary>Seconds held at a side road's red before a physics car gives up on the light (see <see cref="Target"/>).</summary>
@@ -464,7 +468,16 @@ namespace HalfGripOpenWorld
 			bool blockedOut = false;
 			st.Front = -1;
 			st.Blocker = -1;
-			double boxOut = me.Node >= 0 ? me.NodeP + Traffic.Nodes[me.Node].Box + CarLength + 4.0 : double.MinValue;
+			double slowP = double.MaxValue;
+			int slowCar = -1;
+			if (pastBox == null)
+			{
+				pastBox = new List<double>();
+			}
+			pastBox.Clear();
+			// Room past the box: stopped behind the car there, its back is out of the box (P is a car's middle: a car's length and a half,
+			// and the gap, past the box's edge; it was a car's length and 4, and a car stopped behind a queue stood with its back in the box).
+			double boxOut = me.Node >= 0 ? me.NodeP + Traffic.Nodes[me.Node].Box + 1.5 * CarLength + TrafficDay.MinGap : double.MinValue;
 			foreach (Mover o in others)
 			{
 				// A drawn car pulling out of its space or into one is not on the lane yet (or any more): it is in the way only where it is
@@ -504,12 +517,37 @@ namespace HalfGripOpenWorld
 						nearestX = o.X;
 						nearestZ = o.Z;
 					}
-					if (me.Node >= 0 && po < boxOut && po > me.NodeP && o.V < 2.0)
+					if (me.Node >= 0 && po < boxOut + QueueLook)
 					{
-						blockedOut = true;
-						st.Blocker = o.Car;
+						// (The cars ahead of it short of the node go out the same way: they need room there too.)
+						if (po > me.NodeP && o.V < 4.0 && po < slowP)
+						{
+							slowP = po;
+							slowCar = o.Car;
+						}
+						if (pastBox.Count < 32)
+						{
+							pastBox.Add(po);
+						}
 					}
 					break;
+				}
+			}
+			if (slowP < double.MaxValue)
+			{
+				// Past the box, the queue up to the first car standing or crawling there: room for this car behind the cars already in
+				// it, its back out of the box ("do not enter an intersection if there are vehicles blocking your way", PA Driver's Manual
+				// p. 46). Following a moving queue in and stopping when it stops left cars standing in the boxes of Kingsbridge's close
+				// junctions, each holding up the next.
+				int ahead = 0;
+				foreach (double q in pastBox)
+				{
+					ahead += q < slowP ? 1 : 0;
+				}
+				if (slowP < boxOut + ahead * (CarLength + TrafficDay.MinGap))
+				{
+					blockedOut = true;
+					st.Blocker = slowCar;
 				}
 			}
 			if (nearestP < double.MaxValue)
@@ -598,6 +636,7 @@ namespace HalfGripOpenWorld
 							{
 								hold = true;
 								st.Held = 3;
+								st.Blocker = o.Car;
 								break;
 							}
 							continue;
@@ -618,6 +657,7 @@ namespace HalfGripOpenWorld
 							{
 								hold = true;
 								st.Held = 3;
+								st.Blocker = o.Car;
 								break;
 							}
 							continue;
@@ -629,6 +669,7 @@ namespace HalfGripOpenWorld
 							// It can't stop for this car any more (a car that set off late must not cut across a fast one): it goes first.
 							hold = true;
 							st.Held = 4;
+							st.Blocker = o.Car;
 							break;
 						}
 						if (meCommitted)
@@ -660,6 +701,7 @@ namespace HalfGripOpenWorld
 							{
 								hold = true;
 								st.Held = 5;
+								st.Blocker = o.Car;
 								break;
 							}
 							continue;
@@ -704,6 +746,7 @@ namespace HalfGripOpenWorld
 						}
 						hold = first;
 						st.Held = first ? 6 : 0;
+						st.Blocker = first ? o.Car : st.Blocker;
 					}
 				}
 			}

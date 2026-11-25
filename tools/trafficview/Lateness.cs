@@ -52,8 +52,62 @@ internal static partial class Program
 				bestZ = a.z;
 			}
 		}
+		ok &= EarlyCheck(day, w0);
 		ok &= LateRun1(day, w0, "driving with car " + follow, c => follow, 0.0, 0.0);
 		ok &= LateRun1(day, w0, "standing at " + bestX.ToString("0") + ", " + bestZ.ToString("0") + " (" + most + " cars driving within 450)", c => -1, bestX, bestZ);
+		return ok;
+	}
+
+	/// <summary>
+	/// Early entries (a physics car at its trip's end ahead of the day goes back on it early): drawn where it was and on from there with
+	/// no jump, parked at its trip's end until the day has it there, then back on the day (parked, or on its next trip) with no jump.
+	/// </summary>
+	private static bool EarlyCheck(TrafficDay day, double w0)
+	{
+		TrafficLate late = new TrafficLate(day);
+		int tried = 0, jumps = 0, notParked = 0, back = 0;
+		string note = "";
+		for (int c = 0; c < day.Cars.Count && tried < 200; c++)
+		{
+			TrafficDay.Place at = day.At(c, w0);
+			if (at.State != TrafficDay.State.Driving || at.InTunnel)
+			{
+				continue;
+			}
+			TrafficDay.Leg leg = day.Legs[at.Leg];
+			if (leg.Vanishes || leg.End - (leg.Start + at.T) < 30.0)
+			{
+				continue;
+			}
+			tried++;
+			// As if a physics car got to 40 before its end now: as early as the day is from there.
+			double p = Math.Max(at.P, leg.Length - 40.0);
+			double d = TrafficDrive.Lateness(leg, p, w0);
+			late.Late(c, at.Leg, w0, d, 0.05);
+			TrafficDay.Place first = late.At(c, w0, out bool _);
+			// (Along its path: the day's place there is drawn where the day draws it, which the physics car's line follows.)
+			if (first.State != TrafficDay.State.Driving || first.Leg != at.Leg || Math.Abs(first.P - p) > 1.0)
+			{
+				jumps++;
+				note = note.Length == 0 ? " (first: car " + c + " drawn " + (first.P - p).ToString("0.0") + " on)" : note;
+			}
+			// Between its early arrival and the day's: parked at its end.
+			// (Drawn on |d| ahead of the day, it gets there at leg.End + d.)
+			TrafficDay.Place m = late.At(c, leg.End + 0.5 * d, out bool _);
+			if (d < -2.0 && m.State != TrafficDay.State.Parked)
+			{
+				notParked++;
+			}
+			// After the day's arrival: back on the day.
+			double after = leg.End + 1.0;
+			TrafficDay.Place a = late.At(c, after, out bool _), dd = day.At(c, after);
+			if (a.State == dd.State && Math.Abs(a.X - dd.X) < 0.01 && Math.Abs(a.Z - dd.Z) < 0.01)
+			{
+				back++;
+			}
+		}
+		bool ok = jumps == 0 && notParked == 0 && back == tried;
+		Console.WriteLine("  early entries (a physics car back early at its trip's end): " + tried + " tried, " + jumps + " jumps" + note + ", " + notParked + " not parked at its end before the day gets there, " + back + " back on the day after" + (ok ? "  ok" : "  FAIL"));
 		return ok;
 	}
 

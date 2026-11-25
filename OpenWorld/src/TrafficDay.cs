@@ -2561,13 +2561,14 @@ namespace HalfGripOpenWorld
 						joining.Add(r.OutLane);
 					}
 					bool roomless = false, stuck = false;
+					Request chain = default;
 					if (ok || (force && !crossing))
 					{
 						roomless = !Room(r, granted, box);
 						// Two junctions closer than their boxes: not into this one while it would stand in it waiting at the next (the
 						// guard below still lets it go after a long wait, two such junctions could otherwise wait on each other; but never
 						// into the trunk's box, where it would stand across a carriageway).
-						stuck = !roomless && !ThroughNext(r, box);
+						stuck = !roomless && !ThroughNext(r, box, out chain);
 						ok = ok && !roomless && !stuck;
 						RefusedRoom += roomless || stuck ? 1 : 0;
 					}
@@ -2590,6 +2591,24 @@ namespace HalfGripOpenWorld
 						}
 						r.M.Grants.Add(g);
 						r.M.Wait = 0.0;
+						if (chain.M != null && !stuck)
+						{
+							// The next junction is inside this one's box: let in there too, now (its gap and room were just found), so
+							// nobody let in there later stands in its way while it is still in this box.
+							Grant c = new Grant { M = r.M, Node = chain.Node, SegIndex = chain.SegIndex, InLane = chain.InLane, OutLane = chain.OutLane, InKey = chain.InArm, OutKey = chain.OutArm, NodeP = chain.NodeP, At = now, AtP = r.M.P - chain.NodeP, AtV = r.M.V, Through = Math.Min(DesiredAt(r.M.L.Profile, chain.NodeP), DesiredAt(r.M.L.Profile, chain.NodeP + Traffic.Nodes[chain.Node].Box)) };
+							if (!nodeGrants.TryGetValue(chain.Node, out List<Grant> there))
+							{
+								there = new List<Grant>();
+								nodeGrants[chain.Node] = there;
+							}
+							there.Add(c);
+							if (there.Count == 1)
+							{
+								grantNodes.Add(chain.Node);
+							}
+							r.M.Grants.Add(c);
+							Chained++;
+						}
 					}
 					else if (!roomless && !stuck)
 					{
@@ -3725,8 +3744,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Whether the way out has room past the box for this car and those already let in ahead of it: never block a junction.</summary>
 		/// <summary>
 		/// Whether request <paramref name="r"/> can go on through the next junction too, where that junction's stop line is so close that
-		/// a car waiting there would still be in this one's box: its light green, nobody let in there crossing its way, and room past it
-		/// (not the cars coming there it would give way to: they come and go, and waiting for all of them jammed two such junctions). "Do not enter an intersection if there are vehicles blocking your way" (PA Driver's Manual
+		/// a car waiting there would still be in this one's box: its light green, nobody let in there crossing its way, and room past it;
+		/// out of the trunk's box, a gap there too (elsewhere not the cars coming there it would give way to: they come and go, and waiting
+		/// for all of them jammed two such junctions). "Do not enter an intersection if there are vehicles blocking your way" (PA Driver's Manual
 		/// p. 46): two junctions closer than their boxes are one for that. True where the next stop line is clear of this box.
 		/// </summary>
 		/// <summary>
@@ -3735,9 +3755,9 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private double HeldIn(Grant g, double box)
 		{
-			if (!g.M.L.Vanishes && g.M.L.Length < g.NodeP + box + Traffic.CarLength)
+			if (!g.M.L.Vanishes && g.M.L.Length < g.NodeP + box + Traffic.CarLength + 30.0)
 			{
-				// Its trip ends just past the node: it stops there to pull into its space, still in the box.
+				// Its trip ends just past the node: it slows there to stop and pull into its space, still in the box or crawling out.
 				return double.MaxValue;
 			}
 			if (!lanes.TryGetValue(g.OutLane, out List<Mover> list))
@@ -3759,8 +3779,9 @@ namespace HalfGripOpenWorld
 			return held;
 		}
 
-		private bool ThroughNext(Request r, double box)
+		private bool ThroughNext(Request r, double box, out Request chain)
 		{
+			chain = default;
 			Seg[] path = r.M.L.Path;
 			int k = r.SegIndex + 1;
 			if (k + 1 >= path.Length || path[k].Edge < 0 || path[k + 1].Edge < 0 || path[k].Edge == path[k + 1].Edge)
@@ -3798,8 +3819,8 @@ namespace HalfGripOpenWorld
 			{
 				foreach (Grant g in there)
 				{
-					if (g.M != r.M && g.M.P < g.NodeP + nextBox + Traffic.CarLength && Conflict(next, g.InKey, g.OutKey, g.InLane, g.OutLane, q.InArm, q.OutArm, q.InLane, q.OutLane)
-						&& !Yields(next, g.InKey, g.OutKey, q.InArm, q.OutArm))
+					// (Even one that would give way to it: let in, it goes.)
+					if (g.M != r.M && g.M.P < g.NodeP + nextBox + Traffic.CarLength && Conflict(next, g.InKey, g.OutKey, g.InLane, g.OutLane, q.InArm, q.OutArm, q.InLane, q.OutLane))
 					{
 						r.M.NextWhy = "grant at " + next + " " + g.InKey + ">" + g.OutKey + " v " + g.M.V.ToString("0.0") + " at " + (g.M.P - g.NodeP).ToString("0") + " vs " + q.InArm + ">" + q.OutArm;
 						return false;
@@ -3810,13 +3831,27 @@ namespace HalfGripOpenWorld
 			{
 				there = new List<Grant>();
 			}
+			if (twoLaneMain[r.Node] && GivesWayToComing(q, nextBox))
+			{
+				// Out of the trunk's box only into a gap at the next one too: it would stand across a carriageway waiting for it.
+				r.M.NextWhy = "giving way at " + next;
+				return false;
+			}
 			if (!Room(q, there, nextBox))
 			{
 				r.M.NextWhy = "room at " + next + " box " + nextBox.ToString("0") + " seg " + path[k].Len.ToString("0");
 				return false;
 			}
+			// Let in at both at once where it would cross a carriageway of the trunk at either (see the caller).
+			if (twoLaneMain[r.Node] || twoLaneMain[next])
+			{
+				chain = q;
+			}
 			return true;
 		}
+
+		/// <summary>Cars let into the junction just past the trunk's box as they were let into the trunk's (counted for trafficview).</summary>
+		internal int Chained;
 
 		private bool Room(Request r, List<Grant> granted, double box)
 		{
@@ -4019,6 +4054,30 @@ namespace HalfGripOpenWorld
 					found = true;
 					break;
 				}
+			}
+			// Let into the junction ahead, behind a car let in there into the same lane out from another lane in (the trunk's outer lane and
+			// its deceleration lane into one exit, a side road into a main line), nearer the node: it follows that car through. On the
+			// lane out they see each other only once both are on it.
+			foreach (Grant g in m.Grants)
+			{
+				if (g.SegIndex < m.Seg || !nodeGrants.TryGetValue(g.Node, out List<Grant> at))
+				{
+					continue;
+				}
+				double mine = g.NodeP - m.P;
+				foreach (Grant o in at)
+				{
+					if (o.M == m || o.OutLane != g.OutLane || o.InLane == g.InLane || o.M.Seg > o.SegIndex)
+					{
+						continue;
+					}
+					double theirs = o.NodeP - o.M.P;
+					if (theirs < mine || (theirs == mine && o.M.Index < m.Index))
+					{
+						{ double t_ = Interaction(v, mine - theirs - Traffic.CarLength, o.M.V); if (t_ < worst) { worst = t_; m.Binding = "merge"; } }
+					}
+				}
+				break;
 			}
 			// A car waiting to pull out just ahead: leave it a car's length and a little, if it can stop for it comfortably.
 			foreach ((long lane, double u) in letIn)
