@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (late).
+Last written 2026-11-26 (night).
 
 ## Where things stand
 
@@ -80,7 +80,7 @@ Why turn lanes at the light and not elsewhere: on seed 1 the light itself holds 
 node 6, 8.4 northbound, 8.1 from Pinewick), against 1.6 min of the northbound held by turning cars; the side roads wait for **room** past
 the queue. So the gain is in giving the light's queues room and lanes, not in turn lanes at the small junctions.
 
-**What is next** (agreed with the owner, not started; the last session stopped while reading the code):
+**What is next** (agreed with the owner; item 1's southbound half tried and reverted, see the next section):
 1. **Node 6, the link's two ways in, each a lane wider back through the junction before it:**
    - Southbound (from town): the widening starts after node 2 (the street from the north, (-2290, -4139)), so the extra lane begins
      about 40 m north of node 42 (the lane from the west, (-2354, -4259)); at node 42 the left lane is **straight only** (the side road is
@@ -89,6 +89,9 @@ the queue. So the gain is in giving the light's queues room and lanes, not in tu
    - Northbound (from the trunk): a right lane starting south of node 44 ((-2417, -4448)), straight at node 44, **right only** at node 6.
    - Watch: northbound cars turning left into node 42's lane cross two lanes (bigger gap); cars from node 42's lane going to Pinewick
      have about 25 m to move over.
+   - **Tried (southbound): worse, reverted.** What might help instead: more green for the light's southbound (but the timings
+     apply to all 16 lights; a per-junction timing would be new), or a second southbound through lane at the light (a lane each way
+     more through the junction, not a turn lane), or a way for the cars from node 42's lane to get into the bay.
 2. **The Pinewick road (node 6's arm 2) split into a left and a right lane at the light.** A bay at a road's end, which `Network.Bays`
    doesn't lay yet (it only lays a bay on the road that carries on through the T).
 3. Measure each on 16 seeds by the fairness line (as committed: 31.5 s a trip / 90% 74 / 765 over 3 min) and keep it only if it
@@ -111,6 +114,28 @@ How to build item 1 (notes from reading the code, not tried):
 
 **Signs needed** (for when there are models): stop signs at four-way stops; "LEFT LANE MUST TURN LEFT" (and right) before node 6's
 lanes; lane-use arrows (straight; straight/right; left only) at nodes 42, 44 and 6, on the road or overhead.
+
+## 2026-11-26 (night): the southbound left lane through the junction before the light, tried and reverted
+
+Item 1's southbound half was built (commit 8140277, reverted in the next commit; the code is there to bring back): `Network.Bay` let a
+bay run back through the junction behind (`TurnBays.Bay.Through`) when the second junction behind leaves room, its widening's taper
+(`ShortTaper`) just past node 2; at node 6 the bay became 72 to 198 along road 3 (was 155 to 198), node 42 (136) inside it, about six
+cars. `TrafficDay`: `bayEdge` on every edge the bay overlaps; `IntoBay` lets a car in on the edge before node 42 if it goes straight at
+node 42 and left at node 6; `OutLaneOf` keeps a bay car in the bay across node 42 (both the request and the chained request).
+`RoadMesh.BayPaint`: the bay line dotted up to past node 42, then solid; a straight-ahead arrow before node 42 (`AheadArrow`; `BayArrow`
+takes the arrow's parts and front). Looked at with jview: right.
+
+**16 seeds (`TV_DRIVE_ONLY=1`): worse.** As committed 31.5 s a trip / 90% 74 / 765 over 3 min (reproduced exactly); with the lane 32.8 /
+78 / 849, and seeds 4 (right of way refused 117, limit 100), 5 and 7 (physics at the evening peak) fail. Node 6 southbound stood 518 to
+652 min, node 44 northbound 384 to 484, node 6 from Pinewick 181 to 243; only node 2's street better (1,108 to 1,000). The refusals at
+node 6's front hardly changed (light 216 to 226): the extra waiting is in the queue. **Fewer cars got into the bay (614 to 562 over the
+16 days)**: the bay fills from the north, so the left turners coming from node 42's lane (and those stuck behind the bay's short start
+at 72) can't get in, and wait to turn left in the through lane, holding up the cars going straight. The light's capacity, not storage,
+is the limit: the southbound way in is refused for **light** far more than anything else.
+
+Not tried: the northbound right lane (item 1's other half). It needs a road widened on one side only (today's widening is symmetric:
+`Network.HalfAt`, `Point`, the cuts, `RoadMesh`, and every user of `Widened` assume the centre line is the middle). With what the
+southbound half showed (storage doesn't add green), it is unlikely to pay for that work; ask the owner before starting it.
 
 ## The owner's lights report (2026-11-25)
 
