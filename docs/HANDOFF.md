@@ -107,7 +107,8 @@ seen from its line. All-way stops also need `TrafficDrive` stopping, stop lines 
      `TrafficDrive` stops its front at the box (`ToBox - CarLength * 0.5 - 1`). Tried: the day stopping its front at the box
      (`Nose = CarLength / 2` taken off the stop, `ReachOf`, the at-the-line tests and the lights' `toLine` and `MayGo`): node 42's
      meetings went, but over 16 seeds standing went 24.0 to 26.9 s a trip (99% 262 to 296, over 3 min 516 to 701) and pairs 40 to 46
-     (seed 3 to 9). Reverted. Asked the owner whether drawn cars stand past the stop line in game.
+     (seed 3 to 9). Reverted. The owner: cars stand "like a foot over the line"; those are physics cars (within 91 of the player),
+     which stop their front at it. Drawn cars only stand past 91, where half a car (about 2 m) past the line is hard to see: left as is.
    - **Node 6, the Pinewick road's way in:** a physics car on edge 72 at its line (s 26 to 27, box 23, green) is met by one leaving
      north on edge 44 at s 199 to 208 (13 to 22 out). The roads meet at about 60 degrees and edge 44 is widened for the bay, its
      northbound lane half a lane out towards the Pinewick road; `Traffic.ClearOfOthers` ignores the widening on purpose (box 29
