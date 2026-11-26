@@ -2768,12 +2768,15 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Road ends nearer each other than this (and not one point) are brought to one point (<see cref="Meet"/>).</summary>
-		private const double MeetMost = 5.0;
+		private const double MeetMost = 8.0;
+
+		/// <summary>How far along a road its end's move to meet another's is eased in (<see cref="Meet"/>).</summary>
+		private const double MeetEase = 40.0;
 
 		/// <summary>
 		/// Road ends a few units apart brought to one point: the smaller road's end (then the later built's) moves to the other's. Two
 		/// routes found to one place by different ways, or a road snapped to the nearest point of another that was later split there,
-		/// ended 1 to 5 apart; the place was then neither a joint nor a hub (their ends must be one point) but a junction of ends, and the
+		/// ended 1 to 6 apart; the place was then neither a joint nor a hub (their ends must be one point) but a junction of ends, and the
 		/// mouths cut for each other left wedges of ground between (Farm 82, node 480, seven places). Not a course's road, a bridge's end
 		/// or a tunnel's.
 		/// </summary>
@@ -2815,6 +2818,18 @@ namespace HalfGripOpenWorld
 					if (to < 0)
 					{
 						continue;
+					}
+					// The move eased in over the last MeetEase, so the road doesn't kink at its end (a kink stops it joining: Hooked).
+					double mx = Roads[to].X[tk] - a.X[ka], mz = Roads[to].Z[tk] - a.Z[ka], length = a.S[a.Count - 1];
+					for (int i = 0; i < a.Count; i++)
+					{
+						double from = end == 0 ? a.S[i] : length - a.S[i];
+						if (from < MeetEase && !a.Bridge[i])
+						{
+							double w = 1.0 - from / MeetEase;
+							a.X[i] += mx * w;
+							a.Z[i] += mz * w;
+						}
 					}
 					a.X[ka] = Roads[to].X[tk];
 					a.Z[ka] = Roads[to].Z[tk];

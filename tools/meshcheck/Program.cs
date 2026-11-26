@@ -4252,7 +4252,7 @@ internal static class Program
 			for (int b = a + 1; b < tips.Count; b++)
 			{
 				double dx = tips[a].x - tips[b].x, dz = tips[a].z - tips[b].z, d = Math.Sqrt(dx * dx + dz * dz);
-				if (tips[a].r != tips[b].r && d > 1.0 && d < 5.0 && !Network.Hubs.Exists(h => Math.Abs(h.X - tips[a].x) < 30.0 && Math.Abs(h.Z - tips[a].z) < 30.0))
+				if (tips[a].r != tips[b].r && d > 1.0 && d < 8.0 && !Network.Hubs.Exists(h => Math.Abs(h.X - tips[a].x) < 30.0 && Math.Abs(h.Z - tips[a].z) < 30.0))
 				{
 					apart++;
 					if (apart <= 10)
@@ -4306,7 +4306,7 @@ internal static class Program
 		}
 		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0 && slanted == 0 && unjoined == 0;
 		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole, "
-			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 5 apart, " + slanted + " lanes meeting a road more than 30 degrees off square, " + unjoined + " pairs of roads alone at a place not joined" + (ok ? "" : "  FAIL"));
+			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 8 apart, " + slanted + " lanes meeting a road more than 30 degrees off square, " + unjoined + " pairs of roads alone at a place not joined" + (ok ? "" : "  FAIL"));
 		return ok;
 	}
 
