@@ -3254,7 +3254,7 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Makes a hub of the road ends in <paramref name="here"/> at (x, z) (all within half a unit of it) and any road whose paving
 		/// is on the place: one ending near it is an arm from its end, one passing through two arms. At least three roads must end
-		/// there, and at most one pass through. False: nothing is changed.
+		/// there, or two with one passing through, and at most one pass through. False: nothing is changed.
 		/// </summary>
 		private static bool TryHub(List<(int r, int end)> here, double x, double z)
 		{
@@ -3285,15 +3285,14 @@ namespace HalfGripOpenWorld
 					ends++;
 					continue;
 				}
-				if (at < HubMost + 2.0 * Step || at > length - HubMost - 2.0 * Step)
-				{
-					return false;
-				}
+				// Whether each arm has room for its cut is MakeHub's to say (a farm lane's yard 50 past the place had room enough).
 				found.Add((o, at, 1));
 				found.Add((o, at, -1));
 				through++;
 			}
-			if (ends < 3 || through > 1)
+			// Three ends, or two and a road through (a crossroads of two roads ending at one point on a third: cut for it one by one,
+			// a sliver of ground was left between their mouths, Farm 88).
+			if (ends + 2 * through < 4 && ends < 3 || through > 1)
 			{
 				return false;
 			}
