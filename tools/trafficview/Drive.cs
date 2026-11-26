@@ -12,9 +12,9 @@ using HalfGripOpenWorld;
 internal static partial class Program
 {
 	private const double DriveStep = 0.05, DriveRun = 600.0, PhysReach = 300.0, PhysLeave = 400.0, BubbleEvery = 0.4;
-	private const int MostPhysical = 6;
+	private const int MostPhysical = 24;
 	/// <summary>How many more physics cars may be made, over <see cref="MostPhysical"/>, of cars that have to slow for something the day doesn't know of (TrafficCars.MostYieldPhysics).</summary>
-	private const int MostYieldPhysical = 2;
+	private const int MostYieldPhysical = 16;
 	/// <summary>TV_NOYIELDPHYS=1: held cars stay played back (as before 2026-11-26's plan), to compare.</summary>
 	private static readonly int YieldCar = int.TryParse(Environment.GetEnvironmentVariable("TV_YIELD_CAR"), out int yc) ? yc : -1;
 	private static readonly bool NoYieldPhysics = Environment.GetEnvironmentVariable("TV_NOYIELDPHYS") != null;

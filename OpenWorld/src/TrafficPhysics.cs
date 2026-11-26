@@ -49,7 +49,7 @@ namespace HalfGripOpenWorld
 		/// How many physics cars may be made over <see cref="MostPhysics"/> of drawn cars that have to slow for something the day doesn't
 		/// know of (<see cref="ClaimForYield"/>): none with physics cars off (they are then held behind it, drawn).
 		/// </summary>
-		private int MostYieldPhysics => MostPhysics == 0 ? 0 : 2;
+		private int MostYieldPhysics => MostPhysics == 0 ? 0 : 16;
 
 		/// <summary>Drawn cars held up this frame, to be claimed as physics cars once the drawing is done (<see cref="ClaimForYield"/>).</summary>
 		private readonly List<int> yieldWanted = new List<int>();

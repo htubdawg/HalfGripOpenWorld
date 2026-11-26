@@ -89,7 +89,7 @@ owner has reported on it.
      the fields). Millbrook's main road north now reaches the road from Northcote, about (-2885, 5832) with `ShowCoords`.
    - Send `LogOutput.log` and say how the jump feels.
 48. Traffic drawn in the game (0.32.0; a preview: the cars cannot be pushed or wrecked yet; set
-   `TrafficPhysicsCars` to 0 for this test now that stage 3 is in).
+   `TrafficPhysics` to 0 for this test now that stage 3 is in).
    The log says `Traffic: ... cars, ... trips on a weekday (or weekend day) from the race's seed, built in ... ms` a second or two
    after the start (the day is made on a worker; no hitch). With `ShowCoords` on, the overlay's `traffic:` line counts the cars drawn
    (moving and parked), the lit ones and the day's hour; with `WeatherSkip` on, the skip key moves the traffic's hour with the sky.
@@ -120,7 +120,7 @@ owner has reported on it.
    - Send `LogOutput.log` (with `VerboseLog` on it also says how each car body was made) and screenshots: a town street, a car park,
      a junction with a queue, a car pulling out, night.
 49. Physics traffic near you (0.32.0; stage 3 of the traffic). New config `World` /
-   `TrafficPhysicsCars` (default 0; set it to 6 for this test). With `ShowCoords` on, the overlay's `traffic:` line adds `physics N/6 (... giving way, ... stopped),
+   `TrafficPhysics` (default 24). With `ShowCoords` on, the overlay's `traffic:` line adds `physics N/24 (... giving way, ... stopped),
    made ..., back ... on time and ... late, wrecked ..., retired ..., hidden ..., held back ...`. With `VerboseLog`, the log says
    `Traffic: a physics car made`, `Traffic: car N back on its timetable ... s late (out of reach)`, `... wrecked`, `... retired`.
    - Moving cars within about 90 m are real cars: drive into the side of one gently and it is pushed (it is no longer a wall);
@@ -140,7 +140,7 @@ owner has reported on it.
      120 m away.
    - Engine sound: each physics car plays one engine loop, as the game's enemy cars do.
    - At night the nearest few have their headlights on (no more than the drawn cars had).
-   - Frame time with `TrafficPhysicsCars` 0, 6 and 24 at the evening rush in Kingsbridge: please measure and send the numbers.
+   - Frame time with `TrafficPhysics` 0, 20 and 30 at the evening rush in Kingsbridge: please measure and send the numbers.
    - Alone only for now: in a room, everybody's physics cars are their own (stage 4 will share them). Say what you see there.
    - Send `LogOutput.log` and screenshots of a queue behind your car, a junction, a wreck.
    - Owner's first report (2026-11-23, alone in a room): "everything seems fine". The log shows cars made physical, one wrecked, one
@@ -275,11 +275,11 @@ owner has reported on it.
 68. Held cars become real cars (2026-11-26, `traffic-test-branch`, not released; the traffic changed: everyone in a room needs the same
    build). Since 67 a car played back from the day that had something in its way slowed and waited, but it couldn't negotiate a
    junction, so the real cars round you waiting on it (and it on them) locked up for minutes. Now such a car becomes a real car where it
-   is (up to 2 more than `TrafficPhysicsCars`), in a junction too, and no car waits for a car that is waiting for it. Check round
+   is (up to 16 more than `TrafficPhysics`), in a junction too, and no car waits for a car that is waiting for it. Check round
    Kingsbridge at the evening rush (about 17:00):
    - No knot of cars that never moves again. Say where cars stand over a minute and a half with nothing visibly holding them (the
      overlay's position and time, and the log).
-   - Frame rate: with `ShowCoords` on, the `traffic:` line shows `physics N/6+2 (... ) made ... (... claimed for having to slow)`;
+   - Frame rate: with `ShowCoords` on, the `traffic:` line shows `physics N/24+16 (... ) made ... (... claimed for having to slow)`;
      note the fps and the `Frame timings` log lines with the most physics cars you see, against 0.33.0 in the same place.
    - A car pulling out of a drive in front of a stopped queue now goes (the queue lets it out); one pulling into a space goes even if a
      stopped car is right behind it.

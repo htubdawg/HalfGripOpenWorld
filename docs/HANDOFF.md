@@ -24,12 +24,15 @@ Last written 2026-11-26 (night).
   colours or a pass (depth prepass) that doesn't follow the instances. Try a `MaterialPropertyBlock` with per-instance colour arrays.
 - **Paused until the standing-still fix is done:** four-way stops and more lights (the owner said try them; `docs/PLAN.md`).
 
-## Now (2026-11-26, late): physics cars off by default (the owner: "use less cars until you can figure this out")
+## Now (2026-11-26, late): half the local traffic (the owner: "use less cars until you can figure this out")
 
-- **`TrafficPhysics` (24) is now `TrafficPhysicsCars`, default 0** (renamed so saved configs take the new default). The held-car extra
-  (`MostYieldPhysics`) is 2 over it (was 16). With 0, no traffic car drives itself: every car is drawn on its timetable, late cars wait
-  behind what is in their way, and a car the player is about to hit still becomes a real car (`TrafficLoose`). trafficview still
-  tests the physics cars at 6 + 2 (`Drive.cs` `MostPhysical`, `MostYieldPhysical`) so they can be fixed before they come back on.
+- **The owner meant the cars on the road, not the physics cars** ("the only cars that matter are the physics cars"). I first turned
+  the physics cars off by default; that was wrong and is undone (`TrafficPhysics` 24, held-car extra 16, as before). **Never cut the
+  physics cars to dodge a bug.**
+- `Traffic.TrafficAmount = 0.5` scales `DrivingShare`: half the survey's local trips (through traffic on the highway not cut). It
+  changes the day: everyone in a room needs the same build. On the owner's seed with `TV_AT` below: 1466 trips to 810, physics cars
+  meeting 3 to 1 (none at node 6), stood still per trip 16.9 to 9.6 s. Back to 1 once the junctions are right; trafficview's PennDOT
+  and TPG comparisons now read about half (reported, not failed).
 - **Why:** the owner's report "cars stuck here" (race seed 1596659352, weekend, 11:17, at Kingsbridge's light where the Pinewick road
   comes in, node 6). Reproduced with the new `TV_AT=-2312,-4305,11.1` (stand at a place from an hour for 10 minutes): a physics car
   coming in from the Pinewick road on green turning south (arms 2>0) meets one going north (0>1) still in the box past its middle.

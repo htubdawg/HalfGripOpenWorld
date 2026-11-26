@@ -27,7 +27,15 @@ namespace HalfGripOpenWorld
 		/// The share of a day a household has a car moving: 1.89 drivers driving 59 minutes each of 1,440 (NHTS 2017, Tables 30 and
 		/// p. 9). Kept to this share, the roads are as busy as Pennsylvania's counters say; it sets how many trips each day holds.
 		/// </summary>
-		internal const double DrivingShare = 1.89 * 59.0 / 1440.0;
+		internal const double DrivingShare = 1.89 * 59.0 / 1440.0 * TrafficAmount;
+
+		/// <summary>
+		/// How much of the survey's local traffic is on the roads: half (the owner, 2026-11-26: "use less cars until you can figure this
+		/// out"). The physics cars near the player keep meeting and getting stuck at busy junctions; fewer cars driving, fewer meetings.
+		/// Through traffic on the highway is not cut. Changes the day: everyone in a room needs the same build. Back to 1 once the
+		/// junctions are right.
+		/// </summary>
+		internal const double TrafficAmount = 0.5;
 
 		/// <summary>A car's length and width (the game's enemy cars are about 14 by 5.4).</summary>
 		internal const double CarLength = 14.0;
