@@ -45,6 +45,12 @@ when one is done, delete it here.
   a junction if its marked as a left/straight lane at the first one", the owner, 2026-11-26). "I just want the traffic to work and
   the roads to feel realistic": the engineering is ours. Signs (stop signs, lane-use signs and arrows) to be modelled later: keep a
   list of what each change needs (docs/HANDOFF.md).
+- Act on the whole network, not junction by junction (the owner, 2026-11-26, late night: "Do we just need to act on a wider area
+  instead of addressing each junction individually?"). Routes take the waiting into account: the day may be built twice (or more),
+  drivers re-routing round the first pass's queues ("the load-time is already very short"). The Kingsbridge link (the main town's
+  road down to the trunk) gets two lanes each way ("we can just go ahead and add another lane as well"). The junction-by-junction
+  turn-lane plan above is superseded by these; the southbound left lane through the junction before the light was tried and made
+  the waiting worse (docs/HANDOFF.md).
 - Judge traffic changes by how the waiting is shared (the owner, 2026-11-26): waiting spread fairly over everyone is fine; the same
   total moved onto other drivers who now wait longer is not. Report averages per trip, in plain words.
 - Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not

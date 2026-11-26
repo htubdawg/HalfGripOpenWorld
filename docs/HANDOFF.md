@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (night).
+Last written 2026-11-26 (late night).
 
 ## Where things stand
 
@@ -15,6 +15,7 @@ Last written 2026-11-26 (night).
   room fixes and right on red measured and left off; since, node 6's arrow off (a flashing yellow only, the owner's choice). **The world changed** since 0.33.0 (node 6's road is a lane wider; the
   traffic's day too), so everyone in a room needs the same build. Bump the version with the next release.
 - None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 62).
+- **Next: "The new direction" below** (routes that know the waiting, the Kingsbridge link two lanes each way).
 
 ## 2026-11-26: how the waiting is shared, node 6's arrow off, the US rules for lights and stops
 
@@ -80,40 +81,59 @@ Why turn lanes at the light and not elsewhere: on seed 1 the light itself holds 
 node 6, 8.4 northbound, 8.1 from Pinewick), against 1.6 min of the northbound held by turning cars; the side roads wait for **room** past
 the queue. So the gain is in giving the light's queues room and lanes, not in turn lanes at the small junctions.
 
-**What is next** (agreed with the owner; item 1's southbound half tried and reverted, see the next section):
-1. **Node 6, the link's two ways in, each a lane wider back through the junction before it:**
-   - Southbound (from town): the widening starts after node 2 (the street from the north, (-2290, -4139)), so the extra lane begins
-     about 40 m north of node 42 (the lane from the west, (-2354, -4259)); at node 42 the left lane is **straight only** (the side road is
-     on the right) and the right lane straight/right; at node 6 the left lane is **left only** (to Pinewick), the right lane straight.
-     It replaces today's two-car bay (it holds about 6 to 7 cars) and the through cars get the right lane to themselves.
-   - Northbound (from the trunk): a right lane starting south of node 44 ((-2417, -4448)), straight at node 44, **right only** at node 6.
-   - Watch: northbound cars turning left into node 42's lane cross two lanes (bigger gap); cars from node 42's lane going to Pinewick
-     have about 25 m to move over.
-   - **Tried (southbound): worse, reverted.** What might help instead: more green for the light's southbound (but the timings
-     apply to all 16 lights; a per-junction timing would be new), or a second southbound through lane at the light (a lane each way
-     more through the junction, not a turn lane), or a way for the cars from node 42's lane to get into the bay.
-2. **The Pinewick road (node 6's arm 2) split into a left and a right lane at the light.** A bay at a road's end, which `Network.Bays`
-   doesn't lay yet (it only lays a bay on the road that carries on through the T).
-3. Measure each on 16 seeds by the fairness line (as committed: 31.5 s a trip / 90% 74 / 765 over 3 min) and keep it only if it
-   helps; tell the owner plainly if it doesn't.
-4. Then turn lanes at the link's other junctions where they make sense (nodes 49, 67), and lights and four-way stops at more
-   junctions where they help (the owner's "both, Kingsbridge first").
-5. The queues joining (seed 9's physics gap at node 49), and the leftovers below.
-
-How to build item 1 (notes from reading the code, not tried):
-- `Network.Road.Wide`, `WideA0..WideB1` is one widened stretch per road, symmetric (the through lanes half a lane out each side, a
-  painted median between: `RoadMesh.WideStrip`, `BayPaint`; `TurnBays.MiddleHalf`, `Mouth`, `WhiteSide`). A lane added on one side
-  for one direction is new: an offset widening (one side's edge moves out a lane, the centre line stays) or two stretches, and the
-  traffic's lanes for that direction two wide.
-- Today a bay is one lane key per edge (`TrafficDay.LaneKey(s, MedianIx)`, `bayEdge`, `IntoBay`, `Laned`); the bay lane starts after
-  node 42 (`TurnBays.Bay.Back`), the widening already runs through node 42 (`fullBack`). A lane running through node 42 needs the
-  lane key carried across the node (a car in it at node 42 goes on in it), as the trunk's two lanes are (`TwoLane`, `LaneAt`).
-- meshcheck `bays` allows only the junction behind inside the widened stretch; jview `bays` lists the bays. Look with
-  `JVIEW_TEX=1` before and after.
-- `TrafficSignals.Build` gives a bay an arrow only on a main arm (`bayArm`); `SignalPoles` hangs a head over each lane (line ~116, ~405).
+**What is next: superseded.** The junction-by-junction plan (node 6's lanes, the Pinewick road split, bays at nodes 49 and 67) is
+replaced by the direction in the next section ("The new direction"). Its southbound half was tried and reverted (the section after).
 
 **Signs needed** (for when there are models): stop signs at four-way stops; "LEFT LANE MUST TURN LEFT" (and right) before node 6's
 lanes; lane-use arrows (straight; straight/right; left only) at nodes 42, 44 and 6, on the road or overhead.
+
+## The new direction (the owner, 2026-11-26, late night): the routes and the road, not junction by junction
+
+**Why.** Every junction fix so far moved the queue to the next junction (and turned up a different single failure each time). Two
+causes, both checked in the code:
+1. **Routes never react to waiting.** `Traffic.Route` is Dijkstra on each edge's free-flow `Time`: no junction delay, no lights, no
+   left turns across traffic, no queues; chosen once per trip. Every trip whose empty-road quickest way uses the Kingsbridge link takes
+   it however long the queue, so room added at one junction fills and the queue moves on.
+2. **The link is too small for what the map sends down it.** One lane each way, six junctions in about 600 units (180 m), a light in
+   the middle: the main town's way to the trunk. The waiting is almost all there (nodes 2, 42, 6, 44, 49, 67). The southbound try showed
+   the light's green, not room to queue, is the limit.
+
+The owner put to it: "Do we just need to act on a wider area instead of addressing each junction individually?" Agreed. Then: building
+the day twice is fine ("the load-time is already very short"), and **"we can just go ahead and add another lane as well"**: the link
+gets two lanes each way. Both are now standing decisions (docs/PLAN.md). Discussed only; nothing built yet.
+
+**1. Routes that know the waiting: the day built twice.**
+- Pass 1 as today. From it, learn the delay per junction movement (node, way in, way out) **per hour** (the queues are at the peaks: a
+  driver at 08:00 sees 08:00's queue, at 14:00 a clear road). `TrafficDay` already keeps per-way-in standing (`StoodFor`, `WaitAt`,
+  `LegStood`); it needs it by movement and hour.
+- Pass 2: re-route with those delays added to the route cost (`Traffic.Route` takes a delay lookup; a turn's cost needs the edge
+  before, so Dijkstra over (node, way in) states or a turn penalty at relaxation). **Only part of the trips re-route** (those whose
+  pass-1 trip waited long, or a fixed share by hash), or everybody piles onto the same side route; if two passes still swing, a third
+  averaging the delays (method of successive averages). Keep each pass deterministic (same seed, ties by index), so rooms agree.
+- **Only the routes change**: the same tours, places, times and parking.
+- **Cut-throughs**: a small extra cost on streets and lanes so cutting through housing streets must save real time; check trafficview's
+  PennDOT counts by road class don't drain off the main roads.
+- **Time it**: the day's build alone, before and after (not measured yet: trafficview's minutes per seed are mostly its checks). The
+  day is built on a worker at race start (`TrafficCars`).
+- Judge by the whole map's fairness line on 16 seeds (as committed: 31.5 s a trip / 90% 74 / 765 over 3 min), plus how many trips
+  changed route and where the traffic went.
+
+**2. The Kingsbridge link two lanes each way.** From the town (node 2, (-2290, -4139)) down to the trunk, through nodes 42, 6, 44,
+49, 67 (check where it meets the trunk; `jview` road listing near a point). Notes:
+- Road 3 'Kingsbridge link' is a Primary. The cleanest is a whole-road property (two lanes each way: `Half` wider by a lane each side,
+  `Traffic.LaneOffset` and the lanes as the trunk's two-lane logic: `TwoLane`, `twoLaneEdge`, `LaneAt`, overtaking and keeping right),
+  rather than another `Wide` stretch. `twoLaneEdge` today is `Kind == Trunk`: make it a road flag. The paint: a dashed white lane line
+  each side of a double yellow (no median, no centre turn lane: the owner); the texture or `RoadMesh` lines.
+- **The world changes**: a wider road moves plots, houses, lots and parking (`Widened`, `Plots`, `Town`, `TrafficParking`). Expect every
+  day to change; run meshcheck (all of it), preview and the 16 seeds.
+- Node 6's bay: with two through lanes the left-turn bay sits inside them (the road widened again) or the inner lane becomes left-only
+  at the light. Decide when building (measure).
+- Lights on a two-lane way in: `SignalPoles` hangs a head per lane (it does on the trunk); a span where the heads reach past 30.
+- Which other roads, if any, get the same rule: the generator should give any road this busy the capacity real engineers would, not
+  just this one. Measure after routes (item 1) shows how much traffic really needs it.
+
+Order: the routes first (cheaper, and shows how much the road matters), then the lane; or both, measured apart (16 seeds each) so each
+change's effect is known.
 
 ## 2026-11-26 (night): the southbound left lane through the junction before the light, tried and reverted
 
