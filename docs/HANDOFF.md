@@ -49,11 +49,16 @@ their combination, and 2B.07 multi-way stop, at the 70% volumes for country road
 PennDOT comparison does), 4 seeds: **of the 16 lights, 4 to 6 are warranted** (nodes 3, 5, 6, 8, and 14 and 33 by condition B); the
 other trunk lights have side roads with 4 to 35 trips a day; **no new light and no four-way stop is warranted** (0 to 2 a seed, never
 the same junction). The waiting is not at uncontrolled junctions out in the country: it is in Kingsbridge, the queues from its two
-lights (nodes 6 and 8) backing through the close side junctions (42, 44, 49, 67, 2). Put to the owner (below) before building more.
+lights (nodes 6 and 8) backing through the close side junctions (42, 44, 49, 67, 2). Put to the owner (answers below).
+
+**The owner's answers (2026-11-26)**: keep node 6's flashing yellow arrow only (no green arrow); and "both, Kingsbridge first": fix
+Kingsbridge's queues first, then try lights and four-way stops at more junctions, keeping each that doesn't make the per-trip waiting
+worse (docs/PLAN.md).
 
 **What is next**:
-1. The owner's answer to the question below.
-2. Then, as decided: turn lanes by a rule (a main road's way into a junction with left turners holding up the cars behind; room for
+1. Kingsbridge's queues: the northbound commute up the link through nodes 67, 49, 44 to node 6, and the side streets they block
+   (node 67's street from the east 160 to 280 s a trip, node 42's and 49's lanes 40 to 120 s, node 2's street).
+2. Then: turn lanes by a rule (a main road's way into a junction with left turners holding up the cars behind; room for
    two cars or more), `Road.Wide` made a list for two on one road; four-way stops and lights where the rules (or the owner) say, with
    Signs learning which junctions are controlled after the traffic map is built (they are laid out in `Network.Build` now, before it:
    lay out boards for every candidate and decide which to draw later; `Hidden` keeps the ground, so nothing moves).
