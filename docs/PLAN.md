@@ -24,6 +24,9 @@ when one is done, delete it here.
   by whether the player is closing on them (refused twice).
 - Traffic lights: their logic is built and they are drawn, American style (mast arms, yellow heads; the owner asked on 2026-11-25). Ask before adding lights anywhere new.
 - A wreck is not a kill (no `EnemyKilled`, combo, lifesteal); traffic cars never get modded items or bodies.
+- **No car is ever hidden** (the owner, 2026-11-26: "The cars cannot get hidden that is unacceptable"; it overturns the rule of
+  2026-11-23 that hid a late car overlapping another). A drawn car with something in its way the day doesn't know of (a physics car, a
+  late car) slows and waits behind it as a driver would, and runs late. Only a wreck goes (it burns and explodes, as the game's do).
 - The highway (the owner, 2026-11-25): no overpasses or underpasses anywhere (no interchanges); at-grade junctions, traffic lights
   where needed are fine. "The median is not meant to be used as a lane": no median lanes to merge from, no cars standing in the
   median; dedicated left-turn lanes, with left-turn arrows where there is a light. The median stays mostly open so players can cross

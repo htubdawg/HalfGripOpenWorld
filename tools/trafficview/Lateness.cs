@@ -154,8 +154,7 @@ internal static partial class Program
 		};
 		List<TrafficLate.Near> near = new List<TrafficLate.Near>();
 		Dictionary<int, (double x, double z)> lastDrawn = new Dictionary<int, (double, double)>(), drawnNow = new Dictionary<int, (double, double)>();
-		HashSet<int> wasHidden = new HashSet<int>();
-		int hideNear = 0, hideMid = 0, hideFar = 0, hideParked = 0;
+		int held = 0, skippedInto = 0;
 		int left = 0, overlaps = 0, jumps = 0, steps = 0;
 		double worstJump = 0.0, guardMs = 0.0, mostLate = 0;
 		string jumpNote = "";
@@ -186,6 +185,30 @@ internal static partial class Program
 			if (t >= nextLate)
 			{
 				double inner = t == 0.0 ? 300.0 : 380.0, outer = t == 0.0 ? 900.0 : 420.0;
+				// Where every car is drawn now: a physics car going back is where it was driving, never in another car (TrafficDrive keeps it
+				// out, and the drawn cars are held behind it), so one whose late place is in another car isn't made late here. (Until
+				// 2026-11-26 the overlap was hidden; nothing is now, and a car dropped into another stayed in it.)
+				List<TrafficLate.Near> around = new List<TrafficLate.Near>();
+				for (int c = 0; c < day.Cars.Count; c++)
+				{
+					TrafficDay.Place ap = late.At(c, w, out bool apGone);
+					if (apGone || ap.State == TrafficDay.State.Away || (ap.State == TrafficDay.State.Driving && ap.InTunnel))
+					{
+						continue;
+					}
+					(bool ok, double x, double z) q = where(c, ap);
+					double ax = q.x - px, az = q.z - pz;
+					if (!q.ok || ax * ax + az * az > (outer + 100.0) * (outer + 100.0))
+					{
+						continue;
+					}
+					double ahx = ap.Hx, ahz = ap.Hz;
+					if (ap.State == TrafficDay.State.Driving)
+					{
+						parking.Drawn(c, ap, out double _, out double _, out ahx, out ahz);
+					}
+					around.Add(new TrafficLate.Near { Car = c, X = q.x, Z = q.z, Hx = ahx, Hz = ahz, Moving = ap.State == TrafficDay.State.Driving });
+				}
 				for (int c = 0; c < day.Cars.Count; c++)
 				{
 					if (c == follow || late.Has(c))
@@ -201,6 +224,33 @@ internal static partial class Program
 					if (d >= inner && d < outer)
 					{
 						late.Late(c, at.Leg, w, rng.Range(2.0, 120.0));
+						TrafficDay.Place lp = late.At(c, w, out bool _);
+						(bool ok, double x, double z) q = where(c, lp);
+						if (q.ok && lp.State == TrafficDay.State.Driving)
+						{
+							parking.Drawn(c, lp, out double _, out double _, out double lhx, out double lhz);
+							TrafficLate.Near me = new TrafficLate.Near { Car = c, X = q.x, Z = q.z, Hx = lhx, Hz = lhz, Moving = true };
+							bool into = false;
+							foreach (TrafficLate.Near o in around)
+							{
+								if (o.Car != c && TrafficLate.Overlap(me, o))
+								{
+									into = true;
+									break;
+								}
+							}
+							if (into)
+							{
+								late.Late(c, at.Leg, w, 0.0);
+								skippedInto++;
+							}
+							else
+							{
+								// Where it is drawn now, for the cars made late after it.
+								around.RemoveAll(o => o.Car == c);
+								around.Add(me);
+							}
+						}
 					}
 				}
 				nextLate = t + 10.0;
@@ -220,30 +270,90 @@ internal static partial class Program
 				{
 					continue;
 				}
-				TrafficDay.Place at = late.At(c, w, out bool hidden);
-				if (hidden || !seen(c, at))
+				TrafficDay.Place at = late.At(c, w, out bool gone);
+				if (gone || !seen(c, at))
 				{
 					continue;
 				}
 				(bool ok, double x, double z) p = where(c, at);
 				double dx = p.x - px, dz = p.z - pz;
-				near.Add(new TrafficLate.Near { Car = c, X = p.x, Z = p.z, Hx = at.Hx, Hz = at.Hz, Moving = at.State == TrafficDay.State.Driving, Distance = Math.Sqrt(dx * dx + dz * dz) });
+				double hx = at.Hx, hz = at.Hz;
+				if (at.State == TrafficDay.State.Driving)
+				{
+					parking.Drawn(c, at, out double _, out double _, out hx, out hz);
+				}
+				bool pin = at.State == TrafficDay.State.Driving && !day.Legs[at.Leg].Vanishes && day.Legs[at.Leg].End - day.Legs[at.Leg].Start - at.T < day.Legs[at.Leg].PullIn + 2.0;
+				near.Add(new TrafficLate.Near { Car = c, X = p.x, Z = p.z, Hx = hx, Hz = hz, Moving = at.State == TrafficDay.State.Driving, Distance = Math.Sqrt(dx * dx + dz * dz), Late = late.Has(c), PullingIn = pin });
 			}
 			watch.Restart();
-			int hiddenBefore = late.HiddenCount;
-			late.Guard(near, w);
-			if (late.HiddenCount > hiddenBefore)
+			// A late car (or one coming up on a late car) with another in its way is held behind it, as TrafficPhysics.YieldDrawn does
+			// every frame: never hidden.
+			for (int i = 0; i < near.Count; i++)
 			{
-				foreach (TrafficLate.Near a in near)
+				TrafficLate.Near a = near[i];
+				if (!a.Moving)
 				{
-					if (late.TryGet(a.Car, out TrafficLate.Entry he) && he.Hidden && !wasHidden.Contains(a.Car))
+					continue;
+				}
+				TrafficDay.Place at = late.At(a.Car, w, out bool _);
+				if (at.State != TrafficDay.State.Driving)
+				{
+					continue;
+				}
+				TrafficDay.Leg leg = day.Legs[at.Leg];
+				bool pullingIn = !leg.Vanishes && leg.End - leg.Start - at.T < leg.PullIn + 2.0;
+				bool pullingOut = !leg.Appears && at.T < leg.PullOut + 1.0;
+				if (!leg.Appears && at.T < 0.5)
+				{
+					bool keptIn = false;
+					foreach (TrafficLate.Near o in near)
 					{
-						wasHidden.Add(a.Car);
-						hideNear += a.Distance < 300.0 ? 1 : 0;
-						hideMid += a.Distance >= 300.0 && a.Distance < 600.0 ? 1 : 0;
-						hideFar += a.Distance >= 600.0 ? 1 : 0;
-						hideParked += a.Moving ? 0 : 1;
+						if (o.Moving && o.Car != a.Car && !o.PullingIn && (a.Late || o.Late) && TrafficDrive.PullOutBlocked(at.X, at.Z, at.Hx, at.Hz, o.X, o.Z, o.Hx, o.Hz))
+						{
+							late.HoldBack(a.Car, at.Leg, w, 1.0);
+							keptIn = true;
+							break;
+						}
 					}
+					if (keptIn)
+					{
+						TrafficDay.Place inSpace = late.At(a.Car, w, out bool _);
+						(bool ok, double x, double z) q0 = where(a.Car, inSpace);
+						a.X = q0.x;
+						a.Z = q0.z;
+						a.Moving = inSpace.State == TrafficDay.State.Driving;
+						a.Late = true;
+						near[i] = a;
+						continue;
+					}
+				}
+				double look = TrafficDrive.YieldLook(Math.Max(0.0, at.Speed));
+				double free = double.MaxValue;
+				TrafficParking.Spot mine = pullingIn ? parking.Parked(a.Car, at.Leg) : default;
+				foreach (TrafficLate.Near o in near)
+				{
+					if (pullingIn && o.Car != a.Car && (a.Late || o.Late) && !mine.Away && (o.X - mine.X) * (o.X - mine.X) + (o.Z - mine.Z) * (o.Z - mine.Z) < TrafficLate.InSpace * TrafficLate.InSpace)
+					{
+						// Its space still taken: it waits on its lane by it (YieldDrawn).
+						free = 0.0;
+						continue;
+					}
+					if (!(pullingOut && o.PullingIn) && o.Car != a.Car && (a.Late || o.Late) && (o.Moving || pullingIn))
+					{
+						double f1 = TrafficDrive.FreeAhead(a.X, a.Z, a.Hx, a.Hz, o.X, o.Z, o.Hx, o.Hz, look);
+						free = Math.Min(free, f1);
+					}
+				}
+				bool wasHeld = late.Yielding(a.Car);
+				if (late.Yield(a.Car, at, w, LateStep, free, out double _))
+				{
+					held += wasHeld ? 0 : 1;
+					TrafficDay.Place now = late.At(a.Car, w, out bool _);
+					(bool ok, double x, double z) q = where(a.Car, now);
+					a.X = q.x;
+					a.Z = q.z;
+					a.Late = true;
+					near[i] = a;
 				}
 			}
 			late.Settle(w, seen);
@@ -253,10 +363,6 @@ internal static partial class Program
 			List<TrafficLate.Near> drawn = new List<TrafficLate.Near>();
 			foreach (TrafficLate.Near a in near)
 			{
-				if (late.TryGet(a.Car, out TrafficLate.Entry e) && (e.Hidden || e.Gone))
-				{
-					continue;
-				}
 				drawn.Add(a);
 				drawnNow[a.Car] = (a.X, a.Z);
 			}
@@ -292,8 +398,7 @@ internal static partial class Program
 		}
 		left = late.Count;
 		bool good = overlaps == 0 && jumps == 0;
-		Console.WriteLine("  lateness, " + name + ", 10 minutes from 17:00: made late " + late.MadeLate + " (at most " + mostLate + " at once), hidden for an overlap " + late.HiddenCount
-			+ " (" + hideNear + " within 300 of the player (physics cars in stage 3), " + hideMid + " 300 to 600, " + hideFar + " farther; " + hideParked + " parked)" + ", caught up out of sight " + late.CaughtUp + ", still late at the end " + left + "; drawn overlapping because late " + overlaps + ", late cars jumping " + jumps + jumpNote
+		Console.WriteLine("  lateness, " + name + ", 10 minutes from 17:00: made late " + late.MadeLate + " (at most " + mostLate + " at once), held behind another car " + held + " (none hidden; " + skippedInto + " not made late into another car), caught up out of sight " + late.CaughtUp + ", still late at the end " + left + "; drawn overlapping because late " + overlaps + ", late cars jumping " + jumps + jumpNote
 			+ " (worst step " + worstJump.ToString("0.0") + "); guard and catch-up " + (guardMs / steps).ToString("0.00") + " ms a choice" + (good ? "  ok" : "  FAIL"));
 		return good;
 	}

@@ -72,7 +72,7 @@ namespace HalfGripOpenWorld
 			Mod.Info("Traffic pop-in: car " + c + " " + (moving ? "moving at " + (at.Speed / 3.3 * 3.6).ToString("0") + " km/h, leg " + at.Leg + " (" + at.T.ToString("0") + " s in)" : "parked")
 				+ " first drawn " + d.ToString("0") + " units (" + (d / 3.3).ToString("0") + " m) off, " + (ahead >= 0.0 ? "ahead" : "behind") + " (" + Math.Abs(ahead).ToString("0") + " along), "
 				+ (IsFar(v, x, z) ? "far" : "near") + ", at (" + x.ToString("0") + ", " + z.ToString("0") + "); the frame before: " + was
-				+ (inLedger ? "; in the ledger (late " + le.D.ToString("0.0") + " s" + (le.Hidden ? ", hidden" : "") + ")" : "")
+				+ (inLedger ? "; in the ledger (late " + le.D.ToString("0.0") + " s)" : "")
 				+ "; the player at (" + cx.ToString("0") + ", " + cz.ToString("0") + ") doing " + (speed / 3.3 * 3.6).ToString("0") + " km/h; physics cars " + physical.Count
 				+ "; tile loaded there " + (Streamer.Instance != null && Streamer.Instance.IsLoadedAt(x, z)));
 		}

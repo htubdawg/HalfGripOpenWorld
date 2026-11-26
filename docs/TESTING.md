@@ -262,3 +262,13 @@ owner has reported on it.
    It was giving way to cars that had already crossed and were crawling into a drive just past the turn. Now a car pulling in just past
    a junction gives it up as soon as it is out of it. Check: at that turn, and wherever cars turn across a road, a car waiting to turn
    goes once the way across is empty; say where one still stands with nothing coming, with the log and the overlay's position and time.
+67. No car vanishes (2026-11-26, `traffic-test-branch`, not released; the traffic changed: everyone in a room needs the same build).
+   Until now a drawn car that would run into one of the cars near you (or a car running late) was hidden on the spot. Now it slows and
+   waits behind it, then pulls away, and runs late. Check, round Kingsbridge at the evening rush (about 17:00) and on the highway:
+   - No car disappears in front of you, ever, except a wreck burning out. Say where one does, with the log and the overlay's position
+     and time.
+   - Stop in a lane, or bump a car so it stops: the cars coming up behind it slow down and queue behind it, at the same spacing as
+     any other queue, and set off again when it moves. None drives into it or through it.
+   - Cars pulling out of a drive or a lot wait for a car stopped by its mouth; a car arriving at a space someone is still leaving waits
+     beside it.
+   - The overlay's traffic line (`ShowCoords`) says `held behind another N` where it used to say `hidden N`.

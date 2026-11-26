@@ -481,6 +481,72 @@ namespace HalfGripOpenWorld
 			return lo;
 		}
 
+		/// <summary>The braking a drawn car held behind another slows at (units/s², about 2.4 m/s²: an ordinary stop, not a hard one).</summary>
+		internal const double YieldBrake = 8.0;
+		/// <summary>
+		/// The gap (units) a drawn car held behind another stands short of it, nose to tail: the day's own queues' (about 2 m), so a held
+		/// queue looks like any other and stays clear of <see cref="TrafficLate.Gap"/> round a bend.
+		/// </summary>
+		internal const double YieldGap = TrafficDay.MinGap;
+
+		/// <summary>
+		/// How far a drawn car at (x, z) facing (hx, hz) (unit) can still go before it must stand for a car at (bx, bz) facing (bhx, bhz):
+		/// one ahead in its lane, to <see cref="YieldGap"/> short of its tail; one across its way, to just short of where their bodies
+		/// would meet straight on; 0 if they meet already with the other in front. MaxValue if the other is not in its way within
+		/// <paramref name="look"/>. What a drawn car is slowed by (<see cref="TrafficLate.Yield"/>) instead of being hidden: the day doesn't
+		/// know a physics car (or a late car) is in its way. Pure arithmetic: the game and trafficview both use it.
+		/// </summary>
+		internal static double FreeAhead(double x, double z, double hx, double hz, double bx, double bz, double bhx, double bhz, double look)
+		{
+			double dx = bx - x, dz = bz - z;
+			double reach = look + CarLength * 2.0;
+			if (dx * dx + dz * dz > reach * reach)
+			{
+				return double.MaxValue;
+			}
+			double along = dx * hx + dz * hz, side = Math.Abs(dx * hz - dz * hx);
+			if (along <= 0.0)
+			{
+				// Behind it, or beside it: it is the other's to stand for.
+				return double.MaxValue;
+			}
+			if (side < 4.0)
+			{
+				return Math.Max(0.0, along - CarLength - YieldGap);
+			}
+			if (Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5))
+			{
+				return 0.0;
+			}
+			for (double o = 2.0; o <= look; o += 2.0)
+			{
+				if (Overlap(x + hx * o, z + hz * o, hx, hz, bx, bz, bhx, bhz, 0.5))
+				{
+					return Math.Max(0.0, o - 2.0 - YieldGap);
+				}
+			}
+			return double.MaxValue;
+		}
+
+		/// <summary>
+		/// Whether a car about to pull out onto its lane at (x, z) facing (hx, hz) must wait in its space for a car at (ox, oz) facing (ohx, ohz):
+		/// on its lane up to 25 behind (coming up to it) or 45 ahead (standing or going off), or in it. As a physics car holds a drawn car
+		/// back (TrafficPhysics.HoldBackFromPhysics); for a late drawn car, which the day doesn't know is there: two cars pulled out of a lot
+		/// onto a late car queued at its mouth and stood in it for minutes (trafficview, seed 192843966).
+		/// </summary>
+		internal static bool PullOutBlocked(double x, double z, double hx, double hz, double ox, double oz, double ohx, double ohz)
+		{
+			double dx = ox - x, dz = oz - z;
+			double along = dx * hx + dz * hz, side = Math.Abs(dx * hz - dz * hx);
+			return (side < 4.0 && along > -25.0 && along < 45.0) || Overlap(x, z, hx, hz, ox, oz, ohx, ohz, 0.5);
+		}
+
+		/// <summary>How far ahead a drawn car going <paramref name="v"/> looks for something to stand for: its stopping distance and a car.</summary>
+		internal static double YieldLook(double v)
+		{
+			return Math.Min(80.0, v * v / (2.0 * YieldBrake) + CarLength + YieldGap + 8.0);
+		}
+
 		/// <summary>
 		/// A car pulling out of a space across the road turns over the oncoming lane: whether a car <paramref name="along"/> ahead of it
 		/// (along its way out; behind it, negative) and <paramref name="side"/> to the side, in either lane, is in its way or coming into it.

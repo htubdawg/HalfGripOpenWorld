@@ -910,6 +910,8 @@ namespace HalfGripOpenWorld
 			PhysicsLights(lights);
 			bool chosenNow = choseThisFrame;
 			choseThisFrame = false;
+			(drawnWas, drawnIs) = (drawnIs, drawnWas);
+			drawnIs.Clear();
 			foreach (int c in chosen)
 			{
 				if (!live.TryGetValue(c, out View v))
@@ -967,7 +969,7 @@ namespace HalfGripOpenWorld
 				hour -= Math.Floor(hour / 24.0) * 24.0;
 				Status = "traffic: " + drawnMoving + " moving and " + drawnParked + " parked drawn (" + drawnFar + " far), " + lit + " lit, chosen in " + chooseMs.ToString("0.0") + " ms (" + (day.Weekend ? "a weekend" : "a weekday") + ", "
 					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
-					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "")
+					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", held behind another " + late.Yielded + ", retired " + late.Retired + ")" : "")
 					+ PhysicsStatus()
 					+ "\n" + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText() + PopText();
 				if (Perf.LogDue())
@@ -999,16 +1001,16 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				TrafficDay.Place at = late.At(c, w, out bool hidden);
-				if (hidden)
+				TrafficDay.Place at = late.At(c, w, out bool gone);
+				if (gone)
 				{
 					continue;
 				}
 				if (at.State == TrafficDay.State.Driving && AnyBodies && HoldBackFromPhysics(c, at, w))
 				{
 					// It stays in its space while a physics car stands where it would pull out.
-					at = late.At(c, w, out hidden);
-					if (hidden)
+					at = late.At(c, w, out gone);
+					if (gone)
 					{
 						continue;
 					}
@@ -1045,15 +1047,6 @@ namespace HalfGripOpenWorld
 				double d2 = dx * dx + dz * dz;
 				if (d2 < (double)reach * reach)
 				{
-					if (moving && AnyBodies)
-					{
-						// The day doesn't know a physics car is held up: a drawn car where one is is hidden until out of sight.
-						parking.Drawn(c, at, out double px, out double pz, out double _, out double _);
-						if (HideUnderPhysics(c, px, pz, at.Hx, at.Hz, Math.Min(40.0, Math.Max(0.0, at.Speed) * 1.5), w))
-						{
-							continue;
-						}
-					}
 					near.Add(((float)Math.Sqrt(d2) * (moving ? MovingWeight : 1f), c, moving));
 					if (late.Count > 0)
 					{
@@ -1069,14 +1062,10 @@ namespace HalfGripOpenWorld
 			}
 			if (late.Count > 0)
 			{
-				// A late car would be drawn overlapping another: the farther of the two is hidden until it catches up.
-				if (late.Guard(nearCars, w) > 0)
-				{
-					near.RemoveAll(e => late.TryGet(e.car, out TrafficLate.Entry le) && le.Hidden);
-				}
+				// (A late car that would run into another drawn car is held behind it as it is drawn, every frame: YieldDrawn.)
 				nearCars.Clear();
-				// Late and hidden cars that can't be seen, where they are drawn or where the day has them, catch up in the background (in a
-				// room late cars only on the host, out of every player's sight, and sent to everybody; hidden ones here).
+				// Late cars that can't be seen, where they are drawn or where the day has them, catch up in the background (in a room only on
+				// the host, out of every player's sight, and sent to everybody).
 				playerX = cx;
 				playerZ = cz;
 				SendCaughtUp(late.Settle(w, Seen, room.IsHost), w);
@@ -1131,19 +1120,19 @@ namespace HalfGripOpenWorld
 		/// <summary>Puts car <paramref name="c"/> where its day says now; false if it is not to be seen (away, in a tunnel).</summary>
 		private bool Draw(View v, int c, double w, float dt)
 		{
-			TrafficDay.Place at = late.At(c, w, out bool hidden);
-			if (hidden)
+			TrafficDay.Place at = late.At(c, w, out bool gone);
+			if (gone)
 			{
-				drawFail = "hidden";
+				drawFail = "wrecked";
 				return false;
 			}
 			if (at.State == TrafficDay.State.Driving && AnyBodies && HoldBackFromPhysics(c, at, w))
 			{
 				// Checked every frame as well as at the choice: a car sets off between choices.
-				at = late.At(c, w, out hidden);
-				if (hidden)
+				at = late.At(c, w, out gone);
+				if (gone)
 				{
-					drawFail = "hidden (held back)";
+					drawFail = "wrecked (held back)";
 					return false;
 				}
 			}
@@ -1154,8 +1143,17 @@ namespace HalfGripOpenWorld
 					drawFail = "in a tunnel";
 					return false;
 				}
+				// Held behind a physics car or a late car in its way, never hidden.
+				YieldDrawn(c, ref at, w, dt);
+				if (at.State != TrafficDay.State.Driving || at.InTunnel)
+				{
+					drawFail = "held back off the road";
+					return false;
+				}
 				// On its path, or pulling out of its space at the start of a trip and into one at the end (TrafficParking.Drawn).
 				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
+				TrafficDay.Leg dl = day.Legs[at.Leg];
+				drawnIs.Add(new TrafficLate.Near { Car = c, X = x, Z = z, Hx = hx, Hz = hz, Moving = true, Late = late.Has(c), PullingIn = !dl.Vanishes && dl.End - dl.Start - at.T < dl.PullIn + 2.0 });
 				double roadY = at.Y + Network.Lift;
 				v.ParkedLeg = int.MinValue;
 				Lamps(v, true);
@@ -1227,6 +1225,12 @@ namespace HalfGripOpenWorld
 			{
 				ShowNear(v);
 				NearShadows(v, v.ParkX, v.ParkZ);
+			}
+			if (late.Count > 0)
+			{
+				// What a late car pulling in here stops for (YieldDrawn): its space taken.
+				TrafficParking.Spot here = parking.Parked(c, at.Leg);
+				drawnIs.Add(new TrafficLate.Near { Car = c, X = v.ParkX, Z = v.ParkZ, Hx = here.Hx, Hz = here.Hz, Moving = false, Late = late.Has(c) });
 			}
 			drawnParked++;
 			return true;
