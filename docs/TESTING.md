@@ -238,4 +238,11 @@ owner has reported on it.
    - The mast over your way in has a third head over the turn lane with arrows: a flashing yellow arrow while the main road is green
      (turn when there is a gap), a green arrow when a car has waited there a while, red otherwise.
    - Drive up from the trunk in the morning (around 8:00 game time): say if the queue into Kingsbridge on the link is long.
-
+63. Routes that know the queues (2026-11-26, `traffic-test-branch`, not released; the traffic's day changed: everyone in a room needs
+   the same build). The world is the same; only where the cars drive changed.
+   - Start a race and say how long until the traffic shows (the day is now built twice: about 2.5 s more on a fast machine). Send
+     `LogOutput.log`: it says how long the day took.
+   - Drive round Kingsbridge in the morning (about 8:00) and the evening (about 17:00): the queues on the town's road down to the trunk
+     should be shorter than before. Some cars now go round by the back lanes south of the town (east of the link) and by the road
+     to the trunk further west: say if any lane or street looks busier than it should, or if cars sit still in a ring of queues
+     that never moves.

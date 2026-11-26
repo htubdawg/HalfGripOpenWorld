@@ -380,6 +380,10 @@ internal static partial class Program
 		{
 			TurnBays.Sites = new (double, double)[0];
 		}
+		// TV_PASSES=N: the day built N times, each pass's routes knowing the queues of those before (1: routes on empty roads only).
+		// TV_REROUTE=x: the share of trips that choose their way knowing the queues in a later pass.
+		if (int.TryParse(Environment.GetEnvironmentVariable("TV_PASSES"), out int passes)) TrafficDay.BuildPasses = passes;
+		if (double.TryParse(Environment.GetEnvironmentVariable("TV_REROUTE"), out double reroute)) TrafficDay.RerouteShare = reroute;
 		// TV_CIRCLING=N: N cars circling the trunk instead of the day's number (to measure more highway traffic).
 		TrafficDay.CirclingTry = int.TryParse(Environment.GetEnvironmentVariable("TV_CIRCLING"), out int circling) ? circling : 0;
 		// The cars at rest on their springs first: no map needed.
@@ -596,6 +600,8 @@ internal static partial class Program
 		double ms = watch.Elapsed.TotalMilliseconds;
 		Console.WriteLine("Day " + seed + ": " + (day.Weekend ? "a weekend day" : "a weekday") + ", built in " + ms.ToString("0") + " ms (plan " + day.PlanMs.ToString("0") + " ms, homes' parking " + day.ParkingMs.ToString("0") + " ms)"
 			+ " (the first in a process: it makes the indexes kept for later days)");
+		Console.WriteLine("  routes: pass " + day.Pass + " of the day's build" + (day.Pass > 1 ? " (the passes before took " + day.EarlierMs.ToString("0") + " ms, this one " + day.BuildMs.ToString("0") + " ms); "
+			+ day.Rerouted + " trips chose their way knowing the queues (share " + TrafficDay.RerouteShare.ToString("0.00") + "), " + day.RouteChanged + " of them a different way than on empty roads" : ": every route chosen on empty roads"));
 		Console.WriteLine("  tours: " + day.Candidates + " candidates, " + (2.0 * 0 + day.CandidateSeconds / 60.0).ToString("0") + " min of driving; kept with q = " + day.Keep.ToString("0.000")
 			+ " for " + (day.TargetSeconds / 60.0).ToString("0") + " min (" + (day.TargetSeconds / Math.Max(1, CountWithCars())).ToString("0") + " s a household with a car)");
 		Console.WriteLine("  kept " + day.Kept + " (work " + day.TourCount[0] + ", shop " + day.TourCount[1] + ", errand " + day.TourCount[2] + ", social " + day.TourCount[3] + "), "
@@ -785,7 +791,7 @@ internal static partial class Program
 		watch.Restart();
 		TrafficDay again = new TrafficDay(seed);
 		ulong a = day.Checksum(), b = again.Checksum();
-		Console.WriteLine("  the same day twice: " + a.ToString("x16") + (a == b ? " both times  ok" : " then " + b.ToString("x16") + "  FAIL") + "; built again in " + again.BuildMs.ToString("0") + " ms (homes' parking " + again.ParkingMs.ToString("0") + " ms)" + (again.BuildMs < 2000.0 ? "  ok" : "  SLOW (aim under 2 s; reported, not failed: it varies with the machine's load)"));
+		Console.WriteLine("  the same day twice: " + a.ToString("x16") + (a == b ? " both times  ok" : " then " + b.ToString("x16") + "  FAIL") + "; built again in " + (again.BuildMs + again.EarlierMs).ToString("0") + " ms (" + again.Pass + " passes; homes' parking " + again.ParkingMs.ToString("0") + " ms)" + (again.BuildMs + again.EarlierMs < 2000.0 * again.Pass ? "  ok" : "  SLOW (aim under 2 s a pass; reported, not failed: it varies with the machine's load)"));
 		ok &= a == b;
 		TrafficDay other = new TrafficDay(seed + 1);
 		Console.WriteLine("  another seed's day differs: " + (other.Checksum() != a ? "yes  ok" : "no  FAIL"));
@@ -819,7 +825,7 @@ internal static partial class Program
 			Console.WriteLine("  cars stopped in a trunk junction crossing a carriageway: " + day.StoppedAcrossCars + " (" + day.StoppedAcross + " steps)" + (day.StoppedAcrossCars == 0 ? "  ok" : "  FAIL"));
 			ok &= day.StoppedAcrossCars == 0;
 			foreach (string note in day.StoppedAcrossNotes) Console.WriteLine("    across: " + note);
-			Console.WriteLine("  junction lanes: " + day.IntoJunctionLanes + " into one to turn off, " + day.Merged + " merged out of one, " + day.Missed + " turns missed (went on and round)");
+			Console.WriteLine("  junction lanes: " + day.IntoJunctionLanes + " into one to turn off, " + day.Merged + " merged out of one, " + day.Missed + " turns missed (went on and round), " + day.GaveUp + " gave up their way at a junction kept full (a gridlock) and took another");
 			{
 				// The left-turn bays off the trunk: each at a junction with a light whose arrow is for the bay's way in, a main-line arm
 				// turning left there; and used.

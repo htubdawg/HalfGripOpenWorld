@@ -355,8 +355,29 @@ namespace HalfGripOpenWorld
 		private readonly ulong salt;
 
 		/// <summary>Builds race <paramref name="raceSeed"/>'s day (seconds of work: do it on a worker).</summary>
-		internal TrafficDay(int raceSeed)
+		internal TrafficDay(int raceSeed) : this(raceSeed, BuildPasses)
 		{
+		}
+
+		/// <summary>
+		/// The day built <paramref name="passes"/> times over: each pass after the first learns from the ones before it what every turn
+		/// at every junction costs at each hour (<see cref="Waits"/>), and a share of its trips (<see cref="RerouteShare"/>) choose their way
+		/// knowing it. The same tours, places, times and parking each pass: only the routes change.
+		/// </summary>
+		private TrafficDay(int raceSeed, int passes)
+		{
+			if (passes > 1)
+			{
+				TrafficDay before = new TrafficDay(raceSeed, passes - 1);
+				// Each pass's waits averaged with those before it (the method of successive averages), so the routes settle rather than swing.
+				waits = before.Learned;
+				if (before.waits != null)
+				{
+					waits.Blend(before.waits, (passes - 2.0) / (passes - 1.0));
+				}
+				Pass = passes;
+				EarlierMs = before.BuildMs + before.EarlierMs;
+			}
 			Traffic.Ensure();
 			Prepare();
 			Lights = new TrafficSignals.Lights();
@@ -370,6 +391,17 @@ namespace HalfGripOpenWorld
 			{
 				routeCost[i] = double.MaxValue;
 				routeVia[i] = -1;
+			}
+			Learned = new Waits();
+			if (waits != null)
+			{
+				timedCost = new double[2 * Traffic.Edges.Count];
+				timedVia = new int[2 * Traffic.Edges.Count];
+				for (int i = 0; i < timedCost.Length; i++)
+				{
+					timedCost[i] = double.MaxValue;
+					timedVia[i] = -1;
+				}
 			}
 			Plan();
 			PlanMs = watch.Elapsed.TotalMilliseconds;
@@ -576,6 +608,160 @@ namespace HalfGripOpenWorld
 			return edge.Length / Math.Max(1e-6, edge.Time);
 		}
 
+		// ---- routes that know the waiting -------------------------------------------------------------------------------------------
+
+		/// <summary>
+		/// How many times the day is built (the owner, 2026-11-26: building it twice is fine, the load is short): the first pass routes on
+		/// empty roads, each after it with what the passes before learned of the queues. 1: routes on empty roads only.
+		/// </summary>
+		internal static int BuildPasses { get; set; } = 2;
+		/// <summary>
+		/// The share of trips that choose their way knowing the queues in a pass after the first (by hash). Not all: everybody moving off
+		/// a queue at once would pile onto the same side route and queue there instead.
+		/// </summary>
+		internal static double RerouteShare { get; set; } = 0.5;
+		/// <summary>Which pass this day is (1: routes on empty roads), and what the passes before it took.</summary>
+		internal readonly int Pass = 1;
+		internal double EarlierMs;
+		/// <summary>Trips that chose their way knowing the queues, and those of them whose way changed.</summary>
+		internal int Rerouted, RouteChanged;
+
+		/// <summary>
+		/// What each turn at each junction cost the cars in a day: the seconds they stood still queuing for it, by the movement (the way in
+		/// and the way out) and the hour they came to the queue, over the cars that made it. Read by <see cref="Traffic.RouteTimed"/>.
+		/// </summary>
+		internal sealed class Waits
+		{
+			/// <summary>The hours (bins of sim time, 100 s each) the day is counted in: the day and the tail past it.</summary>
+			private const int Bins = 24;
+			private const double BinSeconds = Traffic.DaySeconds / Bins;
+			/// <summary>Per movement (<see cref="Key"/>): per hour, the seconds stood and the cars through.</summary>
+			private readonly Dictionary<int, double[]> stood = new Dictionary<int, double[]>(), cars = new Dictionary<int, double[]>();
+			/// <summary>Per node: whether any movement through it ever waited (most never do, and are skipped at once).</summary>
+			private bool[] waited;
+
+			private static int Key(int node, int inLink, int outLink)
+			{
+				return (node * 16 + inLink) * 16 + outLink;
+			}
+
+			private static int BinOf(double t)
+			{
+				t -= Math.Floor(t / Traffic.DaySeconds) * Traffic.DaySeconds;
+				return Math.Min(Bins - 1, (int)(t / BinSeconds));
+			}
+
+			/// <summary>A car through the junction by that movement, having stood <paramref name="s"/> seconds for it from <paramref name="t"/>.</summary>
+			internal void Add(int node, int inLink, int outLink, double t, double s)
+			{
+				if (inLink < 0 || outLink < 0 || inLink >= 16 || outLink >= 16)
+				{
+					return;
+				}
+				int key = Key(node, inLink, outLink);
+				if (!cars.TryGetValue(key, out double[] c))
+				{
+					c = new double[Bins];
+					cars[key] = c;
+					stood[key] = new double[Bins];
+				}
+				int b = BinOf(t);
+				c[b] += 1.0;
+				stood[key][b] += s;
+				waited = null;
+			}
+
+			/// <summary>This table weighted by 1 - <paramref name="w"/> and <paramref name="other"/>'s by <paramref name="w"/>, as means per car.</summary>
+			internal void Blend(Waits other, double w)
+			{
+				List<int> keys = new List<int>(cars.Keys);
+				foreach (int key in other.cars.Keys)
+				{
+					if (!cars.ContainsKey(key))
+					{
+						keys.Add(key);
+					}
+				}
+				keys.Sort();
+				Dictionary<int, double[]> s2 = new Dictionary<int, double[]>(), c2 = new Dictionary<int, double[]>();
+				foreach (int key in keys)
+				{
+					double[] ms = new double[Bins], mc = new double[Bins];
+					for (int b = 0; b < Bins; b++)
+					{
+						// Kept as the mean itself over no cars (MeanAt divides by the cars and one): the blend is what the cost reads.
+						ms[b] = (1.0 - w) * MeanAt(key, b) + w * other.MeanAt(key, b);
+						mc[b] = 0.0;
+					}
+					s2[key] = ms;
+					c2[key] = mc;
+				}
+				stood.Clear();
+				cars.Clear();
+				foreach (int key in keys)
+				{
+					stood[key] = s2[key];
+					cars[key] = c2[key];
+				}
+				waited = null;
+			}
+
+			/// <summary>
+			/// The mean seconds a car stood for a movement in hour bin <paramref name="b"/>: over the cars through and one more that did not
+			/// stand, so one unlucky car on a quiet turn doesn't count as a queue.
+			/// </summary>
+			private double MeanAt(int key, int b)
+			{
+				if (!cars.TryGetValue(key, out double[] c))
+				{
+					return 0.0;
+				}
+				return stood[key][b] / (c[b] + 1.0);
+			}
+
+			/// <summary>The seconds a turn costs a car reaching it at day time <paramref name="t"/>: the hours either side blended.</summary>
+			internal double At(int node, int inLink, int outLink, double t)
+			{
+				if (waited == null)
+				{
+					waited = new bool[Traffic.Nodes.Count];
+					foreach (int key in cars.Keys)
+					{
+						waited[key / 256] = true;
+					}
+				}
+				if (!waited[node] || inLink >= 16 || outLink >= 16)
+				{
+					return 0.0;
+				}
+				int k = Key(node, inLink, outLink);
+				if (!cars.ContainsKey(k))
+				{
+					return 0.0;
+				}
+				double x = t / BinSeconds - 0.5;
+				x -= Math.Floor(x / Bins) * Bins;
+				int b0 = Math.Min(Bins - 1, (int)x), b1 = (b0 + 1) % Bins;
+				double f = x - b0;
+				return (1.0 - f) * MeanAt(k, b0) + f * MeanAt(k, b1);
+			}
+		}
+
+		/// <summary>What the passes before this one learned (null on the first), and what this one learns for the next.</summary>
+		private readonly Waits waits;
+		internal readonly Waits Learned;
+		/// <summary>When the trip being routed sets off, if it chooses its way knowing the queues (else -1).</summary>
+		private double timedAt = -1.0;
+		private readonly double[] timedCost;
+		private readonly int[] timedVia;
+		private readonly List<int> timedTouched = new List<int>();
+
+		/// <summary>Whether the trip hashed by <paramref name="h"/> and <paramref name="k"/> chooses its way knowing the queues.</summary>
+		private bool Reroutes(ulong h, int k)
+		{
+			return waits != null && U(Noise.Mix(h ^ 0x0EA7_5EE5_0000UL), k) < RerouteShare;
+		}
+
 		// ---- paths ---------------------------------------------------------------------------------------------------------------
 
 		private readonly Heap routeHeap = new Heap();
@@ -599,7 +785,19 @@ namespace HalfGripOpenWorld
 		{
 			a = OffJunctions(a);
 			b = OffJunctions(b);
-			if (!Traffic.Route(a, b, route, routeHeap, routeCost, routeVia, routeTouched))
+			if (timedAt >= 0.0 && waits != null)
+			{
+				double before = 0.0;
+				foreach (Seg sg in segs)
+				{
+					before += sg.Len / Math.Max(1.0, sg.Speed);
+				}
+				if (!Traffic.RouteTimed(a, b, timedAt + before, waits.At, route, routeHeap, timedCost, timedVia, timedTouched))
+				{
+					return false;
+				}
+			}
+			else if (!Traffic.Route(a, b, route, routeHeap, routeCost, routeVia, routeTouched))
 			{
 				return false;
 			}
@@ -734,6 +932,23 @@ namespace HalfGripOpenWorld
 			}
 			length = p;
 			return path;
+		}
+
+		/// <summary>Whether two paths drive the same edges the same ways.</summary>
+		private static bool Same(Seg[] a, Seg[] b)
+		{
+			if (a.Length != b.Length)
+			{
+				return false;
+			}
+			for (int k = 0; k < a.Length; k++)
+			{
+				if (a[k].Edge != b[k].Edge || a[k].Dir != b[k].Dir)
+				{
+					return false;
+				}
+			}
+			return true;
 		}
 
 		/// <summary>
@@ -1038,6 +1253,23 @@ namespace HalfGripOpenWorld
 				Tour t = candidates[i];
 				if (U(Noise.Mix(salt ^ hh[t.Household].Hash ^ 0x5EED_0000UL), i) < Keep)
 				{
+					if (Reroutes(salt ^ hh[t.Household].Hash, i))
+					{
+						// Its way out chosen knowing the queues at the hour it leaves (it was thinned on its way on empty roads, so every pass
+						// keeps the same tours).
+						segs.Clear();
+						timedAt = t.Depart;
+						bool ok = t.Portal >= 0 ? EdgeWay(hh[t.Household].Home, t.Portal, false, segs) : Way(hh[t.Household].Home, -1, t.To, -1, segs);
+						timedAt = -1.0;
+						if (ok)
+						{
+							Seg[] path = Finish(segs, out double length);
+							Rerouted++;
+							RouteChanged += Same(path, t.Out) ? 0 : 1;
+							t.Out = path;
+							t.OutLength = length;
+						}
+					}
 					tours[t.Household].Add(t);
 					Kept++;
 					TourCount[(int)t.Purpose]++;
@@ -1136,6 +1368,8 @@ namespace HalfGripOpenWorld
 			public int Seg;
 			public int StartStep;
 			public double Wait;
+			/// <summary>Seconds it has stood still since the last junction it went through, and when it first stood (-1: not yet).</summary>
+			public double StoodHere, StoodSince = -1.0;
 			/// <summary>When it began waiting at its stop to cross the oncoming lane into its space (MaxValue: not waiting).</summary>
 			public double HeldSince = double.MaxValue;
 			/// <summary>It stands still on its lane until then, drawn pulling out of its space; and parks at <see cref="ParkAt"/>, drawn pulling in.</summary>
@@ -1801,6 +2035,14 @@ namespace HalfGripOpenWorld
 					while (m.Seg + 1 < path.Length && m.P >= path[m.Seg].P0 + path[m.Seg].Len)
 					{
 						m.Seg++;
+						int passed = NodeAfter(path, m.Seg - 1);
+						if (passed >= 0)
+						{
+							// Through a junction: what it stood for it, for the next pass's routes.
+							Learned.Add(passed, LinkIndex(passed, path[m.Seg - 1].Edge), LinkIndex(passed, path[m.Seg].Edge), m.StoodSince >= 0.0 ? m.StoodSince : w, m.StoodHere);
+						}
+						m.StoodHere = 0.0;
+						m.StoodSince = -1.0;
 						if (TwoLane(path[m.Seg]) && !TwoLane(path[m.Seg - 1]))
 						{
 							EnterTrunk(m, w);
@@ -1822,6 +2064,11 @@ namespace HalfGripOpenWorld
 						StoppedOn[path[m.Seg].Edge] = sec + Step;
 						LegStood.TryGetValue(m.Index, out double ls);
 						LegStood[m.Index] = ls + Step;
+						m.StoodHere += Step;
+						if (m.StoodSince < 0.0)
+						{
+							m.StoodSince = w;
+						}
 						{
 							int qn = NodeAfter(path, m.Seg), key = qn < 0 ? -1 : qn * 16 + Math.Max(0, LinkIndex(qn, path[m.Seg].Edge));
 							StoodFor.TryGetValue(key, out double sf);
@@ -1970,15 +2217,29 @@ namespace HalfGripOpenWorld
 			// The way back, after the stay (cut short so it leaves before the day ends).
 			Traffic.Household home = Traffic.Households[car.Household];
 			List<Seg> segs = new List<Seg>();
-			bool ok;
-			if (leg.Vanishes)
+			double ready = Math.Max(t + MinStay, leg.Ready + leg.Dwell);
+			bool Home(List<Seg> into)
 			{
-				int portal = Array.IndexOf(portalDest, leg.Dest);
-				ok = EdgeWay(home.Home, portal, true, segs);
+				if (leg.Vanishes)
+				{
+					return EdgeWay(home.Home, Array.IndexOf(portalDest, leg.Dest), true, into);
+				}
+				return Way(leg.To, -1, home.Home, -1, into);
 			}
-			else
+			bool ok = Home(segs);
+			if (ok && Reroutes(salt ^ ((ulong)(uint)leg.Car * 0x9E37_79B9UL), car.Legs.Count))
 			{
-				ok = Way(leg.To, -1, home.Home, -1, segs);
+				// Its way home chosen knowing the queues at the hour it leaves.
+				List<Seg> timed = new List<Seg>();
+				timedAt = ready;
+				bool timedOk = Home(timed);
+				timedAt = -1.0;
+				if (timedOk)
+				{
+					Rerouted++;
+					RouteChanged += Same(timed.ToArray(), segs.ToArray()) ? 0 : 1;
+					segs = timed;
+				}
 			}
 			if (!ok)
 			{
@@ -1990,7 +2251,7 @@ namespace HalfGripOpenWorld
 			Leg back = new Leg
 			{
 				Car = leg.Car, Purpose = leg.Purpose, Return = true, Appears = leg.Vanishes, From = leg.To, To = home.Home, Dest = leg.Dest, Host = leg.Host,
-				Ready = Math.Max(t + MinStay, leg.Ready + leg.Dwell),
+				Ready = ready,
 			};
 			back.Path = Finish(segs, out back.Length);
 			Legs.Add(back);
@@ -2677,6 +2938,13 @@ namespace HalfGripOpenWorld
 						ok = true;
 						forced = true;
 						Forced++;
+					}
+					// Kept out this long for want of room past the junction (a queue that won't move: on a ring of full roads, a gridlock
+					// nobody can move out of), it gives up its way and takes another out of the junction that has room.
+					if (!ok && (roomless || stuck) && r.M.Wait > GiveUpAfter && ((int)Math.Round(r.M.Wait / Step) % GiveUpEvery == 0) && Detour(r, granted, box))
+					{
+						r.M.Wait = 0.0;
+						GaveUp++;
 					}
 					if (ok)
 					{
@@ -3475,6 +3743,158 @@ namespace HalfGripOpenWorld
 				segs.AddRange(best);
 			}
 			leg.Path = Finish(segs, out double length);
+			leg.Length = length;
+			leg.Profile = Profile(leg);
+			return true;
+		}
+
+		/// <summary>
+		/// How long a car at the front of a queue waits for room past a junction before it gives up its way there and takes another
+		/// (<see cref="Detour"/>), and how often (in steps) it looks again. Long enough that a queue that moves is waited out: only a
+		/// gridlock (a ring of full roads, each queue waiting on the next) keeps a car out this long.
+		/// </summary>
+		private const double GiveUpAfter = 180.0;
+		private const int GiveUpEvery = 40;
+		/// <summary>Cars that gave up their way at a junction for a gridlock and took another.</summary>
+		internal int GaveUp;
+
+		/// <summary>
+		/// Appends to <paramref name="segs"/> the way along edge <paramref name="e"/> the way <paramref name="dir"/> from road distance
+		/// <paramref name="s0"/> and on to anchor <paramref name="b"/> (into portal <paramref name="pb"/>'s tunnel if one), as one stretch
+		/// on that edge first. False, leaving <paramref name="segs"/> as it was, if the quickest way from there turns back along it.
+		/// </summary>
+		private bool Onward(int e, int dir, double s0, Traffic.Anchor b, int pb, List<Seg> segs)
+		{
+			Traffic.Anchor a = OffJunctions(new Traffic.Anchor { Edge = e, S = s0 });
+			List<Seg> rest = new List<Seg>();
+			if (!Way(a, -1, b, pb, rest) || rest.Count == 0 || rest[0].Edge != e || rest[0].Dir != dir)
+			{
+				return false;
+			}
+			Seg first = rest[0];
+			first.Len += Math.Abs(first.S0 - s0);
+			first.S0 = s0;
+			rest[0] = first;
+			segs.AddRange(rest);
+			return true;
+		}
+
+		/// <summary>
+		/// The car asking <paramref name="r"/>, kept out for want of room, leaves the junction by another way that has room (never back the
+		/// way it came, never off the trunk) and its path from there is routed afresh to the same end, the quickest such. False if none.
+		/// </summary>
+		private bool Detour(Request r, List<Grant> granted, double box)
+		{
+			Leg leg = r.M.L;
+			Seg[] path = leg.Path;
+			int k = r.SegIndex, node = r.Node;
+			if (k + 1 >= path.Length || TwoLane(path[k]) || TwoLane(path[k + 1]) || leg.Purpose == Traffic.Purpose.Through)
+			{
+				return false;
+			}
+			Seg last = path[path.Length - 1];
+			int pb = -1;
+			if (last.Edge < 0)
+			{
+				if (path.Length < 2 || last.Inbound)
+				{
+					return false;
+				}
+				pb = last.Portal;
+				last = path[path.Length - 2];
+			}
+			if (last.Edge < 0)
+			{
+				return false;
+			}
+			Traffic.Anchor b = new Traffic.Anchor { Edge = last.Edge, S = last.S0 + last.Dir * last.Len };
+			Seg[] best = null;
+			double bestTime = double.MaxValue;
+			List<int> links = Traffic.Links[node];
+			List<Seg> prefix = new List<Seg>();
+			for (int i = 0; i <= k; i++)
+			{
+				prefix.Add(path[i]);
+			}
+			for (int j = 0; j < links.Count; j++)
+			{
+				if (j == r.InArm || j == r.OutArm || twoLaneEdge[links[j]])
+				{
+					continue;
+				}
+				int e2 = links[j];
+				Traffic.Edge edge = Traffic.Edges[e2];
+				int dir2 = edge.A == node ? 1 : -1;
+				double nearS = dir2 > 0 ? edge.Sa : edge.Sb;
+				List<Seg> segs = new List<Seg>(prefix);
+				if (!Onward(e2, dir2, nearS, b, pb, segs))
+				{
+					// Its quickest way from there turns straight back through this junction: on along that road to its next junction, and
+					// the quickest way from each road leaving that (never back along it).
+					int n2 = dir2 > 0 ? edge.B : edge.A;
+					List<Seg> bestOn = null;
+					double bestOnTime = double.MaxValue;
+					foreach (int ef in Traffic.Links[n2])
+					{
+						if (ef == e2 || twoLaneEdge[ef])
+						{
+							continue;
+						}
+						Traffic.Edge fe = Traffic.Edges[ef];
+						int fdir = fe.A == n2 ? 1 : -1;
+						List<Seg> on = new List<Seg>(prefix)
+						{
+							new Seg { Edge = e2, Dir = dir2, S0 = nearS, Len = edge.Length, Speed = EdgeSpeed(e2), Portal = -1 },
+						};
+						if (!Onward(ef, fdir, fdir > 0 ? fe.Sa : fe.Sb, b, pb, on))
+						{
+							continue;
+						}
+						double t = 0.0;
+						for (int i = k + 1; i < on.Count; i++)
+						{
+							t += on[i].Len / Math.Max(1.0, on[i].Speed);
+						}
+						if (t < bestOnTime)
+						{
+							bestOnTime = t;
+							bestOn = on;
+						}
+					}
+					if (bestOn == null)
+					{
+						continue;
+					}
+					segs = bestOn;
+				}
+				Seg[] trial = Finish(segs, out double _);
+				double time = 0.0;
+				for (int i = k + 1; i < trial.Length; i++)
+				{
+					time += trial[i].Len / Math.Max(1.0, trial[i].Speed);
+				}
+				if (time >= bestTime)
+				{
+					continue;
+				}
+				// Room past the box that way, now.
+				leg.Path = trial;
+				Request q = r;
+				q.OutArm = j;
+				q.OutLane = LaneKey(trial[k + 1], 0);
+				bool room = Room(q, granted, box);
+				leg.Path = path;
+				if (room)
+				{
+					best = trial;
+					bestTime = time;
+				}
+			}
+			if (best == null)
+			{
+				return false;
+			}
+			leg.Path = Finish(new List<Seg>(best), out double length);
 			leg.Length = length;
 			leg.Profile = Profile(leg);
 			return true;

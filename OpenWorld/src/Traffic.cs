@@ -1072,5 +1072,109 @@ namespace HalfGripOpenWorld
 			route.Reverse();
 			return true;
 		}
+
+		/// <summary>
+		/// What <see cref="RouteTimed"/> adds for a turn: seconds lost at node <paramref name="node"/> coming in on its link
+		/// <paramref name="inLink"/> and leaving on <paramref name="outLink"/> (indices in <see cref="Links"/>), reaching it at day time
+		/// <paramref name="t"/>.
+		/// </summary>
+		internal delegate double TurnDelay(int node, int inLink, int outLink, double t);
+
+		/// <summary>
+		/// As <see cref="Route"/>, but the cost also counts what is lost at each junction, by the movement through it (the way in and the way
+		/// out) and the time the car gets there (<paramref name="t0"/> when it sets off, plus the cost so far): a driver who knows the queues
+		/// at that hour. Dijkstra over the edges arrived along (a turn's cost needs the way in), ties by index. <paramref name="cost"/> and
+		/// <paramref name="via"/> are two per edge, MaxValue and -1 outside <paramref name="touched"/>.
+		/// </summary>
+		internal static bool RouteTimed(Anchor from, Anchor to, double t0, TurnDelay delay, List<(int edge, int dir)> route, Heap heap, double[] cost, int[] via, List<int> touched)
+		{
+			route.Clear();
+			Edge e0 = Edges[from.Edge], e1 = Edges[to.Edge];
+			if (from.Edge == to.Edge)
+			{
+				route.Add((from.Edge, to.S >= from.S ? 1 : -1));
+				return true;
+			}
+			foreach (int st in touched)
+			{
+				cost[st] = double.MaxValue;
+				via[st] = -1;
+			}
+			touched.Clear();
+			heap.Clear();
+			// A state: edge e driven the way d to its far end (2e driven A to B, 2e + 1 driven B to A).
+			void Reach(int st, double c, int from)
+			{
+				if (c < cost[st])
+				{
+					if (cost[st] == double.MaxValue)
+					{
+						touched.Add(st);
+					}
+					cost[st] = c;
+					via[st] = from;
+					heap.Push(c, st);
+				}
+			}
+			double speed0 = e0.Length / Math.Max(1e-6, e0.Time);
+			Reach(2 * from.Edge + 1, (from.S - e0.Sa) / speed0, -2);
+			Reach(2 * from.Edge, (e0.Sb - from.S) / speed0, -2);
+			double speed1 = e1.Length / Math.Max(1e-6, e1.Time);
+			double best = double.MaxValue;
+			int bestState = -1;
+			while (heap.Count > 0)
+			{
+				int st = heap.Pop(out double c);
+				if (c > cost[st])
+				{
+					continue;
+				}
+				if (c >= best)
+				{
+					break;
+				}
+				int ein = st >> 1;
+				Edge inEdge = Edges[ein];
+				int u = (st & 1) == 0 ? inEdge.B : inEdge.A;
+				List<int> links = Links[u];
+				int inLink = links.IndexOf(ein);
+				for (int j = 0; j < links.Count; j++)
+				{
+					int e = links[j];
+					if (e == ein)
+					{
+						continue;
+					}
+					double d = delay(u, inLink, j, t0 + c);
+					if (e == to.Edge)
+					{
+						double inner = u == e1.A ? (to.S - e1.Sa) / speed1 : (e1.Sb - to.S) / speed1;
+						if (c + d + inner < best)
+						{
+							best = c + d + inner;
+							bestState = st;
+						}
+						continue;
+					}
+					Edge edge = Edges[e];
+					Reach(edge.A == u ? 2 * e : 2 * e + 1, c + d + edge.Time, st);
+				}
+			}
+			if (bestState < 0)
+			{
+				return false;
+			}
+			{
+				Edge last = Edges[bestState >> 1];
+				int end = (bestState & 1) == 0 ? last.B : last.A;
+				route.Add((to.Edge, end == e1.A ? 1 : -1));
+			}
+			for (int st = bestState; st >= 0; st = via[st])
+			{
+				route.Add((st >> 1, (st & 1) == 0 ? 1 : -1));
+			}
+			route.Reverse();
+			return true;
+		}
 	}
 }

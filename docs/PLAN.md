@@ -50,7 +50,9 @@ when one is done, delete it here.
   drivers re-routing round the first pass's queues ("the load-time is already very short"). The Kingsbridge link (the main town's
   road down to the trunk) gets two lanes each way ("we can just go ahead and add another lane as well"). The junction-by-junction
   turn-lane plan above is superseded by these; the southbound left lane through the junction before the light was tried and made
-  the waiting worse (docs/HANDOFF.md).
+  the waiting worse (docs/HANDOFF.md). Done (2026-11-26): the day is built twice, half the trips of the second pass routed round the
+  first pass's queues by the hour (`TrafficDay.BuildPasses`, `RerouteShare`); a car kept out of a gridlock for three minutes takes
+  another way. Next: the link's second lane each way.
 - Judge traffic changes by how the waiting is shared (the owner, 2026-11-26): waiting spread fairly over everyone is fine; the same
   total moved onto other drivers who now wait longer is not. Report averages per trip, in plain words.
 - Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not

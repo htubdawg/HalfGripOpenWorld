@@ -4,18 +4,111 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (late night).
+Last written 2026-11-26 (night, later).
 
 ## Where things stand
 
 - **Branch: `traffic-test-branch`.** Work and push only there; never start a new branch. Before starting, look at every branch's
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
 - **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights, right of way fixes, lanes no longer laid on lanes,
-  late drawn cars let off a stand, **the highway reworked**, the queues' fixes, and now (below) **Kingsbridge's left-turn lane**, two
-  room fixes and right on red measured and left off; since, node 6's arrow off (a flashing yellow only, the owner's choice). **The world changed** since 0.33.0 (node 6's road is a lane wider; the
-  traffic's day too), so everyone in a room needs the same build. Bump the version with the next release.
-- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 62).
-- **Next: "The new direction" below** (routes that know the waiting, the Kingsbridge link two lanes each way).
+  late drawn cars let off a stand, **the highway reworked**, the queues' fixes, Kingsbridge's left-turn lane (its arrow off: a
+  flashing yellow only), two room fixes, and now **routes that know the queues** (below). **The world changed** since 0.33.0 (node 6's
+  road is a lane wider) and the traffic's day too, so everyone in a room needs the same build. Bump the version with the next release.
+- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 63).
+- **Next: the Kingsbridge link two lanes each way** (item 2 of "The new direction" below), measured against the routes as they are now.
+
+## 2026-11-26 (night, later): routes that know the queues, built
+
+Item 1 of "The new direction" is done.
+- **`Traffic.RouteTimed`**: Dijkstra over the edges arrived along (state 2e or 2e + 1: edge e driven A to B or B to A), so each turn
+  at a junction has a cost: free-flow time plus `delay(node, link in, link out, time reached)`, the time reached being the trip's start
+  plus the cost so far. Ties by index. `Traffic.Route` (empty roads) is unchanged and still used by the first pass.
+- **`TrafficDay.Waits`**: every car through a junction adds the seconds it stood still since its last junction (`Mover.StoodHere`)
+  to its movement (node, link in, link out; links up to 16) and hour bin (100 s of sim time, by when it first stood). The cost a
+  route reads is the mean over the cars through and one more (so one unlucky car on a quiet turn is not a queue), the hour bins
+  either side blended. Passes after the second average the tables (method of successive averages, `Blend`).
+- **The passes** (`TrafficDay(seed)` calls `TrafficDay(seed, BuildPasses)`, which builds the earlier passes first and takes what
+  they learned): `BuildPasses = 2`, `RerouteShare = 0.5`. The tours are thinned on their empty-road routes, so every pass keeps the
+  same tours, places and times; then a share of the kept tours (by hash) re-route their way out at their leaving time, and the same
+  share of the ways home at theirs (`Arrive`). Through cars and `Miss` keep empty-road routes.
+- **Gridlocks**: the first try (2 passes, half re-routing) locked seed 9 solid (179 legs never finished): the re-routed cars found the
+  ring of back lanes beside the link south of node 6 (nodes 47, 48, 50 and 49) and filled it, every queue waiting on the next. So
+  now **`Detour`**: a car at the front of a queue kept out for want of room (refused for room or next) for `GiveUpAfter` (180 s),
+  looked at every 10 s after, leaves by another way out of the junction with room (never back the way it came, never on the trunk)
+  and is routed afresh to the same end; if its quickest way from there turns back, on to the next junction and the quickest way from
+  each road leaving it (`Onward`, as `Miss` does). 0 to 2 cars a day give up (on one pass: seed 1 3, seed 9 none).
+- trafficview: `routes:` line (pass, trips re-routed, of them a different way), `gave up` in the junction lanes line, `TV_PASSES=N`,
+  `TV_REROUTE=x`. The game logs the passes, the re-routed and the gave-up with the day's build time.
+
+**16 seeds (`TV_DRIVE_ONLY=1`), stood still per trip: mean / 90% / 99% / trips over 3 min / FAIL lines; build time each (4 at a time):**
+- as before (one pass): 31.5 s / 74 / 395 / 765 / 1 (seed 9, physics); 3.7 s;
+- 2 passes, half re-routing, with the give-up (**as committed**): **23.3 / 56 / 231 / 433** / 1; 6.5 s;
+- 3 passes, half: 21.9 / 53 / 215 / 369 / 3; 8.8 s;
+- 3 passes, 30%: 24.2 / 58 / 244 / 485 / 2; 9.8 s.
+Two passes keep most of the gain for 2.5 s less build and fewer failures. 14 seeds of 16 wait less (seed 16 52 s to 29 s a trip,
+seed 3 50 to 27), seeds 10 and 12 a second or so more. The long waits fell most (the 99th percentile 395 to 231 s, the longest
+1,127 to 960 s), so the waiting is not moved onto other people. Road classes' counts hardly moved (lanes 122 to 144 a day,
+primaries 3,838 to 3,922): no cut-through cost needed. Every day is still the same built twice. Built alone, one pass takes about
+2.5 s here (the first in a process 3.3 s with its indexes), so the game waits about 2.5 s longer for its traffic.
+
+The waiting left (top ways, summed from each seed's top ten, minutes): nodes 49 from the east lane 471, 47 from the east lane 458, 45
+(the Pinewick road) 354 and 162, 67 from its side street 237, 42 from the town 232, 6 from the north 184; node 2's street (1,109
+before) and node 42's southbound (1,066 before) are off the list. The side lanes at 47 and 49 are where the re-routed traffic waits now.
+
+**The one FAIL line, seed 16**: physics cars at the evening peak near node 42 (player standing at (-2395, -4432)): 8 pairs in each
+other (limit 6), first two physics cars at (-2364, -4249), 17.41 h. The same kind turned up on seed 12 at 3 passes, 30% (8 pairs,
+first at (-2361, -4250)): the physics driver round node 42 at the peak, worth a look (leftover 2).
+**Seen at 3 passes, half (not committed)**: seed 2 with the player's car stopped across a trunk lane at (11151, -9332): 55 pairs of
+circling physics cars in each other in the queue behind it at node 5 (the Westhaven link), approaching at 40 to 56 into cars standing
+(before: 0 to 3 pairs a seed in that test). Not looked into: `TV_PASSES=3 TV_REROUTE=0.5`, seed 2, to reproduce.
+
+## The new direction (the owner, 2026-11-26, late night): the routes and the road, not junction by junction
+
+**Why.** Every junction fix so far moved the queue to the next junction (and turned up a different single failure each time). Two
+causes, both checked in the code:
+1. **Routes never react to waiting.** `Traffic.Route` is Dijkstra on each edge's free-flow `Time`: no junction delay, no lights, no
+   left turns across traffic, no queues; chosen once per trip. Every trip whose empty-road quickest way uses the Kingsbridge link takes
+   it however long the queue, so room added at one junction fills and the queue moves on.
+2. **The link is too small for what the map sends down it.** One lane each way, six junctions in about 600 units (180 m), a light in
+   the middle: the main town's way to the trunk. The waiting is almost all there (nodes 2, 42, 6, 44, 49, 67). The southbound try showed
+   the light's green, not room to queue, is the limit.
+
+The owner put to it: "Do we just need to act on a wider area instead of addressing each junction individually?" Agreed. Then: building
+the day twice is fine ("the load-time is already very short"), and **"we can just go ahead and add another lane as well"**: the link
+gets two lanes each way. Both are now standing decisions (docs/PLAN.md). Discussed only; nothing built yet.
+
+**1. Routes that know the waiting: the day built twice.** Done (above); the notes below were the plan.
+- Pass 1 as today. From it, learn the delay per junction movement (node, way in, way out) **per hour** (the queues are at the peaks: a
+  driver at 08:00 sees 08:00's queue, at 14:00 a clear road). `TrafficDay` already keeps per-way-in standing (`StoodFor`, `WaitAt`,
+  `LegStood`); it needs it by movement and hour.
+- Pass 2: re-route with those delays added to the route cost (`Traffic.Route` takes a delay lookup; a turn's cost needs the edge
+  before, so Dijkstra over (node, way in) states or a turn penalty at relaxation). **Only part of the trips re-route** (those whose
+  pass-1 trip waited long, or a fixed share by hash), or everybody piles onto the same side route; if two passes still swing, a third
+  averaging the delays (method of successive averages). Keep each pass deterministic (same seed, ties by index), so rooms agree.
+- **Only the routes change**: the same tours, places, times and parking.
+- **Cut-throughs**: a small extra cost on streets and lanes so cutting through housing streets must save real time; check trafficview's
+  PennDOT counts by road class don't drain off the main roads.
+- **Time it**: the day's build alone, before and after (not measured yet: trafficview's minutes per seed are mostly its checks). The
+  day is built on a worker at race start (`TrafficCars`).
+- Judge by the whole map's fairness line on 16 seeds (as committed: 31.5 s a trip / 90% 74 / 765 over 3 min), plus how many trips
+  changed route and where the traffic went.
+
+**2. The Kingsbridge link two lanes each way.** From the town (node 2, (-2290, -4139)) down to the trunk, through nodes 42, 6, 44,
+49, 67 (check where it meets the trunk; `jview` road listing near a point). Notes:
+- Road 3 'Kingsbridge link' is a Primary. The cleanest is a whole-road property (two lanes each way: `Half` wider by a lane each side,
+  `Traffic.LaneOffset` and the lanes as the trunk's two-lane logic: `TwoLane`, `twoLaneEdge`, `LaneAt`, overtaking and keeping right),
+  rather than another `Wide` stretch. `twoLaneEdge` today is `Kind == Trunk`: make it a road flag. The paint: a dashed white lane line
+  each side of a double yellow (no median, no centre turn lane: the owner); the texture or `RoadMesh` lines.
+- **The world changes**: a wider road moves plots, houses, lots and parking (`Widened`, `Plots`, `Town`, `TrafficParking`). Expect every
+  day to change; run meshcheck (all of it), preview and the 16 seeds.
+- Node 6's bay: with two through lanes the left-turn bay sits inside them (the road widened again) or the inner lane becomes left-only
+  at the light. Decide when building (measure).
+- Lights on a two-lane way in: `SignalPoles` hangs a head per lane (it does on the trunk); a span where the heads reach past 30.
+- Which other roads, if any, get the same rule: the generator should give any road this busy the capacity real engineers would, not
+  just this one. Measure after routes (item 1) shows how much traffic really needs it.
+
+Order: the routes first (cheaper, and shows how much the road matters), then the lane; or both, measured apart (16 seeds each) so each
+change's effect is known.
 
 ## 2026-11-26: how the waiting is shared, node 6's arrow off, the US rules for lights and stops
 
@@ -86,54 +179,6 @@ replaced by the direction in the next section ("The new direction"). Its southbo
 
 **Signs needed** (for when there are models): stop signs at four-way stops; "LEFT LANE MUST TURN LEFT" (and right) before node 6's
 lanes; lane-use arrows (straight; straight/right; left only) at nodes 42, 44 and 6, on the road or overhead.
-
-## The new direction (the owner, 2026-11-26, late night): the routes and the road, not junction by junction
-
-**Why.** Every junction fix so far moved the queue to the next junction (and turned up a different single failure each time). Two
-causes, both checked in the code:
-1. **Routes never react to waiting.** `Traffic.Route` is Dijkstra on each edge's free-flow `Time`: no junction delay, no lights, no
-   left turns across traffic, no queues; chosen once per trip. Every trip whose empty-road quickest way uses the Kingsbridge link takes
-   it however long the queue, so room added at one junction fills and the queue moves on.
-2. **The link is too small for what the map sends down it.** One lane each way, six junctions in about 600 units (180 m), a light in
-   the middle: the main town's way to the trunk. The waiting is almost all there (nodes 2, 42, 6, 44, 49, 67). The southbound try showed
-   the light's green, not room to queue, is the limit.
-
-The owner put to it: "Do we just need to act on a wider area instead of addressing each junction individually?" Agreed. Then: building
-the day twice is fine ("the load-time is already very short"), and **"we can just go ahead and add another lane as well"**: the link
-gets two lanes each way. Both are now standing decisions (docs/PLAN.md). Discussed only; nothing built yet.
-
-**1. Routes that know the waiting: the day built twice.**
-- Pass 1 as today. From it, learn the delay per junction movement (node, way in, way out) **per hour** (the queues are at the peaks: a
-  driver at 08:00 sees 08:00's queue, at 14:00 a clear road). `TrafficDay` already keeps per-way-in standing (`StoodFor`, `WaitAt`,
-  `LegStood`); it needs it by movement and hour.
-- Pass 2: re-route with those delays added to the route cost (`Traffic.Route` takes a delay lookup; a turn's cost needs the edge
-  before, so Dijkstra over (node, way in) states or a turn penalty at relaxation). **Only part of the trips re-route** (those whose
-  pass-1 trip waited long, or a fixed share by hash), or everybody piles onto the same side route; if two passes still swing, a third
-  averaging the delays (method of successive averages). Keep each pass deterministic (same seed, ties by index), so rooms agree.
-- **Only the routes change**: the same tours, places, times and parking.
-- **Cut-throughs**: a small extra cost on streets and lanes so cutting through housing streets must save real time; check trafficview's
-  PennDOT counts by road class don't drain off the main roads.
-- **Time it**: the day's build alone, before and after (not measured yet: trafficview's minutes per seed are mostly its checks). The
-  day is built on a worker at race start (`TrafficCars`).
-- Judge by the whole map's fairness line on 16 seeds (as committed: 31.5 s a trip / 90% 74 / 765 over 3 min), plus how many trips
-  changed route and where the traffic went.
-
-**2. The Kingsbridge link two lanes each way.** From the town (node 2, (-2290, -4139)) down to the trunk, through nodes 42, 6, 44,
-49, 67 (check where it meets the trunk; `jview` road listing near a point). Notes:
-- Road 3 'Kingsbridge link' is a Primary. The cleanest is a whole-road property (two lanes each way: `Half` wider by a lane each side,
-  `Traffic.LaneOffset` and the lanes as the trunk's two-lane logic: `TwoLane`, `twoLaneEdge`, `LaneAt`, overtaking and keeping right),
-  rather than another `Wide` stretch. `twoLaneEdge` today is `Kind == Trunk`: make it a road flag. The paint: a dashed white lane line
-  each side of a double yellow (no median, no centre turn lane: the owner); the texture or `RoadMesh` lines.
-- **The world changes**: a wider road moves plots, houses, lots and parking (`Widened`, `Plots`, `Town`, `TrafficParking`). Expect every
-  day to change; run meshcheck (all of it), preview and the 16 seeds.
-- Node 6's bay: with two through lanes the left-turn bay sits inside them (the road widened again) or the inner lane becomes left-only
-  at the light. Decide when building (measure).
-- Lights on a two-lane way in: `SignalPoles` hangs a head per lane (it does on the trunk); a span where the heads reach past 30.
-- Which other roads, if any, get the same rule: the generator should give any road this busy the capacity real engineers would, not
-  just this one. Measure after routes (item 1) shows how much traffic really needs it.
-
-Order: the routes first (cheaper, and shows how much the road matters), then the lane; or both, measured apart (16 seeds each) so each
-change's effect is known.
 
 ## 2026-11-26 (night): the southbound left lane through the junction before the light, tried and reverted
 
@@ -244,11 +289,10 @@ Possible next steps (ask the owner):
 
 ## Traffic leftovers
 
-1. With node 6's arrow off all 16 seeds pass but seed 9 (the physics cars' queue joining at node 49, above); the main-line hold-ups
-   over the limit went with the arrow.
-2. Physics cars "in each other": 0 to 4 a seed (limit 6).
+1. Physics cars in each other round node 42 at the evening peak: seed 16 fails with 8 (limit 6) as committed (above).
+2. Physics cars "in each other" elsewhere: 0 to 4 a seed (limit 6); 55 behind the stopped player on the trunk at 3 passes (above).
 3. A physics car brushed the player's stopped car (seed 11): not looked at.
-4. Then the owner's test in the game (`docs/TESTING.md` 58 and 59).
+4. Then the owner's test in the game (`docs/TESTING.md` 58 to 63).
 
 ## How to run the checks here
 
@@ -262,7 +306,11 @@ Possible next steps (ask the owner):
   - From each report, take one line per seed: junction waiting, overlaps, box conflicts, stopped across, physics pairs, physics box
     crossings, stops over 90 s, FAILs.
   - Every fix so far moved the day and turned up a different single failure somewhere else: rerun all 16 after each change.
-- **Comparing builds:** run 16 seeds into a folder per setting (the env switches: `TV_NOBAYS`, `TV_LEAD`, `TV_ARROWDELAY`, `TV_UNLIT`,
+- **`tools/trafficview/run16.sh <copy of the build> <folder> [VAR=value...]`** runs the 16 seeds 4 at a time into a folder (about 8
+  minutes at one pass, 13 at two); **`python3 tools/trafficview/pool.py <folder>...`** pools each folder's fairness lines (trips-weighted
+  mean, percentiles averaged, counts summed), the FAIL lines, the ways in with the most standing, the road classes' counts and the
+  re-routed trips.
+- **Comparing builds:** run 16 seeds into a folder per setting (the env switches: `TV_PASSES`, `TV_REROUTE`, `TV_NOBAYS`, `TV_LEAD`, `TV_ARROWDELAY`, `TV_UNLIT`,
   `TV_MAINMIN`, `TV_SIDEMIN`, `TV_SIDEMAX`, `TV_ROR`, `TV_WARRANTS`) and pool the "fairness:" lines: trips-weighted mean, the
   percentiles averaged over seeds, the over-1/3-minute counts summed, the FAIL lines; and the ways in by node (a short Python script
   over the reports did it; it was in the scratchpad, not kept). A setting that drops a feature fails its own check by design (no bay:
