@@ -17,13 +17,12 @@ Last written 2026-11-26 (night, the pop-in fixed).
   **The world changed** since 0.33.0 (node 6's road is a lane wider) and the traffic's day too, so everyone in a room needs the same
   build. Bump the version with the next release.
 - **The highway pop-in is fixed and confirmed by the owner** (next section). It came before the plan below at the owner's word.
-- **Far traffic's paint and tail lights (the owner, 2026-11-26, untested):** far cars wore the wrong paint and their tail lights showed
-  through the body from the front, until drawn near. Near cars wear the same materials on renderers and look right, so the suspect is
-  the game's paint shader (GMTK/Car Body Channel Paint) drawn **instanced**: its colours (per-instance properties?) or a pass (depth
-  prepass?) not following the instances, leaving the body unpainted or missing. **Done:** `TrafficFar.CanInstance` instances only
-  Unity's own URP shaders; the painted body is drawn one car at a time (`Graphics.RenderMesh`, as a renderer). `docs/TESTING.md` 65. If
-  it still looks wrong with `TrafficInstanced` off, the cause is not instancing: look at the far draws' `RenderParams` (probes, layer)
-  and the lit lamps' material.
+- **Far traffic instancing is off by default, parked (the owner, 2026-11-26: "just busted ... pick it up later").** Instanced far
+  cars wore the wrong paint and their tail lights showed through the body from the front, until drawn near. `TrafficInstanced`
+  defaults to `false` (far cars drawn one by one, `Graphics.RenderMesh`). `TrafficFar.CanInstance` also instances only Unity's own
+  URP shaders, so the game's paint shader (GMTK/Car Body Channel Paint) is never instanced even with it on; untested whether the
+  rest (glass, lamps, wheels in URP Lit) draws right instanced. When picked up: suspect the paint shader's per-instance colours or a
+  pass (depth prepass) not following the instances; try a `MaterialPropertyBlock` with per-instance colour arrays.
 - The owner has run the routes build (log: "built in 10635 ms over 2 passes" on their machine) and **reported cars standing still for
   no reason** (the section after). **Every waiting figure measured so far is suspect until that is fixed**, the routes' gain included.
 - **Next: the three steps in the standing-still section, in order** (step 1 done) (the owner agreed to the first; the second and third were proposed, start
