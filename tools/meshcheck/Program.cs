@@ -1201,8 +1201,16 @@ internal static class Program
 			kinds[area.Kind]++;
 			yields[area.Yield]++;
 		}
-		bool ok = deadIn == 0 && unreached == 0 && offConnectors == 0 && missed == 0 && sixOk && early == 0 && offLine == 0;
-		Console.WriteLine("lanes:   " + Lanes.All.Count + " lanes, " + Lanes.Connectors.Count + " connectors, " + Conflicts.All.Count + " conflict areas (" + kinds[0] + " crossing, " + kinds[1] + " merging, " + kinds[2] + " diverging, " + kinds[3] + " head on; "
+		// Repeatable: built again from scratch, the same lanes, lines and areas to the last bit.
+		ulong first = LaneHash();
+		Lanes.Rebuild();
+		bool same = LaneHash() == first;
+		if (!same)
+		{
+			Console.WriteLine("    the lane graph built twice is not the same");
+		}
+		bool ok = deadIn == 0 && unreached == 0 && offConnectors == 0 && missed == 0 && sixOk && early == 0 && offLine == 0 && same;
+		Console.WriteLine("lanes:   " + (same ? "repeatable; " : "NOT repeatable; ") + Lanes.All.Count + " lanes, " + Lanes.Connectors.Count + " connectors, " + Conflicts.All.Count + " conflict areas (" + kinds[0] + " crossing, " + kinds[1] + " merging, " + kinds[2] + " diverging, " + kinds[3] + " head on; "
 			+ (yields[0] + yields[1]) + " give way, " + yields[2] + " kept apart by lights, " + yields[3] + " first come, " + yields[4] + " follow); lanes with no way on " + deadIn + ", lanes nothing leads into " + unreached
 			+ ", connectors off the paving " + offConnectors + " (" + offPaving + " of " + points + " points, " + middleOff + " of them the line itself; by points off: " + offSizes[0] + " 1-3, " + offSizes[1] + " 4-10, " + offSizes[2] + " 11-30, " + offSizes[3] + " more), crossing pairs " + crossings + " with no area " + missed + ", node 6's pair " + (sixOk ? "ok" : "MISSING")
 			+ ", lanes held back from the stop line " + held + " (most " + mostHold.ToString("0.0") + "; shorter than a car, let through as one " + chained + "), held back more than two cars or off the lane " + early + ", lanes ending off the stop line " + offLine + " of " + lines + " lines; " + Lanes.BuildMs.ToString("0") + " ms" + (ok ? "  ok" : "  FAIL"));
@@ -4308,6 +4316,35 @@ internal static class Program
 		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole, "
 			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 8 apart, " + slanted + " lanes meeting a road more than 30 degrees off square, " + unjoined + " pairs of roads alone at a place not joined" + (ok ? "" : "  FAIL"));
 		return ok;
+	}
+
+	/// <summary>A hash of the whole lane graph and its conflict areas (every number's bits), for the repeatability check.</summary>
+	private static ulong LaneHash()
+	{
+		ulong h = 1469598103934665603UL;
+		void Mix(long v)
+		{
+			h = (h ^ (ulong)v) * 1099511628211UL;
+		}
+		void D(double v)
+		{
+			Mix(BitConverter.DoubleToInt64Bits(v));
+		}
+		foreach (Lanes.Lane l in Lanes.All)
+		{
+			Mix(l.Edge); Mix(l.Dir); Mix(l.Index); Mix(l.Kind); Mix(l.From); Mix(l.To); Mix(l.Parent); D(l.Start); D(l.End); D(l.Limit); D(l.Hold);
+			foreach (int o in l.Out) Mix(o);
+		}
+		foreach (Lanes.Connector c in Lanes.Connectors)
+		{
+			Mix(c.Node); Mix(c.From); Mix(c.To); Mix(c.Turn); D(c.Length); D(c.Limit); Mix(c.Wide ? 1 : 0);
+			for (int i = 0; i < c.X.Length; i++) { D(c.X[i]); D(c.Z[i]); D(c.Y[i]); }
+		}
+		foreach (Conflicts.Area a in Conflicts.All)
+		{
+			Mix(a.A); Mix(a.B); Mix(a.Kind); Mix(a.Yield); Mix(a.Tie); D(a.A0); D(a.A1); D(a.B0); D(a.B1);
+		}
+		return h;
 	}
 
 	/// <summary>The piece of a road nearest (x, z).</summary>

@@ -117,6 +117,16 @@ namespace HalfGripOpenWorld
 		internal static double BuildMs;
 		internal static string Report = "";
 
+		/// <summary>Builds the lane graph and its conflicts again from scratch, for the tools' check that it comes out the same.</summary>
+		internal static void Rebuild()
+		{
+			lock (gate)
+			{
+				built = false;
+			}
+			Ensure();
+		}
+
 		/// <summary>Builds the lane graph and its conflicts once (after <see cref="Junctions.Ensure"/>, which it calls). Safe from any thread.</summary>
 		internal static void Ensure()
 		{
