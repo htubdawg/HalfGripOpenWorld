@@ -912,6 +912,7 @@ namespace HalfGripOpenWorld
 			choseThisFrame = false;
 			(drawnWas, drawnIs) = (drawnIs, drawnWas);
 			drawnIs.Clear();
+			appearing.Clear();
 			foreach (int c in chosen)
 			{
 				if (!live.TryGetValue(c, out View v))
@@ -1022,7 +1023,7 @@ namespace HalfGripOpenWorld
 				bool moving = at.State == TrafficDay.State.Driving;
 				if (moving)
 				{
-					if (at.InTunnel)
+					if (at.InTunnel || late.RoundTheCorner(c, at))
 					{
 						continue;
 					}
@@ -1094,6 +1095,10 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool Seen(int c, TrafficDay.Place at)
 		{
+			if (at.State == TrafficDay.State.Driving && late.RoundTheCorner(c, at))
+			{
+				return false;
+			}
 			double x = at.X, z = at.Z;
 			float reach = MovingReach;
 			if (at.State == TrafficDay.State.Parked)
@@ -1144,6 +1149,22 @@ namespace HalfGripOpenWorld
 				{
 					drawFail = "in a tunnel";
 					return false;
+				}
+				if (late.RoundTheCorner(c, at))
+				{
+					drawFail = "still in its space out of sight";
+					return false;
+				}
+				if (late.Appearing(c, at) && !WasDrawn(c))
+				{
+					if (late.StartBlocked(c, at, DrawnWas, appearing))
+					{
+						// It would come round the corner into a car: it waits there a little longer.
+						SendHold(c, at.Leg, w, late.HoldBack(c, at.Leg, w, 1.0));
+						drawFail = "waiting out of sight for its way onto the road";
+						return false;
+					}
+					appearing.Add(new TrafficLate.Near { Car = c, X = at.X, Z = at.Z, Hx = at.Hx, Hz = at.Hz, Moving = true, Late = late.Has(c), Speed = late.DrawnSpeed(c, at) });
 				}
 				// Held behind a physics car or a late car in its way, never hidden.
 				YieldDrawn(c, ref at, w, dt);

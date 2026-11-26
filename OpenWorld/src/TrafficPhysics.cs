@@ -797,6 +797,25 @@ namespace HalfGripOpenWorld
 		/// <summary>The cars drawn last frame and this one (where, which way, moving, late): what a drawn car is held behind.</summary>
 		private List<TrafficLate.Near> drawnWas = new List<TrafficLate.Near>(), drawnIs = new List<TrafficLate.Near>();
 
+		/// <summary>Cars let come out of a space out of sight onto the road this frame (<see cref="TrafficLate.StartBlocked"/>).</summary>
+		private readonly List<TrafficLate.Near> appearing = new List<TrafficLate.Near>();
+
+		/// <summary>Last frame's drawn driving cars.</summary>
+		private List<TrafficLate.Near> DrawnWas => drawnWas;
+
+		/// <summary>Whether car <paramref name="c"/> was drawn driving last frame.</summary>
+		private bool WasDrawn(int c)
+		{
+			foreach (TrafficLate.Near o in drawnWas)
+			{
+				if (o.Car == c)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
 		/// <summary>
 		/// A drawn driving car with a physics car (this machine's or a stand-in), or a late drawn car, in its way: slowed and stopped behind
 		/// it and made late by it (<see cref="TrafficLate.Yield"/>), as a driver would wait. The day doesn't know a physics car is held up,
@@ -823,7 +842,7 @@ namespace HalfGripOpenWorld
 			// Pulling out of its space it doesn't wait for a car pulling in (one waiting for that space would wait for it in turn, for ever).
 			// (A physics car there holds it in its space: HoldBackFromPhysics.)
 			bool pullingOut = !leg.Appears && at.T < leg.PullOut + 1.0;
-			if (!leg.Appears && at.T < 0.5)
+			if (late.CanHoldBack(c, at))
 			{
 				// Still in its space: it waits there while a late car (or, it being late, any car) is on its lane by it.
 				foreach (TrafficLate.Near o in drawnWas)
@@ -925,8 +944,9 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// A drawn car about to pull out (or pulling out, or waiting at its trip's start to set off) where a physics car stands, or right in front of one: held back in its space a
-		/// little longer (late by it), rather than drawn pulling out into it.
+		/// A drawn car about to pull out where a physics car stands, or right in front of one: held back in its space a little longer (late by
+		/// it), rather than drawn pulling out into it. Only while it is still in a drawn space (<see cref="TrafficLate.CanHoldBack"/>); one
+		/// already pulling out or waiting on its lane is held where it is by <see cref="YieldDrawn"/>.
 		/// </summary>
 		internal bool HoldBackFromPhysics(int c, TrafficDay.Place at, double w)
 		{
@@ -935,7 +955,7 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			TrafficDay.Leg leg = day.Legs[at.Leg];
-			if (leg.Appears || (at.T >= leg.PullOut + 1.0 && at.P > 1.0) || !OnAPhysicsCar(at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0, leg.FarSide))
+			if (!late.CanHoldBack(c, at) || !OnAPhysicsCar(at.X, at.Z, at.Hx, at.Hz, 25.0, 45.0, leg.FarSide))
 			{
 				return false;
 			}

@@ -412,6 +412,89 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// Whether drawn car <paramref name="car"/>, driving at <paramref name="at"/>, may be held back in its space (<see cref="HoldBack"/>):
+		/// only while it is still in it (it hasn't moved yet). A car already pulling out, or out and waiting on its lane to set off, would jump
+		/// back into its space: it waits where it is drawn instead (<see cref="Yield"/>). A car in a space out of sight isn't drawn until it
+		/// sets off (<see cref="RoundTheCorner"/>), so holding it there hides nothing.
+		/// </summary>
+		internal bool CanHoldBack(int car, TrafficDay.Place at)
+		{
+			return at.State == TrafficDay.State.Driving && at.Leg >= 0 && at.T < 0.5 && !day.Legs[at.Leg].Appears;
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="car"/>, driving at <paramref name="at"/>, is still in a space out of sight (round the corner, or gone
+		/// from the map) before it sets off: not drawn. It was drawn on its lane at its trip's start from the first moment, and a car held
+		/// back there went back to its unseen space and vanished, or stood in the lane where others drove (trafficview's ledger, 2026-11-26).
+		/// </summary>
+		internal bool RoundTheCorner(int car, TrafficDay.Place at)
+		{
+			if (!CanHoldBack(car, at))
+			{
+				return false;
+			}
+			return SpaceUnseen(car, at.Leg);
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="car"/>, driving at <paramref name="at"/>, has just come out of a space out of sight onto its lane (its
+		/// first second on the road): where <see cref="StartBlocked"/> is asked, the first frame it would be drawn.
+		/// </summary>
+		internal bool Appearing(int car, TrafficDay.Place at)
+		{
+			return at.State == TrafficDay.State.Driving && at.Leg >= 0 && at.T >= 0.5 && at.T < 1.5 && SpaceUnseen(car, at.Leg);
+		}
+
+		/// <summary>Whether car <paramref name="car"/> sets off on leg <paramref name="leg"/> from a space that isn't drawn (out of sight, or gone from the map).</summary>
+		private bool SpaceUnseen(int car, int leg)
+		{
+			if (day.Legs[leg].Appears)
+			{
+				return false;
+			}
+			TrafficDay.Place before = Before(car, leg);
+			return before.State != TrafficDay.State.Parked || day.Parking.Parked(car, before.Leg).Away;
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="car"/>, still round the corner at <paramref name="at"/> (<see cref="RoundTheCorner"/>), would appear
+		/// on its lane in a drawn car or right in front of a moving one that couldn't stop: one of <paramref name="drawn"/> (last frame's) or
+		/// <paramref name="appearing"/> (cars let appear this frame: two held back by the same car were let go together at the same spot),
+		/// where it or the other is late (on-time cars the day keeps apart itself). It waits round the corner instead (<see cref="HoldBack"/>):
+		/// late cars appeared in the queues standing at their trip's start (trafficview's ledger, 2026-11-26).
+		/// </summary>
+		internal bool StartBlocked(int car, TrafficDay.Place at, List<Near> drawn, List<Near> appearing)
+		{
+			bool meLate = Has(car);
+			Near me = new Near { Car = car, X = at.X, Z = at.Z, Hx = at.Hx, Hz = at.Hz, Moving = true };
+			return Blocks(car, meLate, me, drawn) || Blocks(car, meLate, me, appearing);
+		}
+
+		private static bool Blocks(int car, bool meLate, in Near me, List<Near> others)
+		{
+			foreach (Near o in others)
+			{
+				if (o.Car == car || (!meLate && !o.Late))
+				{
+					continue;
+				}
+				if (Overlap(me, o))
+				{
+					return true;
+				}
+				if (o.Moving && o.Speed > 0.5)
+				{
+					double stop = o.Speed * o.Speed / (2.0 * TrafficDrive.YieldBrake) + TrafficDrive.YieldGap;
+					if (TrafficDrive.FreeAhead(o.X, o.Z, o.Hx, o.Hz, me.X, me.Z, me.Hx, me.Hz, TrafficDrive.YieldLook(o.Speed), 0.0) < stop)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
 		/// Holds car <paramref name="car"/> back in its space before it sets off on leg <paramref name="leg"/> (it would pull out where a physics
 		/// car stands): late from sim time <paramref name="w"/> by however long until the leg's start, and <paramref name="more"/>. Returns the
 		/// lateness (a room sends it).
@@ -483,13 +566,16 @@ namespace HalfGripOpenWorld
 			double extra = Math.Min(at.T, dt * (1.0 - allowed / Math.Max(v, 1e-3)));
 			TrafficDay.Leg leg = day.Legs[at.Leg];
 			double drawnAt = leg.Start + at.T - extra;
+			// One that came out of a space out of sight is never drawn back into it (it would vanish: RoundTheCorner).
+			double floor = at.T >= 0.5 && SpaceUnseen(car, at.Leg) ? leg.Start + 0.5 : leg.Start;
+			drawnAt = Math.Max(floor, drawnAt);
 			// And never further on than going allowed from where it was a step ago: the day's speed over the step it is moved back to can
 			// be more than v, and a car held at the yield's room crept into the car in front (trafficview's ledger, 2026-11-26).
 			double was = TrafficDay.DistanceAt(leg, Math.Max(leg.Start, leg.Start + at.T - dt));
 			double most = was + allowed * dt;
 			if (TrafficDay.DistanceAt(leg, drawnAt) > most + 1e-6)
 			{
-				drawnAt = Math.Max(leg.Start, Math.Min(drawnAt, TrafficDrive.TimeAt(leg, most)));
+				drawnAt = Math.Max(floor, Math.Min(drawnAt, TrafficDrive.TimeAt(leg, most)));
 			}
 			d = TrafficDrive.LegClock(leg, w) - drawnAt;
 			bool had = ledger.ContainsKey(car);
