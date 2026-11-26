@@ -23,7 +23,7 @@ Last written 2026-11-26.
     further on (`Connector.Join`), with a swing the other way first for a hairpin; else a grid of Béziers. Turns of more than 150° at
     a junction (into an acute fork) aren't made. A bay whose junction has no left turn (a trunk crossroads split into two nodes 17
     apart) carries on into the inner lane. Builds in about 0.5 s.
-  - `Conflicts.cs`: 11,192 areas. Every pair of connectors at a node, or at two nodes whose boxes touch, swept as rigid car bodies
+  - `Conflicts.cs`: 11,269 areas. Every pair of connectors at a node, or at two nodes whose boxes touch, swept as rigid car bodies
     (14 by 5.4 and 0.3 all round) from two car lengths back along the lane in (no further than the whole car is on it) to the tail
     leaving; pairs chained through a lane (one after the other) are left out. Kinds: crossing, merging, diverging, head on (a drive is
     one car wide both ways). Who gives way: kept apart by the lights' phases (`TrafficSignals.Apart`), else a minor road to the main
@@ -38,14 +38,14 @@ Last written 2026-11-26.
   an area **or** keeps 2 apart, and prints which.
 - `meshcheck lanes` still **FAILS** on two counts (the rest pass: every lane has a way on and is reached, every pair of crossing lines
   has an area, node 6, lit lanes end on the drawn stop lines):
-  1. **1,361 connectors partly off the paving** (12,491 of 628,770 points, the line and 2.2 either side). Mostly right turns at tight
+  1. **1,210 connectors partly off the paving** (11,384 of 623,127 points, the line and 2.2 either side). Mostly right turns at tight
      corners: lanes into drives (the drive's mouth is verge, not ribbon), street and lane corners sharper than a right angle, where a
      line a car can drive cuts the kerb. **The world's junction corners are tighter than a real car's turning circle** (a street's
      mouth flares a few units; a real corner is about 6 m round). The radius 7 fillet already allows tighter than a real car (14).
-  2. **28 lanes held back more than two car lengths** (444 held back at all, most by less): on narrow lanes and streets a car turning
+  2. **27 lanes held back more than two car lengths** (449 held back at all, most by less): on narrow lanes and streets a car turning
      in swings over the stop line of the road it turns into, so the car waiting there must stand back.
   Both come back to how the junction corners are drawn: a question for the owner (below).
-- `tools/check.sh` compiles clean (HalfGripRefs' game and the stub HalfGripTools). See "Checks" for the full meshcheck run.
+- `tools/check.sh` compiles clean (HalfGripRefs' game and the stub HalfGripTools). Every other meshcheck check passes.
 
 ## Next
 
@@ -60,5 +60,5 @@ Last written 2026-11-26.
 
 - `tools/check.sh`: compiles clean.
 - `meshcheck lanes`: as above (FAIL on off-paving and holds).
-- Full `meshcheck`: see below.
+- Full `meshcheck`: every check passes but `lanes`.
 - Not run in game (nothing in the game uses the lane graph yet).
