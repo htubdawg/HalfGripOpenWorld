@@ -35,6 +35,12 @@ check "steps a car stood for a car out of the junction pulling in just past it" 
 before the fix and is 0 after. Found with the trace patch and a throwaway probe (`day.At(car, w)` every 2 s for one car, and every car
 standing near a point): sim time is (hour - 3) x 100, the race's start hour is in the log's `Sky: the race starts at` line.
 
+16 seeds (`TV_DRIVE_ONLY=1`), without the fix then with it: mean 23.3 to 24.0 s a trip, median 7.5 to 7.3, 90% 56 to 56, 99% 231 to
+262, over 1 min 2074 to 2019, over 3 min 433 to 516; the new check 12,924 steps to 0. The short waits went down and the long ones up:
+the side lanes waiting for a gap on the link (node 49 east lane 471 to 603 min, node 67 237 to 393, node 132 into the top ten) wait
+longer, with cars going by (a visible reason). Other FAILs with the fix: seed 2 a parked car first chosen 533 from the player on the
+highway (limit 600), seed 3 physics cars 7 pairs in each other round node 42 at 18.07 h (limit 6; leftover 1 below).
+
 ## Next: cars standing still for no reason (the owner's first report)
 
 At the T south of Kingsbridge where a street from the east meets the link (node 51, (-2398, -5044)), 14:30 on a weekend: cars on the
@@ -72,8 +78,8 @@ it gives way to or is blocked by. `TV_DUMPAT=t` dumps every car round the link's
 
 ## Baselines (16 seeds, `TV_DRIVE_ONLY=1`; suspect, see above)
 
-Stood still per trip, as committed (2 passes, half re-routing, give-up after 180 s): **mean 23.3 s, 90% 56, 99% 231, 433 trips over
-3 min**, 1 FAIL line. One pass gave 31.5 / 74 / 395 / 765. The day takes about 6.5 s to build here (one pass about 2.5 to 3.3 s).
+Stood still per trip, as committed (2 passes, half re-routing, give-up after 180 s): **mean 24.0 s, 90% 56, 99% 262, 516 trips over
+3 min**, 2 FAIL lines (after the fix above; before it 23.3, 56, 231, 433). One pass gave 31.5 / 74 / 395 / 765. The day takes about 6.5 s to build here (one pass about 2.5 to 3.3 s).
 
 Where the rest waits: side lanes joining the link and the Pinewick road, refused at their front for **crossing** and **gap**. The
 worst are node 47 and node 49 from the east lanes, node 45 (the Pinewick road), node 42 from the west lane and node 51's street.
