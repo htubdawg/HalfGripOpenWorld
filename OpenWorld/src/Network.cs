@@ -214,6 +214,14 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private const double JointTurn = 0.25881904510252074;
 
+		/// <summary>
+		/// The sharpest bend for two roads that are the only ones ending at a place: 120 degrees, as its cosine (Harrow's corner turns 101). Two town streets meeting
+		/// end to end at about a right angle (an L) were neither a joint nor a hub (three roads or more), so each was cut square for the other
+		/// and the outside of the corner was ground (Harrow, the worst hole in meshcheck's holes); drawn as one road round the bend the
+		/// corner is paved, mitred.
+		/// </summary>
+		private const double CornerTurn = -0.5;
+
 		/// <summary>Length of the apron round a cut, over which the road is brought to meet the other road's surface.</summary>
 		private const double Apron = 16.0;
 
@@ -2617,7 +2625,7 @@ namespace HalfGripOpenWorld
 					// other road ending there must be drawn under both (it meets them as at any junction).
 					here.Sort((p, q) => Roads[p.r].Kind != Roads[q.r].Kind ? Roads[p.r].Kind.CompareTo(Roads[q.r].Kind) : p.r.CompareTo(q.r));
 					int bi = -1, bj = -1;
-					double best = JointTurn;
+					double best = here.Count == 2 ? CornerTurn : JointTurn;
 					for (int i = 0; i < here.Count && bi < 0; i++)
 					{
 						for (int j = i + 1; j < here.Count; j++)

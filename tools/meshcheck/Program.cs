@@ -42,7 +42,9 @@ using UnityEngine;
 //                overlapping another; the boards drawn in their tiles' meshes
 //  19. holes:   round every junction (each paved road's ends and crossings), the tiles' road, verge, sidewalk and track meshes drawn
 //                from above at half a unit a pixel: the share of the roads' paving (each road's own strip, its cuts ignored) where no
-//                paved surface is on top (the ground, a verge or a sidewalk showing through a mouth), under 1%, and the worst place
+//                paved surface is on top (the ground, a verge or a sidewalk showing through a mouth), under 0.2%, and the worst place
+//                under 400 pixels (an L of two streets cut square for each other left 1,096, a T's through road cut under the end of
+//                the road ending on it 415, a main road hooking back into its end 1,168)
 //  20. joints:  where two roads carry on end to end (Network.Joints), their ends' edges meet: the same points and heights
 //  21. deadends: every dead end rounded off: a paved road's paving reaching on past its end, nothing past its verge; a track's or
 //                path's ribbon narrowed to a fifth
@@ -3001,7 +3003,7 @@ internal static class Program
 			}
 		}
 		Console.WriteLine("holes:   " + spots.Count + " junctions; " + holes + " of " + nominal + " pixels of the roads' paving with no paved surface on top (" + (100.0 * holes / Math.Max(1, nominal)).ToString("0.00") + "%), the most " + worstHoles + " at (" + worstAt.x.ToString("0") + ", " + worstAt.z.ToString("0") + ")");
-		return holes * 100 < nominal;
+		return holes * 500 < nominal && worstHoles < 400;
 	}
 
 	private static bool Joints()
