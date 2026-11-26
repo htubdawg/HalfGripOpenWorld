@@ -35,6 +35,8 @@ namespace HalfGripOpenWorld
 
 		private static readonly List<(Rigidbody body, RigidbodyInterpolation mode)> paused = new List<(Rigidbody, RigidbodyInterpolation)>();
 		private static int restoreAt;
+		/// <summary>The physics clock at the last shift: interpolation comes back only once it has stepped twice since.</summary>
+		private static float fixedAtShift;
 
 		internal static void Reset(bool active)
 		{
@@ -104,8 +106,12 @@ namespace HalfGripOpenWorld
 			}
 		}
 
-		/// <summary>Moves everything in the loaded scenes by (-dx, 0, -dz) and adds (dx, dz) to the offset.</summary>
-		internal static void Shift(float dx, float dz)
+		/// <summary>
+		/// Moves everything in the loaded scenes by (-dx, 0, -dz) and adds (dx, dz) to the offset. The roots in <paramref name="keep"/>
+		/// stay where they are in the scene, so they move by (dx, dz) in the world: the highway's wrap (<see cref="Wrap"/>) keeps the
+		/// car and the chase camera in place while the world round them goes from one edge to the other.
+		/// </summary>
+		internal static void Shift(float dx, float dz, HashSet<Transform> keep = null)
 		{
 			Vector3 delta = new Vector3(-dx, 0f, -dz);
 			float started = Time.realtimeSinceStartup;
@@ -122,6 +128,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			restoreAt = Time.frameCount + 2;
+			fixedAtShift = Time.fixedTime;
 
 			int roots = 0;
 			HashSet<Transform> moved = new HashSet<Transform>();
@@ -135,7 +142,7 @@ namespace HalfGripOpenWorld
 				foreach (GameObject go in scene.GetRootGameObjects())
 				{
 					// A screen-space canvas is placed by Unity, not by its transform; a cockpit root stays.
-					if ((go.TryGetComponent(out Canvas canvas) && canvas.renderMode != RenderMode.WorldSpace) || go.layer == interior)
+					if ((go.TryGetComponent(out Canvas canvas) && canvas.renderMode != RenderMode.WorldSpace) || go.layer == interior || (keep != null && keep.Contains(go.transform)))
 					{
 						continue;
 					}
@@ -189,6 +196,20 @@ namespace HalfGripOpenWorld
 			return n;
 		}
 
+		/// <summary>
+		/// Moves the roots in <paramref name="roots"/> by <paramref name="delta"/> in the scene, leaving the cockpit under them where it is
+		/// (the leftover of the highway's wrap after its whole-tile shift).
+		/// </summary>
+		internal static void MoveKept(HashSet<Transform> roots, Vector3 delta)
+		{
+			foreach (Transform root in roots)
+			{
+				root.position += delta;
+			}
+			KeepInterior(delta, LayerMask.NameToLayer("INTERIOR"), roots);
+			Physics.SyncTransforms();
+		}
+
 		/// <summary>True if <paramref name="t"/> or anything above it is on the INTERIOR layer: part of the cockpit, which stays put.</summary>
 		private static bool InCockpit(Transform t, int interior)
 		{
@@ -208,7 +229,11 @@ namespace HalfGripOpenWorld
 
 		private static void RestoreInterpolation()
 		{
-			if (paused.Count == 0 || Time.frameCount < restoreAt)
+			// Two frames were not enough: at a high frame rate they can pass with no physics step (50 a second against 144 frames), and an
+			// interpolated body was then drawn for a frame between its pose before the shift and now, a whole shift away. The tyre marks of
+			// every moving traffic car drew a point there, a segment as long as the shift (the owner's log, 2026-11-23: 1118 at a shift of
+			// 500 by 1000). So it waits for two physics steps since the shift too, both taken with the bodies where they are now.
+			if (paused.Count == 0 || Time.frameCount < restoreAt || Time.fixedTime < fixedAtShift + 2f * Time.fixedDeltaTime - 1e-4f)
 			{
 				return;
 			}

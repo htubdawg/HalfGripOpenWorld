@@ -19,7 +19,7 @@ namespace HalfGripOpenWorld
 	}
 
 	/// <summary>
-	/// The deer's reactions (step 3 of the plan in docs/PLAN.md), pure as the calm deer are: a reaction (<see cref="Reaction"/>, settled
+	/// The deer's reactions (step 3 of the deer plan; docs/research/DEER.md has the research), pure as the calm deer are: a reaction (<see cref="Reaction"/>, settled
 	/// by the room's host, <see cref="DeerRoom"/>) overrides what the calm day says a group does from its race time on, and every machine
 	/// plays it the same from the same start, so nothing but the reaction itself is sent.
 	///
@@ -93,6 +93,29 @@ namespace HalfGripOpenWorld
 				}
 			}
 			return side >= 0.0 ? 1 : -1;
+		}
+
+		/// <summary>
+		/// The side a deer is on: that of the group's spot it stands at (within a few units of the spot's round), else
+		/// <see cref="DeerSide"/>. The spots' sides are where they were placed beside the road; the road's own line past its end (a lane
+		/// carrying on as the hill climb) clamps to that end and can put a spot there on the other side, and a deer grazing at it fled
+		/// straight over the lane, 40 units from its crossing, to a spot it took for its own side.
+		/// </summary>
+		internal static int SideAt(Group g, double x, double z)
+		{
+			int best = -1;
+			double bestD = (SpotRadius + 3.0) * (SpotRadius + 3.0);
+			for (int i = 0; i < g.Spots.Length; i++)
+			{
+				double dx = g.Spots[i].X - x, dz = g.Spots[i].Z - z;
+				double d2 = dx * dx + dz * dz;
+				if (d2 < bestD)
+				{
+					bestD = d2;
+					best = i;
+				}
+			}
+			return best >= 0 ? g.Spots[best].Side : DeerSide(g, x, z);
 		}
 
 		/// <summary>Whether a point is on the group's road (its paving and a little more).</summary>
@@ -256,7 +279,7 @@ namespace HalfGripOpenWorld
 			}
 
 			// Where to: away on the leader's side, or over the road from it.
-			int sl = DeerSide(g, rr.StartX[leader], rr.StartZ[leader]);
+			int sl = SideAt(g, rr.StartX[leader], rr.StartZ[leader]);
 			int ts = r.Way == FleeWay.Across && g.Crosses ? -sl : sl;
 			rr.Dst = Refuge(g, ts);
 
@@ -331,7 +354,7 @@ namespace HalfGripOpenWorld
 		private void Run(Group g, Reacted rr, int d, List<(double x, double z)> points)
 		{
 			double px = rr.StartX[d], pz = rr.StartZ[d];
-			int side = DeerSide(g, px, pz);
+			int side = SideAt(g, px, pz);
 			// On its crossing (the only paving a deer is ever on): off it to its side's nearest spot, the way it was going.
 			double cx = px - g.Site.X, cz = pz - g.Site.Z;
 			bool crossing = cx * cx + cz * cz < (g.Site.Half + 12.0) * (g.Site.Half + 12.0);

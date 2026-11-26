@@ -18,7 +18,7 @@ using UnityEngine;
 //   6. verges:  the step from a verge's outer edge to the ground (its inner edge is the road's edge by construction), under 0.1
 //   7. tracks:  the ground along farm tracks pressed into their bed, 0.3 under the track's line
 //   8. bases:   building bases round the main town: never above the ground, at most the slope allowance under it
-//   9. faces:   road, verge and water meshes with no upside-down flat faces, under 65000 vertices
+//   9. faces:   road, verge and water meshes with no upside-down flat faces and no zero normals (a white glow), under 65000 vertices
 //  11. ribbons:  farm tracks' and footpaths' ribbons over the drawn ground everywhere across them (away from paved roads, which
 //                they run under)
 //  12. sidewalks: a sidewalk's back on or over the ground, its kerb's foot under it
@@ -58,7 +58,11 @@ using UnityEngine;
 //  26. homes:   every drive's home: its mailbox off every road's paving and verge and out of the water (or left out, 1 in 50 at most); a roadside house's footprint
 //                clear of every road, lot, park and the water, at its drive's end
 //  27. backroads: the back roads joined up (Network.Links, Throughs, Drives): few lane dead ends out in the country (a farm at the
-//                end of a long lane boxed in by water or hills), and no through way hooking round on itself
+//                end of a long lane boxed in by water or hills), no through way hooking round on itself, and no main road (trunk,
+//                primary, secondary) ending anywhere but on another road or at the map's edge
+//  27b. alongside: no paved road lying along another (its centre line within the wider one's half width for 40 units or more,
+//                running the same way): a lane's through way routed straight back along its own lane was laid on top of it
+//                (Network.Build), five farms' lanes doubled, their junctions' stop lines on the other's paving
 //  28. deer:    the deer's mesh (weights summing to one, no broken faces, bones and vertices in range); for three race seeds, every
 //                group's spots and the legs between them on the drawn ground, never in water above a deer's belly nor over a drop,
 //                every crossing place on the road it crosses, and every deer followed over half an hour of race time never deep in
@@ -69,6 +73,14 @@ using UnityEngine;
 //                messages read back as sent, and the host's kill put in place of another; how many groups the DeerAmount setting
 //                gives; reactions: every group of a race alerted and fleeing each way at three times of day, never into deep water,
 //                onto paving away from its crossing or jumping (through the run, the watch and back to its calm day), the same twice
+//  29. wrap:    the highway wraps round (Wrap): the trunk's two tunnels found, facing opposite ways, as wide as each other; the move
+//                there and back adding up to nothing; every lane's point past one glue plane landing on the other tunnel's floor in
+//                the same lane, going in; the ground under each open tunnel's floor and the road level into its mouth; the highway
+//                event's ends clear of both tunnels
+//  30. median:  the trunk's median is no lane (the owner, 2026-11-25): every junction lane a left-turn bay, ending at the mouth of a
+//                junction where its carriageway turns left and running through none; the bay on its own carriageway's side of the
+//                centre line, clear of the inner lane; K-rail on a few stretches only, each well clear of every junction, bay and
+//                opening, the median open to drive across over most of the trunk
 // Exits 1 if a check fails.
 internal static class Program
 {
@@ -88,6 +100,7 @@ internal static class Program
 			("bridges", Bridges),
 			("flooded", Flooded),
 			("water", Water),
+			("seastrip", SeaStrip),
 			("verges", Verges),
 			("tracks", Tracks),
 			("bases", Bases),
@@ -113,7 +126,12 @@ internal static class Program
 			("homes", Homes),
 			("clear", ClearOfRoads),
 			("backroads", BackRoads),
+			("alongside", Alongside),
 			("deer", DeerChecks),
+			("wrap", WrapChecks),
+			("median", MedianChecks),
+			("bays", BayChecks),
+			("lights", SignalChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -168,6 +186,10 @@ internal static class Program
 					{
 						bad++;
 						worst = Math.Max(worst, over);
+						if (bad <= 5)
+						{
+							Console.WriteLine("  under the terrain: " + r.Kind + " '" + r.Name + "' at (" + x.ToString("0") + ", " + z.ToString("0") + ") side " + f.ToString("0.00") + " by " + over.ToString("0.00"));
+						}
 					}
 				}
 			}
@@ -609,6 +631,336 @@ internal static class Program
 		return Parks.All.Count > 0 && paths == Parks.All.Count && high == 0 && shallow == 0 && onLawn == 0 && benchesBad == 0;
 	}
 
+	/// <summary>
+	/// The owner's report (0.32.0, world 7,548, -9,002): the ring of water round the sea stood as a strip with a wall along the foot of the
+	/// trunk's cutting south of the road. The tile's lake and sea quads (four vertices at one height, larger than a pond's) are sampled
+	/// every unit over x 7,500 to 7,700 and z -9,012 to -9,000: none may be above the ground.
+	/// </summary>
+	/// <summary>
+	/// The left-turn bays off the trunk (TurnBays): one at each site asked for; the road a lane wider all along the bay; and no road but
+	/// the bay's own two (the side road at its T, the junction behind) meeting the road anywhere on its widened stretch or its tapers, where
+	/// the widening would run through a junction it was not laid out for.
+	/// </summary>
+	private static bool BayChecks()
+	{
+		int unmatched = 0, narrow = 0, others = 0;
+		foreach ((double X, double Z) site in TurnBays.Sites)
+		{
+			int found = 0;
+			foreach (TurnBays.Bay b in TurnBays.Bays)
+			{
+				Network.Edge(Network.Roads[b.Road], b.Junction, 0, 0.0, out double jx, out double jz, out double _);
+				found += Math.Abs(jx - site.X) < TurnBays.SiteReach + 5.0 && Math.Abs(jz - site.Z) < TurnBays.SiteReach + 5.0 ? 1 : 0;
+			}
+			if (found != 1)
+			{
+				unmatched++;
+				Console.WriteLine("  bays: " + found + " bays at the site (" + site.X.ToString("0") + ", " + site.Z.ToString("0") + ")");
+			}
+		}
+		foreach (TurnBays.Bay b in TurnBays.Bays)
+		{
+			Network.Road road = Network.Roads[b.Road];
+			for (double s = b.S0; s <= b.S1; s += 1.0)
+			{
+				if (Math.Abs(Network.WideAt(road, s) - TurnBays.Extra) > 1e-6)
+				{
+					narrow++;
+					Console.WriteLine("  bays: road " + b.Road + " not a lane wider at " + s.ToString("0") + " along it, in its bay");
+					break;
+				}
+			}
+			for (int q = 0; q < Network.Roads.Count; q++)
+			{
+				Network.Road other = Network.Roads[q];
+				if (q == b.Road || q == b.Other || other.Kind > RoadKind.Lane || other.Count < 2)
+				{
+					continue;
+				}
+				for (int k = 0; k < other.Count; k++)
+				{
+					double best = double.MaxValue, bs = 0.0;
+					for (int i = 0; i + 1 < road.Count; i++)
+					{
+						if (road.S[i + 1] < road.WideA0 || road.S[i] > road.WideB1)
+						{
+							continue;
+						}
+						Lines.Project(road.X, road.Z, i, other.X[k], other.Z[k], out double t, out double d);
+						if (d < best)
+						{
+							best = d;
+							bs = road.S[i] + (road.S[i + 1] - road.S[i]) * t;
+						}
+					}
+					if (best > Network.Widened(road, bs) + other.Half + 1.0 || bs <= road.WideA0 || bs >= road.WideB1)
+					{
+						continue;
+					}
+					bool own = Math.Abs(bs - b.Back) < b.BackHalf + other.Half + 20.0;
+					if (!own)
+					{
+						others++;
+						Console.WriteLine("  bays: road " + q + " (" + other.Kind + ") meets road " + b.Road + " at " + bs.ToString("0") + " along it, on its widened stretch " + road.WideA0.ToString("0") + " to " + road.WideB1.ToString("0"));
+						break;
+					}
+				}
+			}
+		}
+		bool ok = unmatched == 0 && narrow == 0 && others == 0;
+		Console.WriteLine("bays: " + TurnBays.Bays.Count + " left-turn bays off the trunk at " + TurnBays.Sites.Length + " sites; sites without one " + unmatched + ", bays not a lane wider all along " + narrow + ", other roads meeting a widened stretch " + others + (ok ? "  ok" : "  FAIL"));
+		return ok;
+	}
+
+	private static bool MedianChecks()
+	{
+		int notBay = 0, through = 0, loose = 0, shortBays = 0, railNear = 0, railOnBay = 0;
+		double trunkLength = 0.0, railed = 0.0;
+		foreach (TrunkLanes.Zone z in TrunkLanes.Zones)
+		{
+			if (z.Kind != TrunkLanes.Median)
+			{
+				notBay++;
+			}
+			if (z.S1 - z.S0 < TrunkLanes.Taper * 2.0)
+			{
+				shortBays++;
+			}
+			double end = z.Dir > 0 ? z.S1 : z.S0;
+			bool leads = false;
+			foreach (TrunkLanes.Junction j in TrunkLanes.Junctions)
+			{
+				if (j.Road != z.Road)
+				{
+					continue;
+				}
+				if (j.S > z.S0 + 1.0 && j.S < z.S1 - 1.0)
+				{
+					through++;
+					Console.WriteLine("  median: the bay " + z.S0.ToString("0") + " to " + z.S1.ToString("0") + " runs through the junction at " + j.S.ToString("0"));
+				}
+				// The junction ahead of the bay's end, on the side its carriageway turns left into.
+				if (Math.Abs(j.S - (end + z.Dir * TrunkLanes.Mouth)) < 1.0 && (j.Side == 0 || j.Side == z.Dir))
+				{
+					leads = true;
+				}
+			}
+			if (!leads)
+			{
+				loose++;
+				Console.WriteLine("  median: the bay " + z.S0.ToString("0") + " to " + z.S1.ToString("0") + " (way " + z.Dir + ") ends at no junction where its carriageway turns left");
+			}
+		}
+		foreach (Network.Road road in Network.Roads)
+		{
+			if (road.Kind == RoadKind.Trunk && road.Count > 1)
+			{
+				trunkLength += road.S[road.Count - 1];
+			}
+		}
+		foreach (TrunkLanes.Rail r in TrunkLanes.Rails)
+		{
+			railed += r.S1 - r.S0;
+			Network.Road rr = Network.Roads[r.Road];
+			Network.Locate(rr, (r.S0 + r.S1) * 0.5, out int ri, out double rf);
+			Console.WriteLine("  median: K-rail " + ((r.S1 - r.S0) / 3.3).ToString("0") + " m real, its middle at (" + (rr.X[ri] + (rr.X[ri + 1] - rr.X[ri]) * rf).ToString("0") + ", " + (rr.Z[ri] + (rr.Z[ri + 1] - rr.Z[ri]) * rf).ToString("0") + ")");
+			foreach (TrunkLanes.Junction j in TrunkLanes.Junctions)
+			{
+				if (j.Road == r.Road && j.S > r.S0 - TrunkLanes.RailClear + 1.0 && j.S < r.S1 + TrunkLanes.RailClear - 1.0)
+				{
+					railNear++;
+					Console.WriteLine("  median: K-rail " + r.S0.ToString("0") + " to " + r.S1.ToString("0") + " within " + TrunkLanes.RailClear.ToString("0") + " of the junction at " + j.S.ToString("0"));
+				}
+			}
+			foreach (TrunkLanes.Zone z in TrunkLanes.Zones)
+			{
+				if (z.Road == r.Road && z.S1 > r.S0 && z.S0 < r.S1)
+				{
+					railOnBay++;
+				}
+			}
+		}
+		// The bay between the centre line and the inner lane, on its own side; the lanes clear of the median and inside the road.
+		bool section = TrunkLanes.BayOut > 0.0 && TrunkLanes.BayIn <= TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder && TrunkLanes.InnerMid - TrunkLanes.LaneWidth * 0.5 >= TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder
+			&& TrunkLanes.EdgeLine <= 40.0 && Math.Abs(Traffic.LaneOffset(Network.Roads.First(r => r.Kind == RoadKind.Trunk)) - TrunkLanes.OuterMid) < 1e-9;
+		double share = trunkLength > 0.0 ? railed / trunkLength : 1.0;
+		bool ok = notBay == 0 && through == 0 && loose == 0 && shortBays == 0 && railNear == 0 && railOnBay == 0 && section && TrunkLanes.Rails.Count > 0 && share < 0.3 && TrunkLanes.Zones.Count > 0;
+		Console.WriteLine("median: " + TrunkLanes.Junctions.Count + " junctions on the trunk, " + TrunkLanes.Zones.Count + " left-turn bays (" + notBay + " not bays, " + through + " through a junction, " + loose + " leading nowhere, " + shortBays + " too short); "
+			+ TrunkLanes.Rails.Count + " K-rails, " + (railed / 3.3).ToString("0") + " m real, " + (share * 100.0).ToString("0") + "% of the trunk (" + railNear + " near a junction, " + railOnBay + " on a bay); cross-section " + (section ? "ok" : "wrong") + "  " + (ok ? "ok" : "FAIL"));
+		return ok;
+	}
+
+	/// <summary>
+	/// The drawn traffic lights' masts (<see cref="SignalPoles"/>): every paved way into a junction with a light has one; no pole on a
+	/// road's paving, in the water or in another pole; and the drivers can see them from the stop line (the owner, on the first drawn
+	/// lights: heads over the stop line were seen only from 50 to 100 ft back): from the middle of the outer lane at the line, at least two
+	/// heads within 20 degrees of straight ahead and at least 40 ft past the line (the MUTCD's cone of vision and nearest far-side head);
+	/// heads more than 180 ft past it (its most) are reported. The lit junctions the same as the signs' (no fingerpost at a light, none
+	/// missing elsewhere). (From the old trafficview.)
+	/// </summary>
+	private static bool SignalChecks()
+	{
+		SignalPoles.Build();
+		int heads = 0, unseen = 0, tooFar = 0, onPaving = 0, together = 0, far = 0, shared = 0, ways = 0, spans = 0, boards = 0;
+		double near = 40.0 * 0.3048 * 3.3, most = 180.0 * 0.3048 * 3.3, cone = Math.Tan(20.0 * Math.PI / 180.0);
+		for (int i = 0; i < SignalPoles.All.Count; i++)
+		{
+			SignalPoles.Mast m = SignalPoles.All[i];
+			far += m.Far ? 1 : 0;
+			heads += m.Heads.Length + 1;
+			if (!SignalPoles.Clear(m.X, m.Z) || (m.Span > 0.0 && !SignalPoles.Clear(m.X2, m.Z2)))
+			{
+				onPaving++;
+			}
+			spans += m.Span > 0.0 ? 1 : 0;
+			boards += SignalPoles.Board(m) != null ? 1 : 0;
+			for (int j = 0; j < i; j++)
+			{
+				SignalPoles.Mast o = SignalPoles.All[j];
+				// One pole shared by two arms stands at the same spot; two poles nearly touching is the fault.
+				double dd = (o.X - m.X) * (o.X - m.X) + (o.Z - m.Z) * (o.Z - m.Z);
+				if (dd < 2.5 * 2.5 && dd > 1e-6)
+				{
+					together++;
+				}
+				shared += dd <= 1e-6 ? 1 : 0;
+			}
+		}
+		// Each way in: what its drivers see from the stop line.
+		var byWay = new Dictionary<(int, int), List<SignalPoles.Mast>>();
+		foreach (SignalPoles.Mast m in SignalPoles.All)
+		{
+			if (!byWay.TryGetValue((m.Node, m.Arm), out List<SignalPoles.Mast> l))
+			{
+				byWay[(m.Node, m.Arm)] = l = new List<SignalPoles.Mast>();
+			}
+			l.Add(m);
+		}
+		foreach (KeyValuePair<(int, int), List<SignalPoles.Mast>> kv in byWay)
+		{
+			ways++;
+			(int node, int arm) = kv.Key;
+			Traffic.Node n = Traffic.Nodes[node];
+			Network.Road road = Network.Roads[Traffic.Edges[Traffic.Links[node][arm]].Road];
+			Junctions.ArmOf(node, arm, out double dx, out double dz);
+			double hx = -dx, hz = -dz, rx = hz, rz = -hx, lane = SignalPoles.Lanes(road)[0];
+			double sx = n.X + dx * n.Box + rx * lane, sz = n.Z + dz * n.Box + rz * lane;
+			int seen = 0;
+			double closest = double.MaxValue;
+			foreach (SignalPoles.Mast m in kv.Value)
+			{
+				var at = new List<double>(m.Heads) { 1.35 };
+				foreach (double d in at)
+				{
+					double px = m.X + m.Ax * d - sx, pz = m.Z + m.Az * d - sz;
+					double along = px * hx + pz * hz, side = Math.Abs(px * rx + pz * rz);
+					closest = Math.Min(closest, along);
+					if (along >= near && side <= along * cone)
+					{
+						seen++;
+					}
+					if (along > most)
+					{
+						tooFar++;
+					}
+				}
+			}
+			if (seen < 2)
+			{
+				unseen++;
+				if (unseen <= 8)
+				{
+					Console.WriteLine("    lights not seen from the stop line: node " + node + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ") arm " + arm + " (" + road.Kind + "), " + seen + " heads in view, the nearest " + (closest / 3.3 / 0.3048).ToString("0") + " ft past the line");
+				}
+			}
+		}
+		// Each way in with a mast has its stop line (the owner, 2026-11-25: "we need stop-lines for lights"), across its own side of the
+		// road a little behind where the cars' fronts stop, never wider than its road.
+		int noLine = 0;
+		foreach ((int node, int arm) in byWay.Keys)
+		{
+			if (!SignalPoles.StopLine(node, arm, out int lr, out double s0, out double s1, out double lo, out double hi) || hi - lo < 5.0
+				|| Math.Max(Math.Abs(lo), Math.Abs(hi)) > Network.Widened(Network.Roads[lr], (s0 + s1) * 0.5))
+			{
+				noLine++;
+				if (noLine <= 8)
+				{
+					Traffic.Node n = Traffic.Nodes[node];
+					Console.WriteLine("    no stop line: node " + node + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ") arm " + arm);
+				}
+			}
+		}
+		foreach ((int sn, int sa) in SignalPoles.SkippedAt)
+		{
+			Traffic.Node node = Traffic.Nodes[sn];
+			Console.WriteLine("    no mast: node " + sn + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") arm " + sa + " (" + Network.Roads[Traffic.Edges[Traffic.Links[sn][sa]].Road].Kind + "), box " + node.Box.ToString("0"));
+		}
+		// The signs take a junction to have lights by the roads' classes alone (they are laid out long before the traffic): where they
+		// disagree, a lit junction keeps its fingerpost in front of the poles (the owner, 2026-11-25), or an unlit one loses it.
+		int litNoSign = 0, signNoLight = 0;
+		foreach (int node in TrafficSignals.Nodes)
+		{
+			Traffic.Node n = Traffic.Nodes[node];
+			if (!Signs.LitAt.Exists(p => (p.x - n.X) * (p.x - n.X) + (p.z - n.Z) * (p.z - n.Z) < 40.0 * 40.0))
+			{
+				litNoSign++;
+				Console.WriteLine("    lights the signs don't know of (a fingerpost there): node " + node + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ")");
+			}
+		}
+		foreach ((double x, double z) in Signs.LitAt)
+		{
+			if (!TrafficSignals.Nodes.Exists(node => (Traffic.Nodes[node].X - x) * (Traffic.Nodes[node].X - x) + (Traffic.Nodes[node].Z - z) * (Traffic.Nodes[node].Z - z) < 40.0 * 40.0))
+			{
+				signNoLight++;
+				Console.WriteLine("    no fingerpost but no lights either: (" + x.ToString("0") + ", " + z.ToString("0") + ")");
+			}
+		}
+		bool ok = unseen == 0 && onPaving == 0 && together == 0 && SignalPoles.Skipped == 0 && noLine == 0 && litNoSign == 0 && signNoLight == 0;
+		Console.WriteLine("lights: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads; ways in with no mast " + SignalPoles.Skipped
+			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", ways in with no stop line " + noLine + ", spans " + spans + ", green boards " + boards + ", lit junctions with a fingerpost " + litNoSign + ", without lights or fingerpost " + signNoLight + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
+		return ok && SignalPoles.All.Count > 0;
+	}
+
+	private static bool SeaStrip()
+	{
+		const float tile = 250f;
+		int tx = (int)Math.Floor(7500.0 / tile), tz = (int)Math.Floor(-9006.0 / tile);
+		RoadMeshData water = WaterMesh.Build(tx, tz, tile);
+		double ox = tx * tile, oz = tz * tile;
+		int exposed = 0, samples = 0;
+		double worst = 0.0;
+		for (double x = 7500.5; x < 7700.0; x += 1.0)
+		{
+			for (double z = -9011.5; z < -9000.0; z += 1.0)
+			{
+				double ground = WorldGen.Height(x, z);
+				// The flat quads: every four vertices from the first quad after the rivers' ribbons are one axis-aligned square at a level.
+				for (int i = 0; i + 3 < water.Vertices.Length; i += 4)
+				{
+					Vector3 a = water.Vertices[i], d = water.Vertices[i + 3];
+					if (a.y != d.y || water.Vertices[i + 1].y != a.y || water.Vertices[i + 2].y != a.y || a.x != water.Vertices[i + 1].x || a.z != water.Vertices[i + 2].z)
+					{
+						continue;
+					}
+					double x0 = ox + Math.Min(a.x, d.x), x1 = ox + Math.Max(a.x, d.x), z0 = oz + Math.Min(a.z, d.z), z1 = oz + Math.Max(a.z, d.z);
+					if (x < x0 || x > x1 || z < z0 || z > z1)
+					{
+						continue;
+					}
+					samples++;
+					if (a.y > ground + 0.02)
+					{
+						exposed++;
+						worst = Math.Max(worst, a.y - ground);
+					}
+				}
+			}
+		}
+		bool ok = exposed == 0;
+		Console.WriteLine("seastrip: the sea's ring at the foot of the trunk's cutting (7,500 to 7,700, -9,012 to -9,000): " + exposed + " of " + samples + " water samples above the ground (worst " + worst.ToString("0.00") + ")  " + (ok ? "ok" : "FAIL"));
+		return ok;
+	}
+
 	private static bool Water()
 	{
 		int edges = 0, bad = 0, natural = 0, softened = 0, roads = 0, mesh = 0, meets = 0, beside = 0;
@@ -890,7 +1242,7 @@ internal static class Program
 
 	private static bool Faces()
 	{
-		int down = 0, most = 0;
+		int down = 0, most = 0, badNormals = 0;
 		for (int tz = -64; tz < 64; tz++)
 		{
 			for (int tx = -64; tx < 64; tx++)
@@ -904,6 +1256,20 @@ internal static class Program
 						continue;
 					}
 					most = Math.Max(most, d.Vertices.Length);
+					// No zero or broken normal: it is NaN in the lighting, a white glowing patch through the bloom (the trunk's
+					// junction lanes' paint narrowing to nothing at a taper's end, RoadMesh.Quad).
+					for (int k = 0; d.Normals != null && k < d.Normals.Length; k++)
+					{
+						Vector3 nk = d.Normals[k];
+						if (!(nk.sqrMagnitude > 0.5f && nk.sqrMagnitude < 1.5f))
+						{
+							if (badNormals < 5)
+							{
+								Console.WriteLine("  a broken normal (" + nk.x + ", " + nk.y + ", " + nk.z + ") at (" + (tx * 250f + d.Vertices[k].x).ToString("0.0") + ", " + (tz * 250f + d.Vertices[k].z).ToString("0.0") + ")");
+							}
+							badNormals++;
+						}
+					}
 					for (int m = 0; m < d.Triangles.Length; m++)
 					{
 						// A covered bridge's roof has an underside.
@@ -926,8 +1292,8 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track, water and circuit meshes; most vertices in one mesh " + most);
-		return down == 0 && most < 65000;
+		Console.WriteLine("faces:   " + down + " upside-down flat faces in road, verge, sidewalk, track, water and circuit meshes; " + badNormals + " zero or broken normals; most vertices in one mesh " + most);
+		return down == 0 && badNormals == 0 && most < 65000;
 	}
 
 	private static bool Lots()
@@ -1419,7 +1785,7 @@ internal static class Program
 
 	private static bool SignChecks()
 	{
-		int onRoad = 0, wet = 0, crowded = 0, undrawn = 0;
+		int onRoad = 0, wet = 0, crowded = 0, undrawn = 0, misplaced = 0;
 		foreach (Signs.Sign sign in Signs.All)
 		{
 			// A name sign stands behind the verge; a finger may reach over a verge (it is over a car's roof) but never over a road.
@@ -1455,7 +1821,9 @@ internal static class Program
 					Console.WriteLine("  a building (" + x.ToString("0.0") + ", " + z.ToString("0.0") + ", radius " + r.ToString("0.0") + ") on the sign at (" + sign.X.ToString("0.0") + ", " + sign.Z.ToString("0.0") + ")");
 				}
 			}
-			undrawn += own && d.Mesh != null && d.Mesh.Triangles[Buildings.Board].Length > 0 ? 0 : 1;
+			undrawn += sign.Hidden || (own && d.Mesh != null && d.Mesh.Triangles[Buildings.Board].Length > 0) ? 0 : 1;
+			// A fingerpost is hidden only at a junction with lights, where its places hang on the mast arms (the owner, 2026-11-25).
+			misplaced += sign.Hidden && !Signs.LitAt.Exists(q => (q.x - sign.X) * (q.x - sign.X) + (q.z - sign.Z) * (q.z - sign.Z) < 80.0 * 80.0) ? 1 : 0;
 		}
 		// The faces: inside the atlas and apart.
 		List<Signs.Face> faces = new List<Signs.Face>();
@@ -1489,8 +1857,8 @@ internal static class Program
 				overlap += p.X < q.X + q.W && q.X < p.X + p.W && p.Y < q.Y + q.H && q.Y < p.Y + p.H ? 1 : 0;
 			}
 		}
-		Console.WriteLine("signs:   " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts (" + Signs.Fingers + " fingers): " + onRoad + " points over a road, " + wet + " posts in water, " + crowded + " buildings on a sign, " + undrawn + " not drawn; " + distinct.Count + " faces, " + outside + " outside the atlas, " + overlap + " overlapping");
-		return Signs.NameSigns > 0 && Signs.Fingerposts > 0 && onRoad == 0 && wet == 0 && crowded == 0 && undrawn == 0 && outside == 0 && overlap == 0;
+		Console.WriteLine("signs:   " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts (" + Signs.Fingers + " fingers): " + onRoad + " points over a road, " + wet + " posts in water, " + crowded + " buildings on a sign, " + undrawn + " not drawn; " + Signs.Hidden + " fingerposts at lights left for the masts' " + Signs.Overheads.Count + " junctions' green boards (" + misplaced + " away from lights); " + distinct.Count + " faces, " + outside + " outside the atlas, " + overlap + " overlapping");
+		return Signs.NameSigns > 0 && Signs.Fingerposts > 0 && onRoad == 0 && wet == 0 && crowded == 0 && undrawn == 0 && misplaced == 0 && outside == 0 && overlap == 0;
 	}
 
 	/// <summary>
@@ -1753,7 +2121,7 @@ internal static class Program
 					c.At(c.StartS - Courses.HighwayBoxBack, out double sx, out double sz, out double _, out double sdx, out double sdz);
 					double ahead = (x - sx) * sdx + (z - sz) * sdz, left = (z - sz) * sdx - (x - sx) * sdz;
 					what = "the westbound carriageway behind the grid";
-					return !(across < 5.0 || across > c.Half - 4.0 || left < 0.0 || c.StartS - Courses.HighwayBoxBack + ahead > c.StartS - Courses.GridBack - 10.0);
+					return !(across < TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder || across > c.Half - 4.0 || left < 0.0 || c.StartS - Courses.HighwayBoxBack + ahead > c.StartS - Courses.GridBack - 10.0);
 				}
 				if (lot != null)
 				{
@@ -3306,9 +3674,23 @@ internal static class Program
 
 	private static bool BackRoads()
 	{
-		int dead = 0, hooks = 0, lanes = 0;
+		int dead = 0, hooks = 0, lanes = 0, mainDead = 0;
 		foreach (Network.Road road in Network.Roads)
 		{
+			// A main road (trunk, primary, secondary) never stops in the fields: Westhaven's link to the trunk did, 270 units short of
+			// it, and the town had no road out (Network.SnapJoin). Its ends at the map's edge are portals, not dead ends.
+			if (road.Kind <= RoadKind.Secondary && road.Count >= 2)
+			{
+				for (int end = 0; end < 2; end++)
+				{
+					int k = end == 0 ? 0 : road.Count - 1;
+					if (end == 0 ? road.Dead0 : road.Dead1)
+					{
+						mainDead++;
+						Console.WriteLine("  main road dead end '" + road.Name + "' (" + road.Kind + ") at (" + road.X[k].ToString("0") + ", " + road.Z[k].ToString("0") + ")");
+					}
+				}
+			}
 			if (road.Kind != RoadKind.Lane)
 			{
 				continue;
@@ -3335,8 +3717,148 @@ internal static class Program
 				}
 			}
 		}
-		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round");
-		return dead <= 10 && hooks == 0;
+		Console.WriteLine("backroads: " + lanes + " lanes, " + Network.LinkCount + " of them links; " + dead + " lane dead ends in the country, " + hooks + " through ways hooking round; "
+			+ mainDead + " main road dead ends");
+		return dead <= 10 && hooks == 0 && mainDead == 0;
+	}
+
+	/// <summary>Paved roads lying along each other (see the list at the top, 27b).</summary>
+	private static bool Alongside()
+	{
+		int pairs = 0, checkedRoads = 0;
+		HashSet<long> seen = new HashSet<long>();
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (Network.Unpaved(road.Kind) || road.Count < 2)
+			{
+				continue;
+			}
+			checkedRoads++;
+			// For each other road, the run of this road's samples (by distance along) whose point is on it, running the same way.
+			Dictionary<int, (double start, double last)> runs = new Dictionary<int, (double, double)>();
+			HashSet<int> on = new HashSet<int>();
+			for (int i = 0; i < road.Count; i++)
+			{
+				int a = Math.Max(0, i - 1), b = Math.Min(road.Count - 1, i + 1);
+				double tx = road.X[b] - road.X[a], tz = road.Z[b] - road.Z[a], tl = Math.Sqrt(tx * tx + tz * tz);
+				on.Clear();
+				foreach ((int o, int k) in Near(road.X[i], road.Z[i]))
+				{
+					if (o == r || on.Contains(o))
+					{
+						continue;
+					}
+					Network.Road other = Network.Roads[o];
+					double sx = other.X[k + 1] - other.X[k], sz = other.Z[k + 1] - other.Z[k], sl = sx * sx + sz * sz;
+					if (sl <= 0.0 || tl <= 0.0)
+					{
+						continue;
+					}
+					double u = Math.Max(0.0, Math.Min(1.0, ((road.X[i] - other.X[k]) * sx + (road.Z[i] - other.Z[k]) * sz) / sl));
+					double dx = road.X[i] - other.X[k] - sx * u, dz = road.Z[i] - other.Z[k] - sz * u;
+					double cos = Math.Abs(tx * sx + tz * sz) / (tl * Math.Sqrt(sl));
+					double wide = Math.Max(road.Half, other.Half);
+					if (dx * dx + dz * dz < wide * wide && cos > 0.9)
+					{
+						on.Add(o);
+					}
+				}
+				foreach (int o in on)
+				{
+					bool carries = i > 0 && runs.TryGetValue(o, out (double start, double last) run) && run.last == road.S[i - 1];
+					(double start, double last) now = (carries ? runs[o].start : road.S[i], road.S[i]);
+					runs[o] = now;
+					long key = ((long)Math.Min(r, o) << 32) | (uint)Math.Max(r, o);
+					if (now.last - now.start >= 40.0 && seen.Add(key))
+					{
+						pairs++;
+						if (pairs <= 10)
+						{
+							Network.Road other = Network.Roads[o];
+							Console.WriteLine("  " + road.Kind + " '" + road.Name + "' (" + r + ") along " + other.Kind + " '" + other.Name + "' (" + o + ") from " + now.start.ToString("0") + " at ("
+								+ road.X[i].ToString("0") + ", " + road.Z[i].ToString("0") + ")");
+						}
+					}
+				}
+			}
+		}
+		Console.WriteLine("alongside: " + checkedRoads + " paved roads, " + pairs + " pairs lying along each other for 40 units or more" + (pairs == 0 ? "" : "  FAIL"));
+		return pairs == 0;
+	}
+
+	/// <summary>The highway's wrap round (see the list at the top, 29).</summary>
+	private static bool WrapChecks()
+	{
+		if (Wrap.A < 0)
+		{
+			Console.WriteLine("wrap:    no pair of tunnels found  FAIL");
+			return false;
+		}
+		Network.Portal a = Network.Portals[Wrap.A], b = Network.Portals[Wrap.B];
+		int bad = 0;
+		bool trunk = Network.Roads[a.Road].Kind == RoadKind.Trunk;
+		bool facing = a.DirX == -b.DirX && a.DirZ == -b.DirZ && a.Half == b.Half;
+		Wrap.Move(Wrap.A, out double ax, out double az, out double ay);
+		Wrap.Move(Wrap.B, out double bx, out double bz, out double by);
+		double roundTrip = Math.Abs(ax + bx) + Math.Abs(az + bz) + Math.Abs(ay + by);
+		// Every lane's middle, both ways, a little past the glue plane: on the other side the same lane, a little short of it.
+		int lanes = 0;
+		foreach (int from in new[] { Wrap.A, Wrap.B })
+		{
+			Network.Portal p = Network.Portals[from];
+			Wrap.Move(from, out double dx, out double dz, out double _);
+			foreach (double across in new[] { -Courses.HighwayOuter, -Courses.HighwayInner, Courses.HighwayInner, Courses.HighwayOuter })
+			{
+				double k = 1.5;
+				double x = p.X + p.DirX * (Wrap.Depth + k) - p.DirZ * across, z = p.Z + p.DirZ * (Wrap.Depth + k) + p.DirX * across;
+				if (!Wrap.Past(from, x, z))
+				{
+					bad++;
+					Console.WriteLine("  wrap: lane " + across.ToString("0.0") + " past the plane at portal " + from + " not seen as past");
+				}
+				Wrap.Into(Wrap.Other(from), x + dx, z + dz, out double along, out double across2);
+				if (Math.Abs(along - (Wrap.Depth - k)) > 1e-6 || Math.Abs(across2 + across) > 1e-6 || Math.Abs(across2) > p.Half)
+				{
+					bad++;
+					Console.WriteLine("  wrap: lane " + across.ToString("0.0") + " from portal " + from + " lands " + along.ToString("0.00") + " in, " + across2.ToString("0.00") + " across");
+				}
+				lanes++;
+			}
+		}
+		// The ground under each open tunnel's floor (the floor's top is the road's height at the mouth), and the road into it level.
+		int ground = 0, samples = 0;
+		double worst = double.NegativeInfinity, step = 0.0;
+		foreach (int i in new[] { Wrap.A, Wrap.B })
+		{
+			Network.Portal p = Network.Portals[i];
+			double top = p.Y + Network.Lift, width = p.Half * 2.0 + 8.0 + 4.0;
+			for (double along = 0.0; along <= Wrap.Length; along += 2.0)
+			{
+				for (double across = -width / 2.0; across <= width / 2.0 + 1e-9; across += 2.0)
+				{
+					double x = p.X + p.DirX * along - p.DirZ * across, z = p.Z + p.DirZ * along + p.DirX * across;
+					double over = Mesh(x, z) - top;
+					samples++;
+					worst = Math.Max(worst, over);
+					if (over > -0.05)
+					{
+						ground++;
+					}
+				}
+			}
+			Network.Road road = Network.Roads[p.Road];
+			int end = road.X[0] == p.X && road.Z[0] == p.Z ? 0 : road.Count - 1, back = end == 0 ? 10 : road.Count - 11;
+			step = Math.Max(step, Math.Abs(road.Y[back] - road.Y[end]));
+		}
+		// The highway event's start and finish clear of the tunnels.
+		double clear = Math.Min(Courses.HighwayStart, Courses.HighwayFinish) - Courses.HighwayBoxBack;
+		bool ok = trunk && facing && roundTrip < 1e-6 && bad == 0 && ground == 0 && step < 0.01 && clear > Wrap.Length + 50.0;
+		Console.WriteLine("wrap:    portals " + Wrap.A + " and " + Wrap.B + " (" + (trunk ? "the trunk's" : "NOT the trunk's") + ", " + (facing ? "facing opposite ways, as wide" : "NOT facing opposite ways or not as wide")
+			+ "); there and back " + roundTrip.ToString("0.000000") + "; " + bad + " of " + lanes + " lanes not landing in their lane; " + ground + " of " + samples
+			+ " floor points with the ground through them (highest " + worst.ToString("0.00") + "); road into the mouths level within " + step.ToString("0.000")
+			+ "; the event's nearest spot " + clear.ToString("0") + " from a mouth" + (ok ? "  ok" : "  FAIL"));
+		return ok;
 	}
 
 	/// <summary>Whether (x, z) is within the paving of a road other than <paramref name="self"/>.</summary>

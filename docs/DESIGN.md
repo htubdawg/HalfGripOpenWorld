@@ -246,7 +246,7 @@ drainage; and central place theory and rank-size for settlements.
    a few dozen draw calls, with a capsule collider per trunk; grass is a five-blade tuft drawn instanced on the tiles round the car.
    Positions are kept relative to their tile; the draw lists are rebuilt when tiles come and go, the car changes tile, or the origin
    shifts.
-11. **Race courses** (see `docs/PLAN.md`, PR 3): the tarmac circuit (`Circuit`), placed after the towns, its ground a layer of the
+11. **Race courses** (0.8.0 and 0.9.0): the tarmac circuit (`Circuit`), placed after the towns, its ground a layer of the
    land; and the rally stage (`Rally`), placed after the villages: a loop of gravel road routed by its own A* through the upland,
    made a road of its own class (`RoadKind.Rally`, unpaved like a track) before every other road, which the router keeps out of its
    ground; forest round it, a service area (a lot) beside its straight and a track from there to the nearest lane.
@@ -343,6 +343,6 @@ code (roads, guardrails, signs, simple buildings with generated pixel textures).
 
 1. **Furniture:** street lamps (Tokyo's), guardrails on the trunk road. (Place-name signs and fingerposts came in 0.11.0: see
    `Signs.cs`.)
-2. **Race circuits:** see `docs/PLAN.md`.
-3. **Far view:** done in 0.19.0 (`FarGrid.cs`, `FarView.cs`; see `docs/PLAN.md`). Left: towns and towers as shapes, lit windows at night.
+2. **Race circuits:** done (0.8.0 to 0.9.0).
+3. **Far view:** done in 0.19.0 (`FarGrid.cs`, `FarView.cs`). Left: towns and towers as shapes, lit windows at night.
 4. **Collider baking off the main thread** (`Physics.BakeMesh`) if tile building shows in the frame time.

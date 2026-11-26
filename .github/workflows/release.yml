@@ -1,0 +1,61 @@
+# Makes a release, only when started on purpose (by Claude when the owner asks for a release, or Actions > Release > Run workflow, on main): tag v<version> and a release
+# "Version <version>" with OpenWorld.zip (the OpenWorld/ folder as it is installed to <game>\BepInEx\HalfGripMods\OpenWorld\), as the
+# releases up to 0.27.1 were made by hand. The version is mod.json's; bump it (and the README's) in the pull request, merge it, then
+# run this. It fails if that version is already tagged or the README gives another.
+# The mod is not compiled here: that needs the game's DLLs (the private HalfGripRefs repo); run tools/check.sh before merging.
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('OpenWorld/mod.json'))['version'])")
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=OpenWorld/mod.json::version '$version' is not x.y.z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "::error file=OpenWorld/mod.json::v$version is already released: bump the version in mod.json and the README first"
+            exit 1
+          fi
+
+      - name: Check the README states the version
+        run: |
+          version='${{ steps.version.outputs.version }}'
+          if ! grep -qF "Version **$version**" README.md || ! grep -qF "Loaded Open World $version" README.md; then
+            echo "::error file=README.md::README.md does not give version $version (its 'Version **x.y.z**' and 'Loaded Open World x.y.z' lines)"
+            exit 1
+          fi
+
+      - name: Zip OpenWorld/
+        run: |
+          zip -r -X -q OpenWorld.zip OpenWorld -x '*.DS_Store'
+          unzip -l OpenWorld.zip | tail -1
+
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version='${{ steps.version.outputs.version }}'
+          gh release create "v$version" OpenWorld.zip \
+            --target "$GITHUB_SHA" \
+            --title "Version $version" \
+            --generate-notes

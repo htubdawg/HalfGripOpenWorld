@@ -136,6 +136,12 @@ namespace HalfGripOpenWorld
 			return tiles.ContainsKey(Key(tx, tz));
 		}
 
+		/// <summary>True if the tile under world point (x, z) is built and in the scene.</summary>
+		internal bool IsLoadedAt(double x, double z)
+		{
+			return IsLoaded(TileOf(x), TileOf(z));
+		}
+
 		/// <summary>
 		/// True when every tile in reach of the car is built and none is being worked out or waiting to be made: after a teleport the
 		/// ring round the new place is made a few tiles a frame, each a long frame, and this is when that is over (the events' grid
@@ -188,9 +194,15 @@ namespace HalfGripOpenWorld
 
 		private void Update()
 		{
+			// The frame timings' markers in Unity's frame only while the overlay is on.
+			FramePerf.Want(Mod.ShowCoords.Value && player != null);
 			if (player == null)
 			{
 				return;
+			}
+			if (FramePerf.LogDue())
+			{
+				Mod.Log.LogInfo("Frame timings: " + FramePerf.Text()?.Replace("\n", "; ") + "\nFrame timings, every step of Unity's frame: " + FramePerf.AllSteps());
 			}
 			if (Mod.Teleport.Value && Mod.TeleportKey != null && Mod.TeleportKey.Down)
 			{
@@ -497,6 +509,17 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			long timed = FramePerf.Now;
+			try
+			{
+				WrapRound();
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogError("The highway's wrap failed: " + e);
+			}
+			FramePerf.Add(FramePerf.Part.Wrap, timed);
+			timed = FramePerf.Now;
 			try
 			{
 				Origin.Follow(player.transform.position, Mod.ShiftDistance.Value, TileSize);
@@ -505,6 +528,8 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogError("Origin shift failed: " + e);
 			}
+			FramePerf.Add(FramePerf.Part.Origin, timed);
+			timed = FramePerf.Now;
 			try
 			{
 				Stream();
@@ -513,8 +538,11 @@ namespace HalfGripOpenWorld
 			{
 				Mod.Log.LogError("Tile streaming failed: " + e);
 			}
+			// Streaming's time includes the tiles made in it (shown on their own as well).
+			FramePerf.Add(FramePerf.Part.Stream, timed);
 			if (Far != null)
 			{
+				timed = FramePerf.Now;
 				try
 				{
 					// After the tiles came and went this frame, so the far view's holes follow them with no frame between.
@@ -525,6 +553,7 @@ namespace HalfGripOpenWorld
 				{
 					Mod.Log.LogWarning("Far view failed: " + e);
 				}
+	FramePerf.Add(FramePerf.Part.FarView, timed);
 			}
 		}
 
@@ -536,13 +565,17 @@ namespace HalfGripOpenWorld
 			int radius = Mod.TileRadius.Value;
 			foliage?.Follow(cx, cz);
 
+			// Near a tunnel the highway wraps through, the ground round the other end's mouth is wanted too (see Wrap).
+			bool far = WrapTarget(x, z, out int fx, out int fz);
+			float farKeep = (WrapRadius + 1.5f) * (WrapRadius + 1.5f);
+
 			// Far tiles go (with some slack, so a car driving along a tile edge does not make and drop the same row over and over).
 			float keep = (radius + 1.5f) * (radius + 1.5f);
 			List<long> drop = null;
 			foreach (KeyValuePair<long, GameObject> pair in tiles)
 			{
 				Unkey(pair.Key, out int tx, out int tz);
-				if ((tx - cx) * (tx - cx) + (tz - cz) * (tz - cz) > keep)
+				if ((tx - cx) * (tx - cx) + (tz - cz) * (tz - cz) > keep && !(far && (tx - fx) * (tx - fx) + (tz - fz) * (tz - fz) <= farKeep))
 				{
 					(drop ??= new List<long>()).Add(pair.Key);
 				}
@@ -579,7 +612,9 @@ namespace HalfGripOpenWorld
 					Mod.Log.LogWarning("Tile " + h.Tx + "," + h.Tz + " could not be worked out: " + h.Error);
 					continue;
 				}
-				if ((h.Tx - cx) * (h.Tx - cx) + (h.Tz - cz) * (h.Tz - cz) <= keep && !tiles.ContainsKey(Key(h.Tx, h.Tz)))
+				bool near = (h.Tx - cx) * (h.Tx - cx) + (h.Tz - cz) * (h.Tz - cz) <= keep
+					|| (far && (h.Tx - fx) * (h.Tx - fx) + (h.Tz - fz) * (h.Tz - fz) <= farKeep);
+				if (near && !tiles.ContainsKey(Key(h.Tx, h.Tz)))
 				{
 					Make(h);
 				}
@@ -607,6 +642,23 @@ namespace HalfGripOpenWorld
 				}
 			}
 			wanted.Sort((a, b) => Distance(a, cx, cz).CompareTo(Distance(b, cx, cz)));
+			if (far)
+			{
+				// After the car's own, nearest the other mouth first.
+				int first = wanted.Count;
+				for (int dz = -WrapRadius; dz <= WrapRadius; dz++)
+				{
+					for (int dx = -WrapRadius; dx <= WrapRadius; dx++)
+					{
+						long key = Key(fx + dx, fz + dz);
+						if (dx * dx + dz * dz <= (WrapRadius + 0.5f) * (WrapRadius + 0.5f) && InWorld(fx + dx, fz + dz) && !tiles.ContainsKey(key) && !working.Contains(key) && !wanted.Contains(key))
+						{
+							wanted.Add(key);
+						}
+					}
+				}
+				wanted.Sort(first, wanted.Count - first, Comparer<long>.Create((a, b) => Distance(a, fx, fz).CompareTo(Distance(b, fx, fz))));
+			}
 			for (int i = 0; i < wanted.Count && working.Count < Workers; i++)
 			{
 				long key = wanted[i];
@@ -903,7 +955,22 @@ namespace HalfGripOpenWorld
 			return true;
 		}
 
+		/// <summary>A tile made from its worked-out heights (timed for the frame timings: its meshes and colliders are made here, on the main thread).</summary>
 		private void Make(Heights data)
+		{
+			long timed = FramePerf.Now;
+			try
+			{
+				MakeTile(data);
+			}
+			finally
+			{
+				FramePerf.Add(FramePerf.Part.Tiles, timed);
+				FramePerf.TileMade();
+			}
+		}
+
+		private void MakeTile(Heights data)
 		{
 			float started = Time.realtimeSinceStartup;
 			int side = Quads + 3;
@@ -960,6 +1027,9 @@ namespace HalfGripOpenWorld
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
 			MeshRenderer renderer = go.AddComponent<MeshRenderer>();
 			renderer.sharedMaterial = material;
+			// The ground casts shadows (hills on the land behind them at a low sun). 0.32.5 turned them off with the flat surfaces' below;
+			// the owner's frame timings then showed the gain had come from the overlay (laid out on every OnGUI call, inside Unity's
+			// rendering step), not the shadows, so 0.32.6 put them back. Only tiles within the shadow distance are drawn into the map.
 			block.Clear();
 			block.SetTexture("_BaseMap", texture);
 			block.SetTexture("_MainTex", texture);
@@ -1094,7 +1164,15 @@ namespace HalfGripOpenWorld
 			GameObject go = new GameObject(name) { layer = roadLayer };
 			go.transform.SetParent(tile, false);
 			go.AddComponent<MeshFilter>().sharedMesh = mesh;
-			go.AddComponent<MeshRenderer>().sharedMaterials = materials;
+			MeshRenderer partRenderer = go.AddComponent<MeshRenderer>();
+			partRenderer.sharedMaterials = materials;
+			// The verges, sidewalks, tracks, the courses' surfaces and the water lie on the ground and would only shadow themselves, at the
+			// cost of drawing them again into the shadow map for each cascade (0.32.5). The buildings stand up off it, and the roads keep
+			// theirs for their bridges (decks, parapets, the covered bridges' roofs).
+			if (name != "Buildings" && name != "Roads")
+			{
+				partRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+			}
 			if (solid)
 			{
 				go.AddComponent<MeshCollider>().sharedMesh = mesh;
@@ -1107,6 +1185,88 @@ namespace HalfGripOpenWorld
 				}
 			}
 			go.AddComponent<TileMesh>().Mesh = mesh;
+		}
+
+		/// <summary>How many tiles round the other end's mouth are loaded ahead of a wrap (2: 500 units, past the fog in the tunnel's dark).</summary>
+		private const int WrapRadius = 2;
+
+		/// <summary>
+		/// True when world (x, z) is within <see cref="Wrap.Preload"/> of one of the highway's open tunnels: then the tile round the
+		/// other end's mouth (a little into the world from it), whose ground is loaded too so the car lands on it.
+		/// </summary>
+		private static bool WrapTarget(double x, double z, out int tx, out int tz)
+		{
+			tx = tz = 0;
+			for (int i = 0; i < Network.Portals.Count; i++)
+			{
+				if (!Wrap.Open(i))
+				{
+					continue;
+				}
+				Wrap.Into(i, x, z, out double along, out double across);
+				if (along > -Wrap.Preload && along < Wrap.Length + 50.0 && Math.Abs(across) < Wrap.Preload)
+				{
+					Network.Portal q = Network.Portals[Wrap.Other(i)];
+					tx = TileOf(q.X - q.DirX * 150.0);
+					tz = TileOf(q.Z - q.DirZ * 150.0);
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// The highway's wrap (<see cref="Wrap"/>): a car past the glue plane in one of the trunk's tunnels, going out, is put in the
+		/// other. Done as an origin shift that leaves the car, its cockpit and the cameras following it where they are in the scene, so
+		/// the world swaps round them and nothing is seen sweeping across the map; the leftover (less than half a tile across, and the
+		/// difference in the two roads' heights) moves the car and its cameras. Its speed and heading carry on as they were: the two
+		/// tunnels face opposite ways, so going west at one end is going west at the other.
+		/// </summary>
+		private void WrapRound()
+		{
+			if (Wrap.A < 0)
+			{
+				return;
+			}
+			Origin.World(player.transform.position, out double x, out double z);
+			Vector3 velocity = player.rb != null ? player.rb.linearVelocity : Vector3.zero;
+			for (int i = 0; i < Network.Portals.Count; i++)
+			{
+				Network.Portal p = Network.Portals[i];
+				if (!Wrap.Open(i) || !Wrap.Past(i, x, z) || velocity.x * p.DirX + velocity.z * p.DirZ <= 0.0)
+				{
+					continue;
+				}
+				Wrap.Move(i, out double dx, out double dz, out double dy);
+				// Ground under the other end now, if the preload has not finished it.
+				BuildAround(x + dx, z + dz, 1);
+				Transform car = player.transform.root;
+				HashSet<Transform> keep = new HashSet<Transform> { car };
+				foreach (Camera camera in FindObjectsByType<Camera>(FindObjectsSortMode.None))
+				{
+					Transform top = camera.transform.root;
+					if ((camera.name == "Main Camera" || camera.name == "OutsideCamera" || camera.name == "RearViewCamera") && top != transform.root)
+					{
+						keep.Add(top);
+					}
+				}
+				float sx = Mathf.Round((float)(dx / TileSize)) * TileSize, sz = Mathf.Round((float)(dz / TileSize)) * TileSize;
+				Origin.Shift(sx, sz, keep);
+				Origin.MoveKept(keep, new Vector3((float)(dx - sx), (float)dy, (float)(dz - sz)));
+				if (player.rb != null)
+				{
+					player.rb.position = player.transform.position;
+				}
+				// Tyre marks would draw a streak from where the car was.
+				foreach (TrailRenderer trail in car.GetComponentsInChildren<TrailRenderer>())
+				{
+					trail.Clear();
+				}
+				Origin.World(player.transform.position, out double nx, out double nz);
+				Mod.Log.LogInfo("The highway wrapped round: from the " + (p.DirX < 0 ? "west" : "east") + " edge's tunnel to the " + (p.DirX < 0 ? "east" : "west")
+					+ "'s, world (" + x.ToString("0") + ", " + z.ToString("0") + ") to (" + nx.ToString("0") + ", " + nz.ToString("0") + "), at " + (velocity.magnitude / 3.3f * 3.6f).ToString("0") + " km/h");
+				return;
+			}
 		}
 
 		/// <summary>The key place the teleport went to last (-1: none yet, so the first press goes to the first).</summary>
@@ -1191,6 +1351,9 @@ namespace HalfGripOpenWorld
 			Physics.SyncTransforms();
 		}
 
+		private GUIContent overlay;
+		private float overlayAt, overlayWidth, overlayHeight;
+
 		private void OnGUI()
 		{
 			// The place just teleported to, for a few seconds, mid-screen at the top.
@@ -1202,18 +1365,31 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			Origin.World(player.transform.position, out double x, out double z);
-			string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + player.transform.position.y.ToString("0") + " m\n"
-				+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
-				+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
-				+ (Sky.Status != null ? "\n" + Sky.Status : "")
-				+ (Deer.Status != null ? "\n" + Deer.Status : "")
-				+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "");
-			GUI.Label(new Rect(12f, 12f, 900f, 130f), text);
+			// The text and its height made four times a second, not on every OnGUI call (several a frame): laying out the long overlay
+			// cost the frame time it was there to measure.
+			float width = Mathf.Min(900f, Screen.width - 24f);
+			if (overlay == null || Time.unscaledTime >= overlayAt || width != overlayWidth)
+			{
+				overlayAt = Time.unscaledTime + 0.25f;
+				overlayWidth = width;
+				Origin.World(player.transform.position, out double x, out double z);
+				string text = "world " + (x / 1000.0).ToString("0.000") + ", " + (z / 1000.0).ToString("0.000") + " thousand units   height " + ((player.transform.position.y - Network.Lift) / 3.3).ToString("0") + " m above the sea\n"
+					+ "scene " + player.transform.position.x.ToString("0") + ", " + player.transform.position.z.ToString("0") + "   origin " + Origin.X.ToString("0") + ", " + Origin.Z.ToString("0") + "   shifts " + Origin.Shifts + "\n"
+					+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
+					+ (Sky.Status != null ? "\n" + Sky.Status : "")
+					+ (Deer.Status != null ? "\n" + Deer.Status : "")
+					+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "")
+					+ (FramePerf.Text() is string frame ? "\n" + frame : "");
+				// As tall as the text is (the deer's and the traffic's lines wrap), so nothing is cut off at the bottom.
+				overlay = new GUIContent(text);
+				overlayHeight = GUI.skin.label.CalcHeight(overlay, width) + 4f;
+			}
+			GUI.Label(new Rect(12f, 12f, width, overlayHeight), overlay);
 		}
 
 		private void OnDestroy()
 		{
+			FramePerf.Remove();
 			if (Instance == this)
 			{
 				Instance = null;

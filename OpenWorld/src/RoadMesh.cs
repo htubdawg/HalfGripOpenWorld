@@ -137,6 +137,15 @@ namespace HalfGripOpenWorld
 						Strip(roads, road, i, a, b, bridge);
 					}
 				}
+				if (road.Kind == RoadKind.Trunk)
+				{
+					TrunkPaint(roads, r, road, i, spans);
+					KRail(roads, r, road, i, spans);
+				}
+				if (road.Wide > 0.0)
+				{
+					BayPaint(roads, road, i, spans);
+				}
 				if (verge)
 				{
 					// Each side's verge or sidewalk along its own edge, which runs on past the full width to its own cut.
@@ -271,7 +280,7 @@ namespace HalfGripOpenWorld
 			float lo, hi;
 			switch (hub.Kind)
 			{
-				case RoadKind.Trunk: lo = 5.5f / 66f; hi = 14.5f / 66f; break;
+				case RoadKind.Trunk: lo = 12.5f / 80f; hi = 21.5f / 80f; break;
 				case RoadKind.Primary: lo = 3.5f / 28f; hi = 12.5f / 28f; break;
 				case RoadKind.Secondary: lo = 2.5f / 24f; hi = 10.5f / 24f; break;
 				case RoadKind.Street: lo = 0.5f / 20f; hi = 8.5f / 20f; break;
@@ -542,9 +551,279 @@ namespace HalfGripOpenWorld
 			return false;
 		}
 
+		/// <summary>Columns of the trunk's texture the junction paint samples: the solid white edge line, the yellow line by the median.</summary>
+		private const float TrunkSolid = 3.5f / 80f, TrunkYellow = 26.5f / 80f;
+		/// <summary>The paint stands this far over the surface, so it is drawn over it.</summary>
+		private const float PaintLift = 0.03f;
+		/// <summary>How far out from the centre line the asphalt laid over the median reaches: over the yellow line by the median, to the inner lane.</summary>
+		private const double MedianPave = TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder + 0.6;
+
+		/// <summary>
+		/// The trunk's junction paint (<see cref="TrunkLanes"/>) over piece i where it is drawn: at each junction, the grass median paved
+		/// over for the opening and the white edge line broken across the side road's mouth (a line drivers may cross there); each
+		/// left-turn bay paved into the median on its carriageway's side, opening out over its taper at the far end, with the white line
+		/// between it and the inner lane dotted over the taper and the bay's first stretch (where cars move into it) and solid up to the
+		/// junction, and the yellow line along its median side. Drawn with the trunk's own material, from its columns; the asphalt tiled
+		/// at the texture's own scale (<see cref="Pave"/>).
+		/// </summary>
+		private static void TrunkPaint(Mesher m, int r, Network.Road road, int i, List<(double t0, double t1)> spans)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			if (sb <= sa)
+			{
+				return;
+			}
+			foreach (TrunkLanes.Junction j in TrunkLanes.Junctions)
+			{
+				double mouth = Network.Roads[j.Other].Half + EdgeGapFlare;
+				double reach = Math.Max(TrunkLanes.Mouth, mouth);
+				if (j.Road != r || j.S + reach <= sa || j.S - reach >= sb)
+				{
+					continue;
+				}
+				foreach ((double t0, double t1) in spans)
+				{
+					double a = Math.Max(t0, (j.S - TrunkLanes.Mouth - sa) / (sb - sa)), b = Math.Min(t1, (j.S + TrunkLanes.Mouth - sa) / (sb - sa));
+					if (b > a)
+					{
+						Pave(m, road, i, a, b, -MedianPave, MedianPave, -MedianPave, MedianPave, PaintLift);
+					}
+					// The edge line broken across the side road's mouth (both sides at a crossroads).
+					a = Math.Max(t0, (j.S - mouth - sa) / (sb - sa));
+					b = Math.Min(t1, (j.S + mouth - sa) / (sb - sa));
+					if (b > a)
+					{
+						for (int side = -1; side <= 1; side += 2)
+						{
+							if (j.Side == 0 || j.Side == side)
+							{
+								Pave(m, road, i, a, b, side * (EdgeOff - 0.9), side * (EdgeOff + 0.9), side * (EdgeOff - 0.9), side * (EdgeOff + 0.9), PaintLift);
+							}
+						}
+					}
+				}
+			}
+			double w = TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder;
+			foreach (TrunkLanes.Zone z in TrunkLanes.Zones)
+			{
+				if (z.Road != r || z.S1 <= sa || z.S0 >= sb)
+				{
+					continue;
+				}
+				// The carriageway going the way S grows is on the right (offsets negative), its bay between it and the centre line.
+				double side = z.Dir > 0 ? -1.0 : 1.0;
+				// Where the dotted line gives way to the solid one: past the taper and a little more, from the bay's far end.
+				double dotted = TrunkLanes.Taper + EntryDotted;
+				double solid0 = z.Dir > 0 ? z.S0 + dotted : z.S0, solid1 = z.Dir > 0 ? z.S1 : z.S1 - dotted;
+				foreach ((double t0, double t1) in spans)
+				{
+					double a = Math.Max(t0, (z.S0 - sa) / (sb - sa)), b = Math.Min(t1, (z.S1 - sa) / (sb - sa));
+					if (b <= a)
+					{
+						continue;
+					}
+					// Short steps, so the taper comes out as a slant.
+					int steps = Math.Max(1, (int)Math.Ceiling((b - a) * (sb - sa) / 20.0));
+					for (int k = 0; k < steps; k++)
+					{
+						double ta = a + (b - a) * k / steps, tb = a + (b - a) * (k + 1) / steps;
+						double ea = BayEdge(z, sa + (sb - sa) * ta), eb = BayEdge(z, sa + (sb - sa) * tb);
+						Pave(m, road, i, ta, tb, side * ea, side * MedianPave, side * eb, side * MedianPave, PaintLift);
+						// The lines over the bay's asphalt, a little higher so they never fight with it.
+						Paint(m, road, i, ta, tb, side * (ea - 0.5), side * (ea + 0.5), side * (eb - 0.5), side * (eb + 0.5), TrunkYellow, PaintLift * 2f);
+					}
+					// The white line: solid by the junction, dotted where cars move in (dashes counted from the bay's far end, so every bay's
+					// are alike).
+					WhiteLine(m, road, i, a, b, Math.Max(z.S0, solid0), Math.Min(z.S1, solid1), side * w);
+					for (double d = 0.0; d + DotOn <= dotted; d += DotOn + DotOff)
+					{
+						double d0 = z.Dir > 0 ? z.S0 + d : z.S1 - d - DotOn;
+						WhiteLine(m, road, i, a, b, d0, d0 + DotOn, side * w);
+					}
+				}
+			}
+		}
+
+		/// <summary>The trunk's white edge line, from the centre line (texture column 3's middle, 80 across).</summary>
+		private const double EdgeOff = 40.0 - 3.5;
+		/// <summary>The edge line is broken this far past the side road's paving each way (its flared mouth).</summary>
+		private const double EdgeGapFlare = 8.0;
+		/// <summary>A bay's white line is dotted for this far past its taper (the rest solid to the junction).</summary>
+		private const double EntryDotted = 60.0;
+		/// <summary>The dotted line's dashes and gaps along the road (MUTCD's dotted lane line, 3 ft on and 9 ft off, at the game's scale).</summary>
+		private const double DotOn = 3.0, DotOff = 9.0;
+		/// <summary>The plain asphalt columns of the trunk's texture (4 to 13, between the edge line and the lane line), one unit each.</summary>
+		private const double AsphaltCol0 = 4.0, AsphaltCols = 9.5;
+
+		/// <summary>The white line a unit wide at offset <paramref name="off"/>, from <paramref name="s0"/> to <paramref name="s1"/> along the road, clipped to fractions a to b of piece i.</summary>
+		private static void WhiteLine(Mesher m, Network.Road road, int i, double a, double b, double s0, double s1, double off)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			double ta = Math.Max(a, (s0 - sa) / (sb - sa)), tb = Math.Min(b, (s1 - sa) / (sb - sa));
+			if (tb - ta <= 1e-6)
+			{
+				return;
+			}
+			int steps = Math.Max(1, (int)Math.Ceiling((tb - ta) * (sb - sa) / 20.0));
+			for (int k = 0; k < steps; k++)
+			{
+				double ua = ta + (tb - ta) * k / steps, ub = ta + (tb - ta) * (k + 1) / steps;
+				Paint(m, road, i, ua, ub, off - 0.5, off + 0.5, off - 0.5, off + 0.5, TrunkSolid, PaintLift * 2f);
+			}
+		}
+
+		/// <summary>
+		/// Plain asphalt over fractions ta to tb of piece i between offsets from the centre at each end, at the texture's own scale (a
+		/// texel a unit each way): cut across into strips under <see cref="AsphaltCols"/> wide, each sampling the texture's plain asphalt
+		/// columns from its own left edge. One column stretched across it (as it was) drew the grain as stripes across the road.
+		/// </summary>
+		private static void Pave(Mesher m, Network.Road road, int i, double ta, double tb, double loA, double hiA, double loB, double hiB, float lift)
+		{
+			if (hiA < loA)
+			{
+				(loA, hiA) = (hiA, loA);
+			}
+			if (hiB < loB)
+			{
+				(loB, hiB) = (hiB, loB);
+			}
+			double wa = hiA - loA, wb = hiB - loB;
+			if (wa < 0.05 && wb < 0.05)
+			{
+				return;
+			}
+			int n = Math.Max(1, (int)Math.Ceiling(Math.Max(wa, wb) / AsphaltCols));
+			float va = V(road, i, ta), vb = V(road, i, tb);
+			for (int k = 0; k < n; k++)
+			{
+				double a0 = loA + wa * k / n, a1 = loA + wa * (k + 1) / n, b0 = loB + wb * k / n, b1 = loB + wb * (k + 1) / n;
+				Vector3 la = PaintAt(m, road, i, ta, a1, lift), lb = PaintAt(m, road, i, tb, b1, lift);
+				Vector3 ra = PaintAt(m, road, i, ta, a0, lift), rb = PaintAt(m, road, i, tb, b0, lift);
+				float u0 = (float)(AsphaltCol0 / 80.0);
+				m.Quad(Paving(RoadKind.Trunk), la, lb, ra, rb, new Vector2(u0 + (float)((a1 - a0) / 80.0), va), new Vector2(u0 + (float)((b1 - b0) / 80.0), vb), new Vector2(u0, va), new Vector2(u0, vb));
+			}
+		}
+
+		/// <summary>
+		/// How far out from the centre line bay <paramref name="z"/>'s median-side edge is at <paramref name="s"/>: at the bay's full width
+		/// (<see cref="TrunkLanes.BayOut"/>) but over the taper at its far end (away from the junction), where it closes to the inner lane.
+		/// </summary>
+		private static double BayEdge(TrunkLanes.Zone z, double s)
+		{
+			double far = z.Dir > 0 ? s - z.S0 : z.S1 - s;
+			double f = Math.Max(0.0, Math.Min(1.0, far / TrunkLanes.Taper));
+			double inner = TrunkLanes.MedianHalf + TrunkLanes.InnerShoulder;
+			return inner + (TrunkLanes.BayOut - inner) * f;
+		}
+
+		/// <summary>A K-rail's (Jersey barrier's) half width at its foot, at its break in slope and at its top, and those heights: 32 in tall, 2 ft at the foot (about 0.8 m by 0.6 m).</summary>
+		private const double RailFoot = 1.0, RailBreak = 0.75, RailTop = 0.3, RailBreakY = 0.9, RailTopY = 2.7;
+
+		/// <summary>
+		/// The trunk's K-rails (<see cref="TrunkLanes.Rails"/>) down the middle of the median over piece i where it is drawn: concrete,
+		/// Jersey profile, solid (in the road mesh, so in its collider), its ends closed off.
+		/// </summary>
+		private static void KRail(Mesher m, int r, Network.Road road, int i, List<(double t0, double t1)> spans)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			if (sb <= sa)
+			{
+				return;
+			}
+			foreach (TrunkLanes.Rail rail in TrunkLanes.Rails)
+			{
+				if (rail.Road != r || rail.S1 <= sa || rail.S0 >= sb)
+				{
+					continue;
+				}
+				foreach ((double t0, double t1) in spans)
+				{
+					double a = Math.Max(t0, (rail.S0 - sa) / (sb - sa)), b = Math.Min(t1, (rail.S1 - sa) / (sb - sa));
+					if (b <= a)
+					{
+						continue;
+					}
+					if ((b - a) * (sb - sa) < 0.05)
+					{
+						continue;
+					}
+					int steps = Math.Max(1, (int)Math.Ceiling((b - a) * (sb - sa) / 20.0));
+					for (int k = 0; k < steps; k++)
+					{
+						double ta = a + (b - a) * k / steps, tb = a + (b - a) * (k + 1) / steps;
+						// Outward: across the road at this step (from the rail's middle to each foot), and up for the top.
+						Vector3 across = RailPoint(m, road, i, ta, 1.0, 0.0) - RailPoint(m, road, i, ta, -1.0, 0.0);
+						for (int side = -1; side <= 1; side += 2)
+						{
+							Vector3 outward = across * side;
+							m.Face(Concrete, RailPoint(m, road, i, ta, side * RailFoot, 0.0), RailPoint(m, road, i, tb, side * RailFoot, 0.0), RailPoint(m, road, i, ta, side * RailBreak, RailBreakY), RailPoint(m, road, i, tb, side * RailBreak, RailBreakY), outward);
+							m.Face(Concrete, RailPoint(m, road, i, ta, side * RailBreak, RailBreakY), RailPoint(m, road, i, tb, side * RailBreak, RailBreakY), RailPoint(m, road, i, ta, side * RailTop, RailTopY), RailPoint(m, road, i, tb, side * RailTop, RailTopY), outward);
+						}
+						m.Face(Concrete, RailPoint(m, road, i, ta, -RailTop, RailTopY), RailPoint(m, road, i, tb, -RailTop, RailTopY), RailPoint(m, road, i, ta, RailTop, RailTopY), RailPoint(m, road, i, tb, RailTop, RailTopY), Vector3.up);
+					}
+					// The ends closed off where the rail starts or stops on this piece, facing away along the road.
+					Vector3 along = RailPoint(m, road, i, b, 0.0, 0.0) - RailPoint(m, road, i, a, 0.0, 0.0);
+					foreach (double t in new[] { a, b })
+					{
+						double st = sa + (sb - sa) * t;
+						if (Math.Abs(st - rail.S0) < 0.01 || Math.Abs(st - rail.S1) < 0.01)
+						{
+							m.Face(Concrete, RailPoint(m, road, i, t, -RailFoot, 0.0), RailPoint(m, road, i, t, RailFoot, 0.0), RailPoint(m, road, i, t, -RailTop, RailTopY), RailPoint(m, road, i, t, RailTop, RailTopY), t == a ? -along : along);
+						}
+					}
+				}
+			}
+		}
+
+		/// <summary>A point <paramref name="off"/> left of the trunk's centre at fraction t of piece i, <paramref name="up"/> over its surface.</summary>
+		private static Vector3 RailPoint(Mesher m, Network.Road road, int i, double t, double off, double up)
+		{
+			double s = road.S[i] * (1.0 - t) + road.S[i + 1] * t;
+			Network.Point(road, i, t, off / Network.HalfAt(road, s), 0.0, out double x, out double z, out double y);
+			return new Vector3((float)(x - m.Ox), (float)(y + Network.Lift + up), (float)(z - m.Oz));
+		}
+
+		/// <summary>A strip of paint over fractions ta to tb of piece i, between offsets from the centre (left positive) at each end, all of one texture column.</summary>
+		private static void Paint(Mesher m, Network.Road road, int i, double ta, double tb, double loA, double hiA, double loB, double hiB, float u, float lift = PaintLift)
+		{
+			// Each end's offsets in order: on the carriageway going the other way (side -1) they came in reversed, so the test below
+			// threw every strip there away and its junction lanes were never painted.
+			if (hiA < loA)
+			{
+				(loA, hiA) = (hiA, loA);
+			}
+			if (hiB < loB)
+			{
+				(loB, hiB) = (hiB, loB);
+			}
+			if (hiA - loA < 0.05 && hiB - loB < 0.05)
+			{
+				return;
+			}
+			Vector3 la = PaintAt(m, road, i, ta, hiA, lift), lb = PaintAt(m, road, i, tb, hiB, lift);
+			Vector3 ra = PaintAt(m, road, i, ta, loA, lift), rb = PaintAt(m, road, i, tb, loB, lift);
+			float va = V(road, i, ta), vb = V(road, i, tb);
+			m.Quad(Paving(RoadKind.Trunk), la, lb, ra, rb, new Vector2(u, va), new Vector2(u, vb), new Vector2(u, va), new Vector2(u, vb));
+		}
+
+		/// <summary>A point <paramref name="off"/> left of the trunk's centre at fraction t of piece i, on its surface and <paramref name="lift"/> over it.</summary>
+		private static Vector3 PaintAt(Mesher m, Network.Road road, int i, double t, double off, float lift)
+		{
+			return RailPoint(m, road, i, t, off, lift);
+		}
+
 		/// <summary>The road's surface over fractions a to b of piece i, and a bridge's sides and parapets.</summary>
 		private static void Strip(Mesher m, Network.Road road, int i, double a, double b, bool bridge)
 		{
+			if (road.Wide > 0.0 && !bridge)
+			{
+				double sa = road.S[i] * (1.0 - a) + road.S[i + 1] * a, sb = road.S[i] * (1.0 - b) + road.S[i + 1] * b;
+				if (sb > road.WideA0 && sa < road.WideB1)
+				{
+					WideStrip(m, road, i, a, b);
+					return;
+				}
+			}
 			Vector3 la = m.At(road, i, a, 1, 0.0), lb = m.At(road, i, b, 1, 0.0);
 			Vector3 ra = m.At(road, i, a, -1, 0.0), rb = m.At(road, i, b, -1, 0.0);
 			float va = V(road, i, a), vb = V(road, i, b);
@@ -561,6 +840,181 @@ namespace HalfGripOpenWorld
 				m.Wall(Concrete, ra + down, rb + down, ra, rb);
 				m.Wall(Concrete, la, lb, la + upward, lb + upward);
 				m.Wall(Concrete, ra, rb, ra + upward, rb + upward);
+			}
+		}
+
+		/// <summary>The texture columns either side of a two-lane road's centre line that the middle of a road widened for a bay replaces
+		/// (<see cref="TurnBays.MiddleExtra"/>): the half texture left of them, and right.</summary>
+		private const int MiddleCols = 2;
+
+		/// <summary>
+		/// Fractions a to b of piece i of a road widened for a left-turn bay (<see cref="TurnBays"/>): in steps, so the tapers come out
+		/// as slants; each step's left half of the texture (edge line, shoulder, lane) pushed out to the left edge, its right half to the
+		/// right edge, and between them the middle (<see cref="TurnBays.MiddleHalf"/>) laid in plain asphalt at the texture's scale, with
+		/// its lines painted over it (<see cref="BayPaint"/>). Where the road is not widened, the texture across as usual.
+		/// </summary>
+		private static void WideStrip(Mesher m, Network.Road road, int i, double a, double b)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			int steps = Math.Max(1, (int)Math.Ceiling((b - a) * (sb - sa) / 6.0));
+			int w = TextureWidth(road.Kind), half = w / 2;
+			int mat = Paving(road.Kind);
+			for (int k = 0; k < steps; k++)
+			{
+				double ta = a + (b - a) * k / steps, tb = a + (b - a) * (k + 1) / steps;
+				double ma = TurnBays.MiddleHalf(road, sa + (sb - sa) * ta), mb = TurnBays.MiddleHalf(road, sa + (sb - sa) * tb);
+				Vector3 la = m.At(road, i, ta, 1, 0.0), lb = m.At(road, i, tb, 1, 0.0);
+				Vector3 ra = m.At(road, i, ta, -1, 0.0), rb = m.At(road, i, tb, -1, 0.0);
+				float va = V(road, i, ta), vb = V(road, i, tb);
+				if (ma <= 0.0 && mb <= 0.0)
+				{
+					m.Quad(mat, la, lb, ra, rb, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(1f, va), new Vector2(1f, vb));
+					continue;
+				}
+				// The middle at least the two columns it replaces, so it meets the texture's halves where the widening begins.
+				ma = Math.Max(ma, MiddleCols * 0.5);
+				mb = Math.Max(mb, MiddleCols * 0.5);
+				float uLeft = (float)(half - MiddleCols / 2) / w, uRight = (float)(half + MiddleCols / 2) / w;
+				Vector3 ia = RailPoint(m, road, i, ta, ma, 0.0), ib = RailPoint(m, road, i, tb, mb, 0.0);
+				Vector3 ja = RailPoint(m, road, i, ta, -ma, 0.0), jb = RailPoint(m, road, i, tb, -mb, 0.0);
+				m.Quad(mat, la, lb, ia, ib, new Vector2(0f, va), new Vector2(0f, vb), new Vector2(uLeft, va), new Vector2(uLeft, vb));
+				m.Quad(mat, ja, jb, ra, rb, new Vector2(uRight, va), new Vector2(uRight, vb), new Vector2(1f, va), new Vector2(1f, vb));
+				PaveMiddle(m, road, i, ta, tb, -ma, ma, -mb, mb, mat, w);
+			}
+		}
+
+		/// <summary>A paved class's texture width in texels (a unit each): its paved width.</summary>
+		private static int TextureWidth(RoadKind kind)
+		{
+			switch (kind)
+			{
+				case RoadKind.Trunk: return 80;
+				case RoadKind.Primary: return 28;
+				case RoadKind.Secondary: return 24;
+				case RoadKind.Street: return 20;
+				default: return 15;
+			}
+		}
+
+		/// <summary>
+		/// Plain asphalt of material <paramref name="mat"/> (a texture <paramref name="w"/> texels across) over fractions ta to tb of piece i
+		/// between offsets from the centre at each end, at the texture's own scale: strips under <see cref="AsphaltCols"/> wide, each
+		/// sampling the plain columns from 3 (clear of the edge lines of the two-lane textures).
+		/// </summary>
+		private static void PaveMiddle(Mesher m, Network.Road road, int i, double ta, double tb, double loA, double hiA, double loB, double hiB, int mat, int w)
+		{
+			double wa = hiA - loA, wb = hiB - loB;
+			int n = Math.Max(1, (int)Math.Ceiling(Math.Max(wa, wb) / AsphaltCols));
+			float va = V(road, i, ta), vb = V(road, i, tb);
+			float u0 = 3f / w;
+			for (int k = 0; k < n; k++)
+			{
+				double a0 = loA + wa * k / n, a1 = loA + wa * (k + 1) / n, b0 = loB + wb * k / n, b1 = loB + wb * (k + 1) / n;
+				Vector3 la = RailPoint(m, road, i, ta, a1, 0.0), lb = RailPoint(m, road, i, tb, b1, 0.0);
+				Vector3 ra = RailPoint(m, road, i, ta, a0, 0.0), rb = RailPoint(m, road, i, tb, b0, 0.0);
+				m.Quad(mat, la, lb, ra, rb, new Vector2(u0 + (float)((a1 - a0) / w), va), new Vector2(u0 + (float)((b1 - b0) / w), vb), new Vector2(u0, va), new Vector2(u0, vb));
+			}
+		}
+
+		/// <summary>A bay's white line is dotted this far from its far end (where cars move in), solid from there to the stop line.</summary>
+		private const double BayDotted = 20.0;
+
+		/// <summary>
+		/// The lines of a road widened for a left-turn bay over piece i (<see cref="TurnBays"/>): along each edge of the middle between the
+		/// through lanes a yellow line (a painted median, the lines coming together over the tapers), except along the bay's side by its
+		/// through lane, where the line is white (dotted where cars move in, solid up to the stop line); a left arrow painted in the bay
+		/// short of the stop line. No lines across the junctions' mouths. Painted from the trunk's texture's columns, as the trunk's bays.
+		/// </summary>
+		private static void BayPaint(Mesher m, Network.Road road, int i, List<(double t0, double t1)> spans)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			if (sb <= sa || sb <= road.WideA0 || sa >= road.WideB1)
+			{
+				return;
+			}
+			int r = Network.Roads.IndexOf(road);
+			foreach ((double t0, double t1) in spans)
+			{
+				double a = Math.Max(t0, (road.WideA0 - sa) / (sb - sa)), b = Math.Min(t1, (road.WideB1 - sa) / (sb - sa));
+				if (b <= a)
+				{
+					continue;
+				}
+				int steps = Math.Max(1, (int)Math.Ceiling((b - a) * (sb - sa) / 6.0));
+				for (int k = 0; k < steps; k++)
+				{
+					double ta = a + (b - a) * k / steps, tb = a + (b - a) * (k + 1) / steps;
+					double s0 = sa + (sb - sa) * ta, s1 = sa + (sb - sa) * tb, mid = (s0 + s1) * 0.5;
+					if (TurnBays.Mouth(r, mid))
+					{
+						continue;
+					}
+					double ma = Math.Max(TurnBays.MiddleHalf(road, s0), MiddleCols * 0.5) - 0.5, mb = Math.Max(TurnBays.MiddleHalf(road, s1), MiddleCols * 0.5) - 0.5;
+					for (int side = -1; side <= 1; side += 2)
+					{
+						if (TurnBays.WhiteSide(r, mid) == side)
+						{
+							continue;
+						}
+						Paint(m, road, i, ta, tb, side * ma - 0.5, side * ma + 0.5, side * mb - 0.5, side * mb + 0.5, TrunkYellow, PaintLift);
+					}
+				}
+				foreach (TurnBays.Bay bay in TurnBays.Bays)
+				{
+					if (bay.Road != r || bay.S1 <= sa || bay.S0 >= sb)
+					{
+						continue;
+					}
+					// The white line by the through lane, on the bay's right (traffic keeps right; the road's left is positive).
+					int white = -bay.Dir;
+					double off = white * (TurnBays.MiddleHalf(road, (bay.S0 + bay.S1) * 0.5) - 0.5);
+					double solid0 = bay.Dir > 0 ? bay.S0 + BayDotted : bay.S0, solid1 = bay.Dir > 0 ? bay.S1 : bay.S1 - BayDotted;
+					WhiteLine(m, road, i, a, b, solid0, solid1, off);
+					for (double d = 0.0; d + DotOn <= BayDotted; d += DotOn + DotOff)
+					{
+						double d0 = bay.Dir > 0 ? bay.S0 + d : bay.S1 - d - DotOn;
+						WhiteLine(m, road, i, a, b, d0, d0 + DotOn, off);
+					}
+					BayArrow(m, road, i, a, b, bay);
+				}
+			}
+		}
+
+		/// <summary>The bay's left arrow, back from its stop end: a shaft up the bay's middle, bending left at its head.</summary>
+		private static void BayArrow(Mesher m, Network.Road road, int i, double a, double b, TurnBays.Bay bay)
+		{
+			double sa = road.S[i], sb = road.S[i + 1];
+			// Along the bay from its stop end (u, growing back toward the cars coming), across it to their left (v): to road coordinates.
+			double end = bay.Dir > 0 ? bay.S1 : bay.S0;
+			(double s, double off) At(double u, double v) => (end - bay.Dir * u, bay.Dir * v);
+			// The shaft (1.2 wide, 9 long), then the head: a bar to the left at the shaft's front, ending in a point.
+			(double u0, double u1, double v0a, double v1a, double v0b, double v1b)[] parts =
+			{
+				(14.0, 5.0, -0.6, 0.6, -0.6, 0.6),
+				(7.0, 5.0, 0.6, 3.0, 0.6, 3.0),
+				(8.6, 6.0, 3.0, 3.0, 3.0, 5.6),
+				(6.0, 3.4, 3.0, 5.6, 3.0, 3.0),
+			};
+			foreach ((double u0, double u1, double v0a, double v1a, double v0b, double v1b) in parts)
+			{
+				(double s0, double o0a) = At(u0, v0a);
+				(double s1, double o0b) = At(u1, v0b);
+				double o1a = At(u0, v1a).off, o1b = At(u1, v1b).off;
+				double t0 = (s0 - sa) / (sb - sa), t1 = (s1 - sa) / (sb - sa);
+				if (t0 > t1)
+				{
+					(t0, t1) = (t1, t0);
+					(o0a, o0b) = (o0b, o0a);
+					(o1a, o1b) = (o1b, o1a);
+				}
+				// Clipped to the drawn fractions of this piece (a piece's end may run through the arrow).
+				double c0 = Math.Max(t0, a), c1 = Math.Min(t1, b);
+				if (c1 - c0 <= 1e-6)
+				{
+					continue;
+				}
+				double f0 = (c0 - t0) / (t1 - t0), f1 = (c1 - t0) / (t1 - t0);
+				Paint(m, road, i, c0, c1, o0a + (o0b - o0a) * f0, o1a + (o1b - o1a) * f0, o0a + (o0b - o0a) * f1, o1a + (o1b - o1a) * f1, TrunkSolid, PaintLift * 2f);
 			}
 		}
 
@@ -762,6 +1216,43 @@ namespace HalfGripOpenWorld
 				RoadMesh.Wall(v, n, uv, tris[material], a, b, c, d);
 			}
 
+			/// <summary>
+			/// A quad a, b (one edge) to c, d (the other) seen from one side only, the side toward <paramref name="toward"/>: a solid's
+			/// face (a K-rail's), so its flat top has no copy facing down. Nothing if it has no area (no zero normal: a glow).
+			/// </summary>
+			internal void Face(int material, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 toward)
+			{
+				Vector3 normal = Vector3.Cross(b - a, c - a);
+				if (normal.sqrMagnitude < 1e-8f)
+				{
+					normal = Vector3.Cross(d - b, c - b);
+				}
+				if (normal.sqrMagnitude < 1e-8f)
+				{
+					return;
+				}
+				normal = normal.normalized;
+				if (Vector3.Dot(normal, toward) < 0f)
+				{
+					normal = -normal;
+				}
+				int i = v.Count;
+				v.Add(a);
+				v.Add(b);
+				v.Add(c);
+				v.Add(d);
+				uv.Add(new Vector2(0f, 0f));
+				uv.Add(new Vector2(1f, 0f));
+				uv.Add(new Vector2(0f, 1f));
+				uv.Add(new Vector2(1f, 1f));
+				for (int k = 0; k < 4; k++)
+				{
+					n.Add(normal);
+				}
+				RoadMesh.Triangle(tris[material], v, i, i + 1, i + 2, normal);
+				RoadMesh.Triangle(tris[material], v, i + 2, i + 1, i + 3, normal);
+			}
+
 			/// <summary>A quad a, b, c, d (as <see cref="Wall"/>), seen from both sides, its texture from u0 to u1 along a-b and v0 to v1 up a-c.</summary>
 			internal void Panel(int material, Vector3 a, Vector3 b, Vector3 c, Vector3 d, float u0, float u1, float v0, float v1)
 			{
@@ -862,7 +1353,15 @@ namespace HalfGripOpenWorld
 			uv.Add(ub);
 			uv.Add(uc);
 			uv.Add(ud);
-			Vector3 normal = Vector3.Cross(b - a, c - a).normalized;
+			// From the corner a, else (two corners at one place: a strip of paint narrowing to nothing at a taper's end) across the
+			// diagonals, else straight up. A zero normal is NaN in the lighting, and NaN pixels blew up white through the bloom: a
+			// glowing patch in the trunk's median at every junction lane's end (the owner's screenshot).
+			Vector3 normal = Vector3.Cross(b - a, c - a);
+			if (normal.sqrMagnitude < 1e-10f)
+			{
+				normal = Vector3.Cross(d - a, b - c);
+			}
+			normal = normal.sqrMagnitude < 1e-10f ? Vector3.up : normal.normalized;
 			if (up && normal.y < 0f)
 			{
 				normal = -normal;
@@ -1112,20 +1611,34 @@ namespace HalfGripOpenWorld
 			return m;
 		}
 
-		/// <summary>One pixel per unit across (66) and along (40): two carriageways of two lanes, shoulders, a concrete median.</summary>
+		/// <summary>
+		/// One pixel per unit across (80) and along (40), as <see cref="TrunkLanes"/>' cross-section: a paved shoulder of 4, two lanes of
+		/// 11 (white edge line, dashed lane line), a shoulder of 2 by the median with a yellow line, and a grass median 24 wide, flush
+		/// with the road (a player may drive across it). The junctions' openings and bays are painted over it (<see cref="TrunkPaint"/>),
+		/// sampling its columns: <see cref="TrunkSolid"/>, <see cref="TrunkYellow"/>.
+		/// </summary>
 		private static Texture2D Trunk()
 		{
 			Color asphalt = new Color(0.27f, 0.27f, 0.29f);
 			Color white = new Color(0.86f, 0.86f, 0.82f);
 			Color yellow = new Color(0.85f, 0.70f, 0.20f);
-			Texture2D t = Blank(66, (int)TextureLength, asphalt, false);
-			Fill(t, 28, 38, new Color(0.55f, 0.55f, 0.52f));
-			Line(t, 4, white, 40);
-			Line(t, 15, white, 15);
-			Line(t, 27, yellow, 40);
-			Line(t, 38, yellow, 40);
-			Line(t, 50, white, 15);
-			Line(t, 61, white, 40);
+			Texture2D t = Blank(80, (int)TextureLength, asphalt, false);
+			// The median's grass (offsets within 12 of the centre: columns 28 to 51), tufts lighter and darker.
+			Color grass = new Color(0.36f, 0.47f, 0.24f);
+			for (int y = 0; y < t.height; y++)
+			{
+				for (int x = 28; x < 52; x++)
+				{
+					float g = ((int)(Noise.Mix((ulong)(y * 80 + x) * 2654435761UL + 11UL) >> 61) - 3.5f) * 0.025f;
+					t.SetPixel(x, y, new Color(grass.r + g, grass.g + g * 1.3f, grass.b + g * 0.6f));
+				}
+			}
+			Line(t, 3, white, 40);
+			Line(t, 14, white, 15);
+			Line(t, 26, yellow, 40);
+			Line(t, 53, yellow, 40);
+			Line(t, 65, white, 15);
+			Line(t, 76, white, 40);
 			t.Apply();
 			return t;
 		}

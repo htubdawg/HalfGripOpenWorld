@@ -344,7 +344,7 @@ namespace HalfGripOpenWorld
 			// straight, so the lot's front is exactly the verge's width from the road's edge, and the test that keeps a lot 4 clear of
 			// every road's edge failed on rounding there.
 			double front = Network.Unpaved(road.Kind) || road.Kind == RoadKind.Climb ? Network.Verge + 0.05 : Network.Verge;
-			double off = most + road.Half + front + d * 0.5;
+			double off = most + Network.Widened(road, s) + front + d * 0.5;
 			double[] foot = new double[count];
 			for (int k = 0; k < count; k++)
 			{

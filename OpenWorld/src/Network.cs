@@ -101,6 +101,12 @@ namespace HalfGripOpenWorld
 			public double Taper0, Taper1;
 			/// <summary>The road's start (0) or end (1) is a dead end: no road there, so the road is rounded off into the ground (<see cref="DeadEnds"/>).</summary>
 			public bool Dead0, Dead1;
+			/// <summary>
+			/// The road widened by <see cref="Wide"/> (a lane, for a left-turn bay in its middle: <see cref="TurnBays"/>) from
+			/// <see cref="WideA1"/> to <see cref="WideB0"/> along it, tapering in from <see cref="WideA0"/> and out to <see cref="WideB1"/>
+			/// past <see cref="WideB0"/>; 0 for none (every other road).
+			/// </summary>
+			public double Wide, WideA0, WideA1, WideB0, WideB1;
 			public int Count => X.Length;
 		}
 
@@ -119,8 +125,10 @@ namespace HalfGripOpenWorld
 
 		private static readonly Class[] Classes =
 		{
-			// Half widths: a lane is 11 units (a car is about 5.4 wide). Trunk: two carriageways of two lanes and a median.
-			new Class { Half = 33.0, Grade = 0.05, Window = 40, Keep = 6, Rounds = 4, Soft = 0.035, Steep = 8.0, Bank = 160.0 },
+			// Half widths: a lane is 11 units (a car is about 5.4 wide). Trunk: two carriageways of two lanes either side of a grass
+			// median 24 wide (left-turn bays cut into it at the junctions), a paved shoulder of 4 outside each (TrunkLanes). 66 across
+			// until 0.34.0; then a median of 10 and shoulders a lane wide for the junctions' deceleration and acceleration lanes.
+			new Class { Half = 40.0, Grade = 0.05, Window = 40, Keep = 6, Rounds = 4, Soft = 0.035, Steep = 8.0, Bank = 160.0 },
 			new Class { Half = 14.0, Grade = 0.07, Window = 22, Keep = 4, Rounds = 3, Soft = 0.05, Steep = 5.0, Bank = 120.0 },
 			new Class { Half = 12.0, Grade = 0.09, Window = 14, Keep = 3, Rounds = 3, Soft = 0.07, Steep = 3.0, Bank = 90.0 },
 			new Class { Half = 10.0, Grade = 0.11, Window = 3, Keep = 1, Rounds = 2, Soft = 0.09, Steep = 2.0, Bank = 30.0 },
@@ -246,6 +254,8 @@ namespace HalfGripOpenWorld
 			public double DirX;
 			public double DirZ;
 			public double Half;
+			/// <summary>The road that leaves here (its index in <see cref="Roads"/>): the trunk leaves at both ends, and <see cref="Wrap"/> joins them.</summary>
+			public int Road;
 		}
 
 		internal static readonly List<Portal> Portals = new List<Portal>();
@@ -288,6 +298,8 @@ namespace HalfGripOpenWorld
 				{
 					System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 					Build();
+					Wrap.Find();
+					TrunkLanes.Build();
 					BuildMs = watch.Elapsed.TotalMilliseconds;
 					built = true;
 				}
@@ -438,6 +450,8 @@ namespace HalfGripOpenWorld
 			// The farms' and roadside houses' drives, each with its mailbox.
 			Drives(new Rng(Noise.Mix(WorldGen.Seed + 9800UL)));
 
+			// The left-turn bays, before the junctions: the roads widened for them are cut and met at their drawn width.
+			Bays();
 			// The junctions, now every road is in, and the dead ends; then the samples near bridges.
 			Junctions();
 			DeadEnds();
@@ -821,7 +835,7 @@ namespace HalfGripOpenWorld
 			Roads[at] = longer;
 			segments.Replace(at, original, longer);
 			int tip = atStart ? 0 : n - 1;
-			Portals.Add(new Portal { X = longer.X[tip], Z = longer.Z[tip], Y = longer.Y[tip], DirX = dx, DirZ = dz, Half = longer.Half });
+			Portals.Add(new Portal { X = longer.X[tip], Z = longer.Z[tip], Y = longer.Y[tip], DirX = dx, DirZ = dz, Half = longer.Half, Road = at });
 			return longer;
 		}
 
@@ -1058,7 +1072,9 @@ namespace HalfGripOpenWorld
 				{
 					double px = cx + uz * a * (HomeWidth * 0.5 + 4.0) + ux * b * (HomeDepth * 0.5 + 4.0);
 					double pz = cz - ux * a * (HomeWidth * 0.5 + 4.0) + uz * b * (HomeDepth * 0.5 + 4.0);
-					if (!Clear(px, pz, -1) || segments.Snap(px, pz, 18.0, -1, out double _, out double _, out double _))
+					// 18 from any road's line, and from the trunk's its half width more (80 across since 0.34.0: 18 from its line is on it).
+					if (!Clear(px, pz, -1) || segments.Snap(px, pz, 18.0, -1, out double _, out double _, out double _)
+						|| segments.Snap(px, pz, Classes[0].Half + 10.0, -1, out double _, out double _, out double _, RoadKind.Trunk))
 					{
 						return;
 					}
@@ -1414,7 +1430,7 @@ namespace HalfGripOpenWorld
 				{
 					pts.Add((ax, az));
 				}
-				else if (segments.Snap(router.X(path[s - 1]), router.Z(path[s - 1]), 140.0, -1, out double px, out double pz, out double py))
+				else if (SnapJoin(router.X(path[s - 1]), router.Z(path[s - 1]), 140.0, out double px, out double pz, out double py))
 				{
 					ToEnd(kind, ref px, ref pz, ref py);
 					pts.Add((px, pz));
@@ -1430,15 +1446,22 @@ namespace HalfGripOpenWorld
 					{
 						pts.Add((bx, bz));
 					}
-					else if (segments.Snap(router.X(path[e]), router.Z(path[e]), 160.0, -1, out double px2, out double pz2, out double py2))
+					else if (SnapJoin(router.X(path[e]), router.Z(path[e]), 160.0, out double px2, out double pz2, out double py2))
 					{
 						ToEnd(kind, ref px2, ref pz2, ref py2);
 						pts.Add((px2, pz2));
 						pinEnd = py2;
 					}
 				}
-				else if (segments.Snap(router.X(path[e + 1]), router.Z(path[e + 1]), 140.0, -1, out double px3, out double pz3, out double py3))
+				else if (SnapJoin(router.X(path[e + 1]), router.Z(path[e + 1]), 140.0, out double px3, out double pz3, out double py3))
 				{
+					// A through way whose route goes straight back along the road it starts from (its first cell the dead end, its next
+					// on that road): the forced first stretch would snap back onto that road and lie on top of it, a second lane laid
+					// along the first (four farms' lanes, their junctions' stop lines on the other's paving). Nothing to build there.
+					if (fromStart && s == 0 && segments.Hit >= 0 && EndsAt(Roads[segments.Hit], ax, az))
+					{
+						continue;
+					}
 					ToEnd(kind, ref px3, ref pz3, ref py3);
 					pts.Add((px3, pz3));
 					pinEnd = py3;
@@ -1470,6 +1493,27 @@ namespace HalfGripOpenWorld
 				made.Add(road);
 			}
 			return made;
+		}
+
+		/// <summary>Whether one of the road's ends is within a unit of (x, z).</summary>
+		private static bool EndsAt(Road road, double x, double z)
+		{
+			int last = road.Count - 1;
+			return Math.Abs(road.X[0] - x) + Math.Abs(road.Z[0] - z) < 1.0 || Math.Abs(road.X[last] - x) + Math.Abs(road.Z[last] - z) < 1.0;
+		}
+
+		/// <summary>
+		/// How far a routed stretch's end looks for the road whose cell it reached when that road is not within the usual reach. A road's
+		/// cells are the ones it was routed through, but its smoothed line can run well off them (the trunk's by up to about 270 units),
+		/// so the end found nothing, stopped in the fields a cell short, and Westhaven's only road out (its link to the trunk) and the
+		/// main road from Millbrook to the north edge were dead ends.
+		/// </summary>
+		private const double FarJoin = 320.0;
+
+		/// <summary>The nearest road to a routed stretch's end within <paramref name="reach"/>, else within <see cref="FarJoin"/>.</summary>
+		private static bool SnapJoin(double x, double z, double reach, out double px, out double pz, out double py)
+		{
+			return segments.Snap(x, z, reach, -1, out px, out pz, out py) || segments.Snap(x, z, FarJoin, -1, out px, out pz, out py);
 		}
 
 		/// <summary>A back road's end that lands this near another road's end goes to that end (see <see cref="ToEnd"/>).</summary>
@@ -1912,6 +1956,163 @@ namespace HalfGripOpenWorld
 				}
 			}
 			HubCuts();
+		}
+
+		/// <summary>
+		/// The left-turn bays (<see cref="TurnBays"/>): where a primary road ends on another in a T, the junction the lights' rule lights
+		/// (three main roads), the main road's traffic turning left into the side road gets a bay in the middle of the road, the road
+		/// widened by a lane for it. Most of the cars coming that way at Kingsbridge's T (the owner's node 6) turn left there, and stood
+		/// in the only lane waiting for the oncoming cars, the cars going on stuck behind them and the queue backing up through the
+		/// junction behind. The bay runs back from the junction's stop line to the junction before it (or <see cref="TurnBays.Longest"/>),
+		/// the widening on through that one and past the T, with tapers each end, clear of the junctions beyond. Before the junctions are
+		/// cut, so the side roads' mouths meet the widened edge.
+		/// </summary>
+		private static void Bays()
+		{
+			TurnBays.Bays.Clear();
+			for (int r = 0; r < Roads.Count; r++)
+			{
+				Road side = Roads[r];
+				if (side.Kind != RoadKind.Primary || side.Count < 4)
+				{
+					continue;
+				}
+				for (int end = 0; end < 2; end++)
+				{
+					int ke = end == 0 ? 0 : side.Count - 1;
+					double x = side.X[ke], z = side.Z[ke];
+					foreach (int o in segments.RoadsNear(x, z, 40.0))
+					{
+						Road main = Roads[o];
+						if (o == r || main.Kind != RoadKind.Primary || main.Wide > 0.0 || !segments.Nearest(o, x, z, main.Half + 3.0, out double d, out int k, out double t))
+						{
+							continue;
+						}
+						double js = main.S[k] + (main.S[k + 1] - main.S[k]) * t, length = main.S[main.Count - 1];
+						double my = main.Y[k] + (main.Y[k + 1] - main.Y[k]) * t;
+						// A T in the middle of the main road (not two roads meeting end to end), at one height.
+						if (js < TurnBays.EndClear || js > length - TurnBays.EndClear || Math.Abs(my - side.Y[ke]) > 4.0)
+						{
+							continue;
+						}
+						// Which side of the main road the side road lies on: a point well into it.
+						Locate(side, end == 0 ? Math.Min(side.S[side.Count - 1], main.Half + 25.0) : Math.Max(0.0, side.S[side.Count - 1] - main.Half - 25.0), out int i, out double f);
+						double px = side.X[i] + (side.X[i + 1] - side.X[i]) * f, pz = side.Z[i] + (side.Z[i + 1] - side.Z[i]) * f;
+						double tx = main.X[k + 1] - main.X[k], tz = main.Z[k + 1] - main.Z[k];
+						double cross = tx * (pz - (main.Z[k] + tz * t)) - tz * (px - (main.X[k] + tx * t));
+						// Only at the sites asked for.
+						bool site = false;
+						foreach ((double X, double Z) at in TurnBays.Sites)
+						{
+							site |= Math.Abs(at.X - x) < TurnBays.SiteReach && Math.Abs(at.Z - z) < TurnBays.SiteReach;
+						}
+						if (!site)
+						{
+							continue;
+						}
+						// Traffic keeps right: a side road left of the way the main road's distance grows is a left turn for the cars going
+						// that way.
+						Bay(o, r, js, cross > 0.0 ? 1 : -1);
+					}
+				}
+			}
+		}
+
+		/// <summary>The bay on road <paramref name="o"/> for its cars going <paramref name="dir"/> turning left at <paramref name="js"/> into road <paramref name="r"/>, and the road widened for it.</summary>
+		private static void Bay(int o, int r, double js, int dir)
+		{
+			Road main = Roads[o];
+			double length = main.S[main.Count - 1];
+			// The other junctions on the main road near this one, each side: where along it, and their road's half width; and the
+			// second behind (past the one behind), which the widening's taper keeps clear of. The road's own ends count (it begins or
+			// ends at a junction, or at nothing).
+			double back = double.MaxValue, backHalf = 0.0, ahead = double.MaxValue, beyond = double.MaxValue;
+			List<double> behind = new List<double>();
+			double reach = TurnBays.Longest + TurnBays.Taper + 60.0;
+			Locate(main, js, out int jk, out double jt);
+			Centre(main, jk, jt, out double jx, out double jz);
+			foreach (int q in segments.RoadsNear(jx, jz, reach))
+			{
+				Road other = Roads[q];
+				if (q == o || q == r || other.Kind > RoadKind.Lane || other.Kind == RoadKind.Trunk || other.Count < 2)
+				{
+					continue;
+				}
+				for (int k = 0; k < other.Count; k++)
+				{
+					if (!segments.Nearest(o, other.X[k], other.Z[k], main.Half + other.Half + 2.0, out double d, out int mk, out double mt))
+					{
+						continue;
+					}
+					double ms = main.S[mk] + (main.S[mk + 1] - main.S[mk]) * mt;
+					double my = main.Y[mk] + (main.Y[mk + 1] - main.Y[mk]) * mt;
+					if (Math.Abs(my - other.Y[k]) > 4.0)
+					{
+						continue;
+					}
+					// Behind: the side the bay's cars come from.
+					double along = (ms - js) * dir;
+					if (along < 0.0)
+					{
+						behind.Add(-along);
+						if (-along < back)
+						{
+							back = -along;
+							backHalf = other.Half;
+						}
+					}
+					else if (along > 0.0 && along < ahead)
+					{
+						ahead = along;
+					}
+				}
+			}
+			foreach (double d in behind)
+			{
+				if (d > back + backHalf + 10.0 && d < beyond)
+				{
+					beyond = d;
+				}
+			}
+			beyond = Math.Min(beyond, dir > 0 ? js : length - js);
+			ahead = Math.Min(ahead, dir > 0 ? length - js : js);
+			Road side = Roads[r];
+			// The bay: from the stop line (the side road's half width and a little, as the traffic's junction box) back to just past the
+			// junction behind, or as long as the longest.
+			double near = side.Half + TurnBays.StopBack;
+			double far = back < double.MaxValue ? back - backHalf - TurnBays.PastJunction : TurnBays.Longest;
+			far = Math.Min(far, TurnBays.Longest);
+			if (far - near < TurnBays.Shortest)
+			{
+				return;
+			}
+			// The widening: full from past the junction behind (or the bay's far end) to just past the T, its tapers clear of the
+			// junctions beyond.
+			double fullBack = back < double.MaxValue && back - backHalf - TurnBays.PastJunction <= TurnBays.Longest ? back + backHalf + TurnBays.PastJunction : far;
+			double fullAhead = side.Half + TurnBays.PastJunction;
+			double taperAhead = Math.Max(TurnBays.ShortTaper, Math.Min(TurnBays.Taper, ahead - fullAhead - TurnBays.PastJunction * 2.0));
+			double taperBack = Math.Max(TurnBays.ShortTaper, Math.Min(TurnBays.Taper, beyond - fullBack - TurnBays.PastJunction * 2.0));
+			double a0 = js - dir * (fullBack + taperBack), a1 = js - dir * fullBack, b0 = js + dir * fullAhead, b1 = js + dir * (fullAhead + taperAhead);
+			if (dir < 0)
+			{
+				(a0, b1) = (b1, a0);
+				(a1, b0) = (b0, a1);
+			}
+			if (a0 < 0.0 || b1 > length)
+			{
+				return;
+			}
+			main.Wide = TurnBays.Extra;
+			main.WideA0 = a0;
+			main.WideA1 = a1;
+			main.WideB0 = b0;
+			main.WideB1 = b1;
+			double s0 = js - dir * far, s1 = js - dir * near;
+			TurnBays.Bays.Add(new TurnBays.Bay
+			{
+				Road = o, Other = r, Dir = dir, Junction = js, S0 = Math.Min(s0, s1), S1 = Math.Max(s0, s1), SideHalf = side.Half,
+				Back = back < double.MaxValue ? js - dir * back : double.NaN, BackHalf = backHalf,
+			});
 		}
 
 		/// <summary>
@@ -3993,7 +4194,7 @@ namespace HalfGripOpenWorld
 				}
 				flare = Math.Max(flare, s < g.C0 ? Bell((g.C0 - s) / FlareLength) : s > g.C1 ? Bell((s - g.C1) / FlareLength) : 1.0);
 			}
-			double half = road.Half;
+			double half = road.Half + WideAt(road, s) * 0.5;
 			if (road.Taper0 > 0.0)
 			{
 				half += (road.Taper0 - road.Half) * (1.0 - Noise.Step(0.0, TaperLength, s));
@@ -4003,6 +4204,35 @@ namespace HalfGripOpenWorld
 				half += (road.Taper1 - road.Half) * (1.0 - Noise.Step(0.0, TaperLength, road.S[road.Count - 1] - s));
 			}
 			return (half + Math.Min(Flare, road.Half * 0.5) * flare) * Fade(road, s);
+		}
+
+		/// <summary>
+		/// How much wider than its own the road is at distance <paramref name="s"/> along it for a left-turn bay (<see cref="TurnBays"/>):
+		/// a lane over its widened stretch, eased in and out over the tapers; 0 on every other road.
+		/// </summary>
+		internal static double WideAt(Road road, double s)
+		{
+			if (road.Wide <= 0.0 || s <= road.WideA0 || s >= road.WideB1)
+			{
+				return 0.0;
+			}
+			if (s < road.WideA1)
+			{
+				return road.Wide * Noise.Step(road.WideA0, road.WideA1, s);
+			}
+			return s > road.WideB0 ? road.Wide * (1.0 - Noise.Step(road.WideB0, road.WideB1, s)) : road.Wide;
+		}
+
+		/// <summary>Half the road's paved width at distance <paramref name="s"/> along it: its own and a bay's widening (no mouth's flare).</summary>
+		internal static double Widened(Road road, double s)
+		{
+			return road.Half + WideAt(road, s) * 0.5;
+		}
+
+		/// <summary>The same at fraction <paramref name="t"/> of piece <paramref name="k"/>.</summary>
+		internal static double Widened(Road road, int k, double t)
+		{
+			return road.Wide <= 0.0 ? road.Half : road.Half + WideAt(road, road.S[k] + (road.S[k + 1] - road.S[k]) * t) * 0.5;
 		}
 
 		/// <summary>The flare's shape: full at the other road's edge, curving in to nothing (a kerb's radius, roughly).</summary>
@@ -4771,8 +5001,8 @@ namespace HalfGripOpenWorld
 				trunk.Over[k] = false;
 			}
 			Hold(trunk, Classes[0].Grade, 0, trunk.Count - 1);
-			// Right of the direction of travel: (dz, -dx). The inner lane's centre is the median (5) plus its shoulder (2) plus half a lane.
-			const double lane = 5.0 + 2.0 + 5.5;
+			// Right of the direction of travel: (dz, -dx), in the middle of the inner lane.
+			const double lane = TrunkLanes.InnerMid;
 			SpawnX = trunk.X[i] + SpawnDirZ * lane;
 			SpawnZ = trunk.Z[i] - SpawnDirX * lane;
 			SpawnY = level;
@@ -5425,7 +5655,7 @@ namespace HalfGripOpenWorld
 							Road road = Roads[(int)(item >> 32)];
 							int k = (int)(uint)item;
 							Lines.Project(road.X, road.Z, k, x, z, out double t, out double d);
-							double inside = d - road.Half - margin;
+							double inside = d - Widened(road, k, t) - margin;
 							if (inside < 0.0 && ((int)road.Kind < bestKind || ((int)road.Kind == bestKind && inside < best)))
 							{
 								best = inside;
@@ -5472,7 +5702,7 @@ namespace HalfGripOpenWorld
 							{
 								continue;
 							}
-							double inside = d - (road.Half - inset);
+							double inside = d - (Widened(road, k, t) - inset);
 							if (inside < 0.0 && ((int)road.Kind < bestKind || ((int)road.Kind == bestKind && inside < best)))
 							{
 								best = inside;

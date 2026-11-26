@@ -279,7 +279,21 @@ namespace HalfGripOpenWorld
 		private Camera[] all = new Camera[16];
 		private float nextScan;
 
+		/// <summary>Timed for the frame timings (ShowCoords): with the far view's Follow from Streamer.</summary>
 		private void LateUpdate()
+		{
+			long timed = FramePerf.Now;
+			try
+			{
+				UpdateCameras();
+			}
+			finally
+			{
+				FramePerf.Add(FramePerf.Part.FarView, timed);
+			}
+		}
+
+		private void UpdateCameras()
 		{
 			// The cameras draw as far as Sky says the far view is drawn (where the fog ends, or FarViewDistance if that is nearer and the land
 			// past it is painted into the sky), never less than the tiles reach.

@@ -121,7 +121,7 @@ namespace HalfGripOpenWorld
 			Network.Ensure();
 			Mod.Log.LogInfo("World layout: " + Rivers.All.Count + " rivers, " + Rivers.LakeCount + " lakes, " + Places.All.Count + " towns, villages and farms, " + Network.Roads.Count + " roads (" + Network.LinkCount + " back road links), " + Network.BuildMs.ToString("0") + " ms");
 			Mod.Log.LogInfo("Courses: " + Circuit.Report + "; " + Rally.Report + "; " + HillClimb.Report);
-			Mod.Log.LogInfo("Road signs: " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts with " + Signs.Fingers + " fingers, lettering " + Signs.AtlasW + " x " + Signs.AtlasH + "; " + Signs.Report);
+			Mod.Log.LogInfo("Road signs: " + Signs.NameSigns + " place-name signs, " + Signs.Fingerposts + " fingerposts with " + Signs.Fingers + " fingers, green boards for the lights at " + Signs.Overheads.Count + " junctions, lettering " + Signs.AtlasW + " x " + Signs.AtlasH + "; " + Signs.Report);
 
 			// The scene's 0,0 is put at the spawn, so the start is as precise as anywhere else.
 			Origin.Reset(true);
@@ -165,6 +165,8 @@ namespace HalfGripOpenWorld
 			root.AddComponent<Sky>().Setup(tm, paved.ToArray(), unpaved.ToArray());
 			// The deer, drawn from the race's seed as the sky is (placed on a worker; seen once they are).
 			root.AddComponent<Deer>().Setup(tm, lit);
+			// The traffic lights, each on its fixed-time plan from the race clock (laid out on a worker; built once they are).
+			root.AddComponent<SignalHeads>().Setup(tm, lit, assets);
 
 			PlaceGrid(tm, env, out Vector3 forward);
 			assets.Add(Tunnels(lit, roads[RoadMesh.Concrete]));
@@ -256,8 +258,10 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// A tunnel mouth where each road leaves the world: a concrete portal in the cutting at the road's end, dark inside, with a solid
-		/// block behind the dark so nobody drives in. The concrete is the roads' own; the dark is returned, to be freed with the world.
+		/// A tunnel mouth where each road leaves the world: a concrete portal in the cutting at the road's end, dark inside. The trunk's two
+		/// (<see cref="Wrap"/>) are open: a dark tunnel with a floor at the road's height, walls, a roof and a back wall, driven into until
+		/// the car comes out of the other one. The road north's is shut by a solid block behind the dark so nobody drives in. The concrete
+		/// is the roads' own; the dark is returned, to be freed with the world.
 		/// </summary>
 		private static Material Tunnels(Shader shader, Material concrete)
 		{
@@ -270,9 +274,10 @@ namespace HalfGripOpenWorld
 			{
 				dark.SetColor("_Color", new Color(0.02f, 0.02f, 0.03f));
 			}
-			foreach (Network.Portal p in Network.Portals)
+			for (int i = 0; i < Network.Portals.Count; i++)
 			{
-				GameObject portal = new GameObject("Tunnel");
+				Network.Portal p = Network.Portals[i];
+				GameObject portal = new GameObject(Wrap.Open(i) ? "Tunnel (wraps round)" : "Tunnel");
 				portal.transform.SetParent(root.transform, false);
 				Vector3 outward = new Vector3((float)p.DirX, 0f, (float)p.DirZ);
 				portal.transform.SetPositionAndRotation(Origin.Local(p.X, (float)(p.Y + Network.Lift), p.Z), Quaternion.LookRotation(outward, Vector3.up));
@@ -281,13 +286,26 @@ namespace HalfGripOpenWorld
 				Block(portal.transform, concrete, new Vector3(-width / 2f - 3f, height / 2f, 0f), new Vector3(6f, height + 4f, 6f));
 				Block(portal.transform, concrete, new Vector3(width / 2f + 3f, height / 2f, 0f), new Vector3(6f, height + 4f, 6f));
 				Block(portal.transform, concrete, new Vector3(0f, height + 4f, 0f), new Vector3(width + 12f, 8f, 6f));
-				Block(portal.transform, dark, new Vector3(0f, height / 2f, 6f), new Vector3(width, height, 6f));
+				if (!Wrap.Open(i))
+				{
+					Block(portal.transform, dark, new Vector3(0f, height / 2f, 6f), new Vector3(width, height, 6f));
+					continue;
+				}
+				// Open: from the inside the walls' own faces are seen, so the driver's eye inside it sees only the dark.
+				float length = (float)Wrap.Length;
+				Block(portal.transform, dark, new Vector3(0f, -0.5f, length / 2f), new Vector3(width + 4f, 1f, length));
+				Block(portal.transform, dark, new Vector3(-width / 2f - 1f, height / 2f, length / 2f + 1.5f), new Vector3(2f, height + 2f, length - 3f));
+				Block(portal.transform, dark, new Vector3(width / 2f + 1f, height / 2f, length / 2f + 1.5f), new Vector3(2f, height + 2f, length - 3f));
+				Block(portal.transform, dark, new Vector3(0f, height + 1f, length / 2f + 1.5f), new Vector3(width + 4f, 2f, length - 3f));
+				GameObject back = Block(portal.transform, dark, new Vector3(0f, height / 2f, length + 1f), new Vector3(width + 4f, height + 2f, 2f));
+				// Seen, not solid (see Wrap.Length).
+				UnityEngine.Object.Destroy(back.GetComponent<Collider>());
 			}
-			Mod.Info("Tunnel mouths: " + Network.Portals.Count);
+			Mod.Info("Tunnel mouths: " + Network.Portals.Count + (Wrap.A >= 0 ? ", the trunk's two open (the highway wraps round)" : ""));
 			return dark;
 		}
 
-		private static void Block(Transform parent, Material material, Vector3 at, Vector3 size)
+		private static GameObject Block(Transform parent, Material material, Vector3 at, Vector3 size)
 		{
 			GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
 			block.name = "Portal";
@@ -295,6 +313,7 @@ namespace HalfGripOpenWorld
 			block.transform.localPosition = at;
 			block.transform.localScale = size;
 			block.GetComponent<MeshRenderer>().sharedMaterial = material;
+			return block;
 		}
 
 		/// <summary>
