@@ -32,6 +32,9 @@ namespace HalfGripOpenWorld
 			public Material Plain;
 			/// <summary>Its index in the look's painted renderers (-1: not painted) and lamps (-1: not a lamp).</summary>
 			public int PaintIndex = -1, LampIndex = -1;
+			/// <summary>The layer and rendering layers its renderer is on in a near car (the game's car's own, not the Enemy layer the box is on).</summary>
+			public int Layer;
+			public uint RenderingLayers;
 		}
 
 		/// <summary>The far cars of one look, paint and lamps (lit or dark) this frame: their matrices in the scene.</summary>
@@ -177,7 +180,12 @@ namespace HalfGripOpenWorld
 						worldBounds = box,
 						shadowCastingMode = ShadowCastingMode.Off,
 						receiveShadows = true,
-						layer = layer,
+						// As the near car's renderer: its own layer (the cameras may not draw the Enemy layer at all: every far car was unseen
+						// until it came within 75 m and was drawn near, the owner's "pop-in at 50 m"), probes for its ambient and reflections.
+						layer = part.Layer,
+						renderingLayerMask = part.RenderingLayers,
+						lightProbeUsage = LightProbeUsage.BlendProbes,
+						reflectionProbeUsage = ReflectionProbeUsage.BlendProbes,
 					};
 					for (int i = 0; i < g.Count; i++)
 					{
@@ -293,10 +301,27 @@ namespace HalfGripOpenWorld
 				int paint = Array.IndexOf(look.Paint, k), lamp = Array.IndexOf(look.Lamps, k);
 				for (int s = 0; s < Math.Min(mesh.subMeshCount, mats.Length); s++)
 				{
-					parts.Add(new Part { Mesh = mesh, Sub = s, Local = local, Plain = mats[s], PaintIndex = paint, LampIndex = lamp });
+					parts.Add(new Part { Mesh = mesh, Sub = s, Local = local, Plain = mats[s], PaintIndex = paint, LampIndex = lamp, Layer = rs[k].gameObject.layer, RenderingLayers = rs[k].renderingLayerMask });
 				}
+			}
+			if (!loggedLayers)
+			{
+				loggedLayers = true;
+				HashSet<int> used = new HashSet<int>();
+				foreach (Part p in parts)
+				{
+					used.Add(p.Layer);
+				}
+				string seen = "";
+				foreach (Camera cam in Camera.allCameras)
+				{
+					seen += (seen.Length > 0 ? ", " : "") + cam.name + " " + ((cam.cullingMask & (1 << layer)) != 0 ? "draws" : "does not draw") + " the Enemy layer";
+				}
+				Mod.Info("Traffic: far cars drawn on their parts' own layers (" + string.Join(", ", System.Linq.Enumerable.Select(used, l => LayerMask.LayerToName(l) + " " + l)) + "), not the Enemy layer (" + layer + "); " + seen);
 			}
 			return parts.ToArray();
 		}
+
+		private bool loggedLayers;
 	}
 }

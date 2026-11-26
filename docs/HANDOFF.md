@@ -46,6 +46,14 @@ the race from 18:11, alone (room host), driving the trunk east from about (-3250
   `Traffic pop-in:` with what it was the frame before (`Draw`'s reason via `drawFail`: hidden, held back, in a tunnel, no ground under
   it, space away; or not chosen; or a physics car), where, ahead or behind, its and the player's speed, whether its tile was loaded.
   **Next: read the owner's log with these lines (`docs/TESTING.md` 64) and fix what they show.**
+- **The owner's third log (seed 1299320649, "very close, 50 m"): the watch logged no car first drawn close ahead.** Its 37 lines: 10
+  at the race's start (standing), the rest physics cars gone back on their timetable about 400 units behind (expected, unseen). So
+  the cars that pop in were drawn far all along, unseen: both far paths (instanced and one by one) share `RenderParams`, and drew on
+  `layer` = the **Enemy** layer, while a near car's renderers keep the game car's own layers (`Copy` copies each part's layer; only
+  the root and the box are on Enemy). If the cameras don't draw the Enemy layer, every far car is invisible until it is drawn near
+  (250 units) or made a physics car (300): the "50 m". **Done:** each far part is drawn on its renderer's own layer and rendering
+  layers, with light and reflection probes as a renderer has; logged once: the layers used and whether each camera draws the Enemy
+  layer (that line says whether this was it). Next: the owner's log.
 - Old next step (superseded): the owner's log (`docs/TESTING.md` 64). If cars still pop in with far cars drawn one by one (or with `TrafficInstanced`
   off), look at `Pose` failing (no ground under a car on a tile not yet loaded at speed: `Streamer`'s ring loads nearest first, so the
   leading edge comes last) and the far cars' matrices (`PartsOf`).

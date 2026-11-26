@@ -253,6 +253,9 @@ owner has reported on it.
    car first drawn close to you: a `Traffic pop-in:` line (up to 80 a race) says how far off it appeared, ahead or behind, and what it
    was the frame before (not chosen to draw, chosen but not drawn and why, or a physics car); the `Traffic timings` lines end with
    `first drawn close this race N`.
+   - The third log showed the cars that pop in were being drawn far all along, but on a layer the cameras may not show (Enemy). Far
+     cars are now drawn on the car's own layers. The log line `Traffic: far cars drawn on their parts' own layers (...)` says whether
+     each camera draws the Enemy layer.
    - Set `TrafficInstanced` back to true. Drive the same stretch of highway at full speed, both ways, and send `LogOutput.log`.
    - Say whether the cars that pop in are ones coming towards you, ones you are catching up, or both; and whether it was by day or at
      night (both logs so far started the race in the evening, so most of the drive was in the dark).
