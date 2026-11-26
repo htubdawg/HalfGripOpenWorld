@@ -99,7 +99,20 @@ seen from its line. All-way stops also need `TrafficDrive` stopping, stop lines 
 ## Traffic leftovers
 
 1. Physics cars in each other round node 42 at the evening peak: seed 16 fails with 8 pairs (limit 6), first at (-2364, -4249),
-   17.41 h. Seed 12 does the same at 3 passes, 30%.
+   17.41 h. Seed 12 does the same at 3 passes, 30%. After the pulling-in fix, seed 3 fails with 7 (16 seeds: 40 pairs in all, 47 before
+   it). Traced 2026-11-26 (`TV_DRIVE_NOTES=1`, positions added to the note): almost all are at two places, the same in every seed.
+   - **Node 42, the lane west's way in:** a drawn car waiting on edge 243 at s 18 (box 17) is met by a physics car on edge 43 passing
+     5 short of the node. The day stops a car with its **middle** about at the box's edge (the IDM stop at `stop = ... - Box`, P is
+     the car's middle: `OnPath` puts the drawn body's centre there), so its front is half a car into the box and past the stop line;
+     `TrafficDrive` stops its front at the box (`ToBox - CarLength * 0.5 - 1`). Tried: the day stopping its front at the box
+     (`Nose = CarLength / 2` taken off the stop, `ReachOf`, the at-the-line tests and the lights' `toLine` and `MayGo`): node 42's
+     meetings went, but over 16 seeds standing went 24.0 to 26.9 s a trip (99% 262 to 296, over 3 min 516 to 701) and pairs 40 to 46
+     (seed 3 to 9). Reverted. Asked the owner whether drawn cars stand past the stop line in game.
+   - **Node 6, the Pinewick road's way in:** a physics car on edge 72 at its line (s 26 to 27, box 23, green) is met by one leaving
+     north on edge 44 at s 199 to 208 (13 to 22 out). The roads meet at about 60 degrees and edge 44 is widened for the bay, its
+     northbound lane half a lane out towards the Pinewick road; `Traffic.ClearOfOthers` ignores the widening on purpose (box 29
+     against 23 held every way in longer). A box per way in, not per junction, would fix this without that cost; a big change (`Box` is
+     read in about 60 places).
 2. Physics cars in each other elsewhere: 0 to 4 a seed. At 3 passes, seed 2 had 55 behind the player's car stopped across a trunk lane
    at (11151, -9332) (`TV_PASSES=3 TV_REROUTE=0.5` to reproduce).
 3. A physics car brushed the player's stopped car (seed 11): not looked at.
