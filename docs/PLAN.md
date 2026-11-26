@@ -37,6 +37,10 @@ when one is done, delete it here.
   Shown that the US rules (MUTCD) warrant no new light or four-way stop at the game's counts, the owner chose "both, Kingsbridge
   first": fix Kingsbridge's queues first, then try lights and four-way stops at more junctions, keeping each that doesn't make the
   per-trip waiting worse.
+- No centre turn lanes (two-way left-turn lanes): "those are extremely dangerous and hard to read" (the owner, 2026-11-26). Turn
+  lanes are separate bays at each junction, never running back through the junction behind. Next: turn lanes on the ways into
+  Kingsbridge's light (a right-turn lane for the cars coming up from the trunk turning to Pinewick; the Pinewick road split left and
+  right at the light), then left-turn bays at the link's other junctions where the gap allows, each kept only if it helps.
 - Judge traffic changes by how the waiting is shared (the owner, 2026-11-26): waiting spread fairly over everyone is fine; the same
   total moved onto other drivers who now wait longer is not. Report averages per trip, in plain words.
 - Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not

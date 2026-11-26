@@ -70,10 +70,10 @@ The bay's overflow is about 6 of seed 1's 380 junction minutes. What is left is 
 junctions in 600 units with a light in the middle.
 
 **What is next**:
-1. Kingsbridge's queues: the geometry. A two-way centre turn lane down Kingsbridge's link (nodes 2 to 67) instead of the one short
-   bay: every left turner off the link out of the through lane, the bay running back through node 42. Needs `Road.Wide` as a list, a
-   junction allowed inside the widened stretch (meshcheck `bays` refuses one now) and the lane keys spanning edges. Measure it before
-   drawing it if a cheaper way to simulate it turns up. Then the queues joining (seed 9's physics gap at node 49).
+1. Kingsbridge's queues: the geometry. **No centre turn lane** (the owner: "extremely dangerous and hard to read"; docs/PLAN.md).
+   Instead, at node 6: a right-turn lane for the northbound cars turning to Pinewick (arm 1 > 2), and the Pinewick road (arm 2) split
+   into a left and a right lane at the light; then left-turn bays at nodes 44, 49, 67 where the gap allows (`Road.Wide` as a list).
+   Measure each on 16 seeds by the per-trip waiting. Then the queues joining (seed 9's physics gap at node 49).
 2. Then lights and four-way stops at more junctions, keeping each that doesn't make the per-trip waiting worse (the owner's choice).
 3. Earlier notes on the queues: the northbound commute up the link through nodes 67, 49, 44 to node 6, and the side streets they block
    (node 67's street from the east 160 to 280 s a trip, node 42's and 49's lanes 40 to 120 s, node 2's street).
