@@ -41,5 +41,6 @@ As `docs/TRAFFIC_REWORK.md` §4 and §6 say:
 ## Checks run for phase 0
 
 - `tools/check.sh` against HalfGripRefs' game and the stub HalfGripTools (`tools/halfgriptools-stub`): compiles clean.
-- `tools/preview`: ok. `tools/meshcheck`: see the commit (the `lights` check included). `tools/jview` builds.
+- `tools/preview`: ok. `tools/meshcheck`: all checks pass, `lights` included (48 masts, 154 heads, 16 junctions, every way in seen
+  from its stop line). `tools/jview` builds.
 - Not run in game.
