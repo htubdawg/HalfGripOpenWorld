@@ -23,6 +23,9 @@ namespace HalfGripOpenWorld
 			public double S0, S1, Junction;
 			/// <summary>The side road's half width; the junction behind the bay (along the road; NaN: none near) and its road's half width.</summary>
 			public double SideHalf, Back, BackHalf;
+			/// <summary>The bay runs on back through the junction behind (<see cref="Back"/>), a through lane there: its cars go straight
+			/// on at it in the bay, and move into it before it.</summary>
+			public bool Through;
 		}
 
 		internal static readonly List<Bay> Bays = new List<Bay>();
