@@ -886,6 +886,7 @@ namespace HalfGripOpenWorld
 				chosenZ = cz;
 				long chose = Perf.Now;
 				Choose(w, cx, cz);
+				choseThisFrame = true;
 				Perf.Add(Perf.Part.Choose, chose);
 			}
 			else
@@ -907,6 +908,8 @@ namespace HalfGripOpenWorld
 			bool lights = Sky.LightsOn;
 			// The physics cars are the nearest: theirs are the first headlights.
 			PhysicsLights(lights);
+			bool chosenNow = choseThisFrame;
+			choseThisFrame = false;
 			foreach (int c in chosen)
 			{
 				if (!live.TryGetValue(c, out View v))
@@ -915,11 +918,14 @@ namespace HalfGripOpenWorld
 					live[c] = v;
 				}
 				v.Seen = true;
+				drawFail = null;
 				if (!Draw(v, c, w, dt))
 				{
 					v.Go.SetActive(false);
+					PopFrom(c, drawFail ?? "not drawn");
 					continue;
 				}
+				PopCheck(c, v, w, cx, cz, chosenNow);
 				// The nearest moving cars' headlights (the chosen list is nearest first).
 				bool on = lights && v.Light != null && chosenMoving.Contains(c) && lit < MostLit && v.Go.activeSelf;
 				if (on)
@@ -944,6 +950,7 @@ namespace HalfGripOpenWorld
 				Give(live[c]);
 				live.Remove(c);
 			}
+			PopForget(cx, cz, dt);
 			DrawFar();
 			Perf.Add(Perf.Part.Draw, drew);
 			// Contact physics: a drawn car the player is about to touch becomes a loose car.
@@ -962,10 +969,10 @@ namespace HalfGripOpenWorld
 					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
 					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "")
 					+ PhysicsStatus()
-					+ "\n" + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText();
+					+ "\n" + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText() + PopText();
 				if (Perf.LogDue())
 				{
-					Mod.Log.LogInfo("Traffic timings: " + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText());
+					Mod.Log.LogInfo("Traffic timings: " + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText() + PopText());
 				}
 			}
 		}
@@ -1127,6 +1134,7 @@ namespace HalfGripOpenWorld
 			TrafficDay.Place at = late.At(c, w, out bool hidden);
 			if (hidden)
 			{
+				drawFail = "hidden";
 				return false;
 			}
 			if (at.State == TrafficDay.State.Driving && AnyBodies && HoldBackFromPhysics(c, at, w))
@@ -1135,6 +1143,7 @@ namespace HalfGripOpenWorld
 				at = late.At(c, w, out hidden);
 				if (hidden)
 				{
+					drawFail = "hidden (held back)";
 					return false;
 				}
 			}
@@ -1142,6 +1151,7 @@ namespace HalfGripOpenWorld
 			{
 				if (at.InTunnel)
 				{
+					drawFail = "in a tunnel";
 					return false;
 				}
 				// On its path, or pulling out of its space at the start of a trip and into one at the end (TrafficParking.Drawn).
@@ -1152,6 +1162,7 @@ namespace HalfGripOpenWorld
 				bool far = IsFar(v, x, z);
 				if (!Pose(v, x, z, roadY, hx, hz, far, !far))
 				{
+					drawFail = "no ground found under it";
 					return false;
 				}
 				// The wheels turn with the distance it is drawn moving (pulling in or out, the day holds it still on its lane), backwards
@@ -1183,6 +1194,7 @@ namespace HalfGripOpenWorld
 			}
 			if (at.State != TrafficDay.State.Parked)
 			{
+				drawFail = "neither driving nor parked";
 				return false;
 			}
 			// Parked: lamps off.
@@ -1193,6 +1205,7 @@ namespace HalfGripOpenWorld
 				TrafficParking.Spot spot = parking.Parked(c, at.Leg);
 				if (spot.Away)
 				{
+					drawFail = "its space is away";
 					return false;
 				}
 				// Placed once: it hangs from the world's root, which an origin shift moves, so it stays where it is in the world.
@@ -1202,6 +1215,7 @@ namespace HalfGripOpenWorld
 				v.Placed = Pose(v, spot.X, spot.Z, WorldGen.Height(spot.X, spot.Z), spot.Hx, spot.Hz, false, false);
 				if (!v.Placed)
 				{
+					drawFail = "no ground found under its space";
 					return false;
 				}
 			}

@@ -248,13 +248,11 @@ owner has reported on it.
      that never moves.
    - **When reporting traffic:** the log now has a "Race seed: N" line near the race's start. With it, the day can be replayed exactly:
      send the log with the screenshot and the overlay's position and time showing.
-64. Far traffic on the highway (2026-11-26, `traffic-test-branch`, not released). The owner saw cars appear very close on the highway at
-   speed. The day itself always puts the cars within reach well out (trafficview: moving cars first chosen at 310 m or more), so the
-   suspect is how cars past 75 m are drawn: instanced, and the game's car paint is its own shader. Far cars are now instanced only
-   where the shader has an instancing variant, else drawn one by one.
-   - Drive the highway at full speed both ways, by day: cars ahead and oncoming should be visible from far off (300 m and more), not
-     appear close. Say if any still appear close, and roughly how close.
-   - Send `LogOutput.log` with `ShowCoords` on: the lines `Traffic: far cars' parts with shader ...` say how each shader is drawn, and
-     each `Traffic timings` line ends with `far N (part draws: X instanced, Y one by one)`.
-   - If cars still appear close: set `TrafficInstanced` to false in the config and drive the same stretch again; say whether that
-     changes it.
+64. Cars popping in close on the highway (2026-11-26, `traffic-test-branch`, not released). `TrafficInstanced` off didn't fix it
+   (the owner's second log: far cars drawn one by one, still popping in), so it isn't how far cars are drawn. The game now logs each
+   car first drawn close to you: a `Traffic pop-in:` line (up to 80 a race) says how far off it appeared, ahead or behind, and what it
+   was the frame before (not chosen to draw, chosen but not drawn and why, or a physics car); the `Traffic timings` lines end with
+   `first drawn close this race N`.
+   - Set `TrafficInstanced` back to true. Drive the same stretch of highway at full speed, both ways, and send `LogOutput.log`.
+   - Say whether the cars that pop in are ones coming towards you, ones you are catching up, or both; and whether it was by day or at
+     night (both logs so far started the race in the evening, so most of the drive was in the dark).

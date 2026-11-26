@@ -37,7 +37,16 @@ the race from 18:11, alone (room host), driving the trunk east from about (-3250
   `INSTANCING_ON`, else its far cars are drawn one by one (`Graphics.RenderMesh`, which any shader can); logged once per shader, and the
   timings line ends `far N (part draws: X instanced, Y one by one)`. If Unity leaves built-in keywords out of the keyword space, every
   far car is drawn one by one: right, a little dearer.
-- **Next:** the owner's log (`docs/TESTING.md` 64). If cars still pop in with far cars drawn one by one (or with `TrafficInstanced`
+- **The owner's second log (seed 906601541, `TrafficInstanced` off): still pops in.** Far cars were drawn one by one (`far 14 (part
+  draws: 0 instanced, 126 one by one)`), so the instancing isn't it (the guard stays: harmless). trafficview's check is clean on that
+  seed too. Looked at and found right: the far cars' matrices (`PartsOf`: the template hangs from `TrafficCars` as a body from its
+  root, same scale), the same-lane hiding next to physics cars. Both drives started the race in the evening (18:11, 19:02; a day is 40
+  minutes), so most was in the dark: far cars have lit lamps but no light of their own; the six nearest have real headlights.
+- **Done now: the in-game watch (`TrafficPop.cs`).** Each car first drawn nearer than 900 units (moving) or 450 (parked) is logged as
+  `Traffic pop-in:` with what it was the frame before (`Draw`'s reason via `drawFail`: hidden, held back, in a tunnel, no ground under
+  it, space away; or not chosen; or a physics car), where, ahead or behind, its and the player's speed, whether its tile was loaded.
+  **Next: read the owner's log with these lines (`docs/TESTING.md` 64) and fix what they show.**
+- Old next step (superseded): the owner's log (`docs/TESTING.md` 64). If cars still pop in with far cars drawn one by one (or with `TrafficInstanced`
   off), look at `Pose` failing (no ground under a car on a tile not yet loaded at speed: `Streamer`'s ring loads nearest first, so the
   leading edge comes last) and the far cars' matrices (`PartsOf`).
 
