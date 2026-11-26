@@ -13,8 +13,8 @@ using HalfGripOpenWorld;
 // distance, speed, place on the leg and the leg's times): for finding why they meet.
 internal static partial class Program
 {
-	/// <summary>Cars with the right of way refused for a car giving way to them, a day, at most.</summary>
-	private const int MostMainHeld = 100;
+	/// <summary>Cars with the right of way refused for a car giving way to them, a day, at most: none (until 2026-11-26, 100 passed).</summary>
+	private const int MostMainHeld = 0;
 
 	/// <summary>
 	/// Every junction's stop lines: a car waiting at the box's edge on any arm (its front there, in its lane) is off every other road's
@@ -1074,6 +1074,11 @@ internal static partial class Program
 		Console.WriteLine("  cars stopped in a tunnel's mouth or within 60 of it: " + day.StoppedAtMouth + " steps" + (day.StoppedAtMouth == 0 ? "  ok" : "  FAIL"));
 		ok &= day.StoppedAtMouth == 0;
 		// TV_DRIVE_ONLY: only the physics cars' check after the day's (the parking and the ledger take most of a run).
+		// TV_LATE_ONLY: only the ledger's check after the day's.
+		if (Environment.GetEnvironmentVariable("TV_LATE_ONLY") != null)
+		{
+			return ok & Lateness(day);
+		}
 		if (Environment.GetEnvironmentVariable("TV_DRIVE_ONLY") == null)
 		{
 			ok &= Parking(day, closeup);
@@ -1488,16 +1493,16 @@ internal static partial class Program
 		{
 			Console.WriteLine("    meeting: " + kv.Key + " " + kv.Value);
 		}
-		// Pulling in and out is drawn off the day's lanes, and the day holds the car still beside its space meanwhile: those meetings
-		// fail over a few a day (before the day knew the spaces, about 50). The rest are reported: cars turning across each other inside
-		// a junction's box, and late ways home driven after the day's end, which the next morning's traffic does not see.
+		// Every meeting fails: two cars drawn through each other is a crash a player sees, whatever they were doing. (Until 2026-11-26 only
+		// those pulling in or out failed, over 10 a day; cars turning across each other in a junction and late ways home were reported and
+		// passed.)
 		int pullMeets = 0;
 		foreach (KeyValuePair<string, int> kv in movingKinds)
 		{
 			pullMeets += kv.Key.Contains("pulling") ? kv.Value : 0;
 		}
-		Console.WriteLine("  moving cars (as drawn) through each other, every 5 s: " + movingHits + " of " + movingLooks + ", " + pullMeets + " pulling in or out (" + watch.ElapsedMilliseconds + " ms)" + (pullMeets <= MostPullMeetings ? "  ok (the rest reported)" : "  FAIL (more than " + MostPullMeetings + " pulling in or out)"));
-		ok &= pullMeets <= MostPullMeetings;
+		Console.WriteLine("  moving cars (as drawn) through each other, every 5 s: " + movingHits + " of " + movingLooks + ", " + pullMeets + " of them pulling in or out (" + watch.ElapsedMilliseconds + " ms)" + (movingHits == 0 ? "  ok" : "  FAIL"));
+		ok &= movingHits == 0;
 
 		// Choosing the cars near the player, as TrafficCars.Choose does: every car's place, the parked ones' spaces.
 		watch.Restart();
@@ -1642,7 +1647,6 @@ internal static partial class Program
 	}
 
 	/// <summary>Meetings of a car pulling in or out with another moving car, as drawn every 5 s, allowed in a day.</summary>
-	private const int MostPullMeetings = 10;
 
 	/// <summary>What a moving car is doing where it is drawn: pulling out of or into its space, on a drive, or on its way.</summary>
 	private static string Phase(TrafficDay day, TrafficDay.Place at)

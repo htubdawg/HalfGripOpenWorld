@@ -316,6 +316,34 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// Whether a car played back from the day at <paramref name="at"/> may become a physics car now: driving, not in a tunnel, not pulling
+		/// out or in (the day draws that), not on its last stretch, not near a tunnel, not in a junction's box (the day let it in; the drivers
+		/// didn't, and might send another physics car across it). The game (<c>TrafficCars.Drivable</c>) and trafficview both ask this.
+		/// <paramref name="held"/>: a car held up by something the day doesn't know of may be one in a junction's box too: standing there
+		/// played back, it can't negotiate, and the cars it holds up wait on it for ever (the physics cars' gridlocks of 2026-11-26 all
+		/// ended at one); made physical, the drivers see it in the box and wait for it to clear.
+		/// </summary>
+		internal static bool Drivable(TrafficDay day, TrafficDay.Place at, bool held = false)
+		{
+			if (at.State != TrafficDay.State.Driving || at.InTunnel || at.Leg < 0)
+			{
+				return false;
+			}
+			TrafficDay.Leg leg = day.Legs[at.Leg];
+			if ((!leg.Appears && at.T < leg.PullOut + 0.5) || (!leg.Vanishes && (leg.End - leg.Start - at.T < leg.PullIn + 3.0 || at.P > leg.Length - EndZone - 25.0)) || NearTunnel(leg, at.P))
+			{
+				return false;
+			}
+			if (held)
+			{
+				return true;
+			}
+			Mover m = new Mover { Car = -1, Leg = at.Leg, P = at.P };
+			Prepare(day, ref m);
+			return !((m.Node >= 0 && m.ToBox < CarLength * 0.5) || m.Back >= 0);
+		}
+
+		/// <summary>
 		/// Whether a tunnel is on leg <paramref name="leg"/>'s path within <see cref="TunnelKeep"/> either side of <paramref name="p"/>. Only
 		/// the stretches within reach are looked at, found by binary search: a circling car's leg is the whole day (about 250 stretches),
 		/// and walking it from its start on every call cost frames once 100 of them were on the trunk (0.32.1).
@@ -491,9 +519,9 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// How far a drawn car at (x, z) facing (hx, hz) (unit) can still go before it must stand for a car at (bx, bz) facing (bhx, bhz):
-		/// one ahead in its lane, to <see cref="YieldGap"/> short of its tail; one across its way, to just short of where their bodies
-		/// would meet straight on, if it is moving (<paramref name="otherSpeed"/>; one standing at its line waits for this one); 0 if they
-		/// meet already with the other in front. MaxValue if the other is not in its way within <paramref name="look"/>. What a drawn car is slowed by (<see cref="TrafficLate.Yield"/>) instead of being hidden: the day doesn't
+		/// one ahead in its lane, to <see cref="YieldGap"/> short of its tail; one across its way, moving or standing, to just short of where
+		/// their bodies would meet straight on; 0 if they meet already with the other in front (<paramref name="otherSpeed"/> is no longer
+		/// looked at). MaxValue if the other is not in its way within <paramref name="look"/>. What a drawn car is slowed by (<see cref="TrafficLate.Yield"/>) instead of being hidden: the day doesn't
 		/// know a physics car (or a late car) is in its way. Pure arithmetic: the game and trafficview both use it.
 		/// </summary>
 		internal static double FreeAhead(double x, double z, double hx, double hz, double bx, double bz, double bhx, double bhz, double look, double otherSpeed)
@@ -518,10 +546,8 @@ namespace HalfGripOpenWorld
 			{
 				return 0.0;
 			}
-			if (otherSpeed < 1.0)
-			{
-				return double.MaxValue;
-			}
+			// Across its way: moving, or standing (a car standing in a junction was driven through until 2026-11-26; one standing at its line
+			// is off this car's way, and a ring of cars each waiting for the next is broken by Ring).
 			for (double o = 2.0; o <= Math.Min(look, 40.0); o += 2.0)
 			{
 				if (Overlap(x + hx * o, z + hz * o, hx, hz, bx, bz, bhx, bhz, 0.5))
@@ -543,6 +569,60 @@ namespace HalfGripOpenWorld
 			double dx = ox - x, dz = oz - z;
 			double along = dx * hx + dz * hz, side = Math.Abs(dx * hz - dz * hx);
 			return (side < 4.0 && along > -25.0 && along < 45.0) || Overlap(x, z, hx, hz, ox, oz, ohx, ohz, 0.5);
+		}
+
+		/// <summary>
+		/// Whether a physics car <paramref name="along"/> ahead of a car about to pull out of its space (negative: behind it), going
+		/// <paramref name="speed"/>, lets it out: standing behind it. Its driver sees the car pulling out and waits for it
+		/// (<see cref="Target"/>'s cars pulling in or out); held in its space instead, a car whose space another car was waiting to pull into
+		/// kept that car, and the queue of physics cars behind it, waiting for ever (trafficview, seed 7, 2026-11-26).
+		/// </summary>
+		internal static bool LetsOut(double along, double speed)
+		{
+			return along < 0.0 && speed < 0.5;
+		}
+
+		/// <summary>
+		/// Whether a drawn car pulling into or out of its space at (x, z) facing (hx, hz) goes on past a car at (bx, bz) facing (bhx, bhz)
+		/// going <paramref name="otherSpeed"/>: one standing still and not touching it. Turned across the road, its nose pointed at the
+		/// physics car standing behind it in the queue, which waited for it in turn (a car pulling in or out is in its way: <see cref="Target"/>),
+		/// for ever (trafficview, seed 7, 2026-11-26). Pulling in (<paramref name="pullingIn"/>) it goes on even touching it: it moves away
+		/// from the lane, out of the other's way.
+		/// </summary>
+		internal static bool PullsPast(bool pulling, bool pullingIn, double x, double z, double hx, double hz, double bx, double bz, double bhx, double bhz, double otherSpeed)
+		{
+			return pulling && otherSpeed < 0.5 && (pullingIn || !Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5));
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="me"/>, about to wait for car <paramref name="first"/>, would close a ring: following what each car
+		/// waits for (<paramref name="next"/>: the car it waits for, -1 none) from <paramref name="first"/> comes back to <paramref name="me"/>
+		/// within <paramref name="most"/> cars. Drawn cars held up see the cars in their way in a straight line (<see cref="FreeAhead"/>), so
+		/// round a junction three or four of them, physics cars among them, waited each for the next for ever (trafficview, seed 9,
+		/// 2026-11-26). A car that would close one doesn't wait.
+		/// </summary>
+		internal static bool Ring(int me, int first, Func<int, int> next, int most = 16)
+		{
+			int c = first;
+			for (int i = 0; i < most && c >= 0; i++)
+			{
+				if (c == me)
+				{
+					return true;
+				}
+				c = next(c);
+			}
+			return false;
+		}
+
+		/// <summary>What a physics car with driver's state <paramref name="st"/> waits for (-1: nothing), for <see cref="Ring"/>.</summary>
+		internal static int Waiting(in State st)
+		{
+			if (st.Why == 0)
+			{
+				return -1;
+			}
+			return st.Why == 2 && st.Blocker >= 0 ? st.Blocker : st.Front >= 0 ? st.Front : st.Blocker;
 		}
 
 		/// <summary>How far ahead a drawn car going <paramref name="v"/> looks for something to stand for: its stopping distance and a car.</summary>
@@ -738,6 +818,7 @@ namespace HalfGripOpenWorld
 					{
 						target = safe;
 						why = 1;
+						st.Front = o.Car;
 					}
 				}
 			}
@@ -754,7 +835,7 @@ namespace HalfGripOpenWorld
 					// Turned across the lane, its nose or tail reaches further to the side than its middle.
 					double before = target;
 					InTheWay(me, o.X, o.Z, 0.0, ref target, ref why, 0.5 * CarLength * Math.Abs(me.Hx * o.Hz - me.Hz * o.Hx));
-					if (target < before && target < 0.5)
+					if (target < before)
 					{
 						// (For the notes: what holds it is a car pulling in or out.)
 						st.Front = o.Car;

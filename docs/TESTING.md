@@ -272,3 +272,14 @@ owner has reported on it.
    - Cars pulling out of a drive or a lot wait for a car stopped by its mouth; a car arriving at a space someone is still leaving waits
      beside it.
    - The overlay's traffic line (`ShowCoords`) says `held behind another N` where it used to say `hidden N`.
+68. Held cars become real cars (2026-11-26, `traffic-test-branch`, not released; the traffic changed: everyone in a room needs the same
+   build). Since 67 a car played back from the day that had something in its way slowed and waited, but it couldn't negotiate a
+   junction, so the real cars round you waiting on it (and it on them) locked up for minutes. Now such a car becomes a real car where it
+   is (up to 16 more than `TrafficPhysics`), in a junction too, and no car waits for a car that is waiting for it. Check round
+   Kingsbridge at the evening rush (about 17:00):
+   - No knot of cars that never moves again. Say where cars stand over a minute and a half with nothing visibly holding them (the
+     overlay's position and time, and the log).
+   - Frame rate: with `ShowCoords` on, the `traffic:` line shows `physics N/24+16 (... ) made ... (... claimed for having to slow)`;
+     note the fps and the `Frame timings` log lines with the most physics cars you see, against 0.33.0 in the same place.
+   - A car pulling out of a drive in front of a stopped queue now goes (the queue lets it out); one pulling into a space goes even if a
+     stopped car is right behind it.

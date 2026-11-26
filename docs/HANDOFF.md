@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 session notes; git keeps them (`git log -p docs/HANDOFF.md`). Standing decisions go in `docs/PLAN.md`, open in-game tests in
 `docs/TESTING.md`, finished research in `docs/research/`.
 
-Last written 2026-11-26 (late).
+Last written 2026-11-26 (night).
 
 ## Where things stand
 
@@ -24,38 +24,56 @@ Last written 2026-11-26 (late).
   colours or a pass (depth prepass) that doesn't follow the instances. Try a `MaterialPropertyBlock` with per-instance colour arrays.
 - **Paused until the standing-still fix is done:** four-way stops and more lights (the owner said try them; `docs/PLAN.md`).
 
-## Next, first: no car hidden, and the gridlock it caused (the owner, 2026-11-26)
+## Next, first: the honest tests' failures (the owner, 2026-11-26: "stop cheating the traffic tests")
 
-**The owner's decisions:** "The cars cannot get hidden that is unacceptable" (`docs/PLAN.md`). Don't roll the branch back: the owner
-holds that every in-game test so far was invalid because cars were being hidden. Approved plan: **a far car that would have to stop
-becomes a real (physics) car**, so it negotiates junctions through `TrafficDrive`; measure the frame cost of the extra physics cars.
-Talk plainly: "real cars near you" (physics) and "far cars played back from the day's plan" (drawn), never "drawn car", "node", "box".
+**The tests were made honest** (this session). Every allowance that let a visible fault pass is gone; each check now fails on any:
+- Physics cars in each other or crossing in a junction box: none allowed (were 6 and 3 a run).
+- A physics car standing over 90 s fails, wherever (it passed if the day's own car stood as long, and only cars still physical at the
+  end were counted). Only the queue behind the player's stopped car is excused, found by following what each car waits on to the
+  player's car (`BehindPlayer`), not by a radius. The line also says how many of the long stands the day itself has (diagnosis only).
+- New: cars played back from the day drawn in each other because one is late (Drive.cs had no such check).
+- The ledger test (`Lateness.cs`) no longer moves cars back along their way and skips those it would drop into another car: it stops
+  cars for real (braking at the yield's rate, standing up to 2 min, "stopped by something unseen") and everyone behind must cope. Its
+  overlap test is the real body box both ways (`TrafficLate.Overlap`: it was same-direction only for moving cars and a 6-unit circle
+  for a parked one). Other cars are seen where they were drawn last step, as the game does (the test used where the day would have them).
+- trafficview drew no parked cars in the physics run, so the game's "space still taken" rule was never exercised: now it does.
+- Day level: any two cars drawn through each other fails (only those pulling in or out did, over 10); right of way refused 0 (was
+  100); parked cars a lane car would sweep 0% (was 2%).
 
-**Where the code is** (commits 58950d0, 280cd1c on `traffic-test-branch`; compiles, `tools/check.sh` clean; trafficsim ok):
-- Nothing hides any more: `HideUnderPhysics`, `TrafficLate.Guard`, `Hide` and the hidden set are gone (`At`'s out flag is now only a
-  wreck, `gone`).
-- A drawn car with a physics car, the player's stopped car (trafficview only) or a late drawn car in its way is slowed and stopped
-  behind it and made late (`TrafficLate.Yield`: braking at `TrafficDrive.YieldBrake`, never more than its room in a step, pulling away
-  at the day's acceleration, never back past its trip's start; `TrafficDrive.FreeAhead`: in its lane, or across its way only for a
-  moving car within 40). Every frame in `TrafficPhysics.YieldDrawn` (called from `TrafficCars.Draw`); `drawnWas`/`drawnIs` hold
-  last frame's drawn cars. Physics drivers see a held car's drawn speed (`TrafficLate.DrawnSpeed`): without it they ran into them.
-- A car still in its space waits there while a late car is on its lane by it (`TrafficDrive.PullOutBlocked` + `HoldBack`); a car
-  arriving at a space still being left waits beside it; a car pulling out doesn't wait for one pulling in (that deadlocked).
-- trafficview drives the same rules (`Drive.cs` per step, `Lateness.cs`); its lateness test only makes a car late where its late
-  place is clear (as a physics car going back is). Lateness overlaps: a few hundred to a few thousand pair-steps a seed (was 0 hidden).
+**Built (the approved plan): a held car becomes a physics car.** `TrafficCars.ClaimForYield` (after each frame's drawing) claims every
+drawn car `YieldDrawn` had to slow, within reach and drivable, up to 16 over `TrafficPhysics` (`MostYieldPhysics`); a held car may be
+made one in a junction's box (`TrafficDrive.Drivable(day, at, held: true)`; `yieldClaimed` carries that to `Become`). Also: a car
+becomes physical at the speed it is drawn (`DrawnSpeed`, was the day's), and forgets it was held (`TrafficLate.Unheld`); a drawn car
+never waits for a car waiting, through others perhaps, for it (`TrafficDrive.Ring`, `Waiting`, `heldBy`); a stopped physics car behind
+a space lets its car out (`LetsOut`); a car pulling in or out goes past a standing car it isn't touching, pulling in even touching
+(`PullsPast`); a drawn car waits for a car standing across its way too (`FreeAhead`; it ignored standing ones and drove through cars
+standing in junctions); a held car is never drawn further than its allowed speed from where it was (`Yield`'s `TimeAt` cap); a car
+pulling in waits while a late car is still in its space, from the ledger (`TrafficLate.SpaceTaken`), not only the drawn cars.
+trafficview drives the same (`Drive.cs`: `MakeForYield`; `TV_NOYIELDPHYS=1` turns it off to compare).
 
-**What's wrong (16 seeds, `TV_DRIVE_ONLY=1`, run16.sh + pool.py):** the physics cars round the player gridlock on most seeds ("longest
-stop of the cars still physical" up to 600 s, 24 over 90 s; before: 9 s), meetings 81 against 40, 14 FAIL lines. The "long stop"
-notes (`TV_DRIVE_NOTES=1`) show physics cars waiting for room past a junction or giving way to drawn cars that are themselves held: a
-held drawn car can stand anywhere (in a junction, at its line with the right of way) and can't negotiate, so waits form rings.
-Dropping the across-its-way test didn't help.
+**Numbers, 16 seeds, `TV_DRIVE_ONLY=1`, the open-road run (standing at the busiest place at 17:00):**
+- Before (old, lax tests that only counted cars still physical): 14 of 16 seeds locked solid, stands up to 600 s.
+- Now: no seed locks; longest stand per seed 44 to 446 s; 166 physics cars stood over 90 s (0 on 4 seeds), 98 of them where the day's
+  own car also stood over 90 s (the day's slow side-road queues: the owner's "standing for no reason" report, below). Seeds 7, 9, 10,
+  16 have the most (24 to 32).
+- Physics cars in each other: 87 pairs over 16 seeds (old count 72, at 24 physics cars; now up to 40 at once). Crossing in a box: 12.
+- Played-back cars in each other because late: 0 to 268 pair-steps a seed (seed 9 the worst).
+- The ledger test (`TV_LATE_ONLY=1`, standing run): 80 to 12,818 overlapping pair-steps a seed. Seed 1 went 5,301 to 315 with the
+  fixes above; the rest of the seeds weren't looked at.
+- Every seed still FAILs somewhere. `tools/check.sh` compiles clean. Not tested in game; the frame cost of up to 40 physics cars is
+  unmeasured (`docs/TESTING.md` 68).
 
-**To build:** in `YieldDrawn` (and `Drive.cs`'s per-step loop), when a drawn car would have to slow (`free` below its stopping
-distance) and `Drivable` and within `PhysicsReach`, claim it as a physics car at once (`room.Claim` like `ClaimNearest`; over
-`MostPhysics` for these, with a separate cap to measure); keep `Yield` only where it can't be made physical (pulling out or in, in a
-junction, near a tunnel, out of reach: there only behind cars in its own lane). Watch the release rule (out of reach at 400) so a car
-isn't made and given back in turn. Then the 16 seeds: no "longest stop" FAIL, meetings back to about 40, lateness overlaps near 0; the
-frame cost with more physics cars (`ShowCoords` timings) in game. Stop line issue and the two meeting spots below still stand.
+**Next, in order:**
+1. The ledger test's overlaps on seeds 16, 12, 5, 7, 4, 3 (`TV_LATE_ONLY=1 TV_LATE_NOTES=1`: the first 25 pairs, each car's state,
+   junction, leg time). On seed 1 what's left: two late cars both reported **parked at (0, 0)** (the ledger gives a stale leg for a late
+   car between trips: `TrafficLate.At`; in the game that draws a car at the world's middle), and late cars crossing at node 47.
+2. The physics cars' meetings: most are at the two known places (Leftovers 1 below: node 6, the Pinewick road's way in, needs a box
+   per way in; node 42, drawn cars standing half a car past the line), and a physics car made where the day has a car at its trip's
+   end on the lane (the day's own overlap).
+3. The long stands where the day's car doesn't stand (68 of 166): `TV_DRIVE_CHAIN=1` prints, for each car standing over 90 s at the
+   end, what it waits on and so on to the head; `TV_DRIVE_CAR=n`, `TV_YIELD_CAR=n`, `TV_LATE_CAR=n` trace one car.
+4. The day's own failures, now counted: right of way refused (68 on seed 1), cars drawn through each other (27 sightings on seed 1).
+5. Then the owner's report of standing still (below), the four-way stops and lights.
 
 ## Fixed 2026-11-26: a car standing in the open road (the owner's second report)
 

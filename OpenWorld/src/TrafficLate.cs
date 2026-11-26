@@ -344,23 +344,14 @@ namespace HalfGripOpenWorld
 			return count;
 		}
 
-		/// <summary>Whether two drawn cars would overlap: on one lane too close, or one in the other's parking space.</summary>
+		/// <summary>
+		/// Whether two drawn cars' bodies overlap, whichever way each faces (each box half a unit smaller than a car, as the physics cars'
+		/// check). Until 2026-11-26 two moving cars overlapped only going the same way, and a moving car and a parked one within 6 of each
+		/// other: a car driving through a crossing one passed, and one passing a kerb car half a unit off failed.
+		/// </summary>
 		internal static bool Overlap(in Near a, in Near b)
 		{
-			double dx = b.X - a.X, dz = b.Z - a.Z;
-			double d2 = dx * dx + dz * dz;
-			if (a.Moving && b.Moving)
-			{
-				// Same way (not a car in the other lane), close along it and not beside it.
-				if (a.Hx * b.Hx + a.Hz * b.Hz < 0.5 || d2 >= Gap * Gap)
-				{
-					return false;
-				}
-				// Beside by either car's heading (the same answer whichever is a and which b).
-				double side = Math.Min(Math.Abs(dx * a.Hz - dz * a.Hx), Math.Abs(dx * b.Hz - dz * b.Hx));
-				return side < 3.0;
-			}
-			return d2 < InSpace * InSpace;
+			return TrafficDrive.Overlap(a.X, a.Z, a.Hx, a.Hz, b.X, b.Z, b.Hx, b.Hz, -0.5);
 		}
 
 		private static bool Visible(int car, TrafficDay.Place p, Func<int, TrafficDay.Place, bool> seen)
@@ -489,7 +480,16 @@ namespace HalfGripOpenWorld
 			// (Never back past its trip's start: it would be drawn in its space again, a jump.)
 			double extra = Math.Min(at.T, dt * (1.0 - allowed / Math.Max(v, 1e-3)));
 			TrafficDay.Leg leg = day.Legs[at.Leg];
-			d = TrafficDrive.LegClock(leg, w) - (leg.Start + at.T) + extra;
+			double drawnAt = leg.Start + at.T - extra;
+			// And never further on than going allowed from where it was a step ago: the day's speed over the step it is moved back to can
+			// be more than v, and a car held at the yield's room crept into the car in front (trafficview's ledger, 2026-11-26).
+			double was = TrafficDay.DistanceAt(leg, Math.Max(leg.Start, leg.Start + at.T - dt));
+			double most = was + allowed * dt;
+			if (TrafficDay.DistanceAt(leg, drawnAt) > most + 1e-6)
+			{
+				drawnAt = Math.Max(leg.Start, Math.Min(drawnAt, TrafficDrive.TimeAt(leg, most)));
+			}
+			d = TrafficDrive.LegClock(leg, w) - drawnAt;
 			bool had = ledger.ContainsKey(car);
 			Late(car, at.Leg, w, d, 0.0);
 			if (had)
@@ -498,6 +498,72 @@ namespace HalfGripOpenWorld
 			}
 			return true;
 		}
+
+		/// <summary>
+		/// Whether a late car other than <paramref name="car"/> is still in parking space <paramref name="spot"/> at sim time <paramref name="w"/>
+		/// (parked, or pulling out of it): the day gave the space to <paramref name="car"/> once that car had left, and it hasn't. Read from
+		/// the ledger, not from the drawn cars: parked cars are drawn nearer the player than moving ones, and a car arriving out of their
+		/// reach parked in one still there (trafficview's ledger, 2026-11-26).
+		/// </summary>
+		internal bool SpaceTaken(int car, TrafficParking.Spot spot, double w)
+		{
+			if (spot.Away)
+			{
+				return false;
+			}
+			foreach (KeyValuePair<int, Entry> kv in ledger)
+			{
+				if (kv.Key == car || kv.Value.Gone)
+				{
+					continue;
+				}
+				TrafficDay.Place p = At(kv.Key, w, out bool gone);
+				if (gone || p.Leg < 0)
+				{
+					continue;
+				}
+				TrafficParking.Spot there;
+				if (p.State == TrafficDay.State.Parked)
+				{
+					there = day.Parking.Parked(kv.Key, p.Leg);
+				}
+				else if (p.State == TrafficDay.State.Driving && !day.Legs[p.Leg].Appears && p.T < day.Legs[p.Leg].PullOut + 0.5)
+				{
+					there = day.Parking.Parked(kv.Key, LegBefore(kv.Key, p.Leg));
+				}
+				else
+				{
+					continue;
+				}
+				if (!there.Away && (there.X - spot.X) * (there.X - spot.X) + (there.Z - spot.Z) * (there.Z - spot.Z) < InSpace * InSpace)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>The car's leg that ran before <paramref name="leg"/> (-1: none: it set off from home).</summary>
+		private int LegBefore(int car, int leg)
+		{
+			double start = day.Legs[leg].Start;
+			int best = -1;
+			foreach (int li in day.Cars[car].Legs)
+			{
+				TrafficDay.Leg l = day.Legs[li];
+				if (li != leg && l.Start < start && (best < 0 || l.Start > day.Legs[best].Start))
+				{
+					best = li;
+				}
+			}
+			return best;
+		}
+
+		/// <summary>
+		/// Forgets that car <paramref name="car"/> was held back (<see cref="Yield"/>): it became a physics car. Kept, the speed it was held
+		/// to would be where it picks up from once it is drawn again, however fast its physics car was going.
+		/// </summary>
+		internal void Unheld(int car) => shown.Remove(car);
 
 		/// <summary>Whether car <paramref name="car"/> is being held back or picking up again (<see cref="Yield"/>).</summary>
 		internal bool Yielding(int car) => shown.ContainsKey(car);

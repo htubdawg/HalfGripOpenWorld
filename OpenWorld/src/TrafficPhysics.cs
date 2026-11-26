@@ -45,6 +45,21 @@ namespace HalfGripOpenWorld
 
 		private int MostPhysics => physicsFailed ? 0 : Math.Max(0, Mod.TrafficPhysics.Value);
 
+		/// <summary>
+		/// How many physics cars may be made over <see cref="MostPhysics"/> of drawn cars that have to slow for something the day doesn't
+		/// know of (<see cref="ClaimForYield"/>): none with physics cars off (they are then held behind it, drawn).
+		/// </summary>
+		private int MostYieldPhysics => MostPhysics == 0 ? 0 : 16;
+
+		/// <summary>Drawn cars held up this frame, to be claimed as physics cars once the drawing is done (<see cref="ClaimForYield"/>).</summary>
+		private readonly List<int> yieldWanted = new List<int>();
+
+		/// <summary>The cars claimed for being held up whose grant hasn't come yet: they may become physics cars in a junction's box (<see cref="Become"/>).</summary>
+		private readonly HashSet<int> yieldClaimed = new HashSet<int>();
+
+		/// <summary>Drawn cars claimed as physics cars for having to slow (counted for the log and the overlay).</summary>
+		private int madeForYield;
+
 		/// <summary>Contact physics: at most this many loose cars (drawn cars made real a moment before the player touches them), apart from <see cref="MostPhysics"/>.</summary>
 		private int MostLoose => physicsFailed ? 0 : Math.Max(0, Mod.TrafficLoose.Value);
 
@@ -613,25 +628,73 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// The drawn cars held up this frame (<see cref="YieldDrawn"/>) claimed as physics cars, where they may be (drivable, within reach, not on
+		/// a physics car, this machine the nearest player), up to <see cref="MostPhysics"/> and <see cref="MostYieldPhysics"/> more. Called
+		/// after the drawing (becoming one takes a car off the chosen list). One that can't be stays drawn, held behind what is in its way.
+		/// </summary>
+		private void ClaimForYield(double w)
+		{
+			if (yieldWanted.Count == 0)
+			{
+				return;
+			}
+			if (MostYieldPhysics == 0 || tm.enemyCarPrefab == null)
+			{
+				yieldWanted.Clear();
+				return;
+			}
+			double now = EventLink.Clock();
+			CarControllerNew car = tm.playerCarController;
+			if (car == null)
+			{
+				yieldWanted.Clear();
+				return;
+			}
+			Origin.World(car.transform.position, out double cx, out double cz);
+			foreach (int c in yieldWanted)
+			{
+				if (physical.Count - LooseCount + room.Claims - looseWanted.Count >= MostPhysics + MostYieldPhysics)
+				{
+					break;
+				}
+				if (physical.ContainsKey(c) || !live.TryGetValue(c, out View v) || !Drawn(v) || double.IsNaN(v.LastX))
+				{
+					continue;
+				}
+				if (room.DriverOf(c) != 0UL || room.Claiming(c) || room.Handing(c) || !Drivable(c, w, out TrafficDay.Place at, true))
+				{
+					continue;
+				}
+				double dx = v.LastX - cx, dz = v.LastZ - cz;
+				if (dx * dx + dz * dz > (double)PhysicsReach * PhysicsReach)
+				{
+					continue;
+				}
+				// Not made one in another (behind one is fine: its driver follows it).
+				if (OnAPhysicsCar(v.LastX, v.LastZ, at.Hx, at.Hz, -TrafficLate.Gap, -TrafficLate.Gap) || !room.Nearest(v.LastX, v.LastZ, now))
+				{
+					continue;
+				}
+				yieldClaimed.Add(c);
+				room.Claim(c, now);
+				if (physicsFailed)
+				{
+					break;
+				}
+				madeForYield++;
+			}
+			yieldWanted.Clear();
+		}
+
+		/// <summary>
 		/// Whether drawn car <paramref name="c"/> may become a physics car now: driving, not wrecked or in a tunnel, not pulling out or in (the
 		/// day draws that), not on its last stretch, not near a tunnel, not in a junction's box (the day let it in; the drivers didn't, and
 		/// might send another physics car across it).
 		/// </summary>
-		private bool Drivable(int c, double w, out TrafficDay.Place at)
+		private bool Drivable(int c, double w, out TrafficDay.Place at, bool held = false)
 		{
 			at = late.At(c, w, out bool gone);
-			if (gone || at.State != TrafficDay.State.Driving || at.InTunnel || at.Leg < 0)
-			{
-				return false;
-			}
-			TrafficDay.Leg leg = day.Legs[at.Leg];
-			if ((!leg.Appears && at.T < leg.PullOut + 0.5) || (!leg.Vanishes && (leg.End - leg.Start - at.T < leg.PullIn + 3.0 || at.P > leg.Length - TrafficDrive.EndZone - 25.0)) || TrafficDrive.NearTunnel(leg, at.P))
-			{
-				return false;
-			}
-			TrafficDrive.Mover m = new TrafficDrive.Mover { Car = c, Leg = at.Leg, P = at.P };
-			TrafficDrive.Prepare(day, ref m);
-			return !((m.Node >= 0 && m.ToBox < TrafficDrive.CarLength * 0.5) || m.Back >= 0);
+			return !gone && TrafficDrive.Drivable(day, at, held);
 		}
 
 		/// <summary>
@@ -644,7 +707,8 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			if (!Drivable(c, w, out TrafficDay.Place at))
+			// (One claimed for being held up may be in a junction's box: ClaimForYield.)
+			if (!Drivable(c, w, out TrafficDay.Place at, yieldClaimed.Remove(c)))
 			{
 				return false;
 			}
@@ -655,7 +719,10 @@ namespace HalfGripOpenWorld
 			}
 			Vector3 fwd = new Vector3((float)at.Hx, 0f, (float)at.Hz);
 			PlaceAsDrawn(b, v, 0.4f);
-			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, at.Speed));
+			// As fast as it is drawn: a car held back is drawn slower than the day has it.
+			b.Begin(this, c, at.Leg, at.P, fwd.normalized * (float)Math.Max(0.0, late.DrawnSpeed(c, at)));
+			late.Unheld(c);
+			heldBy.Remove(c);
 			physical[c] = b;
 			madePhysical++;
 			// Not drawn by stage 2 from now on (a grant that came between choices: off the chosen list too).
@@ -700,14 +767,32 @@ namespace HalfGripOpenWorld
 				float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
 				// In its lane close behind or ahead, or in it whichever way either faces (a car pulling in across the road, one passing the
 				// nose of a physics car stopped in a junction). A loose car still in its space only if in it (cars drive past parked ones).
-				if ((!b.InSpace && side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, 0.5)
-					|| (farSide && !b.InSpace && TrafficDrive.AcrossItsWay(along, side)))
+				// One standing behind it lets it out (TrafficDrive.LetsOut): its driver sees it pulling out and waits.
+				Vector3 bv = b.Rb.velocity;
+				bool letsOut = TrafficDrive.LetsOut(along, Math.Sqrt(bv.x * bv.x + bv.z * bv.z));
+				if ((!b.InSpace && !letsOut && side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, 0.5)
+					|| (farSide && !b.InSpace && !letsOut && TrafficDrive.AcrossItsWay(along, side)))
 				{
 					return true;
 				}
 			}
 			return false;
 		}
+
+		/// <summary>What held each drawn car held back last (a car: a drawn car never waits for one waiting for it).</summary>
+		private readonly Dictionary<int, int> heldBy = new Dictionary<int, int>();
+
+		private Func<int, int> waitsOn;
+
+		/// <summary>What car c waits for (-1: nothing): a physics car this machine drives, its driver's; a drawn car held back, what held it.</summary>
+		private Func<int, int> WaitsOn => waitsOn ??= c =>
+		{
+			if (physical.TryGetValue(c, out TrafficBody b))
+			{
+				return b != null && b.Alive && !b.Loose ? TrafficDrive.Waiting(b.Drive) : -1;
+			}
+			return late.Yielding(c) && heldBy.TryGetValue(c, out int h) ? h : -1;
+		};
 
 		/// <summary>The cars drawn last frame and this one (where, which way, moving, late): what a drawn car is held behind.</summary>
 		private List<TrafficLate.Near> drawnWas = new List<TrafficLate.Near>(), drawnIs = new List<TrafficLate.Near>();
@@ -724,13 +809,17 @@ namespace HalfGripOpenWorld
 			parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
 			double look = TrafficDrive.YieldLook(Math.Max(0.0, at.Speed));
 			double free = double.MaxValue;
-			if (AnyBodies)
-			{
-				free = Math.Min(FreeOfBodies(physical, x, z, hx, hz, look), FreeOfBodies(remote, x, z, hx, hz, look));
-			}
 			bool meLate = late.Has(c);
 			TrafficDay.Leg leg = day.Legs[at.Leg];
 			bool pullingIn = !leg.Vanishes && leg.End - leg.Start - at.T < leg.PullIn + 2.0;
+			bool pullIn = !leg.Vanishes && leg.End - leg.Start - at.T < leg.PullIn;
+			bool pulling = (!leg.Appears && at.T < leg.PullOut) || pullIn;
+			int by = -1;
+			if (AnyBodies)
+			{
+				free = FreeOfBodies(physical, c, x, z, hx, hz, look, pulling, pullIn, ref by, double.MaxValue);
+				free = FreeOfBodies(remote, c, x, z, hx, hz, look, pulling, pullIn, ref by, free);
+			}
 			// Pulling out of its space it doesn't wait for a car pulling in (one waiting for that space would wait for it in turn, for ever).
 			// (A physics car there holds it in its space: HoldBackFromPhysics.)
 			bool pullingOut = !leg.Appears && at.T < leg.PullOut + 1.0;
@@ -749,6 +838,11 @@ namespace HalfGripOpenWorld
 				}
 			}
 			TrafficParking.Spot mine = pullingIn ? parking.Parked(c, at.Leg) : default;
+			if (pullingIn && late.SpaceTaken(c, mine, w))
+			{
+				// Its space still taken by a late car, drawn or not: it waits on its lane by it.
+				free = 0.0;
+			}
 			foreach (TrafficLate.Near o in drawnWas)
 			{
 				if ((pullingOut && o.PullingIn) || o.Car == c || (!meLate && !o.Late))
@@ -761,32 +855,53 @@ namespace HalfGripOpenWorld
 					free = 0.0;
 					continue;
 				}
-				if (!o.Moving)
+				if (!o.Moving || TrafficDrive.Ring(c, o.Car, WaitsOn))
 				{
+					// (Not one waiting, through others perhaps, for this car: each would wait for the next for ever.)
 					continue;
 				}
-				free = Math.Min(free, TrafficDrive.FreeAhead(x, z, hx, hz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed));
+				double f1 = TrafficDrive.FreeAhead(x, z, hx, hz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed);
+				if (f1 < free)
+				{
+					free = f1;
+					by = o.Car;
+				}
 			}
 			bool was = late.Yielding(c);
 			if (late.Yield(c, at, w, dt, free, out double d))
 			{
+				heldBy[c] = by;
 				SendHold(c, at.Leg, w, d);
 				at = late.At(c, w, out bool _);
+				// Held: made a physics car where it can be, so it negotiates the junctions itself (a held drawn car can't, and physics cars
+				// waiting on held cars waiting on them gridlocked: the owner's approved plan, 2026-11-26).
+				yieldWanted.Add(c);
 			}
 			else if (was && late.TryGet(c, out TrafficLate.Entry e) && e.Leg >= 0)
 			{
+				heldBy.Remove(c);
 				// Going again: its lateness as it stands, sent at once (the sends while held are spaced out).
 				holdSent.Remove(c);
 				SendHold(c, e.Leg, w, e.D);
 			}
 		}
 
-		private static double FreeOfBodies(Dictionary<int, TrafficBody> bodies, double x, double z, double hx, double hz, double look)
+		/// <summary>
+		/// How far drawn car <paramref name="c"/> can go before it must stand for one of <paramref name="bodies"/>, from <paramref name="free"/>
+		/// (<see cref="TrafficDrive.FreeAhead"/>); <paramref name="by"/> the car it stands for. Not for one waiting, through others perhaps,
+		/// for <paramref name="c"/> (<see cref="TrafficDrive.Ring"/>): seen in a straight line, round a junction's bend a car on another road
+		/// looked ahead of it, and each waited for the other for ever.
+		/// </summary>
+		private double FreeOfBodies(Dictionary<int, TrafficBody> bodies, int c, double x, double z, double hx, double hz, double look, bool pulling, bool pullIn, ref int by, double free)
 		{
-			double free = double.MaxValue;
-			foreach (TrafficBody b in bodies.Values)
+			foreach (KeyValuePair<int, TrafficBody> kv in bodies)
 			{
+				TrafficBody b = kv.Value;
 				if (b == null || !b.gameObject.activeSelf || b.InSpace)
+				{
+					continue;
+				}
+				if (TrafficDrive.Ring(c, kv.Key, WaitsOn))
 				{
 					continue;
 				}
@@ -794,7 +909,17 @@ namespace HalfGripOpenWorld
 				Vector3 f = b.transform.forward;
 				float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
 				Vector3 bv = b.Rb.velocity;
-				free = Math.Min(free, TrafficDrive.FreeAhead(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, look, Math.Sqrt(bv.x * bv.x + bv.z * bv.z)));
+				double bs = Math.Sqrt(bv.x * bv.x + bv.z * bv.z);
+				if (TrafficDrive.PullsPast(pulling, pullIn, x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, bs))
+				{
+					continue;
+				}
+				double f1 = TrafficDrive.FreeAhead(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, look, bs);
+				if (f1 < free)
+				{
+					free = f1;
+					by = kv.Key;
+				}
 			}
 			return free;
 		}
@@ -1275,7 +1400,7 @@ namespace HalfGripOpenWorld
 				}
 			}
 			int loose = LooseCount;
-			return "; physics " + (physical.Count - loose) + "/" + MostPhysics + " (" + waiting + " giving way, " + holding + " stopped), made " + madePhysical + ", back " + backOnTime + " on time and " + backLate + " late, wrecked "
+			return "; physics " + (physical.Count - loose) + "/" + MostPhysics + "+" + MostYieldPhysics + " (" + waiting + " giving way, " + holding + " stopped), made " + madePhysical + " (" + madeForYield + " claimed for having to slow), back " + backOnTime + " on time and " + backLate + " late, wrecked "
 				+ retiredWrecked + ", retired " + retiredOff + ", drawn held behind another " + late.Yielded + ", held back " + heldBack
 				+ "; loose " + loose + "/" + MostLoose + " (made " + madeLoose + ", back " + looseBack + ", retired " + looseRetired + ")" + RoomStatus();
 		}

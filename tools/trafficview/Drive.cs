@@ -13,12 +13,18 @@ internal static partial class Program
 {
 	private const double DriveStep = 0.05, DriveRun = 600.0, PhysReach = 300.0, PhysLeave = 400.0, BubbleEvery = 0.4;
 	private const int MostPhysical = 24;
+	/// <summary>How many more physics cars may be made, over <see cref="MostPhysical"/>, of cars that have to slow for something the day doesn't know of (TrafficCars.MostYieldPhysics).</summary>
+	private const int MostYieldPhysical = 16;
+	/// <summary>TV_NOYIELDPHYS=1: held cars stay played back (as before 2026-11-26's plan), to compare.</summary>
+	private static readonly int YieldCar = int.TryParse(Environment.GetEnvironmentVariable("TV_YIELD_CAR"), out int yc) ? yc : -1;
+	private static readonly bool NoYieldPhysics = Environment.GetEnvironmentVariable("TV_NOYIELDPHYS") != null;
 	/// <summary>
-	/// What a run may have: cars that both committed to a junction at once (one turning, one merging, both past stopping) and meet in its
-	/// box. Physics cars there bump; the day itself has about a dozen such meetings a day. 16 seeds give 0 to 5 a run at the busiest place
-	/// at the rush (2026-11-23).
+	/// What a run may have: none. Two cars in each other, or two crossing in a junction's box, is a crash a player sees. (Until 2026-11-26
+	/// a run might have 6 and 3: those were crashes counted as passes.)
 	/// </summary>
-	private const int MostMeetings = 6, MostCrossings = 3;
+	private const int MostMeetings = 0, MostCrossings = 0;
+	/// <summary>A physics car may stand this long (s) at most; longer is a gridlock. With the player's car stopped across a lane, the queue behind it (each car standing behind the next, the first at the player's car: <see cref="BehindPlayer"/>) may stand for ever: the drivers don't go round it.</summary>
+	private const double LongestStand = 90.0;
 	/// <summary>The game car's pull and braking as the driver uses them (units/s²): a level-0 car pulls about 5 to 8 off the line; brakes up to 40.</summary>
 	private const double SimAccel = 6.0, SimBrake = 30.0;
 
@@ -26,6 +32,9 @@ internal static partial class Program
 	{
 		public int Car, Leg;
 		public double P, V, Stopped, MostStopped;
+		/// <summary>The longest it stood over <see cref="LongestStand"/> not in the queue behind the player's car, and whether its stand now is in it.</summary>
+		public double Unexcused;
+		public bool StandExcused;
 		public float[] Profile;
 		public TrafficDrive.State St;
 		public TrafficDrive.Mover Me;
@@ -138,9 +147,14 @@ internal static partial class Program
 		List<TrafficDrive.Mover> movers = new List<TrafficDrive.Mover>();
 		List<TrafficDrive.Obstacle> obstacles = new List<TrafficDrive.Obstacle>();
 		List<int> keys = new List<int>();
-		HashSet<long> crashed = new HashSet<long>(), crossed = new HashSet<long>();
+		HashSet<long> crashed = new HashSet<long>(), crossed = new HashSet<long>(), drawnCrashed = new HashSet<long>();
+		List<Sim> wentBack = new List<Sim>();
+		string drawnNote = "";
+		// What last held each drawn car (a car, -2 the player's car): for the chains.
+		Dictionary<int, int> heldBy = new Dictionary<int, int>();
+		Func<int, int> waitsOn = x => physical.TryGetValue(x, out Sim ws) ? TrafficDrive.Waiting(ws.St) : late.Yielding(x) && heldBy.TryGetValue(x, out int h) ? h : -1;
 		List<TrafficLate.Near> drawnWas = new List<TrafficLate.Near>(), drawnIs = new List<TrafficLate.Near>();
-		int made = 0, unstuck = 0, backOnTime = 0, backLate = 0, waitedEnd = 0, yielded = 0, heldBack = 0, hitPlayer = 0, jumps = 0, targets = 0;
+		int made = 0, madeYield = 0, mostAtOnce = 0, unstuck = 0, backOnTime = 0, backLate = 0, waitedEnd = 0, yielded = 0, heldBack = 0, hitPlayer = 0, jumps = 0, targets = 0;
 		double worstJump = 0.0, mostLate = 0.0, sumLate = 0.0, targetMs = 0.0;
 		string crashNote = "", crossNote = "", jumpNote = "", hitNote = "";
 		Stopwatch watch = new Stopwatch();
@@ -223,6 +237,7 @@ internal static partial class Program
 					}
 					TrafficDay.ReleaseLaneAt(day.Legs[s.Leg], s.P);
 					physical.Remove(c);
+					wentBack.Add(s);
 					// Where it is drawn now against where it was as a physics car: no jump.
 					TrafficDay.Place drawn = late.At(c, w, out bool _);
 					if (drawn.State == TrafficDay.State.Driving)
@@ -301,9 +316,11 @@ internal static partial class Program
 					{
 						continue;
 					}
-					physical[e.c] = new Sim { Car = e.c, Leg = e.at.Leg, P = e.at.P, V = Math.Max(0.0, e.at.Speed), Profile = TrafficDay.Profile(leg), St = new TrafficDrive.State { WaitNode = -1 } };
+					physical[e.c] = new Sim { Car = e.c, Leg = e.at.Leg, P = e.at.P, V = Math.Max(0.0, late.DrawnSpeed(e.c, e.at)), Profile = TrafficDay.Profile(leg), St = new TrafficDrive.State { WaitNode = -1 } };
+					late.Unheld(e.c);
 					TrafficDay.HoldLaneAt(leg, e.at.P);
 					made++;
+					mostAtOnce = Math.Max(mostAtOnce, physical.Count);
 				}
 			}
 
@@ -318,6 +335,16 @@ internal static partial class Program
 					continue;
 				}
 				TrafficDay.Place at = late.At(c, w, out bool hid);
+				if (!hid && at.State == TrafficDay.State.Parked && at.Leg >= 0)
+				{
+					// Parked cars near the player, as TrafficCars draws them: what a late car pulling in stops for, its space taken.
+					TrafficParking.Spot here = parking.Parked(c, at.Leg);
+					if (!here.Away && (here.X - px) * (here.X - px) + (here.Z - pz) * (here.Z - pz) < 600.0 * 600.0)
+					{
+						drawnIs.Add(new TrafficLate.Near { Car = c, X = here.X, Z = here.Z, Hx = here.Hx, Hz = here.Hz, Moving = false, Late = late.Has(c) });
+					}
+					continue;
+				}
 				if (hid || at.State != TrafficDay.State.Driving || at.InTunnel)
 				{
 					continue;
@@ -339,14 +366,31 @@ internal static partial class Program
 					parking.Drawn(c, at, out double yx, out double yz, out double yhx, out double yhz);
 					double look = TrafficDrive.YieldLook(Math.Max(0.0, at.Speed));
 					double free = double.MaxValue;
+					int by = -1;
+					bool pullInNow = !ml.Vanishes && ml.End - ml.Start - at.T < ml.PullIn;
+					bool pullingNow = (!ml.Appears && at.T < ml.PullOut) || pullInNow;
 					foreach (Sim ps in physical.Values)
 					{
 						TrafficDrive.Line(day.Legs[ps.Leg], ps.P, out double bx, out double bz, out double bhx, out double bhz);
-						free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, bx, bz, bhx, bhz, look, ps.V));
+						if (TrafficDrive.PullsPast(pullingNow, pullInNow, yx, yz, yhx, yhz, bx, bz, bhx, bhz, ps.V) || TrafficDrive.Ring(c, ps.Car, waitsOn))
+						{
+							continue;
+						}
+						double fp = TrafficDrive.FreeAhead(yx, yz, yhx, yhz, bx, bz, bhx, bhz, look, ps.V);
+						if (fp < free)
+						{
+							free = fp;
+							by = ps.Car;
+						}
 					}
 					if (blocked)
 					{
-						free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, ox, oz, -yhz, yhx, look, 0.0));
+						double fo = TrafficDrive.FreeAhead(yx, yz, yhx, yhz, ox, oz, -yhz, yhx, look, 0.0);
+						if (fo < free)
+						{
+							free = fo;
+							by = -2;
+						}
 					}
 					bool meLate = late.Has(c);
 					bool pullingIn = !ml.Vanishes && ml.End - ml.Start - at.T < ml.PullIn + 2.0, pullingOut = !ml.Appears && at.T < ml.PullOut + 1.0;
@@ -368,22 +412,79 @@ internal static partial class Program
 					{
 						continue;
 					}
+					TrafficParking.Spot mine = pullingIn ? parking.Parked(c, at.Leg) : default;
+					if (pullingIn && late.SpaceTaken(c, mine, w))
+					{
+						free = 0.0;
+					}
 					foreach (TrafficLate.Near o in drawnWas)
 					{
-						if (!(pullingOut && o.PullingIn) && o.Car != c && (meLate || o.Late) && o.Moving)
+						if ((pullingOut && o.PullingIn) || o.Car == c || (!meLate && !o.Late))
 						{
-							free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed));
+							continue;
 						}
+						if (pullingIn && !mine.Away && (o.X - mine.X) * (o.X - mine.X) + (o.Z - mine.Z) * (o.Z - mine.Z) < TrafficLate.InSpace * TrafficLate.InSpace)
+						{
+							// Its space still taken, or being left: it waits on its lane by it (TrafficCars.YieldDrawn).
+							free = 0.0;
+							by = o.Car;
+							continue;
+						}
+						if (o.Moving && !TrafficDrive.Ring(c, o.Car, waitsOn))
+						{
+							double fd = TrafficDrive.FreeAhead(yx, yz, yhx, yhz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed);
+							if (fd < free)
+							{
+								free = fd;
+								by = o.Car;
+							}
+						}
+					}
+					if (YieldCar == c && Math.Abs(t - Math.Round(t)) < DriveStep * 0.5 && (int)Math.Round(t) % 5 == 0)
+					{
+						string who = "";
+						foreach (Sim ps in physical.Values)
+						{
+							TrafficDrive.Line(day.Legs[ps.Leg], ps.P, out double bx, out double bz, out double bhx, out double bhz);
+							double f1 = TrafficDrive.FreeAhead(yx, yz, yhx, yhz, bx, bz, bhx, bhz, look, ps.V);
+							if (f1 < 1e9)
+							{
+								who += " p" + ps.Car + " free " + f1.ToString("0.0") + " v " + ps.V.ToString("0.0") + " pullsPast " + TrafficDrive.PullsPast(pullingNow, pullInNow, yx, yz, yhx, yhz, bx, bz, bhx, bhz, ps.V);
+							}
+						}
+						foreach (TrafficLate.Near o in drawnWas)
+						{
+							double f1 = TrafficDrive.FreeAhead(yx, yz, yhx, yhz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed);
+							if (f1 < 1e9 && o.Car != c)
+							{
+								who += " d" + o.Car + " free " + f1.ToString("0.0") + " moving " + o.Moving + " late " + o.Late;
+							}
+						}
+						Console.WriteLine("    yield car " + c + " t " + t.ToString("0") + " T " + at.T.ToString("0.0") + " pulling " + pullingNow + " free " + free.ToString("0.0") + " at (" + yx.ToString("0") + ", " + yz.ToString("0") + ") h (" + yhx.ToString("0.00") + ", " + yhz.ToString("0.00") + "):" + who);
 					}
 					bool wasHeld = late.Yielding(c);
 					if (late.Yield(c, at, w, DriveStep, free, out double _))
 					{
+						heldBy[c] = by;
 						yielded += wasHeld ? 0 : 1;
 						at = late.At(c, w, out bool _);
 						if (at.State != TrafficDay.State.Driving || at.InTunnel)
 						{
 							continue;
 						}
+					}
+					if (!late.Yielding(c))
+					{
+						heldBy.Remove(c);
+					}
+					// A car played back from the day that has to slow for something the day doesn't know of becomes a physics car at once,
+					// where it can (TrafficCars.YieldDrawn): a held car can't negotiate a junction, and physics cars waiting on held cars
+					// waiting on them gridlocked (2026-11-26).
+					if (late.Yielding(c) && MakeForYield(day, late, physical, c, at, px, pz, blocked, ox, oz))
+					{
+						madeYield++;
+						mostAtOnce = Math.Max(mostAtOnce, physical.Count);
+						continue;
 					}
 				}
 				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
@@ -394,6 +495,21 @@ internal static partial class Program
 				movers.Add(m);
 			}
 			int drawnCount = movers.Count;
+			// No two cars played back from the day drawn in each other because one is late (on-time ones the day keeps apart itself).
+			for (int i = 0; i < drawnIs.Count; i++)
+			{
+				for (int j = i + 1; j < drawnIs.Count; j++)
+				{
+					if ((drawnIs[i].Late || drawnIs[j].Late) && TrafficLate.Overlap(drawnIs[i], drawnIs[j]))
+					{
+						long key = Math.Min(drawnIs[i].Car, drawnIs[j].Car) * 100000L + Math.Max(drawnIs[i].Car, drawnIs[j].Car);
+						if (drawnCrashed.Add(key) && drawnNote.Length == 0)
+						{
+							drawnNote = " (first cars " + drawnIs[i].Car + " and " + drawnIs[j].Car + " at (" + drawnIs[i].X.ToString("0") + ", " + drawnIs[i].Z.ToString("0") + "), " + (3.0 + w / 100.0).ToString("0.00") + " h)";
+						}
+					}
+				}
+			}
 			keys.Clear();
 			keys.AddRange(physical.Keys);
 			keys.Sort();
@@ -448,6 +564,22 @@ internal static partial class Program
 				s.P = Math.Min(leg.Length, s.P + s.V * DriveStep);
 				s.Stopped = s.V < 0.5 ? s.Stopped + DriveStep : 0.0;
 				s.MostStopped = Math.Max(s.MostStopped, s.Stopped);
+				if (s.Stopped == 0.0)
+				{
+					s.StandExcused = false;
+				}
+				else if (s.Stopped > LongestStand)
+				{
+					// Standing long: in the queue behind the player's stopped car (the drivers don't go round it), or not.
+					if (!s.StandExcused && blocked && BehindPlayer(day, physical, heldBy, waitsOn, s, ox, oz))
+					{
+						s.StandExcused = true;
+					}
+					if (!s.StandExcused)
+					{
+						s.Unexcused = Math.Max(s.Unexcused, s.Stopped);
+					}
+				}
 				if (s.Stopped > 90.0 && s.StopNote == null)
 				{
 					s.StopNote = "at 90 s: " + (3.0 + w / 100.0).ToString("0.00") + " h why " + s.St.Why + " held " + s.St.Held + " node " + s.Me.Node + " arms " + s.Me.InArm + ">" + s.Me.OutArm + " toBox " + s.Me.ToBox.ToString("0") + " target " + target.ToString("0.0") + " | front " + Who(day, late, physical, s.St.Front, w) + " | blocker " + Who(day, late, physical, s.St.Blocker, w);
@@ -520,39 +652,207 @@ internal static partial class Program
 				}
 			}
 		}
-		// A physics car stopped over 90 s fails only if it stood well longer than the day had the same car stand over the run: one in
-		// the day's own queue (Kingsbridge's junctions at the 5 pm peak, minutes on some seeds) stands where the player sees why, the
-		// cars in front standing too, and that queue is the day's (its junction waiting, above).
-		int longWaits = 0, dayQueue = 0;
+		// A physics car stopped over LongestStand fails: there is no queue so long at any light here. Only the queue behind the player's
+		// stopped car may stand for ever. (Until 2026-11-26 a car stopped as long as the day had it stand passed: the day's own gridlock
+		// counted as fine.)
+		int longWaits = 0, behindPlayer = 0, dayAlso = 0;
 		double longest = 0.0;
-		foreach (Sim s in physical.Values)
+		// Every car that was a physics car in the run: those gone back on their timetable too (one that stood minutes and went back out of
+		// reach went uncounted until 2026-11-26).
+		List<Sim> all = new List<Sim>(wentBack);
+		all.AddRange(physical.Values);
+		foreach (Sim s in all)
 		{
 			longest = Math.Max(longest, s.MostStopped);
-			if (s.MostStopped > 90.0)
+			if (s.Unexcused > LongestStand)
 			{
-				if (s.MostStopped > DayStop(day, s.Car, w0) + 30.0)
-				{
-					longWaits++;
-				}
-				else
-				{
-					dayQueue++;
-				}
+				longWaits++;
+				dayAlso += DayStop(day, s.Car, w0) > LongestStand ? 1 : 0;
 			}
-			if (s.MostStopped > 90.0 && Environment.GetEnvironmentVariable("TV_DRIVE_NOTES") != null)
+			else if (s.MostStopped > LongestStand)
+			{
+				behindPlayer++;
+			}
+			if (s.MostStopped > LongestStand && Environment.GetEnvironmentVariable("TV_DRIVE_NOTES") != null)
 			{
 				TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
 				TrafficDrive.Prepare(day, ref lm);
 				Console.WriteLine("    long stop: car " + s.Car + " leg " + s.Leg + " at " + s.P.ToString("0") + " of " + day.Legs[s.Leg].Length.ToString("0") + " why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " arms " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " stopped " + s.MostStopped.ToString("0") + " s (the day's own car: " + DayStop(day, s.Car, w0).ToString("0") + " s) lights " + LightsTrace(day, lm.Node, lm.InArm, TrafficDay.SimOfHour(17.0)) + " || " + s.StopNote);
 			}
 		}
-		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && hitPlayer == 0 && jumps == 0 && (blocked || longWaits == 0);
-		Console.WriteLine("  physics cars, " + name + ", 10 minutes from 17:00: " + made + " made physical, back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
+		if (Environment.GetEnvironmentVariable("TV_DRIVE_CHAIN") != null)
+		{
+			// What each long-stopped physics car waits on, and what that waits on: the chains' heads are the gridlock's causes.
+			double wEnd = w0 + DriveRun;
+			if (wEnd >= Traffic.DaySeconds)
+			{
+				wEnd -= Traffic.DaySeconds;
+			}
+			Dictionary<string, int> heads = new Dictionary<string, int>();
+			foreach (Sim s0 in physical.Values)
+			{
+				if (s0.Stopped < LongestStand)
+				{
+					continue;
+				}
+				string chain = "";
+				HashSet<int> seen = new HashSet<int>();
+				int c = s0.Car;
+				string head = "";
+				for (int hop = 0; hop < 12; hop++)
+				{
+					if (!seen.Add(c))
+					{
+						chain += " LOOP";
+						head = "loop";
+						break;
+					}
+					if (physical.TryGetValue(c, out Sim s))
+					{
+						TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = s.Car, Leg = s.Leg, P = s.P };
+						TrafficDrive.Prepare(day, ref lm);
+						chain += " > p" + c + "(why " + s.St.Why + " held " + s.St.Held + " n" + lm.Node + " " + lm.InArm + ">" + lm.OutArm + " toBox " + lm.ToBox.ToString("0") + " back " + lm.Back + " v " + s.V.ToString("0.0") + ")";
+						int next = s.St.Why == 2 && s.St.Blocker >= 0 ? s.St.Blocker : s.St.Front >= 0 ? s.St.Front : s.St.Blocker;
+						if (next < 0)
+						{
+							head = "physics why " + s.St.Why + " held " + s.St.Held + " node " + lm.Node + " " + lm.InArm + ">" + lm.OutArm;
+							break;
+						}
+						c = next;
+					}
+					else
+					{
+						TrafficDay.Place at = late.At(c, wEnd, out bool _);
+						bool held = late.Yielding(c);
+						TrafficDrive.Mover lm = new TrafficDrive.Mover { Car = c, Leg = at.Leg, P = at.P };
+						if (at.Leg >= 0)
+						{
+							TrafficDrive.Prepare(day, ref lm);
+						}
+						string legInfo = at.Leg >= 0 ? " leg " + at.Leg + " T " + at.T.ToString("0.0") + " P " + at.P.ToString("0") + "/" + day.Legs[at.Leg].Length.ToString("0") + " appears " + day.Legs[at.Leg].Appears + " vanishes " + day.Legs[at.Leg].Vanishes + " pullOut " + day.Legs[at.Leg].PullOut.ToString("0.0") + " pullIn " + day.Legs[at.Leg].PullIn.ToString("0.0") + " dur " + (day.Legs[at.Leg].End - day.Legs[at.Leg].Start).ToString("0.0") : " no leg";
+						chain += " > d" + c + legInfo + "(" + at.State + " v " + late.DrawnSpeed(c, at).ToString("0.0") + " day v " + at.Speed.ToString("0.0") + (held ? " HELD" : "") + (late.Has(c) ? " late" : "") + " n" + lm.Node + " toBox " + lm.ToBox.ToString("0") + " back " + lm.Back + " drivable " + (at.Leg >= 0 && TrafficDrive.Drivable(day, at)) + ")";
+						if (at.Leg >= 0 && !day.Legs[at.Leg].Vanishes && day.Legs[at.Leg].End - day.Legs[at.Leg].Start - at.T < day.Legs[at.Leg].PullIn + 2.0)
+						{
+							TrafficParking.Spot sp = day.Parking.Parked(c, at.Leg);
+							chain += " space (" + sp.X.ToString("0") + ", " + sp.Z.ToString("0") + ") taken by:";
+							foreach (TrafficLate.Near o in drawnIs)
+							{
+								if (o.Car != c && (o.X - sp.X) * (o.X - sp.X) + (o.Z - sp.Z) * (o.Z - sp.Z) < TrafficLate.InSpace * TrafficLate.InSpace)
+								{
+									TrafficDay.Place oa = late.At(o.Car, wEnd, out bool _);
+									chain += " d" + o.Car + " " + oa.State + " T " + oa.T.ToString("0.0") + " late " + late.Has(o.Car) + " yielding " + late.Yielding(o.Car) + " pullingIn " + o.PullingIn;
+								}
+							}
+							foreach (Sim ps in physical.Values)
+							{
+								TrafficDrive.Line(day.Legs[ps.Leg], ps.P, out double bx, out double bz, out double _, out double _);
+								if ((bx - sp.X) * (bx - sp.X) + (bz - sp.Z) * (bz - sp.Z) < TrafficLate.InSpace * TrafficLate.InSpace)
+								{
+									chain += " p" + ps.Car;
+								}
+							}
+						}
+						head = "drawn" + (held ? " held" : late.Has(c) ? " late" : " on time") + (at.Speed < 0.5 ? " standing in the day" : " moving in the day");
+						if (held && heldBy.TryGetValue(c, out int hb))
+						{
+							if (hb == -2)
+							{
+								chain += " > the player's car";
+								head = "player";
+								break;
+							}
+							head += " (held by " + hb + ")";
+							c = hb;
+							continue;
+						}
+						break;
+					}
+				}
+				heads[head] = heads.TryGetValue(head, out int n) ? n + 1 : 1;
+				Console.WriteLine("    chain: " + chain);
+			}
+			foreach (KeyValuePair<string, int> kv in heads)
+			{
+				Console.WriteLine("    chain heads: " + kv.Key + " " + kv.Value);
+			}
+		}
+		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && drawnCrashed.Count == 0 && hitPlayer == 0 && jumps == 0 && longWaits == 0;
+		Console.WriteLine("  physics cars, " + name + ", 10 minutes from 17:00: " + made + " made physical by the nearest and " + madeYield + " for having to slow (at most " + mostAtOnce + " at once), back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
 			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " back early at a trip's end, " + yielded + " drawn cars held behind another (none hidden), " + heldBack + " held back from pulling out onto one, " + unstuck + " late drawn cars let off a stand; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
 			+ (crashNote.Length > 0 ? " (first " + crashNote + ")" : "") + ", " + crossed.Count + " pairs crossing in a box (at most " + MostCrossings + ")" + (crossNote.Length > 0 ? " (first " + crossNote + ")" : "") + (blocked ? ", " + hitPlayer + " steps in the player's car" + hitNote : "")
-			+ "; jumps going back: worst " + worstJump.ToString("0.0") + (jumpNote.Length > 0 ? " (" + jumpNote + ")" : "") + ", " + jumps + " over 3; longest stop of the cars still physical " + longest.ToString("0") + " s"
-			+ (blocked ? "" : " (" + longWaits + " over 90 s and 30 s longer than the day's car, " + dayQueue + " over 90 s in the day's own queue)") + "; " + (targets > 0 ? targetMs * 1000.0 / targets : 0.0).ToString("0.0") + " us a target" + (ok ? "" : " FAIL"));
+			+ "; jumps going back: worst " + worstJump.ToString("0.0") + (jumpNote.Length > 0 ? " (" + jumpNote + ")" : "") + ", " + jumps + " over 3; longest stop of any physics car " + longest.ToString("0") + " s"
+			+ " (" + longWaits + " over " + LongestStand.ToString("0") + " s, " + dayAlso + " of them where the day has the same car stand that long too" + (blocked ? ", " + behindPlayer + " in the queue behind the player's car" : "") + "); " + drawnCrashed.Count + " pairs of played-back cars in each other because late" + drawnNote + "; " + (targets > 0 ? targetMs * 1000.0 / targets : 0.0).ToString("0.0") + " us a target" + (ok ? "" : " FAIL"));
 		return ok;
+	}
+
+	/// <summary>
+	/// Whether physics car <paramref name="s"/> stands in the queue behind the player's stopped car at (ox, oz): what it waits for, and
+	/// what that waits for (<paramref name="waitsOn"/>: physics cars' drivers, drawn cars held back), ends at the player's car: a physics
+	/// car standing within two cars of it with nothing it waits for, or a drawn car held back by it (<paramref name="heldBy"/> -2).
+	/// </summary>
+	private static bool BehindPlayer(TrafficDay day, Dictionary<int, Sim> physical, Dictionary<int, int> heldBy, Func<int, int> waitsOn, Sim s, double ox, double oz)
+	{
+		HashSet<int> seen = new HashSet<int>();
+		int c = s.Car;
+		while (seen.Add(c))
+		{
+			if (physical.TryGetValue(c, out Sim p))
+			{
+				int n = TrafficDrive.Waiting(p.St);
+				if (n < 0)
+				{
+					TrafficDrive.Line(day.Legs[p.Leg], p.P, out double x, out double z, out double _, out double _);
+					return p.V < 0.5 && (x - ox) * (x - ox) + (z - oz) * (z - oz) < (2.0 * TrafficDrive.CarLength + 8.0) * (2.0 * TrafficDrive.CarLength + 8.0);
+				}
+				c = n;
+				continue;
+			}
+			if (heldBy.TryGetValue(c, out int h) && h == -2)
+			{
+				return true;
+			}
+			c = waitsOn(c);
+			if (c < 0)
+			{
+				return false;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// Makes car <paramref name="c"/>, played back at <paramref name="at"/> and held up, a physics car if it may be one (as
+	/// TrafficCars.ClaimForYield does): drivable, within reach, under the cap with <see cref="MostYieldPhysical"/> more, and not in a
+	/// physics car or the player's car.
+	/// </summary>
+	private static bool MakeForYield(TrafficDay day, TrafficLate late, Dictionary<int, Sim> physical, int c, TrafficDay.Place at, double px, double pz, bool blocked, double ox, double oz)
+	{
+		if (NoYieldPhysics || physical.Count >= MostPhysical + MostYieldPhysical || !TrafficDrive.Drivable(day, at, true))
+		{
+			return false;
+		}
+		day.Parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
+		if ((x - px) * (x - px) + (z - pz) * (z - pz) > PhysReach * PhysReach)
+		{
+			return false;
+		}
+		foreach (Sim s in physical.Values)
+		{
+			TrafficDrive.Line(day.Legs[s.Leg], s.P, out double bx, out double bz, out double bhx, out double bhz);
+			if (TrafficDrive.Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5))
+			{
+				return false;
+			}
+		}
+		if (blocked && TrafficDrive.Overlap(x, z, hx, hz, ox, oz, -hz, hx, 0.5))
+		{
+			return false;
+		}
+		TrafficDay.Leg leg = day.Legs[at.Leg];
+		physical[c] = new Sim { Car = c, Leg = at.Leg, P = at.P, V = Math.Max(0.0, late.DrawnSpeed(c, at)), Profile = TrafficDay.Profile(leg), St = new TrafficDrive.State { WaitNode = -1 } };
+		late.Unheld(c);
+		TrafficDay.HoldLaneAt(leg, at.P);
+		return true;
 	}
 
 	/// <summary>The junction box a mover is in (its near half, or the far half of the one it passed) and its arms.</summary>
@@ -579,7 +879,8 @@ internal static partial class Program
 			TrafficDrive.Line(day.Legs[s.Leg], s.P, out double bx, out double bz, out double bhx, out double bhz);
 			double dx = bx - x, dz = bz - z;
 			double along = dx * hx + dz * hz, side = Math.Abs(dx * hz - dz * hx);
-			if ((side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5) || (farSide && TrafficDrive.AcrossItsWay(along, side)))
+			bool letsOut = TrafficDrive.LetsOut(along, s.V);
+			if ((!letsOut && side < 4.0 && along > -TrafficLate.Gap - before && along < TrafficLate.Gap + behind) || TrafficDrive.Overlap(x, z, hx, hz, bx, bz, bhx, bhz, 0.5) || (farSide && !letsOut && TrafficDrive.AcrossItsWay(along, side)))
 			{
 				return true;
 			}

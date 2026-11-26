@@ -11,8 +11,8 @@ internal static partial class Program
 {
 	/// <summary>The player's box in the touch test and the drawn car's (half sizes, units), and the margin, as TrafficPhysics has them.</summary>
 	private const double TouchPlayerL = 7.5, TouchPlayerW = 2.7, TouchCarL = 7.1, TouchCarW = 2.65, TouchMargin = 0.2;
-	/// <summary>At most this share of the cars driving their lanes may sweep a parked car (a few: a lane past a car park's bays, a tight lane).</summary>
-	private const double MostTouchingShare = 0.02;
+	/// <summary>The share of the cars driving their lanes that may sweep a parked car: none (a parked car in a lane is in the way; until 2026-11-26, 2% passed).</summary>
+	private const double MostTouchingShare = 0.0;
 
 	private static bool Contact(TrafficDay day)
 	{

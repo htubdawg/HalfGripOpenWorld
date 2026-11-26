@@ -27,6 +27,10 @@ when one is done, delete it here.
 - **No car is ever hidden** (the owner, 2026-11-26: "The cars cannot get hidden that is unacceptable"; it overturns the rule of
   2026-11-23 that hid a late car overlapping another). A drawn car with something in its way the day doesn't know of (a physics car, a
   late car) slows and waits behind it as a driver would, and runs late. Only a wreck goes (it burns and explodes, as the game's do).
+- **No allowances in the traffic tests** (the owner, 2026-11-26: "we need to get serious and you need to stop cheating the traffic
+  tests"). A check fails on any visible fault (two cars in each other, a crossing in a box, a car standing for minutes, a car drawn
+  through another), never "at most N"; a test never skips the cases that would fail or excuses a fault because the day does it too;
+  and trafficview drives the game's own rules (no rule only in the game, none only in the test). Report the failures as they are.
 - The highway (the owner, 2026-11-25): no overpasses or underpasses anywhere (no interchanges); at-grade junctions, traffic lights
   where needed are fine. "The median is not meant to be used as a lane": no median lanes to merge from, no cars standing in the
   median; dedicated left-turn lanes, with left-turn arrows where there is a light. The median stays mostly open so players can cross

@@ -953,6 +953,8 @@ namespace HalfGripOpenWorld
 				live.Remove(c);
 			}
 			PopForget(cx, cz, dt);
+			// The drawn cars held up while drawing, claimed as physics cars (not in the loop: becoming one takes a car off the chosen list).
+			ClaimForYield(w);
 			DrawFar();
 			Perf.Add(Perf.Part.Draw, drew);
 			// Contact physics: a drawn car the player is about to touch becomes a loose car.
