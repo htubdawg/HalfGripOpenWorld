@@ -342,11 +342,11 @@ internal static partial class Program
 					foreach (Sim ps in physical.Values)
 					{
 						TrafficDrive.Line(day.Legs[ps.Leg], ps.P, out double bx, out double bz, out double bhx, out double bhz);
-						free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, bx, bz, bhx, bhz, look));
+						free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, bx, bz, bhx, bhz, look, ps.V));
 					}
 					if (blocked)
 					{
-						free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, ox, oz, -yhz, yhx, look));
+						free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, ox, oz, -yhz, yhx, look, 0.0));
 					}
 					bool meLate = late.Has(c);
 					bool pullingIn = !ml.Vanishes && ml.End - ml.Start - at.T < ml.PullIn + 2.0, pullingOut = !ml.Appears && at.T < ml.PullOut + 1.0;
@@ -372,7 +372,7 @@ internal static partial class Program
 					{
 						if (!(pullingOut && o.PullingIn) && o.Car != c && (meLate || o.Late) && o.Moving)
 						{
-							free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, o.X, o.Z, o.Hx, o.Hz, look));
+							free = Math.Min(free, TrafficDrive.FreeAhead(yx, yz, yhx, yhz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed));
 						}
 					}
 					bool wasHeld = late.Yielding(c);
@@ -387,7 +387,7 @@ internal static partial class Program
 					}
 				}
 				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
-				drawnIs.Add(new TrafficLate.Near { Car = c, X = x, Z = z, Hx = hx, Hz = hz, Moving = true, Late = late.Has(c), PullingIn = !ml.Vanishes && ml.End - ml.Start - at.T < ml.PullIn + 2.0 });
+				drawnIs.Add(new TrafficLate.Near { Car = c, X = x, Z = z, Hx = hx, Hz = hz, Moving = true, Late = late.Has(c), PullingIn = !ml.Vanishes && ml.End - ml.Start - at.T < ml.PullIn + 2.0, Speed = late.DrawnSpeed(c, at) });
 				bool pulling = (!ml.Appears && at.T < ml.PullOut) || (!ml.Vanishes && ml.End - ml.Start - at.T < ml.PullIn);
 				TrafficDrive.Mover m = new TrafficDrive.Mover { Car = c, Leg = at.Leg, P = at.P, V = late.DrawnSpeed(c, at), X = x, Z = z, Hx = hx, Hz = hz, Pulling = pulling };
 				TrafficDrive.Prepare(day, ref m);

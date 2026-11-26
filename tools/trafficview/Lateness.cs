@@ -283,7 +283,7 @@ internal static partial class Program
 					parking.Drawn(c, at, out double _, out double _, out hx, out hz);
 				}
 				bool pin = at.State == TrafficDay.State.Driving && !day.Legs[at.Leg].Vanishes && day.Legs[at.Leg].End - day.Legs[at.Leg].Start - at.T < day.Legs[at.Leg].PullIn + 2.0;
-				near.Add(new TrafficLate.Near { Car = c, X = p.x, Z = p.z, Hx = hx, Hz = hz, Moving = at.State == TrafficDay.State.Driving, Distance = Math.Sqrt(dx * dx + dz * dz), Late = late.Has(c), PullingIn = pin });
+				near.Add(new TrafficLate.Near { Car = c, X = p.x, Z = p.z, Hx = hx, Hz = hz, Moving = at.State == TrafficDay.State.Driving, Distance = Math.Sqrt(dx * dx + dz * dz), Late = late.Has(c), PullingIn = pin, Speed = at.State == TrafficDay.State.Driving ? late.DrawnSpeed(c, at) : 0.0 });
 			}
 			watch.Restart();
 			// A late car (or one coming up on a late car) with another in its way is held behind it, as TrafficPhysics.YieldDrawn does
@@ -340,7 +340,7 @@ internal static partial class Program
 					}
 					if (!(pullingOut && o.PullingIn) && o.Car != a.Car && (a.Late || o.Late) && (o.Moving || pullingIn))
 					{
-						double f1 = TrafficDrive.FreeAhead(a.X, a.Z, a.Hx, a.Hz, o.X, o.Z, o.Hx, o.Hz, look);
+						double f1 = TrafficDrive.FreeAhead(a.X, a.Z, a.Hx, a.Hz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed);
 						free = Math.Min(free, f1);
 					}
 				}

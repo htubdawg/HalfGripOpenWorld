@@ -492,11 +492,11 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// How far a drawn car at (x, z) facing (hx, hz) (unit) can still go before it must stand for a car at (bx, bz) facing (bhx, bhz):
 		/// one ahead in its lane, to <see cref="YieldGap"/> short of its tail; one across its way, to just short of where their bodies
-		/// would meet straight on; 0 if they meet already with the other in front. MaxValue if the other is not in its way within
-		/// <paramref name="look"/>. What a drawn car is slowed by (<see cref="TrafficLate.Yield"/>) instead of being hidden: the day doesn't
+		/// would meet straight on, if it is moving (<paramref name="otherSpeed"/>; one standing at its line waits for this one); 0 if they
+		/// meet already with the other in front. MaxValue if the other is not in its way within <paramref name="look"/>. What a drawn car is slowed by (<see cref="TrafficLate.Yield"/>) instead of being hidden: the day doesn't
 		/// know a physics car (or a late car) is in its way. Pure arithmetic: the game and trafficview both use it.
 		/// </summary>
-		internal static double FreeAhead(double x, double z, double hx, double hz, double bx, double bz, double bhx, double bhz, double look)
+		internal static double FreeAhead(double x, double z, double hx, double hz, double bx, double bz, double bhx, double bhz, double look, double otherSpeed)
 		{
 			double dx = bx - x, dz = bz - z;
 			double reach = look + CarLength * 2.0;
@@ -518,7 +518,11 @@ namespace HalfGripOpenWorld
 			{
 				return 0.0;
 			}
-			for (double o = 2.0; o <= look; o += 2.0)
+			if (otherSpeed < 1.0)
+			{
+				return double.MaxValue;
+			}
+			for (double o = 2.0; o <= Math.Min(look, 40.0); o += 2.0)
 			{
 				if (Overlap(x + hx * o, z + hz * o, hx, hz, bx, bz, bhx, bhz, 0.5))
 				{

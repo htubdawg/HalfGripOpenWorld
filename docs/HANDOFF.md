@@ -24,6 +24,24 @@ Last written 2026-11-26.
   colours or a pass (depth prepass) that doesn't follow the instances. Try a `MaterialPropertyBlock` with per-instance colour arrays.
 - **Paused until the standing-still fix is done:** four-way stops and more lights (the owner said try them; `docs/PLAN.md`).
 
+## In progress, NOT READY TO TEST: no car hidden (the owner, 2026-11-26)
+
+The owner: "The cars cannot get hidden that is unacceptable" (`docs/PLAN.md`). Drawn cars used to be hidden when a physics car or a
+late car was in their way (`HideUnderPhysics`, `TrafficLate.Guard`). Now (commit 58950d0 and the one after) they slow and stop behind
+it and run late (`TrafficLate.Yield`, `TrafficDrive.FreeAhead`, `TrafficPhysics.YieldDrawn` every frame; the drivers see a held car's
+drawn speed, `TrafficLate.DrawnSpeed`). Hide, Guard and the hidden set are gone.
+
+**It gridlocks:** over 16 seeds (`TV_DRIVE_ONLY=1`) the physics cars round the player stand up to the whole 10-minute run on most
+seeds (24 over 90 s; before: longest 9 s) and their meetings doubled (81 against 40), 14 FAILs. Drawn cars only waiting for a car
+ahead in their lane (no crossing traffic) didn't help. The stop notes (`TV_DRIVE_NOTES=1`, "long stop") show physics cars held for
+room past a box or giving way to drawn cars that are themselves held: a held drawn car can stand anywhere (in a box, at its line with
+the right of way), and it can't negotiate a junction, so waits form rings. The lateness test went from 0 overlaps (hidden) to a few
+hundred to a few thousand pair-steps.
+
+The idea to try next (told to the owner): a drawn car that would be held becomes a physics car instead (it negotiates junctions
+through `TrafficDrive`), with the physics cap raised for it; holding drawn cars only for the cars ahead in their own lane, out of
+junctions.
+
 ## Fixed 2026-11-26: a car standing in the open road (the owner's second report)
 
 Race seed 192843966 (weekday), about 09:04: car 2521 (leg 247) stood 26 s north of node 42 ((-2354, -4259), box 17) waiting to turn

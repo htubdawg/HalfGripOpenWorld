@@ -765,7 +765,7 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				free = Math.Min(free, TrafficDrive.FreeAhead(x, z, hx, hz, o.X, o.Z, o.Hx, o.Hz, look));
+				free = Math.Min(free, TrafficDrive.FreeAhead(x, z, hx, hz, o.X, o.Z, o.Hx, o.Hz, look, o.Speed));
 			}
 			bool was = late.Yielding(c);
 			if (late.Yield(c, at, w, dt, free, out double d))
@@ -793,7 +793,8 @@ namespace HalfGripOpenWorld
 				Origin.World(b.Rb.position, out double bx, out double bz);
 				Vector3 f = b.transform.forward;
 				float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
-				free = Math.Min(free, TrafficDrive.FreeAhead(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, look));
+				Vector3 bv = b.Rb.velocity;
+				free = Math.Min(free, TrafficDrive.FreeAhead(x, z, hx, hz, bx, bz, f.x / fl, f.z / fl, look, Math.Sqrt(bv.x * bv.x + bv.z * bv.z)));
 			}
 			return free;
 		}

@@ -318,6 +318,8 @@ namespace HalfGripOpenWorld
 			public bool Late;
 			/// <summary>On its last few seconds, pulling into its space (a car pulling out of that space doesn't wait for it).</summary>
 			public bool PullingIn;
+			/// <summary>The speed it is drawn going (0 parked).</summary>
+			public double Speed;
 		}
 
 		/// <summary>

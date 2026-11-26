@@ -1153,7 +1153,7 @@ namespace HalfGripOpenWorld
 				// On its path, or pulling out of its space at the start of a trip and into one at the end (TrafficParking.Drawn).
 				parking.Drawn(c, at, out double x, out double z, out double hx, out double hz);
 				TrafficDay.Leg dl = day.Legs[at.Leg];
-				drawnIs.Add(new TrafficLate.Near { Car = c, X = x, Z = z, Hx = hx, Hz = hz, Moving = true, Late = late.Has(c), PullingIn = !dl.Vanishes && dl.End - dl.Start - at.T < dl.PullIn + 2.0 });
+				drawnIs.Add(new TrafficLate.Near { Car = c, X = x, Z = z, Hx = hx, Hz = hz, Moving = true, Late = late.Has(c), PullingIn = !dl.Vanishes && dl.End - dl.Start - at.T < dl.PullIn + 2.0, Speed = late.DrawnSpeed(c, at) });
 				double roadY = at.Y + Network.Lift;
 				v.ParkedLeg = int.MinValue;
 				Lamps(v, true);
