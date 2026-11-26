@@ -343,9 +343,21 @@ namespace HalfGripOpenWorld
 		/// <summary>Where along each connector its car's body can touch the other's: the first and last distances of each one's rear axle that do.</summary>
 		private static bool Touch(int a, int b, out double a0, out double a1, out double b0, out double b1)
 		{
+			return Touch(a, b, 0.0, out a0, out a1, out b0, out b1);
+		}
+
+		/// <summary>Whether the two connectors' car bodies, each grown by <paramref name="margin"/> all round, ever overlap (for checking how far apart two ways keep).</summary>
+		internal static bool Meet(int a, int b, double margin)
+		{
+			return Touch(a, b, margin, out double _, out double _, out double _, out double _);
+		}
+
+		private static bool Touch(int a, int b, double margin, out double a0, out double a1, out double b0, out double b1)
+		{
 			a0 = a1 = b0 = b1 = 0.0;
 			Body p = BodyOf(a), q = BodyOf(b);
-			double reach = 2.0 * Math.Sqrt(HalfLength * HalfLength + HalfWidth * HalfWidth);
+			double hl = HalfLength + margin, hw = HalfWidth + margin;
+			double reach = 2.0 * Math.Sqrt(hl * hl + hw * hw);
 			if (p.X0 - reach > q.X1 || q.X0 - reach > p.X1 || p.Z0 - reach > q.Z1 || q.Z0 - reach > p.Z1)
 			{
 				return false;
@@ -362,7 +374,7 @@ namespace HalfGripOpenWorld
 				for (int j = 0; j < q.F.Length; j++)
 				{
 					double dx = q.Cx[j] - cx, dz = q.Cz[j] - cz;
-					if (dx * dx + dz * dz > r2 || !Overlap(dx, dz, p.Ux[i], p.Uz[i], q.Ux[j], q.Uz[j]))
+					if (dx * dx + dz * dz > r2 || !Overlap(dx, dz, p.Ux[i], p.Uz[i], q.Ux[j], q.Uz[j], hl, hw))
 					{
 						continue;
 					}
@@ -384,26 +396,26 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether two car bodies overlap: middles (dx, dz) apart, axes u and v (separating axes, the four sides' normals).</summary>
-		private static bool Overlap(double dx, double dz, double ux, double uz, double vx, double vz)
+		private static bool Overlap(double dx, double dz, double ux, double uz, double vx, double vz, double hl, double hw)
 		{
 			// Along each axis, the two half extents projected against the middles' distance.
 			double uv = Math.Abs(ux * vx + uz * vz), uvp = Math.Abs(ux * -vz + uz * vx);
 			// Axis u: the first body's length.
-			if (Math.Abs(dx * ux + dz * uz) > HalfLength + HalfLength * uv + HalfWidth * uvp)
+			if (Math.Abs(dx * ux + dz * uz) > hl + hl * uv + hw * uvp)
 			{
 				return false;
 			}
 			// Axis u's normal: the first body's width.
-			if (Math.Abs(-dx * uz + dz * ux) > HalfWidth + HalfLength * uvp + HalfWidth * uv)
+			if (Math.Abs(-dx * uz + dz * ux) > hw + hl * uvp + hw * uv)
 			{
 				return false;
 			}
 			// Axis v.
-			if (Math.Abs(dx * vx + dz * vz) > HalfLength + HalfLength * uv + HalfWidth * uvp)
+			if (Math.Abs(dx * vx + dz * vz) > hl + hl * uv + hw * uvp)
 			{
 				return false;
 			}
-			return Math.Abs(-dx * vz + dz * vx) <= HalfWidth + HalfLength * uvp + HalfWidth * uv;
+			return Math.Abs(-dx * vz + dz * vx) <= hw + hl * uvp + hw * uv;
 		}
 
 		// ---- who gives way -------------------------------------------------------------------------------------------------------

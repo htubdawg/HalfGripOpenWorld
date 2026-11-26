@@ -22,6 +22,9 @@ namespace HalfGripOpenWorld
 		/// <summary>What a connector does: goes on, turns left (across the other way's lane: traffic keeps right), turns right, turns round at a
 		/// dead end, or jumps through the wrap (no length: the trunk's tunnels joined).</summary>
 		internal const int Straight = 0, Left = 1, Right = 2, Round = 3, Jump = 4;
+		/// <summary>No way: a turn of more than 150 degrees at a junction (cos 150° is -0.866).</summary>
+		private const int None = -1;
+		private const double HairpinCos = 0.866;
 
 		/// <summary>A lane along edge <see cref="Edge"/> for traffic going <see cref="Dir"/> (+1 from its A to its B, the way its road's distance grows).</summary>
 		internal sealed class Lane
@@ -102,6 +105,13 @@ namespace HalfGripOpenWorld
 		/// lane past the box.
 		/// </summary>
 		internal const double MinRadius = 14.0;
+		/// <summary>
+		/// The tightest a fillet round a corner may be (about 2.1 m for the rear axle; a street corner's right turn needs 7.5, tighter than a real car's): the map's drawn corners are
+		/// tighter than real ones (a street's mouth flares by a few units), and a line round a corner that keeps to the lanes' middles and
+		/// the paving is better than one wide enough for a real car that cuts over the kerb. Only where the corner is tighter still (a
+		/// hairpin) does the line swing wide at <see cref="MinRadius"/>.
+		/// </summary>
+		internal const double FilletRadius = 7.0;
 		/// <summary>The slowest a connector's limit goes (a dead end's turn round): about 6 mph.</summary>
 		internal const double Crawl = 6.0 * Traffic.Mph;
 
@@ -186,8 +196,17 @@ namespace HalfGripOpenWorld
 			}
 			else
 			{
-				// The two junctions' boxes meet: a lane of no length where they do, in proportion.
+				// The two junctions' boxes meet: a lane of no length where they do, in proportion; at a light's drawn stop line where the
+				// junction ahead has one (SignalPoles.StopLine is at its box), or the one behind.
 				start = end = s0 + dir * edge.Length * (b0 + b1 > 0.0 ? b0 / (b0 + b1) : 0.5);
+				if (TrafficSignals.Has(to))
+				{
+					start = end = s1 - dir * Math.Min(b1, edge.Length);
+				}
+				else if (TrafficSignals.Has(from))
+				{
+					start = end = s0 + dir * Math.Min(b0, edge.Length);
+				}
 			}
 			Traffic.At(road, (edge.Sa + edge.Sb) * 0.5, out double mx, out double mz, out double _);
 			double limit = Traffic.Limit(road.Kind, mx, mz);
@@ -338,6 +357,10 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					int turn = TurnOf(n, i, j);
+					if (turn == None)
+					{
+						continue;
+					}
 					int throughIn = Throughs(ins), throughOut = Throughs(outs);
 					int bay = ins.Count > throughIn ? ins[throughIn] : -1;
 					switch (turn)
@@ -361,6 +384,20 @@ namespace HalfGripOpenWorld
 								Add(n, i, j, ins[k], outs[Math.Min(k, throughOut - 1)], turn);
 							}
 							break;
+					}
+				}
+				// A bay with no left turn at its end: the junction is split in two a few units apart (a crossroads whose side roads
+				// meet the trunk a little out of line), and the left is at the next one. The bay goes on into the lane nearest the middle.
+				int bayIn = Throughs(ins) < ins.Count ? ins[Throughs(ins)] : -1;
+				if (bayIn >= 0 && All[bayIn].Out.Count == 0)
+				{
+					for (int j = 0; j < m; j++)
+					{
+						List<int> outs = AtB(n, j) ? Backward[links[j]] : Forward[links[j]];
+						if (j != i && outs.Count > 0 && TurnOf(n, i, j) == Straight)
+						{
+							Add(n, i, j, bayIn, outs[Throughs(outs) - 1], Straight);
+						}
 					}
 				}
 			}
@@ -391,6 +428,11 @@ namespace HalfGripOpenWorld
 			Junctions.ArmOf(n, i, out double ix, out double iz);
 			Junctions.ArmOf(n, j, out double jx, out double jz);
 			double tx = -ix, tz = -iz, cross = tx * jz - tz * jx;
+			if (tx * jx + tz * jz < -HairpinCos)
+			{
+				// Back the way it came into an acute fork: no driver turns there (the fork's other end is the way).
+				return None;
+			}
 			return cross > 0.3 ? Left : cross < -0.3 ? Right : Straight;
 		}
 
@@ -403,9 +445,12 @@ namespace HalfGripOpenWorld
 			Connector c = new Connector { Node = n, From = from, To = to, InArm = inArm, OutArm = outArm, Turn = turn, KeepClear = Traffic.Links[n].Count >= 3 };
 			Curve(c, x0, z0, y0, h0x, h0z, x1, z1, y1, h1x, h1z);
 			c.Join = b.Start;
-			if (turn != Round && Tightest(c) < MinRadius)
+			if (turn != Round && Tightest(c) < FilletRadius)
 			{
-				Fit(c, b, x0, z0, y0, h0x, h0z);
+				if (!Arc(c, b, x0, z0, h0x, h0z, y1))
+				{
+					Fit(c, b, x0, z0, y0, h0x, h0z);
+				}
 			}
 			c.Limit = Math.Max(Crawl, Math.Min(Math.Min(a.Limit, b.Limit), Math.Sqrt(TurnGrip * Tightest(c))));
 			a.Out.Add(Connectors.Count);
@@ -482,6 +527,181 @@ namespace HalfGripOpenWorld
 				double span = pd[at + 1] - pd[at], f = span > 1e-12 ? Math.Max(0.0, Math.Min(1.0, (want - pd[at]) / span)) : 0.0;
 				c.X[p] = px[at] + (px[at + 1] - px[at]) * f;
 				c.Z[p] = pz[at] + (pz[at + 1] - pz[at]) * f;
+				c.Y[p] = y0 + (y1 - y0) * (length > 0.0 ? want / length : 0.0);
+				c.D[p] = want;
+			}
+			c.Length = length;
+		}
+
+		/// <summary>
+		/// Re-draws connector <paramref name="c"/>, whose plain curve bends tighter than a car can, the way a driver turns: one arc from the
+		/// rear axle's start, as wide as it must be (never tighter than <see cref="MinRadius"/>) to come out along lane
+		/// <paramref name="to"/>'s middle, then straight on to the lane's start, or joining the lane further along if the arc comes out past
+		/// it (<see cref="Connector.Join"/>). Where even the tightest arc can't reach the lane (a hairpin like the right off the Pinewick
+		/// road at node 6) the car first swings the other way on the tightest arc, a little more each try, until it can. False if no swing up
+		/// to 80 degrees does, or the lane is joined beyond its reach: the caller tries a Bézier.
+		/// </summary>
+		private static bool Arc(Connector c, Lane to, double x0, double z0, double h0x, double h0z, double y1)
+		{
+			Point(to, to.Start, out double px, out double pz, out double _, out double h1x, out double h1z);
+			double cross = h0x * h1z - h0z * h1x;
+			if (Math.Abs(cross) < 0.05 && h0x * h1x + h0z * h1z > 0.0)
+			{
+				return false;
+			}
+			// The way the turn goes: +1 left (cross positive), -1 right.
+			double side = cross >= 0.0 ? 1.0 : -1.0, n1x = -h1z, n1z = h1x;
+			double reach = Math.Min(to.Length, 60.0);
+			// First the fillet: one arc tangent to both lanes' lines, with straight on before or after it, ending at the lane's start (as a
+			// driver keeps to the middle of the lanes round a corner).
+			double dot = h0x * h1x + h0z * h1z;
+			double wx = px - x0, wz = pz - z0;
+			// Q0 + u h0 = P1 - v h1.
+			double det = h0x * -h1z - h0z * -h1x;
+			if (Math.Abs(det) > 1e-9)
+			{
+				double u = (wx * -h1z - wz * -h1x) / det, v = (h0x * wz - h0z * wx) / det;
+				// The arc is as wide as the shorter of the two straights to the meeting point allows; the rest of the longer is driven
+				// straight, before the arc (the lane in's) or after it (the lane out's).
+				double t = Math.Min(u, v), rho = t * (1.0 + dot) / Math.Abs(cross);
+				if (t > 0.0 && rho >= FilletRadius)
+				{
+					double lead = u - t, ax = x0 + h0x * lead, az = z0 + h0z * lead;
+					double alpha = side * Network.Atan2(cross, dot);
+					List<double> fx = new List<double> { x0 };
+					List<double> fz = new List<double> { z0 };
+					if (lead > 1e-6)
+					{
+						fx.Add(ax);
+						fz.Add(az);
+					}
+					Sweep(ax, az, h0x, h0z, side, rho, alpha, fx, fz);
+					if (v - t > 1e-6)
+					{
+						fx.Add(px);
+						fz.Add(pz);
+					}
+					else
+					{
+						fx[fx.Count - 1] = px;
+						fz[fz.Count - 1] = pz;
+					}
+					Resample(c, fx, fz, c.Y[0], y1);
+					c.Join = to.Start;
+					c.Wide = false;
+					return true;
+				}
+			}
+			for (int deg = 0; deg <= 80; deg += 2)
+			{
+				// The swing the other way first: an arc of the tightest radius through deg degrees.
+				double phi = deg * DetMath.Pi / 180.0;
+				double sx = x0, sz = z0, gx = h0x, gz = h0z;
+				if (deg > 0)
+				{
+					Turn(x0, z0, h0x, h0z, -side, MinRadius, phi, out sx, out sz, out gx, out gz);
+				}
+				double e = (sx - px) * n1x + (sz - pz) * n1z, den = side * (1.0 - (gx * h1x + gz * h1z));
+				if (Math.Abs(den) < 1e-9)
+				{
+					continue;
+				}
+				double rho = e / den;
+				if (rho < MinRadius || rho > 400.0)
+				{
+					continue;
+				}
+				// Where the arc comes out, on the lane's line: before its start (straight on to it) or past it (joining there).
+				double ex = sx + side * rho * (-gz - n1x), ez = sz + side * rho * (gx - n1z);
+				double along = (ex - px) * h1x + (ez - pz) * h1z;
+				if (along > reach)
+				{
+					continue;
+				}
+				double alpha = side * Network.Atan2(gx * h1z - gz * h1x, gx * h1x + gz * h1z);
+				if (alpha < 0.0)
+				{
+					alpha += 2.0 * DetMath.Pi;
+				}
+				List<double> xs = new List<double>(), zs = new List<double>();
+				xs.Add(x0);
+				zs.Add(z0);
+				if (deg > 0)
+				{
+					Sweep(x0, z0, h0x, h0z, -side, MinRadius, phi, xs, zs);
+				}
+				Sweep(sx, sz, gx, gz, side, rho, alpha, xs, zs);
+				double join = to.Start;
+				if (along < 0.0)
+				{
+					xs.Add(px);
+					zs.Add(pz);
+				}
+				else
+				{
+					join = to.Start + to.Dir * along;
+					Point(to, join, out double jx, out double jz, out double _, out double _, out double _);
+					xs[xs.Count - 1] = jx;
+					zs[zs.Count - 1] = jz;
+				}
+				Resample(c, xs, zs, c.Y[0], y1);
+				c.Join = join;
+				c.Wide = deg > 0 || along > 0.0;
+				return true;
+			}
+			return false;
+		}
+
+		/// <summary>Where an arc of radius <paramref name="r"/> from (x, z) along (hx, hz), turning <paramref name="side"/> (+1 left) through <paramref name="angle"/>, ends, and its way there.</summary>
+		private static void Turn(double x, double z, double hx, double hz, double side, double r, double angle, out double ex, out double ez, out double gx, out double gz)
+		{
+			// The centre is r to the turn's side; the way turns by side * angle (left of (hx, hz) is (-hz, hx)).
+			double cx = x + side * r * -hz, cz = z + side * r * hx;
+			double cs = DetMath.Cos(angle), sn = DetMath.Sin(side * angle);
+			gx = hx * cs - hz * sn;
+			gz = hx * sn + hz * cs;
+			ex = cx - side * r * -gz;
+			ez = cz - side * r * gx;
+		}
+
+		/// <summary>Adds the points of that arc a step apart (its start left out).</summary>
+		private static void Sweep(double x, double z, double hx, double hz, double side, double r, double angle, List<double> xs, List<double> zs)
+		{
+			int n = Math.Max(1, (int)Math.Ceiling(r * angle / (Step * 0.5)));
+			for (int k = 1; k <= n; k++)
+			{
+				Turn(x, z, hx, hz, side, r, angle * k / n, out double px, out double pz, out double _, out double _);
+				xs.Add(px);
+				zs.Add(pz);
+			}
+		}
+
+		/// <summary>Sets connector <paramref name="c"/>'s points from a line through (xs, zs), spaced about <see cref="Step"/> apart by distance along it.</summary>
+		private static void Resample(Connector c, List<double> xs, List<double> zs, double y0, double y1)
+		{
+			int n = xs.Count;
+			double[] wd = new double[n];
+			for (int p = 1; p < n; p++)
+			{
+				wd[p] = wd[p - 1] + Math.Sqrt((xs[p] - xs[p - 1]) * (xs[p] - xs[p - 1]) + (zs[p] - zs[p - 1]) * (zs[p] - zs[p - 1]));
+			}
+			double length = wd[n - 1];
+			int count = Math.Max(1, (int)Math.Ceiling(length / Step - 1e-9));
+			c.X = new double[count + 1];
+			c.Z = new double[count + 1];
+			c.Y = new double[count + 1];
+			c.D = new double[count + 1];
+			int at = 0;
+			for (int p = 0; p <= count; p++)
+			{
+				double want = length * p / count;
+				while (at < n - 2 && wd[at + 1] < want)
+				{
+					at++;
+				}
+				double span = wd[at + 1] - wd[at], f = span > 1e-12 ? Math.Max(0.0, Math.Min(1.0, (want - wd[at]) / span)) : 0.0;
+				c.X[p] = xs[at] + (xs[at + 1] - xs[at]) * f;
+				c.Z[p] = zs[at] + (zs[at + 1] - zs[at]) * f;
 				c.Y[p] = y0 + (y1 - y0) * (length > 0.0 ? want / length : 0.0);
 				c.D[p] = want;
 			}

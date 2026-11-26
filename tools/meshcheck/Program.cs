@@ -977,6 +977,7 @@ internal static class Program
 		const double half = 2.2;
 		int offPaving = 0, offConnectors = 0, points = 0;
 		var worstOff = new List<(int c, int off)>();
+		var offWhy = new Dictionary<string, int>();
 		for (int ci = 0; ci < Lanes.Connectors.Count; ci++)
 		{
 			Lanes.Connector c = Lanes.Connectors[ci];
@@ -1011,7 +1012,16 @@ internal static class Program
 				offPaving += off;
 				offConnectors++;
 				worstOff.Add((ci, off));
+				if (Environment.GetEnvironmentVariable("LANES_WHY") == "1")
+				{
+					string key = TurnName(c.Turn) + (c.Wide ? " wide" : "") + " " + Network.Roads[Traffic.Edges[Lanes.All[c.From].Edge].Road].Kind + ">" + Network.Roads[Traffic.Edges[Lanes.All[c.To].Edge].Road].Kind + (off * 3 > c.X.Length * 3 / 4 ? " much" : "");
+					offWhy[key] = offWhy.GetValueOrDefault(key) + 1;
+				}
 			}
+		}
+		foreach (var kv in offWhy.OrderByDescending(k => k.Value).Take(20))
+		{
+			Console.WriteLine("    off the paving by kind: " + kv.Value + " " + kv.Key);
 		}
 		worstOff.Sort((x, y) => y.off != x.off ? y.off.CompareTo(x.off) : x.c.CompareTo(y.c));
 		for (int k = 0; k < Math.Min(8, worstOff.Count); k++)
@@ -1082,6 +1092,27 @@ internal static class Program
 					sixWhat = KindName(area.Kind) + ", " + YieldName(area, a.InArm == 2 ? "2>0" : "0>1", a.InArm == 2 ? "0>1" : "2>0") + ", " + (area.A1 - area.A0).ToString("0") + " and " + (area.B1 - area.B0).ToString("0") + " long";
 					break;
 				}
+			}
+		}
+		if (six >= 0 && !sixOk && sixWhat == "no conflict area")
+		{
+			// No area: then their cars' bodies must keep well apart, as far as they can be grown before they meet.
+			int a = -1, b = -1;
+			foreach (int ci in Lanes.AtNode[six])
+			{
+				Lanes.Connector c = Lanes.Connectors[ci];
+				a = c.InArm == 2 && c.OutArm == 0 ? ci : a;
+				b = c.InArm == 0 && c.OutArm == 1 ? ci : b;
+			}
+			if (a >= 0 && b >= 0)
+			{
+				double grown = 0.0;
+				while (grown < 10.0 && !Conflicts.Meet(a, b, grown + 0.25))
+				{
+					grown += 0.25;
+				}
+				sixOk = grown >= 1.0;
+				sixWhat = "no conflict area: the bodies keep " + (2.0 * grown).ToString("0.0") + " apart" + (grown >= 10.0 ? " or more" : "") + " (2 wanted)";
 			}
 		}
 		Console.WriteLine("    node 6 (" + (six >= 0 ? six.ToString() : "?") + " at " + (six >= 0 ? Traffic.Nodes[six].X.ToString("0") + ", " + Traffic.Nodes[six].Z.ToString("0") : "?") + "): 2>0 against 0>1: " + sixWhat);
