@@ -4190,8 +4190,61 @@ internal static class Program
 				Console.WriteLine("  sliver lane '" + road.Name + "' (" + r + "), " + road.S[road.Count - 1].ToString("0") + " long, at (" + road.X[0].ToString("0") + ", " + road.Z[0].ToString("0") + ")");
 			}
 		}
-		bool ok = ends == 0 && slivers == 0 && buried == 0;
-		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole" + (ok ? "" : "  FAIL"));
+		// Hooks: a paved road's line running past its end and turning back to it (within 40 of the end, a piece heading away from it).
+		int hooks = 0, apart = 0;
+		List<(double x, double z, int r)> tips = new List<(double, double, int)>();
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (Network.Unpaved(road.Kind) || road.Kind >= RoadKind.Rally || road.Count < 6 || Network.CutWhole(road))
+			{
+				continue;
+			}
+			for (int end = 0; end < 2; end++)
+			{
+				int k = end == 0 ? 0 : road.Count - 1, step = end == 0 ? 1 : -1;
+				tips.Add((road.X[k], road.Z[k], r));
+				for (int i = k + step; i + step >= 0 && i + step < road.Count; i += step)
+				{
+					double dx = road.X[i] - road.X[k], dz = road.Z[i] - road.Z[k];
+					if (dx * dx + dz * dz > 1600.0)
+					{
+						break;
+					}
+					// The piece from i towards the end (i - step) heading away from the end.
+					double tx = road.X[i - step] - road.X[i], tz = road.Z[i - step] - road.Z[i];
+					if (tx * -dx + tz * -dz < 0.0)
+					{
+						hooks++;
+						if (hooks <= 10)
+						{
+							Console.WriteLine("  " + road.Kind + " '" + road.Name + "' (" + r + ") hooks back into its end at (" + road.X[k].ToString("0") + ", " + road.Z[k].ToString("0") + ")");
+						}
+						break;
+					}
+				}
+			}
+		}
+		// Road ends a few units apart (not one point, not well apart) away from a hub (whose arms end round the place): the joint
+		// between them leaves ground showing (Farm 82's drive, lane and through way).
+		for (int a = 0; a < tips.Count; a++)
+		{
+			for (int b = a + 1; b < tips.Count; b++)
+			{
+				double dx = tips[a].x - tips[b].x, dz = tips[a].z - tips[b].z, d = Math.Sqrt(dx * dx + dz * dz);
+				if (tips[a].r != tips[b].r && d > 1.0 && d < 5.0 && !Network.Hubs.Exists(h => Math.Abs(h.X - tips[a].x) < 30.0 && Math.Abs(h.Z - tips[a].z) < 30.0))
+				{
+					apart++;
+					if (apart <= 10)
+					{
+						Console.WriteLine("  road ends " + d.ToString("0.0") + " apart: " + tips[a].r + " and " + tips[b].r + " at (" + tips[a].x.ToString("0") + ", " + tips[a].z.ToString("0") + ")");
+					}
+				}
+			}
+		}
+		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0;
+		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole, "
+			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 5 apart" + (ok ? "" : "  FAIL"));
 		return ok;
 	}
 

@@ -901,6 +901,9 @@ namespace HalfGripOpenWorld
 
 		internal static readonly List<Home> Homes = new List<Home>();
 
+		/// <summary>A road ending this near the sample a farm's lane is split at for its drive is brought to end there.</summary>
+		private const double MeetMove = 6.0;
+
 		/// <summary>A farm's lane no longer than this that still ends at the farm becomes its drive.</summary>
 		private const double DriveLongest = 600.0;
 
@@ -958,6 +961,25 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				int joined = segments.Hit;
+				// The road that meets the lane there ends on it a few units from the sample it is split at: its end goes to that sample,
+				// so the drive, the lane and it end at one point. Ending apart, the drive and the lane met a through way off the farm at
+				// three points and the joint between them left a wedge of ground showing (Farm 82, the lane graph's lines over it).
+				if (e < spur.Count - 1)
+				{
+					Road other = Roads[joined];
+					for (int k = 0; k < other.Count; k += other.Count - 1)
+					{
+						double dx = other.X[k] - spur.X[e], dz = other.Z[k] - spur.Z[e];
+						if (dx * dx + dz * dz < MeetMove * MeetMove)
+						{
+							other.X[k] = spur.X[e];
+							other.Z[k] = spur.Z[e];
+							Lengths(other);
+							segments.Replace(joined, other, other);
+							break;
+						}
+					}
+				}
 				Road drive = e == spur.Count - 1 ? spur : Split(lane, e);
 				drive.Kind = RoadKind.Drive;
 				drive.Half = HalfOf(RoadKind.Drive);
@@ -1472,6 +1494,10 @@ namespace HalfGripOpenWorld
 				}
 				Class cl = Classes[(int)kind];
 				List<(double x, double z)> line = Wobble(Smooth(pts, cl.Keep, cl.Rounds), kind);
+				line.Reverse();
+				line = Unhook(line);
+				line.Reverse();
+				line = Unhook(line);
 				if (kind == RoadKind.Lane)
 				{
 					line.Reverse();
@@ -1548,6 +1574,60 @@ namespace HalfGripOpenWorld
 			pin = road.Y[k] + (road.Y[k + 1] - road.Y[k]) * t;
 			return cut;
 		}
+
+		/// <summary>
+		/// A routed line that runs past its end and turns back to it, cut where it passes the end nearest and taken straight there. The
+		/// route's last cell's middle lies beyond the end, so the smoothed line went on past and hooked back: the main road into Kestrel
+		/// overshot its end by 15 units and came into the junction sideways, its rounded end over the ground beyond. The line's last
+		/// point is the end.
+		/// </summary>
+		private static List<(double x, double z)> Unhook(List<(double x, double z)> line)
+		{
+			int last = line.Count - 1;
+			if (last < 6)
+			{
+				return line;
+			}
+			(double ex, double ez) = line[last];
+			// The first point within reach of the end after which the line heads away from it.
+			int m = -1;
+			for (int i = last - 1; i >= 1; i--)
+			{
+				double dx = line[i].x - ex, dz = line[i].z - ez;
+				if (dx * dx + dz * dz > HookReach * HookReach * 4.0)
+				{
+					break;
+				}
+				double tx = line[i + 1].x - line[i].x, tz = line[i + 1].z - line[i].z;
+				if (tx * (ex - line[i].x) + tz * (ez - line[i].z) < 0.0)
+				{
+					m = i;
+				}
+			}
+			if (m < 0)
+			{
+				return line;
+			}
+			// Back from there while the way straight to the end turns more than 20 degrees off the line coming in (a hub takes a sharper
+			// turn near a road's end for a hook too, and starts its arm back before it).
+			while (m > 1)
+			{
+				double ix = line[m].x - line[m - 1].x, iz = line[m].z - line[m - 1].z, ox = ex - line[m].x, oz = ez - line[m].z;
+				double il = Math.Sqrt(ix * ix + iz * iz), ol = Math.Sqrt(ox * ox + oz * oz);
+				double dx = line[m - 1].x - ex, dz = line[m - 1].z - ez;
+				if (il <= 0.0 || ol <= 0.0 || (ix * ox + iz * oz) / (il * ol) > 0.9397 || dx * dx + dz * dz > HookReach * HookReach * 4.0)
+				{
+					break;
+				}
+				m--;
+			}
+			List<(double x, double z)> cut = line.GetRange(0, m + 1);
+			cut.Add((ex, ez));
+			return Lines.Resample(cut, Step);
+		}
+
+		/// <summary>How near a line must pass its end for the rest of it to count as a hook back to it.</summary>
+		private const double HookReach = 20.0;
 
 		/// <summary>How far beyond both roads' edges a lane's end still counts as alongside the road it ends on.</summary>
 		private const double BesideGap = 10.0;
@@ -2445,6 +2525,7 @@ namespace HalfGripOpenWorld
 		{
 			joints.Clear();
 			Hubs.Clear();
+			Meet();
 			Overlaps();
 			// Road ends by unit cell.
 			Dictionary<long, List<(int r, int end)>> ends = new Dictionary<long, List<(int, int)>>();
@@ -2539,6 +2620,63 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					Join(here[bi], here[bj], x, z);
+				}
+			}
+		}
+
+		/// <summary>Road ends nearer each other than this (and not one point) are brought to one point (<see cref="Meet"/>).</summary>
+		private const double MeetMost = 5.0;
+
+		/// <summary>
+		/// Road ends a few units apart brought to one point: the smaller road's end (then the later built's) moves to the other's. Two
+		/// routes found to one place by different ways, or a road snapped to the nearest point of another that was later split there,
+		/// ended 1 to 5 apart; the place was then neither a joint nor a hub (their ends must be one point) but a junction of ends, and the
+		/// mouths cut for each other left wedges of ground between (Farm 82, node 480, seven places). Not a course's road, a bridge's end
+		/// or a tunnel's.
+		/// </summary>
+		private static void Meet()
+		{
+			for (int r = 0; r < Roads.Count; r++)
+			{
+				for (int end = 0; end < 2; end++)
+				{
+					Road a = Roads[r];
+					if (a.Kind >= RoadKind.Rally || a.Count < 3)
+					{
+						continue;
+					}
+					int ka = end == 0 ? 0 : a.Count - 1;
+					if (a.Bridge[ka] || Portals.Exists(p => p.Road == r))
+					{
+						continue;
+					}
+					// The road it moves to: the biggest (then the first built) with an end that near, bigger or earlier than this one.
+					int to = -1, tk = -1;
+					foreach (int o in segments.RoadsNear(a.X[ka], a.Z[ka], MeetMost + 1.0))
+					{
+						Road b = Roads[o];
+						if (o == r || b.Kind >= RoadKind.Rally || b.Count < 3 || Unpaved(b.Kind) != Unpaved(a.Kind) || b.Kind > a.Kind || (b.Kind == a.Kind && o > r))
+						{
+							continue;
+						}
+						foreach (int kb in new[] { 0, b.Count - 1 })
+						{
+							double dx = b.X[kb] - a.X[ka], dz = b.Z[kb] - a.Z[ka], d2 = dx * dx + dz * dz;
+							if (d2 > 1e-6 && d2 < MeetMost * MeetMost && (to < 0 || b.Kind < Roads[to].Kind || (b.Kind == Roads[to].Kind && o < to)))
+							{
+								to = o;
+								tk = kb;
+							}
+						}
+					}
+					if (to < 0)
+					{
+						continue;
+					}
+					a.X[ka] = Roads[to].X[tk];
+					a.Z[ka] = Roads[to].Z[tk];
+					Lengths(a);
+					segments.Replace(r, a, a);
 				}
 			}
 		}
