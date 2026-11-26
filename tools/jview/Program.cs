@@ -666,7 +666,9 @@ internal static class Program
 						if (d > road.Half - 0.4) continue;
 						int p = (px - 1 - j) * px + ii;
 						int cur = over[p];
-						if (cur < 0 || road.Kind < Network.Roads[cur].Kind || (road.Kind == Network.Roads[cur].Kind && r < cur)) over[p] = r;
+						// At a T the road carrying on is drawn over the one ending on it, whichever is bigger (Network.TeeOver).
+						bool wins = cur < 0 || (Network.TeeOver(r, cur, x, z, out bool tee) ? tee : road.Kind < Network.Roads[cur].Kind || (road.Kind == Network.Roads[cur].Kind && r < cur));
+						if (wins) over[p] = r;
 					}
 			}
 		}

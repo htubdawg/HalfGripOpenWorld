@@ -1632,6 +1632,22 @@ namespace HalfGripOpenWorld
 		/// <summary>How far beyond both roads' edges a lane's end still counts as alongside the road it ends on.</summary>
 		private const double BesideGap = 10.0;
 
+		/// <summary>
+		/// Whether (x, z) is at a T between roads a and b (one ends there on the other, which carries on: <see cref="Segments.Tee"/>), and
+		/// if so whether a is the one drawn over the other there. For the tools, which otherwise take the bigger road as on top.
+		/// </summary>
+		internal static bool TeeOver(int a, int b, double x, double z, out bool aOver)
+		{
+			aOver = false;
+			Road road = Roads[a];
+			if (!segments.Nearest(a, x, z, road.Half + 2.0, out double _, out int k, out double t) || !Segments.TeeAt(road, k, t, b, x, z, out bool ends))
+			{
+				return false;
+			}
+			aOver = !ends;
+			return true;
+		}
+
 		/// <summary>Whether one of the road's ends is within a unit of (x, z).</summary>
 		private static bool EndsAt(Road road, double x, double z)
 		{
@@ -5908,12 +5924,22 @@ namespace HalfGripOpenWorld
 						{
 							int r = (int)(item >> 32);
 							Road road = Roads[r];
-							if (r == skip || road.Kind > kind || (road.Kind == kind && r >= before) || Unpaved(road.Kind) || Joined(skip, r, x, z))
+							bool over = road.Kind < kind || (road.Kind == kind && r < before);
+							if (r == skip || Unpaved(road.Kind) || road.Kind >= RoadKind.Rally || Joined(skip, r, x, z))
 							{
 								continue;
 							}
 							int k = (int)(uint)item;
 							if (!Across(road, k, x, z, out double t, out double d) || !DrawnAt(road, k, t, x, z))
+							{
+								continue;
+							}
+							// At a T the road carrying on is drawn over the one ending on it, whichever is the bigger.
+							if (skip >= 0 && Tee(road, k, t, skip, x, z, out bool ends))
+							{
+								over = !ends;
+							}
+							if (!over)
 							{
 								continue;
 							}
@@ -5929,6 +5955,44 @@ namespace HalfGripOpenWorld
 					}
 				}
 				return found;
+			}
+
+			/// <summary>
+			/// Whether (x, z), on road <paramref name="road"/>'s piece k at t and part of road <paramref name="skip"/>, is at a T between
+			/// the two: one of them ends there on the other, which carries on well past it both ways. <paramref name="ends"/>: it is
+			/// <paramref name="road"/> that ends. A street ending on a back lane cut the lane across its whole width under the street's
+			/// end, which covers only the half past the lane's middle: a strip of ground across the lane (Westhaven, node 172). Not the
+			/// trunk, which is never cut for a road ending on it and never ends on one but at a tunnel.
+			/// </summary>
+			internal static bool TeeAt(Road road, int k, double t, int skip, double x, double z, out bool ends)
+			{
+				return Tee(road, k, t, skip, x, z, out ends);
+			}
+
+			private static bool Tee(Road road, int k, double t, int skip, double x, double z, out bool ends)
+			{
+				ends = false;
+				Road own = Roads[skip];
+				if (road.Kind == RoadKind.Trunk || own.Kind == RoadKind.Trunk || own.Kind >= RoadKind.Rally || Unpaved(own.Kind))
+				{
+					return false;
+				}
+				double s = road.S[k] + (road.S[k + 1] - road.S[k]) * t, length = road.S[road.Count - 1];
+				double roadEnd = Math.Min(s, length - s);
+				double ownEnd = double.MaxValue;
+				foreach (int e in new[] { 0, own.Count - 1 })
+				{
+					double dx = own.X[e] - x, dz = own.Z[e] - z;
+					ownEnd = Math.Min(ownEnd, Math.Sqrt(dx * dx + dz * dz));
+				}
+				// One ends within the other's width of the place, the other carries on past it by well more than that.
+				double near = Math.Max(road.Half, own.Half) + Flare + 4.0, far = near + 20.0;
+				if (roadEnd < near && ownEnd > far)
+				{
+					ends = true;
+					return true;
+				}
+				return ownEnd < near && roadEnd > far;
 			}
 
 			/// <summary>The nearest point of road <paramref name="r"/> to (x, z) within <paramref name="reach"/>: its distance, and its segment and fraction along it.</summary>
