@@ -15,7 +15,10 @@ Last written 2026-11-26 (night, later).
   flashing yellow only), two room fixes, and now **routes that know the queues** (below). **The world changed** since 0.33.0 (node 6's
   road is a lane wider) and the traffic's day too, so everyone in a room needs the same build. Bump the version with the next release.
 - None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 63).
-- **Next: the Kingsbridge link two lanes each way** (item 2 of "The new direction" below), measured against the routes as they are now.
+- **Next: ask the owner** (put to them 2026-11-26): with the routes in, the link's own queues are small and the waiting left is side
+  lanes waiting for a gap in the link's traffic (below). A second lane each way doesn't help that (four lanes to cross instead of
+  two). Proposed instead: the US rules' next step at those junctions, a four-way stop or a light where the counts call for one, kept
+  only where it lowers the per-trip waiting (the owner's "both" plan, docs/PLAN.md). The lane stays possible if they still want it.
 
 ## 2026-11-26 (night, later): routes that know the queues, built
 
@@ -54,6 +57,11 @@ primaries 3,838 to 3,922): no cut-through cost needed. Every day is still the sa
 The waiting left (top ways, summed from each seed's top ten, minutes): nodes 49 from the east lane 471, 47 from the east lane 458, 45
 (the Pinewick road) 354 and 162, 67 from its side street 237, 42 from the town 232, 6 from the north 184; node 2's street (1,109
 before) and node 42's southbound (1,066 before) are off the list. The side lanes at 47 and 49 are where the re-routed traffic waits now.
+
+**Where the rest waits now** (seeds 1, 3, 5 and 11 looked at): side lanes joining the link and the Pinewick road, refused at their front
+for **crossing** and **gap** (waiting for both streams to clear), hardly for room: node 47 from the east lane (mean 47 to 85 s a trip
+through it), node 42 from the west lane (26 to 59 s), node 45 from the lane to the south (35 to 54 s), node 49 from the east lane (39
+to 84 s), node 51's street (seed 5: 267 s). Node 6's light holds the link's cars 14 to 16 min a day (was 30 or more).
 
 **The one FAIL line, seed 16**: physics cars at the evening peak near node 42 (player standing at (-2395, -4432)): 8 pairs in each
 other (limit 6), first two physics cars at (-2364, -4249), 17.41 h. The same kind turned up on seed 12 at 3 passes, 30% (8 pairs,
