@@ -25,6 +25,7 @@ using UnityEngine;
 //   pairs                              road ends meeting road ends: counts by distance, bend and height step
 //   ends                               what every road end meets (a bigger road, one of its class, a smaller, nothing)
 //   stubs                              paved dead ends more than half cut out under other roads
+//   beside                             paved road ends lying beside another paved road, close but not on it
 //   lanes <out.ppm> <x> <z> [span] [c...]  the lane graph over the meshes (Lanes, Conflicts): lanes' middles white, connectors by
 //                                      turn (going on blue, left orange, right green, round grey; swung wide brighter), stop points
 //                                      red ticks; with connector numbers, those alone, their conflict areas marked red along them
@@ -129,6 +130,43 @@ internal static class Program
 				if (best > rad) continue;
 				Console.WriteLine(r + " " + rd.Kind + " n=" + rd.Count + " nearest sample " + bi + " d=" + best.ToString("0") + " start " + rd.X[0].ToString("0") + "," + rd.Z[0].ToString("0") + " end " + rd.X[rd.Count - 1].ToString("0") + "," + rd.Z[rd.Count - 1].ToString("0") + " gaps " + string.Join(";", rd.Gaps.Select(g => g.C0.ToString("0") + ".." + g.C1.ToString("0") + "[L" + g.L0.ToString("0") + ".." + g.L1.ToString("0") + " R" + g.R0.ToString("0") + ".." + g.R1.ToString("0") + "]")) + " len " + rd.S[rd.Count - 1].ToString("0") + " j " + rd.Joined0 + rd.Joined1 + " dead " + rd.Dead0 + rd.Dead1 + " name " + rd.Name);
 			}
+			return 0;
+		}
+		if (mode == "beside")
+		{
+			// Paved road ends lying beside another paved road, close but not on it (a stub run on past a junction, a lane stopped short
+			// of the road it should have met): the end's distance from the other road's line, between its half width and 30 past it.
+			int besides = 0;
+			for (int r = 0; r < Network.Roads.Count; r++)
+			{
+				var rd = Network.Roads[r];
+				if (Network.Unpaved(rd.Kind) || rd.Kind >= RoadKind.Rally || rd.Kind == RoadKind.Drive || Network.CutWhole(rd)) continue;
+				for (int end = 0; end < 2; end++)
+				{
+					int k = end == 0 ? 0 : rd.Count - 1;
+					double x = rd.X[k], z = rd.Z[k];
+					for (int o = 0; o < Network.Roads.Count; o++)
+					{
+						var od = Network.Roads[o];
+						if (o == r || Network.Unpaved(od.Kind) || od.Kind >= RoadKind.Rally || od.Kind == RoadKind.Drive || Network.CutWhole(od)) continue;
+						if (Math.Abs(od.X[0] - x) > od.S[od.Count - 1] + 40 && Math.Abs(od.X[od.Count - 1] - x) > od.S[od.Count - 1] + 40) continue;
+						double best = double.MaxValue;
+						for (int i = 0; i + 1 < od.Count; i++)
+						{
+							double sx = od.X[i + 1] - od.X[i], sz = od.Z[i + 1] - od.Z[i], sl = sx * sx + sz * sz;
+							double u = sl > 0 ? Math.Max(0, Math.Min(1, ((x - od.X[i]) * sx + (z - od.Z[i]) * sz) / sl)) : 0;
+							double dx = x - od.X[i] - sx * u, dz = z - od.Z[i] - sz * u;
+							best = Math.Min(best, Math.Sqrt(dx * dx + dz * dz));
+						}
+						if (best > od.Half + 1.0 && best < od.Half + rd.Half + 12.0)
+						{
+							besides++;
+							Console.WriteLine(r + " " + rd.Kind + " '" + rd.Name + "' end " + end + " at " + x.ToString("0") + " " + z.ToString("0") + " beside " + o + " " + od.Kind + " '" + od.Name + "' " + best.ToString("0.0") + " (half " + od.Half.ToString("0.0") + ")");
+						}
+					}
+				}
+			}
+			Console.WriteLine("ends beside a road: " + besides);
 			return 0;
 		}
 		if (mode == "stubs")

@@ -73,10 +73,13 @@ namespace HalfGripOpenWorld
 
 		private static readonly Dictionary<long, List<int>> nodeCells = new Dictionary<long, List<int>>();
 
-		/// <summary>The roads cars drive: every road but the footpaths, the farm tracks and the courses themselves.</summary>
+		/// <summary>
+		/// The roads cars drive: every road but the footpaths, the farm tracks, the courses themselves and a road cut out whole (a short
+		/// street lying along a main road, which is never drawn: driven, its lanes ran off the paving beside the road it lies along).
+		/// </summary>
 		internal static bool Driven(Network.Road road)
 		{
-			return road.Count >= 2 && (road.Kind <= RoadKind.Lane || road.Kind == RoadKind.Drive);
+			return road.Count >= 2 && (road.Kind <= RoadKind.Lane || road.Kind == RoadKind.Drive) && !Network.CutWhole(road);
 		}
 
 		/// <summary>The legal speed on a road at a point (units a second): Pennsylvania's limits, lower inside a town or village.</summary>

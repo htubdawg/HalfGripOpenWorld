@@ -1472,10 +1472,22 @@ namespace HalfGripOpenWorld
 				}
 				Class cl = Classes[(int)kind];
 				List<(double x, double z)> line = Wobble(Smooth(pts, cl.Keep, cl.Rounds), kind);
+				if (kind == RoadKind.Lane)
+				{
+					line.Reverse();
+					line = Unbeside(line, cl.Half, ref pinStart);
+					line.Reverse();
+					line = Unbeside(line, cl.Half, ref pinEnd);
+				}
 				Road road = Make(kind, name, line);
 				if (road.Count < 6)
 				{
 					continue;
+				}
+				// A lane's through way that meets a road straight away (see ThroughShortest) is not built at all.
+				if (fromStart && s == 0 && kind == RoadKind.Lane && road.S[road.Count - 1] < ThroughShortest)
+				{
+					return made;
 				}
 				pins.Add((0, double.IsNaN(pinStart) ? WorldGen.Base(road.X[0], road.Z[0]) : pinStart));
 				for (int i = 1; s == 0 && i < road.Count - 1 && road.S[i] <= level; i++)
@@ -1494,6 +1506,51 @@ namespace HalfGripOpenWorld
 			}
 			return made;
 		}
+
+		/// <summary>
+		/// A lane's end that runs in alongside the road it ends on, cut back to where it first comes close and taken square onto that road
+		/// from there. A link routed to a farm reached the farm's own lane a cell out and ran beside it, a lane's width of grass between,
+		/// all the way to the farmyard (77 road ends lay beside another road; the lane graph's lines ran over the grass between them).
+		/// The line's last point is the end; <paramref name="pin"/>, the end's height, is set when it moves.
+		/// </summary>
+		private static List<(double x, double z)> Unbeside(List<(double x, double z)> line, double half, ref double pin)
+		{
+			int last = line.Count - 1;
+			if (last < 4 || !segments.Snap(line[last].x, line[last].z, 4.0, -1, out double _, out double _, out double _) || segments.Hit < 0)
+			{
+				return line;
+			}
+			int on = segments.Hit;
+			Road road = Roads[on];
+			if (Unpaved(road.Kind) || road.Kind >= RoadKind.Rally)
+			{
+				return line;
+			}
+			double reach = road.Half + half + BesideGap;
+			int m = last;
+			while (m > 2 && segments.Nearest(on, line[m - 1].x, line[m - 1].z, reach, out double _, out int _, out double _))
+			{
+				m--;
+			}
+			double run = 0.0;
+			for (int i = m; i < last; i++)
+			{
+				double dx = line[i + 1].x - line[i].x, dz = line[i + 1].z - line[i].z;
+				run += Math.Sqrt(dx * dx + dz * dz);
+			}
+			// Coming in square, a lane is within reach for about the reach itself; a run much longer than that lies alongside.
+			if (run < reach * 1.6 + 10.0 || !segments.Nearest(on, line[m].x, line[m].z, reach + 1.0, out double _, out int k, out double t))
+			{
+				return line;
+			}
+			List<(double x, double z)> cut = line.GetRange(0, m + 1);
+			cut.Add((road.X[k] + (road.X[k + 1] - road.X[k]) * t, road.Z[k] + (road.Z[k + 1] - road.Z[k]) * t));
+			pin = road.Y[k] + (road.Y[k + 1] - road.Y[k]) * t;
+			return cut;
+		}
+
+		/// <summary>How far beyond both roads' edges a lane's end still counts as alongside the road it ends on.</summary>
+		private const double BesideGap = 10.0;
 
 		/// <summary>Whether one of the road's ends is within a unit of (x, z).</summary>
 		private static bool EndsAt(Road road, double x, double z)
@@ -2174,6 +2231,20 @@ namespace HalfGripOpenWorld
 					road.Gaps.Add(new Gap { C0 = -1.0, C1 = length + 1.0, L0 = -1.0, L1 = length + 1.0, R0 = -1.0, R1 = length + 1.0 });
 				}
 			}
+		}
+
+		/// <summary>Whether a road's cuts take out its whole length on both edges, so none of it is drawn.</summary>
+		internal static bool CutWhole(Road road)
+		{
+			double length = road.S[road.Count - 1];
+			foreach (Gap g in road.Gaps)
+			{
+				if (Math.Max(g.L0, g.R0) < 0.0 && Math.Min(g.L1, g.R1) > length)
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/// <summary>How much of a road's length its cuts take out along one edge or the other.</summary>
@@ -4648,7 +4719,7 @@ namespace HalfGripOpenWorld
 							}
 						}
 						tried++;
-						Road made = Walk(rng, x, z, road.Y[i], ahead, dist * 1.6 + 60.0, null, road.Kind, r, 0.12, tx, tz, smallest);
+						Road made = Walk(rng, x, z, road.Y[i], ahead, dist * 1.6 + 60.0, null, road.Kind, r, 0.12, tx, tz, smallest, lane ? ThroughShortest : 50.0);
 						if (made != null)
 						{
 							made.Name = lane ? road.Name + " on" : made.Name;
@@ -4677,6 +4748,12 @@ namespace HalfGripOpenWorld
 				}
 			}
 		}
+
+		/// <summary>
+		/// The shortest through way a lane is given. One from a farmyard that met the farm's links a few dozen units on (47 to 61 units)
+		/// only closed a little triangle of grass beside them, its lanes laid along theirs.
+		/// </summary>
+		private const double ThroughShortest = 120.0;
 
 		/// <summary>A through way's target is within 70 degrees of the way the road was going (the cosine).</summary>
 		private const double ThroughAhead = 0.342;
@@ -4746,7 +4823,7 @@ namespace HalfGripOpenWorld
 		/// farm track in its way), never turns back on itself (it gives up past <see cref="WalkTurn"/>: it hooked round to a road beside
 		/// its own end, which the owner found daft), and is kept only if it ends on a road of class <paramref name="smallest"/> or bigger.
 		/// </summary>
-		private static Road Walk(Rng rng, double x, double z, double y, double angle, double length, Places.Place place, RoadKind kind, int from, double wander, double tx = double.NaN, double tz = double.NaN, RoadKind smallest = RoadKind.Path)
+		private static Road Walk(Rng rng, double x, double z, double y, double angle, double length, Places.Place place, RoadKind kind, int from, double wander, double tx = double.NaN, double tz = double.NaN, RoadKind smallest = RoadKind.Path, double shortest = 50.0)
 		{
 			bool steered = !double.IsNaN(tx);
 			const double seg = 30.0;
@@ -4857,7 +4934,7 @@ namespace HalfGripOpenWorld
 				return null;
 			}
 			Road road = Make(kind, kind == RoadKind.Track ? "Track" : kind == RoadKind.Drive ? "Drive" : kind == RoadKind.Path ? "Footpath" : (place != null ? place.Name + " street" : "Street"), Lines.Resample(Rounded(pts), Step));
-			if (road.S[road.Count - 1] < 50.0)
+			if (road.S[road.Count - 1] < shortest)
 			{
 				return null;
 			}

@@ -34,22 +34,24 @@ Last written 2026-11-26.
   - `meshcheck lanes` (`LANES_WHY=1` sorts the off-paving lines by kind); `jview lanes` (the graph over the meshes; name connectors to
     see their areas). A jview crash near drives (a track submesh past its colour table) is fixed.
 - **Node 6 (the old "cars stuck here")**: the right off the Pinewick road (2>0) keeps to the junction's corner and its body stays
-  10.5 units clear of the cars going on south (0>1). The old meeting came from the old traffic's paths running through the node's
-  middle. The check passes for a pair that has an area **or** keeps 2 apart, and prints which.
-- `meshcheck lanes` still **FAILS** on two counts (the rest pass: every lane has a way on and is reached, every pair of crossing lines
-  has an area, node 6, lit lanes end on the drawn stop lines):
-  1. **151 connectors touching off the paving** (1,779 of 542,685 points, the line and 2.2 either side, a neighbouring unit square
-     paved counting; 59 of them by 1 to 3 points). The worst are at a few junctions where the world's own drawing is wrong: ground
-     showing through (jview's cyan) at nodes 22 (-1486, 5487), 574 (-7272, 1156) and 366 (4876, -110, a sharp V where two lanes meet
-     end to end), roads laid side by side with slivers of grass between at node 584 (1065, -7554) and 682.
-  2. **1 lane held back too far**: lane 1285 at node 366's V (55.5).
-- `tools/check.sh` compiles clean. Every other meshcheck check passed on the last full run (before this session's last changes, which
-  touch only `Lanes`, `Conflicts` and the `lanes` check).
+  10.5 units clear of the cars going on south (0>1). The check passes for a pair that has an area **or** keeps 2 apart.
+- **Junk lanes taken out of the world (this session; a world change).** The owner on node 681: "what even is that road". Farm-to-farm
+  links routed to a farm ran in beside the farm's own lane, a lane's width of grass between, to the farmyard; and the through-way pass
+  then grew a 47 to 61-unit lane out of the farmyard back alongside the link, closing a sliver of grass. Now `Network.Unbeside` cuts a
+  lane's end that runs in alongside the road it ends on back to where it first comes close and takes it square onto that road; a
+  lane's through way is at least `ThroughShortest` (120) long, walked or routed. 12 fewer lanes; country lane dead ends 10 (the
+  allowed most: three are farmyards just past where their links join). Also `Traffic.Driven` leaves out a road cut out whole (node
+  22's buried street had lanes). New meshcheck check `beside` (it finds all 7 old cases on the old world); `jview beside` lists road
+  ends close beside another road (what's left are staggered crossroads, fine).
+- `meshcheck lanes` still **FAILS** on one count: **110 connectors touching off the paving** (799 of 514,938 points; 57 of them by 1
+  to 3 points; was 151 and 1,779). Nodes 22, 574, 366 and 681 are clean now, and node 366's over-long hold went with them. The worst
+  left: node 507 (7552, -10046), nodes 1191 and 13 (12081, -4170, two nodes 15 apart), nodes 172 and 197 near (11700, -10300).
+- `tools/check.sh` compiles clean; the full `meshcheck` passes every check but `lanes`.
 
 ## Next
 
-1. The world spots above: look at each with `jview at`/`jview lanes` and fix the drawing (Network) where it's wrong (the holes, the
-   V-joint, the side-by-side roads), then the rest of the off-paving lines (mostly right turns on narrow lanes brushing the verge).
+1. The off-paving connectors left: look at nodes 507, 1191/13, 172, 197 with `jview lanes` (world drawing or connector shape), then
+   the long tail (mostly right turns on narrow lanes brushing the verge).
 2. Finish phase 1: a repeatability check (the graph built twice the same); look at node 42 and the trunk's bays with `jview lanes`
    (`JVIEW_TEX=1`).
 3. Phase 2 (population and schedules), as `docs/TRAFFIC_REWORK.md` §6.
@@ -57,6 +59,6 @@ Last written 2026-11-26.
 ## Checks
 
 - `tools/check.sh`: compiles clean.
-- `meshcheck lanes`: as above (FAIL on off-paving and holds).
+- `meshcheck lanes`: as above (FAIL on off-paving only).
 - Full `meshcheck`: every check passes but `lanes`.
 - Not run in game (nothing in the game uses the lane graph yet).

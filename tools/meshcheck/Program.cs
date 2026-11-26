@@ -63,6 +63,11 @@ using UnityEngine;
 //  27b. alongside: no paved road lying along another (its centre line within the wider one's half width for 40 units or more,
 //                running the same way): a lane's through way routed straight back along its own lane was laid on top of it
 //                (Network.Build), five farms' lanes doubled, their junctions' stop lines on the other's paving
+//  27c. beside: no lane's end running in alongside the road it ends on (within both half widths and 10 more for over 1.6 times
+//                that and 10: coming in square it is within reach about that far), and no lane under 120 units with both ends on
+//                other roads: a link routed to a farm ran in beside the farm's own lane, grass between, and a through way from the
+//                farmyard closed a little triangle beside it (Network.Unbeside, ThroughShortest; the lane graph's lines ran over the
+//                grass, node 681); and no driven road cut out whole (Traffic.Driven: node 22's buried street had lanes)
 //  28. deer:    the deer's mesh (weights summing to one, no broken faces, bones and vertices in range); for three race seeds, every
 //                group's spots and the legs between them on the drawn ground, never in water above a deer's belly nor over a drop,
 //                every crossing place on the road it crosses, and every deer followed over half an hour of race time never deep in
@@ -127,6 +132,7 @@ internal static class Program
 			("clear", ClearOfRoads),
 			("backroads", BackRoads),
 			("alongside", Alongside),
+			("beside", Beside),
 			("deer", DeerChecks),
 			("wrap", WrapChecks),
 			("median", MedianChecks),
@@ -4110,6 +4116,97 @@ internal static class Program
 		}
 		Console.WriteLine("alongside: " + checkedRoads + " paved roads, " + pairs + " pairs lying along each other for 40 units or more" + (pairs == 0 ? "" : "  FAIL"));
 		return pairs == 0;
+	}
+
+	/// <summary>Lanes' ends beside the road they end on, sliver lanes, buried roads driven (see the list at the top, 27c).</summary>
+	private static bool Beside()
+	{
+		int ends = 0, slivers = 0, buried = 0, lanes = 0;
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road road = Network.Roads[r];
+			if (Network.CutWhole(road))
+			{
+				if (Traffic.Driven(road))
+				{
+					buried++;
+					Console.WriteLine("  driven road cut out whole: " + road.Kind + " '" + road.Name + "' (" + r + ")");
+				}
+				continue;
+			}
+			if (road.Kind != RoadKind.Lane || road.Count < 2)
+			{
+				continue;
+			}
+			lanes++;
+			int onRoads = 0;
+			for (int end = 0; end < 2; end++)
+			{
+				int k = end == 0 ? 0 : road.Count - 1, step = end == 0 ? 1 : -1;
+				int on = -1;
+				double best = double.MaxValue;
+				for (int o = 0; o < Network.Roads.Count; o++)
+				{
+					Network.Road other = Network.Roads[o];
+					if (o == r || Network.Unpaved(other.Kind) || other.Kind >= RoadKind.Rally || Network.CutWhole(other))
+					{
+						continue;
+					}
+					double d = LineDistance(other, road.X[k], road.Z[k]);
+					if (d < other.Half + 2.0 && d < best)
+					{
+						best = d;
+						on = o;
+					}
+				}
+				if (on < 0)
+				{
+					continue;
+				}
+				Network.Road j = Network.Roads[on];
+				// Meeting another road's end, the two carry on as one lane: not a sliver's end.
+				int last = j.Count - 1;
+				if (Math.Abs(j.X[0] - road.X[k]) + Math.Abs(j.Z[0] - road.Z[k]) > 3.0 && Math.Abs(j.X[last] - road.X[k]) + Math.Abs(j.Z[last] - road.Z[k]) > 3.0)
+				{
+					onRoads++;
+				}
+				double reach = j.Half + road.Half + 10.0, run = 0.0;
+				for (int i = k; i + step >= 0 && i + step < road.Count && LineDistance(j, road.X[i + step], road.Z[i + step]) < reach; i += step)
+				{
+					run += Math.Abs(road.S[i + step] - road.S[i]);
+				}
+				if (run > reach * 1.6 + 10.0)
+				{
+					ends++;
+					if (ends <= 10)
+					{
+						Console.WriteLine("  lane '" + road.Name + "' (" + r + ") runs in beside '" + j.Name + "' (" + on + ") for " + run.ToString("0") + " to (" + road.X[k].ToString("0") + ", " + road.Z[k].ToString("0") + ")");
+					}
+				}
+			}
+			if (onRoads == 2 && road.S[road.Count - 1] < 120.0)
+			{
+				slivers++;
+				Console.WriteLine("  sliver lane '" + road.Name + "' (" + r + "), " + road.S[road.Count - 1].ToString("0") + " long, at (" + road.X[0].ToString("0") + ", " + road.Z[0].ToString("0") + ")");
+			}
+		}
+		bool ok = ends == 0 && slivers == 0 && buried == 0;
+		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole" + (ok ? "" : "  FAIL"));
+		return ok;
+	}
+
+	/// <summary>How far (x, z) is from a road's centre line.</summary>
+	private static double LineDistance(Network.Road road, double x, double z)
+	{
+		double best = double.MaxValue;
+		for (int i = 0; i + 1 < road.Count; i++)
+		{
+			double sx = road.X[i + 1] - road.X[i], sz = road.Z[i + 1] - road.Z[i], sl = sx * sx + sz * sz;
+			double u = sl > 0.0 ? Math.Max(0.0, Math.Min(1.0, ((x - road.X[i]) * sx + (z - road.Z[i]) * sz) / sl)) : 0.0;
+			double dx = x - road.X[i] - sx * u, dz = z - road.Z[i] - sz * u;
+			best = Math.Min(best, dx * dx + dz * dz);
+		}
+		return Math.Sqrt(best);
 	}
 
 	/// <summary>The highway's wrap round (see the list at the top, 29).</summary>
