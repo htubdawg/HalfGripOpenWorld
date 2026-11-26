@@ -55,14 +55,33 @@ lights (nodes 6 and 8) backing through the close side junctions (42, 44, 49, 67,
 Kingsbridge's queues first, then try lights and four-way stops at more junctions, keeping each that doesn't make the per-trip waiting
 worse (docs/PLAN.md).
 
+**Kingsbridge's queues, what was tried (2026-11-26, 16 seeds each, mean stood per trip / 90% / trips over 3 min)**. trafficview now
+gives each busy way in its refusals at the front by reason (light, behind, crossing, gap, room, next; `TrafficDay.RefusedFor`). On
+seeds 1 and 2 the side roads at nodes 42 and 2 are refused for **room**: the southbound queue at node 6's red backs past them; node
+44's northbound cars for **next** (they would stand in node 44's box waiting at node 6); at node 6 the southbound way in also waits
+**behind** and **crossing**: the bay holds two cars, and the left turners past them (giving way to the northbound) block the through lane.
+- as committed (no arrow): 31.5 / 74 / 765;
+- node 6 unlit (`TV_UNLIT=-2388,-4337`): 29.6 / 70 / 781, but the cars from Pinewick wait 68 s a trip at node 6 (12 to 28 lit) and back
+  up through node 45; more physics fails. Node 6 and 8 unlit: 28.5 / 72 / 791, the same. **The light stays** (the owner's rule: not
+  some people waiting much longer; and the US rules warrant it);
+- `TV_MAINMIN=35`: 33.3 / 83 / 749; `TV_MAINMIN=15`: 32.8 / 79 / 867; `TV_SIDEMAX=18`: 31.5 / 76 / 705 (more seeds fail). **Timings
+  kept** (they apply to all 16 lights).
+The bay's overflow is about 6 of seed 1's 380 junction minutes. What is left is the link's capacity: one lane each way through six
+junctions in 600 units with a light in the middle.
+
 **What is next**:
-1. Kingsbridge's queues: the northbound commute up the link through nodes 67, 49, 44 to node 6, and the side streets they block
+1. Kingsbridge's queues: the geometry. A two-way centre turn lane down Kingsbridge's link (nodes 2 to 67) instead of the one short
+   bay: every left turner off the link out of the through lane, the bay running back through node 42. Needs `Road.Wide` as a list, a
+   junction allowed inside the widened stretch (meshcheck `bays` refuses one now) and the lane keys spanning edges. Measure it before
+   drawing it if a cheaper way to simulate it turns up. Then the queues joining (seed 9's physics gap at node 49).
+2. Then lights and four-way stops at more junctions, keeping each that doesn't make the per-trip waiting worse (the owner's choice).
+3. Earlier notes on the queues: the northbound commute up the link through nodes 67, 49, 44 to node 6, and the side streets they block
    (node 67's street from the east 160 to 280 s a trip, node 42's and 49's lanes 40 to 120 s, node 2's street).
-2. Then: turn lanes by a rule (a main road's way into a junction with left turners holding up the cars behind; room for
+4. Turn lanes by a rule (a main road's way into a junction with left turners holding up the cars behind; room for
    two cars or more), `Road.Wide` made a list for two on one road; four-way stops and lights where the rules (or the owner) say, with
    Signs learning which junctions are controlled after the traffic map is built (they are laid out in `Network.Build` now, before it:
    lay out boards for every candidate and decide which to draw later; `Hidden` keeps the ground, so nothing moves).
-3. The leftovers below, and seed 9's queue joining above.
+5. The leftovers below.
 
 ## The owner's lights report (2026-11-25)
 
