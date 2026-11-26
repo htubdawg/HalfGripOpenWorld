@@ -164,7 +164,7 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					// Instanced only where the material's shader can be: one without an instancing variant draws every car of the call
-					// with one transform (all in one place, or none to be seen), and the far cars were missing until 75 m off.
+					// with one transform.
 					bool together = instancing && CanInstance(m);
 					if (together)
 					{
@@ -180,8 +180,9 @@ namespace HalfGripOpenWorld
 						worldBounds = box,
 						shadowCastingMode = ShadowCastingMode.Off,
 						receiveShadows = true,
-						// As the near car's renderer: its own layer (the cameras may not draw the Enemy layer at all: every far car was unseen
-						// until it came within 75 m and was drawn near, the owner's "pop-in at 50 m"), probes for its ambient and reflections.
+						// As the near car's renderer: its own layer. The main camera doesn't draw the Enemy layer (the near cars' boxes are on it):
+						// drawn there, every far car was unseen until it came within 75 m and was drawn near, the owner's "pop-in at 50 m"
+						// (2026-11-26). Probes for its ambient and reflections, as a renderer has.
 						layer = part.Layer,
 						renderingLayerMask = part.RenderingLayers,
 						lightProbeUsage = LightProbeUsage.BlendProbes,
@@ -229,9 +230,9 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Whether <paramref name="m"/>'s shader has an instancing variant (<c>INSTANCING_ON</c> in its keywords), worked out once for each
-		/// material and logged once for each shader. The owner saw traffic on the highway appear only close up, at speed (2026-11-26), after
-		/// the far cars went instanced in 0.33.0: the game's car paint is its own shader, and a shader with no instancing variant draws
-		/// every instance with the same transform. Unknown (an error) counts as no: drawn one by one, which any shader can.
+		/// material and logged once for each shader. A shader with no instancing variant would draw every instance with the same transform;
+		/// the game's own car paint (GMTK/Car Body Channel Paint) and URP Lit have one (the owner's log, 2026-11-26), so this is a guard for
+		/// other bodies. Unknown (an error) counts as no: drawn one by one, which any shader can.
 		/// </summary>
 		private bool CanInstance(Material m)
 		{

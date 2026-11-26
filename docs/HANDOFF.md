@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (night, after the pop-in report).
+Last written 2026-11-26 (night, the pop-in fixed).
 
 ## Where things stand
 
@@ -12,53 +12,46 @@ Last written 2026-11-26 (night, after the pop-in report).
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
 - **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights, right of way fixes, lanes no longer laid on lanes,
   late drawn cars let off a stand, **the highway reworked**, the queues' fixes, Kingsbridge's left-turn lane (its arrow off: a
-  flashing yellow only), two room fixes, **routes that know the queues** (the day built twice), and the **race seed in the log**.
+  flashing yellow only), two room fixes, **routes that know the queues** (the day built twice), the **race seed in the log**, and
+  **far traffic seen** (the pop-in fix, next section).
   **The world changed** since 0.33.0 (node 6's road is a lane wider) and the traffic's day too, so everyone in a room needs the same
   build. Bump the version with the next release.
+- **The highway pop-in is fixed and confirmed by the owner** (next section). It came before the plan below at the owner's word.
 - The owner has run the routes build (log: "built in 10635 ms over 2 passes" on their machine) and **reported cars standing still for
-  no reason** (next section). **Every waiting figure measured so far is suspect until that is fixed**, the routes' gain included.
-- **Next: the three steps in the next section, in order** (the owner agreed to the first; the second and third were proposed, start
+  no reason** (the section after). **Every waiting figure measured so far is suspect until that is fixed**, the routes' gain included.
+- **Next: the three steps in the standing-still section, in order** (step 1 done) (the owner agreed to the first; the second and third were proposed, start
   them). The four-way stops and added lights (put to the owner, who said try them) are **paused** until the standing is fixed: their
   measuring switches are in (`TV_ALLWAY`, `TV_LIT`), their first numbers below.
 
-## The owner's report (2026-11-26, latest): cars pop in very close on the highway at speed
+## Fixed (2026-11-26, the owner confirmed): cars popped in very close on the highway
 
-The owner put this ahead of the plan below ("lets try to address this before moving forward"). Log: race seed 1030564886, a weekend,
-the race from 18:11, alone (room host), driving the trunk east from about (-3250, -7000) to (-750, -9250).
-- **The day is not it.** New trafficview check (`PopIn` in `Highway.cs`, `TV_POPLIST=1` lists the cases): a player on each way's lap at
-  168 km/h, cars chosen every 0.4 s as `TrafficCars.Choose` does (moving within 1500, parked within 750, on a loaded tile): moving cars
-  are first chosen 1,028 units or more away (10% at 1,240: the loaded tiles' edge), parked ones at 686 or more, on seeds 1030564886, 1
-  and 5. Only cars out of a tunnel or setting off from a space come in nearer. Also ruled out: the hiding next to physics cars (same lane
-  only, 4 units across), the physics cars' bodies (shown the frame they are taken).
-- **The suspect: far cars (past 250 units, 75 m) drawn instanced** since 0.33.0, the day before the first "popped in too near" report;
-  raising the reach (900 to 1500) didn't help, which fits. The game's car paint is its own shader (`_EntireColor`), and a shader with no
-  instancing variant draws every instance with one transform: the far cars would be missing (or in one place) until 75 m off. Not
-  provable here (no game assets). **Done:** `TrafficFar.CanInstance`: a material is instanced only if its shader's keyword space has
-  `INSTANCING_ON`, else its far cars are drawn one by one (`Graphics.RenderMesh`, which any shader can); logged once per shader, and the
-  timings line ends `far N (part draws: X instanced, Y one by one)`. If Unity leaves built-in keywords out of the keyword space, every
-  far car is drawn one by one: right, a little dearer.
-- **The owner's second log (seed 906601541, `TrafficInstanced` off): still pops in.** Far cars were drawn one by one (`far 14 (part
-  draws: 0 instanced, 126 one by one)`), so the instancing isn't it (the guard stays: harmless). trafficview's check is clean on that
-  seed too. Looked at and found right: the far cars' matrices (`PartsOf`: the template hangs from `TrafficCars` as a body from its
-  root, same scale), the same-lane hiding next to physics cars. Both drives started the race in the evening (18:11, 19:02; a day is 40
-  minutes), so most was in the dark: far cars have lit lamps but no light of their own; the six nearest have real headlights.
-- **Done now: the in-game watch (`TrafficPop.cs`).** Each car first drawn nearer than 900 units (moving) or 450 (parked) is logged as
-  `Traffic pop-in:` with what it was the frame before (`Draw`'s reason via `drawFail`: hidden, held back, in a tunnel, no ground under
-  it, space away; or not chosen; or a physics car), where, ahead or behind, its and the player's speed, whether its tile was loaded.
-  **Next: read the owner's log with these lines (`docs/TESTING.md` 64) and fix what they show.**
-- **The owner's third log (seed 1299320649, "very close, 50 m"): the watch logged no car first drawn close ahead.** Its 37 lines: 10
-  at the race's start (standing), the rest physics cars gone back on their timetable about 400 units behind (expected, unseen). So
-  the cars that pop in were drawn far all along, unseen: both far paths (instanced and one by one) share `RenderParams`, and drew on
-  `layer` = the **Enemy** layer, while a near car's renderers keep the game car's own layers (`Copy` copies each part's layer; only
-  the root and the box are on Enemy). If the cameras don't draw the Enemy layer, every far car is invisible until it is drawn near
-  (250 units) or made a physics car (300): the "50 m". **Done:** each far part is drawn on its renderer's own layer and rendering
-  layers, with light and reflection probes as a renderer has; logged once: the layers used and whether each camera draws the Enemy
-  layer (that line says whether this was it). Next: the owner's log.
-- Old next step (superseded): the owner's log (`docs/TESTING.md` 64). If cars still pop in with far cars drawn one by one (or with `TrafficInstanced`
-  off), look at `Pose` failing (no ground under a car on a tile not yet loaded at speed: `Streamer`'s ring loads nearest first, so the
-  leading edge comes last) and the far cars' matrices (`PartsOf`).
+**The report.** On the highway at speed, cars appeared about 50 m off. Raising the drawn reach (900 to 1500, the day before) hadn't
+helped, nor had `TrafficInstanced` off.
 
-## The owner's report (2026-11-26, before): cars standing still for no reason
+**The cause.** Every drawn car past 250 units (75 m) is drawn "far" (`TrafficFar`: its body switched off, its meshes drawn with
+`Graphics.RenderMesh(Instanced)`), and those draws were on the **Enemy** layer, the layer the near cars' boxes are on. The near cars'
+renderers keep the game car's own layers (`Copy`: Default). **The main camera doesn't draw the Enemy layer** (logged: "Main Camera does
+not draw the Enemy layer, InteriorCamera does not ..., RearViewCamera draws ..."), so every far car was invisible until it was drawn
+near (75 m) or became a physics car (90 m). It dates from 0.33.0 (far cars made cheap), so it is in the released 0.33.0 too.
+
+**The fix.** `PartsOf` keeps each part's renderer layer and rendering layers; `DrawFar` draws on them, with light and reflection probes
+as a renderer has. The owner's log after it: far cars drawn on Default, instanced, and no pop-in.
+
+**Kept from the hunt:**
+- `TrafficFar.CanInstance`: a material is instanced only if its shader has `INSTANCING_ON`, else its far cars are drawn one by one. Both
+  of the game's car shaders have it (GMTK/Car Body Channel Paint, URP Lit): a guard for other bodies. Logged once a shader (verbose).
+- The timings line ends `far N (part draws: X instanced, Y one by one); first drawn close this race N`.
+- **`TrafficPop.cs`, the in-game watch** that found it: each car drawn this frame that wasn't the frame before, nearer than 900 units
+  (moving) or 450 (parked), is counted and logged verbose (`Traffic pop-in:`, at most 20 a race) with what it was the frame before
+  (`Draw`'s reason via `drawFail`: hidden, held back, in a tunnel, no ground under it, space away; or not chosen). Physics cars going
+  back on their timetable (out of reach, unseen behind) and the race's first choice are not counted. If a pop-in is reported again,
+  read these lines first: a count of 0 with cars still popping means they are drawn but unseen (rendering), as here.
+- **trafficview's pop-in check** (`PopIn` in `Highway.cs`; `TV_POPLIST=1` lists cases): a player on each way's lap at 168 km/h, cars
+  chosen every 0.4 s as `TrafficCars.Choose` does: fails if a moving car is first chosen within 1000 or a parked one within 600 (other
+  than out of a tunnel, through the wrap, or setting off). Clean on seeds 1, 5, 906601541, 1030564886: moving cars first chosen 1,028
+  or more out (the loaded tiles' edge, about 1,250), parked about 690.
+
+## The owner's report (2026-11-26): cars standing still for no reason
 
 A screenshot from the flying camera at (-2401, -5096), 14:30 on a weekend day: the T where a street from the east meets the Kingsbridge
 link south of the town (node 51 at (-2398, -5044), street from (-2185, -5070)). Two cars on the street at its mouth, cars on the link

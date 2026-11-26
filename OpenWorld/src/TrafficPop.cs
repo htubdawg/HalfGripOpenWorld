@@ -5,24 +5,27 @@ using UnityEngine;
 namespace HalfGripOpenWorld
 {
 	/// <summary>
-	/// Part of <see cref="TrafficCars"/>: a watch for cars that start being drawn close to the player. The owner sees cars appear very close
-	/// on the highway at speed (2026-11-26), with far cars drawn instanced or one by one; trafficview finds the day puts every moving car
-	/// within reach 1,000 units or more out. So the game says what happened: each car drawn this frame that wasn't the frame before,
-	/// nearer than <see cref="PopMoving"/> (moving) or <see cref="PopParked"/> (parked), is logged with what it was the frame before (not
-	/// chosen, chosen but not drawn and why, a physics car), where it is and how fast both it and the player go.
+	/// Part of <see cref="TrafficCars"/>: a watch for cars that start being drawn close to the player. It found the owner's "pop-in at 50 m"
+	/// on the highway (2026-11-26): no car was first drawn close, so the far cars were drawn but unseen (on the Enemy layer, which the main
+	/// camera doesn't draw; see <see cref="PartsOf"/>). Kept for the next such report: each car drawn this frame that wasn't the frame before,
+	/// nearer than <see cref="PopMoving"/> (moving) or <see cref="PopParked"/> (parked), is counted in the timings line and logged (verbose)
+	/// with what it was the frame before (not chosen, chosen but not drawn and why), where it is and how fast both it and the player go.
+	/// Not counted: a physics car going back on its timetable (out of reach, about 120 m off and unseen behind) and the race's first choice.
 	/// </summary>
 	internal sealed partial class TrafficCars
 	{
 		/// <summary>A car first drawn nearer than this (units, about 270 m moving and 135 m parked) is logged.</summary>
 		private const double PopMoving = 900.0, PopParked = 450.0;
 		/// <summary>At most this many lines a race (the count goes on in the timings line).</summary>
-		private const int PopMostLogged = 80;
+		private const int PopMostLogged = 20;
 
 		private Dictionary<int, string> popPrev = new Dictionary<int, string>(), popNow = new Dictionary<int, string>();
 		private HashSet<int> popPhysPrev = new HashSet<int>();
 		private int popLogged, popCount;
 		private double popLastX = double.NaN, popLastZ, popVx, popVz;
 		private bool choseThisFrame;
+		/// <summary>True until the first frame with cars drawn is over (the race's first choice draws every car at once).</summary>
+		private bool popFirst = true;
 		/// <summary>Why <see cref="Draw"/> last said no (for the watch).</summary>
 		private string drawFail;
 
@@ -47,6 +50,10 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			if (popFirst || (before == null && popPhysPrev.Contains(c)))
+			{
+				return;
+			}
 			double dx = x - cx, dz = z - cz, d = Math.Sqrt(dx * dx + dz * dz);
 			if (d >= (moving ? PopMoving : PopParked))
 			{
@@ -58,11 +65,11 @@ namespace HalfGripOpenWorld
 				return;
 			}
 			popLogged++;
-			string was = before ?? (popPhysPrev.Contains(c) ? "a physics car (gone back on its timetable)" : "not chosen" + (chosenNow ? " (chosen this frame)" : " (no choice this frame)"));
+			string was = before ?? "not chosen" + (chosenNow ? " (chosen this frame)" : " (no choice this frame)");
 			double speed = Math.Sqrt(popVx * popVx + popVz * popVz);
 			double ahead = speed > 1.0 ? (dx * popVx + dz * popVz) / speed : 0.0;
 			bool inLedger = late.TryGet(c, out TrafficLate.Entry le);
-			Mod.Log.LogInfo("Traffic pop-in: car " + c + " " + (moving ? "moving at " + (at.Speed / 3.3 * 3.6).ToString("0") + " km/h, leg " + at.Leg + " (" + at.T.ToString("0") + " s in)" : "parked")
+			Mod.Info("Traffic pop-in: car " + c + " " + (moving ? "moving at " + (at.Speed / 3.3 * 3.6).ToString("0") + " km/h, leg " + at.Leg + " (" + at.T.ToString("0") + " s in)" : "parked")
 				+ " first drawn " + d.ToString("0") + " units (" + (d / 3.3).ToString("0") + " m) off, " + (ahead >= 0.0 ? "ahead" : "behind") + " (" + Math.Abs(ahead).ToString("0") + " along), "
 				+ (IsFar(v, x, z) ? "far" : "near") + ", at (" + x.ToString("0") + ", " + z.ToString("0") + "); the frame before: " + was
 				+ (inLedger ? "; in the ledger (late " + le.D.ToString("0.0") + " s" + (le.Hidden ? ", hidden" : "") + ")" : "")
@@ -77,6 +84,10 @@ namespace HalfGripOpenWorld
 			popPrev = popNow;
 			popNow = t;
 			popNow.Clear();
+			if (popPrev.Count > 0)
+			{
+				popFirst = false;
+			}
 			popPhysPrev.Clear();
 			foreach (int c in physical.Keys)
 			{

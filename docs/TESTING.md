@@ -248,14 +248,7 @@ owner has reported on it.
      that never moves.
    - **When reporting traffic:** the log now has a "Race seed: N" line near the race's start. With it, the day can be replayed exactly:
      send the log with the screenshot and the overlay's position and time showing.
-64. Cars popping in close on the highway (2026-11-26, `traffic-test-branch`, not released). `TrafficInstanced` off didn't fix it
-   (the owner's second log: far cars drawn one by one, still popping in), so it isn't how far cars are drawn. The game now logs each
-   car first drawn close to you: a `Traffic pop-in:` line (up to 80 a race) says how far off it appeared, ahead or behind, and what it
-   was the frame before (not chosen to draw, chosen but not drawn and why, or a physics car); the `Traffic timings` lines end with
-   `first drawn close this race N`.
-   - The third log showed the cars that pop in were being drawn far all along, but on a layer the cameras may not show (Enemy). Far
-     cars are now drawn on the car's own layers. The log line `Traffic: far cars drawn on their parts' own layers (...)` says whether
-     each camera draws the Enemy layer.
-   - Set `TrafficInstanced` back to true. Drive the same stretch of highway at full speed, both ways, and send `LogOutput.log`.
-   - Say whether the cars that pop in are ones coming towards you, ones you are catching up, or both; and whether it was by day or at
-     night (both logs so far started the race in the evening, so most of the drive was in the dark).
+64. Far traffic seen (2026-11-26, `traffic-test-branch`, not released). **Confirmed by the owner**: cars on the highway no longer pop in
+   close; far cars were drawn on a layer the main camera doesn't show. Recheck in towns: parked cars down a long street should be
+   visible from about 230 m, not appear at 75 m. If a pop-in is ever reported again, send the log: its `Traffic pop-in:` lines and the
+   timings lines' `first drawn close this race N` say where to look.
