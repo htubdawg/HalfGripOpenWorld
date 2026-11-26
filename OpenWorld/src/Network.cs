@@ -1522,8 +1522,11 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				// A lane's through way that meets a road straight away (see ThroughShortest) is not built at all.
-				if (fromStart && s == 0 && kind == RoadKind.Lane && road.S[road.Count - 1] < ThroughShortest)
+				// A lane's through way that meets a road straight away (see ThroughShortest), or turns back on the road it carries on
+				// from by more than two roads alone at a place may join at (CornerTurn), is not built at all: the routed one may set off
+				// anywhere within 120 degrees, and some went straight back beside their own lane, a V with ground in its crotch (Farm 16,
+				// Farm 83).
+				if (fromStart && s == 0 && kind == RoadKind.Lane && (road.S[road.Count - 1] < ThroughShortest || TurnsBack(road, ax, az)))
 				{
 					return made;
 				}
@@ -1687,6 +1690,30 @@ namespace HalfGripOpenWorld
 			}
 			aOver = !ends;
 			return true;
+		}
+
+		/// <summary>Whether a road setting off from another road's end at (x, z) turns back from that road's way by more than <see cref="CornerTurn"/>.</summary>
+		private static bool TurnsBack(Road made, double x, double z)
+		{
+			Unit(made.X[2] - made.X[0], made.Z[2] - made.Z[0], out double mx, out double mz);
+			foreach (int o in segments.RoadsNear(x, z, 4.0))
+			{
+				Road road = Roads[o];
+				foreach ((int k, int nk) in new[] { (0, 2), (road.Count - 1, road.Count - 3) })
+				{
+					if (road.Count < 3 || Math.Abs(road.X[k] - x) + Math.Abs(road.Z[k] - z) > 1.0)
+					{
+						continue;
+					}
+					// Its way out of that end against the new road's way on.
+					Unit(road.X[k] - road.X[nk], road.Z[k] - road.Z[nk], out double ox, out double oz);
+					if (ox * mx + oz * mz < CornerTurn)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
 		}
 
 		/// <summary>Whether one of the road's ends is within a unit of (x, z).</summary>
