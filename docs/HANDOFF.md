@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-25 (later the same day).
+Last written 2026-11-26.
 
 ## Where things stand
 
@@ -58,8 +58,39 @@ The numbers, all 16 seeds (`TV_DRIVE_ONLY=1`), junction waiting / trips with a s
 - the bay with permissive lefts only (no arrow): about the same as no bay (6,524 / 283 / 73 with right on red on);
 - the arrow at once (no delay): gridlocked seed 1 before the room fixes; worse than the delay after.
 So the bay halves the long stands but adds about 18% junction waiting: with it the southbound lefts get served, and that green
-comes out of the northbound morning commute up the link (the queue now backs up through nodes 44, 49, 67). **Ask the owner** which
-they prefer, and whether node 6's main line should be the busiest pair (42 to 45, the town to Pinewick) rather than the link.
+comes out of the northbound morning commute up the link (the queue now backs up through nodes 44, 49, 67).
+
+**The owner's answers (2026-11-26)** to the questions put after this work:
+1. Which is better, fewer long stands or less waiting in all: "it would matter what the average wait time is for everyone. If we
+   just spread the wait time out mostly equally it's probably fine, but if it's just different people now waiting longer, that's
+   dumb." So judge a change by **how the waiting is shared among the trips**, not the day's total alone. trafficview doesn't report
+   that yet: add, per seed, each trip's junction waiting (mean, median, 90th and 99th percentile, the most), and who waits (by node
+   and way in), then compare the build before the bay, the room fixes alone and the bay. The totals so far say the waiting got more
+   even overall (stands over 300 s from 280 to 154) but that the northbound commuters on the link now wait longer: exactly the case
+   the owner calls dumb if it holds up. Decide the bay's phasing from that (below).
+2. Whether node 6's main line should be the busiest pair: the owner didn't follow the jargon ("node, pair, link"). **Use plain words
+   with the owner**: "the junction where the road to Pinewick leaves Kingsbridge's road to the highway", "the cars coming up from the
+   highway into town". Only re-ask if the measurement shows it matters, as: "most cars at that light turn the corner between the
+   town and Pinewick; should the light treat that as the main road?"
+3. A longer turn lane: "I only want what makes sense to have." The engineer's call: do what a real road would have and the numbers
+   back.
+4. More turn lanes: "they should probably go everywhere it makes sense to have one." Standing decision now (docs/PLAN.md).
+
+**What is next** (in this order; plain words to the owner, show the numbers as averages per trip):
+1. trafficview: the waiting per trip as above (one line per seed, totals over 16), to judge every change below by.
+2. Node 6's light: try a through green for the cars coming down from town during the turn arrow (the left turners and the cars
+   going on together, the cars coming up held for the arrow only), the arrow's delay and its longest green; keep what makes the
+   waiting fairest per trip. If the commute up from the highway still pays for the turn lane, say so to the owner plainly.
+3. The turn lane's length: it holds two cars. Carry the widening further north (the taper toward node 2) and let the lane run back
+   through the lane junction behind it (node 42) as a centre lane, if the per-trip waiting says it helps.
+4. Turn lanes everywhere they make sense: a rule instead of `TurnBays.Sites` (a lit junction off the trunk where a main-line way
+   in has many left turners and room for two cars or more between junctions), lit junctions first; then unlit ones only where the
+   left turners hold up the main line. The rule's T's of main roads with room: node 8 (the link's junction with the road to
+   Redford; its other way in is 19 long, so one way only) and Northcote's road north meeting Millbrook's (-2885, 5832). A road can
+   only be widened once now (`Road.Wide` is one stretch): make it a list for two bays on one road (node 6 and node 8 are both on the
+   link). Look at each with `jview` (JVIEW_TEX=1) and keep meshcheck `bays` and `clear` passing.
+5. A stop distance per way in (`Node.Box` is one per junction), so a side road meeting a widened road at a slant stops further
+   back without pushing back every way in (cost seed 1 about 250 minutes when tried).
 
 **Right on red**: measured on 16 seeds in each setting (also turning only into a gap 1.5 s more than a give way's, and counting the
 cars standing at the main line's stop line, so none is let go in the all red and caught by the main line's green): it never helped
@@ -67,9 +98,6 @@ in total (6,347 against 6,087 without the bay, 6,851 against 6,524 with the perm
 on more seeds. Seed by seed it helps some (6, 10, 13, 15, 16) and costs others (1, 4, 8, 12). So it is **off**
 (`TrafficDay.RightOnRedOn`), its fixes kept; trafficview `TV_ROR=1` measures it. Tell the owner.
 
-Next (ask the owner first): a longer bay (it holds two cars; through node 42 as a two-way centre lane, the widening taper moved north
-toward node 2), a through green with the arrow for the bay's way in, more bays (`Sites`: node 8, Northcote's T), a stop distance per
-way in, then the leftovers below.
 
 ## The owner's lights report (2026-11-25)
 
@@ -188,7 +216,10 @@ Possible next steps (ask the owner):
 ## Working with the owner
 
 - Ask for anything you need (access, files, a decision) at once, plainly. Don't guess, and don't quietly work around a refusal.
-- Fix bugs without asking whether to. Ask about design choices.
+- Fix bugs without asking whether to. Ask about design choices, but only ones the owner can answer: they judge by what players see
+  and feel (the waiting, the look), not the engineering. Where it is an engineering call ("what makes sense"), make it and say why.
+- Plain words: no "node", "arm", "pair", "link", "box" with the owner; name the place ("the light where the road to Pinewick leaves
+  town") and give averages per trip.
 - Verify before claiming: say what you read or ran yourself and what came from notes.
 - Use plain words about what the player sees. Show only pictures you have looked at yourself.
 - The owner tests in game and reports with screenshots and `LogOutput.log`.
