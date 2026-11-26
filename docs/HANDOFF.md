@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (evening).
+Last written 2026-11-26 (late).
 
 ## Where things stand
 
@@ -12,7 +12,7 @@ Last written 2026-11-26 (evening).
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
 - **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights, right of way fixes, lanes no longer laid on lanes,
   late drawn cars let off a stand, **the highway reworked**, the queues' fixes, and now (below) **Kingsbridge's left-turn lane**, two
-  room fixes and right on red measured and left off. **The world changed** since 0.33.0 (node 6's road is a lane wider; the
+  room fixes and right on red measured and left off; since, node 6's arrow off (a flashing yellow only, the owner's choice). **The world changed** since 0.33.0 (node 6's road is a lane wider; the
   traffic's day too), so everyone in a room needs the same build. Bump the version with the next release.
 - None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 62).
 
@@ -69,19 +69,48 @@ seeds 1 and 2 the side roads at nodes 42 and 2 are refused for **room**: the sou
 The bay's overflow is about 6 of seed 1's 380 junction minutes. What is left is the link's capacity: one lane each way through six
 junctions in 600 units with a light in the middle.
 
-**What is next**:
-1. Kingsbridge's queues: the geometry. **No centre turn lane** (the owner: "extremely dangerous and hard to read"; docs/PLAN.md).
-   Instead, at node 6: a right-turn lane for the northbound cars turning to Pinewick (arm 1 > 2), and the Pinewick road (arm 2) split
-   into a left and a right lane at the light; then left-turn bays at nodes 44, 49, 67 where the gap allows (`Road.Wide` as a list).
-   Measure each on 16 seeds by the per-trip waiting. Then the queues joining (seed 9's physics gap at node 49).
-2. Then lights and four-way stops at more junctions, keeping each that doesn't make the per-trip waiting worse (the owner's choice).
-3. Earlier notes on the queues: the northbound commute up the link through nodes 67, 49, 44 to node 6, and the side streets they block
-   (node 67's street from the east 160 to 280 s a trip, node 42's and 49's lanes 40 to 120 s, node 2's street).
-4. Turn lanes by a rule (a main road's way into a junction with left turners holding up the cars behind; room for
-   two cars or more), `Road.Wide` made a list for two on one road; four-way stops and lights where the rules (or the owner) say, with
-   Signs learning which junctions are controlled after the traffic map is built (they are laid out in `Network.Build` now, before it:
-   lay out boards for every candidate and decide which to draw later; `Hidden` keeps the ground, so nothing moves).
-5. The leftovers below.
+**The owner on the road design (2026-11-26, late)**, after an overhead picture of the link (`jview at` with `JVIEW_TEX=1
+JVIEW_CLEAN=1`, centred (-2370, -4440), span 700; and node 6 at span 220): "looks like there's plenty of space". No centre turn lane
+("extremely dangerous and hard to read"). **A turn lane may run back through the junction before it, marked as a through lane there**
+("we can have the left lane extend beyond a junction if its marked as a left/straight lane at the first one"). "I just want the
+traffic to work and the roads to feel realistic": the engineering calls are ours, judged by the per-trip waiting. "We are gonna need a
+bunch of signs eventually": keep a list of the signs each change needs (below). Both in docs/PLAN.md.
+
+Why turn lanes at the light and not elsewhere: on seed 1 the light itself holds the cars (refused for **light** 14.6 min southbound at
+node 6, 8.4 northbound, 8.1 from Pinewick), against 1.6 min of the northbound held by turning cars; the side roads wait for **room** past
+the queue. So the gain is in giving the light's queues room and lanes, not in turn lanes at the small junctions.
+
+**What is next** (agreed with the owner, not started; the last session stopped while reading the code):
+1. **Node 6, the link's two ways in, each a lane wider back through the junction before it:**
+   - Southbound (from town): the widening starts after node 2 (the street from the north, (-2290, -4139)), so the extra lane begins
+     about 40 m north of node 42 (the lane from the west, (-2354, -4259)); at node 42 the left lane is **straight only** (the side road is
+     on the right) and the right lane straight/right; at node 6 the left lane is **left only** (to Pinewick), the right lane straight.
+     It replaces today's two-car bay (it holds about 6 to 7 cars) and the through cars get the right lane to themselves.
+   - Northbound (from the trunk): a right lane starting south of node 44 ((-2417, -4448)), straight at node 44, **right only** at node 6.
+   - Watch: northbound cars turning left into node 42's lane cross two lanes (bigger gap); cars from node 42's lane going to Pinewick
+     have about 25 m to move over.
+2. **The Pinewick road (node 6's arm 2) split into a left and a right lane at the light.** A bay at a road's end, which `Network.Bays`
+   doesn't lay yet (it only lays a bay on the road that carries on through the T).
+3. Measure each on 16 seeds by the fairness line (as committed: 31.5 s a trip / 90% 74 / 765 over 3 min) and keep it only if it
+   helps; tell the owner plainly if it doesn't.
+4. Then turn lanes at the link's other junctions where they make sense (nodes 49, 67), and lights and four-way stops at more
+   junctions where they help (the owner's "both, Kingsbridge first").
+5. The queues joining (seed 9's physics gap at node 49), and the leftovers below.
+
+How to build item 1 (notes from reading the code, not tried):
+- `Network.Road.Wide`, `WideA0..WideB1` is one widened stretch per road, symmetric (the through lanes half a lane out each side, a
+  painted median between: `RoadMesh.WideStrip`, `BayPaint`; `TurnBays.MiddleHalf`, `Mouth`, `WhiteSide`). A lane added on one side
+  for one direction is new: an offset widening (one side's edge moves out a lane, the centre line stays) or two stretches, and the
+  traffic's lanes for that direction two wide.
+- Today a bay is one lane key per edge (`TrafficDay.LaneKey(s, MedianIx)`, `bayEdge`, `IntoBay`, `Laned`); the bay lane starts after
+  node 42 (`TurnBays.Bay.Back`), the widening already runs through node 42 (`fullBack`). A lane running through node 42 needs the
+  lane key carried across the node (a car in it at node 42 goes on in it), as the trunk's two lanes are (`TwoLane`, `LaneAt`).
+- meshcheck `bays` allows only the junction behind inside the widened stretch; jview `bays` lists the bays. Look with
+  `JVIEW_TEX=1` before and after.
+- `TrafficSignals.Build` gives a bay an arrow only on a main arm (`bayArm`); `SignalPoles` hangs a head over each lane (line ~116, ~405).
+
+**Signs needed** (for when there are models): stop signs at four-way stops; "LEFT LANE MUST TURN LEFT" (and right) before node 6's
+lanes; lane-use arrows (straight; straight/right; left only) at nodes 42, 44 and 6, on the road or overhead.
 
 ## The owner's lights report (2026-11-25)
 
@@ -170,7 +199,8 @@ Possible next steps (ask the owner):
 
 ## Traffic leftovers
 
-1. Node 6's trade-off and the main-line hold-ups over the limit on 4 seeds (above).
+1. With node 6's arrow off all 16 seeds pass but seed 9 (the physics cars' queue joining at node 49, above); the main-line hold-ups
+   over the limit went with the arrow.
 2. Physics cars "in each other": 0 to 4 a seed (limit 6).
 3. A physics car brushed the player's stopped car (seed 11): not looked at.
 4. Then the owner's test in the game (`docs/TESTING.md` 58 and 59).
@@ -187,7 +217,12 @@ Possible next steps (ask the owner):
   - From each report, take one line per seed: junction waiting, overlaps, box conflicts, stopped across, physics pairs, physics box
     crossings, stops over 90 s, FAILs.
   - Every fix so far moved the day and turned up a different single failure somewhere else: rerun all 16 after each change.
-- **Tracing why cars wait:** copy `OpenWorld/src/TrafficDay.cs` to the scratchpad, add a `Why` string to `Mover` set at each refusal in
+- **Comparing builds:** run 16 seeds into a folder per setting (the env switches: `TV_NOBAYS`, `TV_LEAD`, `TV_ARROWDELAY`, `TV_UNLIT`,
+  `TV_MAINMIN`, `TV_SIDEMIN`, `TV_SIDEMAX`, `TV_ROR`, `TV_WARRANTS`) and pool the "fairness:" lines: trips-weighted mean, the
+  percentiles averaged over seeds, the over-1/3-minute counts summed, the FAIL lines; and the ways in by node (a short Python script
+  over the reports did it; it was in the scratchpad, not kept). A setting that drops a feature fails its own check by design (no bay:
+  the bays line; a light off: the signs' line).
+- **Tracing why cars wait:** the fairness lines now give each busy way in its refusals by reason, which answers most of it. copy `OpenWorld/src/TrafficDay.cs` to the scratchpad, add a `Why` string to `Mover` set at each refusal in
   `Junctions` (red, order, cross, gap, room, stuck) and a dump after `Junctions(requests, refused)` in `Simulate` of the movers on
   edges touching chosen nodes every N steps; build it with trafficview's sources in a scratch project. It answered every question here.
 - How long things take: meshcheck, all of it, about 1 min 45 s; the layout in trafficview about 7.5 s. Anything longer than 2 minutes

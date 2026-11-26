@@ -41,6 +41,10 @@ when one is done, delete it here.
   lanes are separate bays at each junction, never running back through the junction behind. Next: turn lanes on the ways into
   Kingsbridge's light (a right-turn lane for the cars coming up from the trunk turning to Pinewick; the Pinewick road split left and
   right at the light), then left-turn bays at the link's other junctions where the gap allows, each kept only if it helps.
+  A turn lane may run back through the junction before it, marked as a through lane there ("we can have the left lane extend beyond
+  a junction if its marked as a left/straight lane at the first one", the owner, 2026-11-26). "I just want the traffic to work and
+  the roads to feel realistic": the engineering is ours. Signs (stop signs, lane-use signs and arrows) to be modelled later: keep a
+  list of what each change needs (docs/HANDOFF.md).
 - Judge traffic changes by how the waiting is shared (the owner, 2026-11-26): waiting spread fairly over everyone is fine; the same
   total moved onto other drivers who now wait longer is not. Report averages per trip, in plain words.
 - Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not
