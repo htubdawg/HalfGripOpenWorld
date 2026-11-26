@@ -1039,7 +1039,8 @@ internal static class Program
 			Console.WriteLine("    off the paving by kind: " + kv.Value + " " + kv.Key);
 		}
 		worstOff.Sort((x, y) => y.off != x.off ? y.off.CompareTo(x.off) : x.c.CompareTo(y.c));
-		for (int k = 0; k < Math.Min(8, worstOff.Count); k++)
+		// LANES_WHY=all lists every connector off the paving.
+		for (int k = 0; k < Math.Min(Environment.GetEnvironmentVariable("LANES_WHY") == "all" ? worstOff.Count : 8, worstOff.Count); k++)
 		{
 			Lanes.Connector c = Lanes.Connectors[worstOff[k].c];
 			Traffic.Node n = Traffic.Nodes[c.Node];
@@ -4123,7 +4124,7 @@ internal static class Program
 	/// <summary>Lanes' ends beside the road they end on, sliver lanes, buried roads driven (see the list at the top, 27c).</summary>
 	private static bool Beside()
 	{
-		int ends = 0, slivers = 0, buried = 0, lanes = 0;
+		int ends = 0, slivers = 0, buried = 0, lanes = 0, slanted = 0;
 		for (int r = 0; r < Network.Roads.Count; r++)
 		{
 			Network.Road road = Network.Roads[r];
@@ -4171,6 +4172,23 @@ internal static class Program
 				if (Math.Abs(j.X[0] - road.X[k]) + Math.Abs(j.Z[0] - road.Z[k]) > 3.0 && Math.Abs(j.X[last] - road.X[k]) + Math.Abs(j.Z[last] - road.Z[k]) > 3.0)
 				{
 					onRoads++;
+					// How square it meets the road: its way over its last 30 against the road's there.
+					int b = k;
+					while (b + step >= 0 && b + step < road.Count && Math.Abs(road.S[b + step] - road.S[k]) < 30.0)
+					{
+						b += step;
+					}
+					double ax = road.X[k] - road.X[b], az = road.Z[k] - road.Z[b], al = Math.Sqrt(ax * ax + az * az);
+					int seg = Nearest(j, road.X[k], road.Z[k]);
+					double tx = j.X[seg + 1] - j.X[seg], tz = j.Z[seg + 1] - j.Z[seg], tl = Math.Sqrt(tx * tx + tz * tz);
+					if (al > 0.0 && tl > 0.0 && Math.Abs(ax * tx + az * tz) / (al * tl) > 0.5)
+					{
+						slanted++;
+						if (slanted <= 10)
+						{
+							Console.WriteLine("  lane '" + road.Name + "' (" + r + ") meets '" + j.Name + "' at a slant at (" + road.X[k].ToString("0") + ", " + road.Z[k].ToString("0") + ")");
+						}
+					}
 				}
 				double reach = j.Half + road.Half + 10.0, run = 0.0;
 				for (int i = k; i + step >= 0 && i + step < road.Count && LineDistance(j, road.X[i + step], road.Z[i + step]) < reach; i += step)
@@ -4244,10 +4262,29 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0;
+		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0 && slanted == 0;
 		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole, "
-			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 5 apart" + (ok ? "" : "  FAIL"));
+			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 5 apart, " + slanted + " lanes meeting a road more than 30 degrees off square" + (ok ? "" : "  FAIL"));
 		return ok;
+	}
+
+	/// <summary>The piece of a road nearest (x, z).</summary>
+	private static int Nearest(Network.Road road, double x, double z)
+	{
+		int best = 0;
+		double bd = double.MaxValue;
+		for (int i = 0; i + 1 < road.Count; i++)
+		{
+			double sx = road.X[i + 1] - road.X[i], sz = road.Z[i + 1] - road.Z[i], sl = sx * sx + sz * sz;
+			double u = sl > 0.0 ? Math.Max(0.0, Math.Min(1.0, ((x - road.X[i]) * sx + (z - road.Z[i]) * sz) / sl)) : 0.0;
+			double dx = x - road.X[i] - sx * u, dz = z - road.Z[i] - sz * u, d = dx * dx + dz * dz;
+			if (d < bd)
+			{
+				bd = d;
+				best = i;
+			}
+		}
+		return best;
 	}
 
 	/// <summary>How far (x, z) is from a road's centre line.</summary>

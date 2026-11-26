@@ -1512,6 +1512,10 @@ namespace HalfGripOpenWorld
 					line = Unbeside(line, cl.Half, ref pinStart);
 					line.Reverse();
 					line = Unbeside(line, cl.Half, ref pinEnd);
+					line.Reverse();
+					line = Squared(line, ref pinStart);
+					line.Reverse();
+					line = Squared(line, ref pinEnd);
 				}
 				Road road = Make(kind, name, line);
 				if (road.Count < 6)
@@ -1636,6 +1640,35 @@ namespace HalfGripOpenWorld
 
 		/// <summary>How near a line must pass its end for the rest of it to count as a hook back to it.</summary>
 		private const double HookReach = 20.0;
+
+		/// <summary>
+		/// A routed lane's end on a road at a slant brought round to meet it square (<see cref="SquareEnd"/>, as walked roads and town
+		/// streets are), where that can be done without crossing another road; left as it was where it can't (never made a dead end).
+		/// Lanes meeting at 25 degrees left a sliver of ground in the acute corner of the mouth, and right turns into them ran over it
+		/// and the verge. The line's last point is the end; <paramref name="pin"/>, its height, is set when it moves.
+		/// </summary>
+		private static List<(double x, double z)> Squared(List<(double x, double z)> line, ref double pin)
+		{
+			int last = line.Count - 1;
+			if (last < 4 || !segments.Snap(line[last].x, line[last].z, 4.0, -1, out double _, out double _, out double py) || segments.Hit < 0)
+			{
+				return line;
+			}
+			Road road = Roads[segments.Hit];
+			if (Unpaved(road.Kind) || road.Kind >= RoadKind.Rally || EndsAt(road, line[last].x, line[last].z))
+			{
+				return line;
+			}
+			List<(double x, double z)> pts = new List<(double x, double z)>(line);
+			End end = new End { Road = segments.Hit, X = line[last].x, Z = line[last].z, Y = double.IsNaN(pin) ? py : pin };
+			SquareEnd(pts, ref end);
+			if (end.Road < 0)
+			{
+				return line;
+			}
+			pin = end.Y;
+			return Lines.Resample(pts, Step);
+		}
 
 		/// <summary>How far beyond both roads' edges a lane's end still counts as alongside the road it ends on.</summary>
 		private const double BesideGap = 10.0;
