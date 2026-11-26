@@ -256,3 +256,9 @@ owner has reported on it.
    paint and showed their tail lights through the body; `TrafficInstanced` now defaults to off (a config file that already has it
    keeps `true`: set it to `false`). Check: a far car has the same paint as when it comes near, and a car coming toward you shows no
    red lamps.
+66. A car standing in the open road (2026-11-26, `traffic-test-branch`, not released; the traffic's day changed: everyone in a room
+   needs the same build). The owner's report: race seed 192843966, about 09:05, a car stood about 25 s on Kingsbridge's road north of
+   the lights where the road to Pinewick goes off, waiting to turn left onto the lane west (about (-2354, -4259)), with nothing coming.
+   It was giving way to cars that had already crossed and were crawling into a drive just past the turn. Now a car pulling in just past
+   a junction gives it up as soon as it is out of it. Check: at that turn, and wherever cars turn across a road, a car waiting to turn
+   goes once the way across is empty; say where one still stands with nothing coming, with the log and the overlay's position and time.

@@ -279,6 +279,25 @@ namespace HalfGripOpenWorld
 			}
 		}
 		internal int RefusedOrder, RefusedCross, RefusedRoom;
+		/// <summary>
+		/// Steps a car stood refused for a car granted the junction that was already out of its box and crawling the last of its trip
+		/// (pulling into a space just past it): the junction empty, nothing to wait for (the owner's report of a car standing in the open
+		/// road). Not a car out of the box crawling in a queue: its tail is still in it. Read by trafficview, with the first few as notes.
+		/// </summary>
+		internal int HeldOutOfBox;
+		internal readonly List<string> HeldOutOfBoxNotes = new List<string>();
+
+		private void OutOfBox(Request r, Grant g, double box)
+		{
+			if (r.M.V < 0.5 && g.M.P > g.NodeP + box && g.M.V < 2.0 && !g.M.L.Vanishes && g.M.L.Length - g.M.P < 30.0)
+			{
+				HeldOutOfBox++;
+				if (HeldOutOfBoxNotes.Count < 6)
+				{
+					HeldOutOfBoxNotes.Add("leg " + r.M.Index + " at node " + r.Node + " (" + Traffic.Nodes[r.Node].X.ToString("0") + ", " + Traffic.Nodes[r.Node].Z.ToString("0") + "), " + (3.0 + now / 100.0).ToString("0.00") + " h, for leg " + g.M.Index + " " + (g.M.P - g.NodeP).ToString("0") + " past the node (box " + box.ToString("0") + "), " + (g.M.L.Length - g.M.P).ToString("0") + " from its trip's end");
+				}
+			}
+		}
 		/// <summary>Refusals at a red light (or a green ending before the car would be through).</summary>
 		internal int RefusedSignal;
 		/// <summary>The day's clock this step (the lights read it in <see cref="Junctions"/>).</summary>
@@ -2890,6 +2909,7 @@ namespace HalfGripOpenWorld
 								ok = false;
 								crossing = true;
 								RefusedCross++;
+								OutOfBox(r, g, box);
 								Refusal(r, 2);
 								break;
 							}
@@ -2930,6 +2950,7 @@ namespace HalfGripOpenWorld
 								ok = false;
 								crossing = true;
 								RefusedCross++;
+								OutOfBox(r, g, box);
 								Refusal(r, 2);
 								if (MainYields(node, g.InKey, g.OutKey, r.InArm, r.OutArm))
 								{
@@ -4571,7 +4592,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>The first few steps over the limit, for trafficview's notes.</summary>
 		internal readonly List<string> SpeedNotes = new List<string>();
-
+		/// <summary>Grants end once the car is a car's length past the box, or out of it where its trip ends before that.</summary>
 		/// <summary>Grants end once the car is a car's length past the box.</summary>
 		private void Release()
 		{
@@ -4595,7 +4616,13 @@ namespace HalfGripOpenWorld
 				{
 					Grant g = m.Grants[i];
 					double box = Traffic.Nodes[g.Node].Box;
-					if (m.P > g.NodeP + box + Traffic.CarLength)
+					// A car whose trip ends just past the junction (into a drive or a space there, as HeldIn reckons it) slows to a crawl
+					// for the last of the way and may stop short of that: it held the junction all that while, and a car waiting to turn
+					// across its way stood for it with the junction empty (the owner's report: a car stood in the open road, seed
+					// 192843966 at 09:04, south of node 42, 26 s for two cars pulling into a drive 23 past it). It gives the junction back
+					// once it is out of the box.
+					bool endsShort = !m.L.Vanishes && m.L.Length < g.NodeP + box + Traffic.CarLength + 30.0;
+					if (m.P > g.NodeP + box + Traffic.CarLength || (endsShort && m.P > g.NodeP + box))
 					{
 						nodeGrants[g.Node].Remove(g);
 						m.Grants.RemoveAt(i);

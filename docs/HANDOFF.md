@@ -24,7 +24,18 @@ Last written 2026-11-26.
   colours or a pass (depth prepass) that doesn't follow the instances. Try a `MaterialPropertyBlock` with per-instance colour arrays.
 - **Paused until the standing-still fix is done:** four-way stops and more lights (the owner said try them; `docs/PLAN.md`).
 
-## Next: cars standing still for no reason (the owner's report)
+## Fixed 2026-11-26: a car standing in the open road (the owner's second report)
+
+Race seed 192843966 (weekday), about 09:04: car 2521 (leg 247) stood 26 s north of node 42 ((-2354, -4259), box 17) waiting to turn
+left (1>2), refused **crossing** for cars 1191 and 1004 going straight south and pulling into a drive 23 past the node (their trips
+end 31.2 past it). `Release` only gave a grant back at a car's length past the box (31 here); a car whose trip ends near there crawls
+the last of it and may stop short, so it held the junction until it parked. Now a car whose trip ends within 30 of that point gives its
+grants back once it is out of the box (`Release`, `endsShort`; the same test as `HeldIn`). Car 2521 now stands 5 s. trafficview's new
+check "steps a car stood for a car out of the junction pulling in just past it" (`TrafficDay.HeldOutOfBox`) was 690 on that seed
+before the fix and is 0 after. Found with the trace patch and a throwaway probe (`day.At(car, w)` every 2 s for one car, and every car
+standing near a point): sim time is (hour - 3) x 100, the race's start hour is in the log's `Sky: the race starts at` line.
+
+## Next: cars standing still for no reason (the owner's first report)
 
 At the T south of Kingsbridge where a street from the east meets the link (node 51, (-2398, -5044)), 14:30 on a weekend: cars on the
 street and the link stood 5 s or more with the junction empty. **Treat every waiting figure measured so far as suspect until this is

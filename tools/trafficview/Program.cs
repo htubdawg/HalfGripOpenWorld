@@ -835,6 +835,9 @@ internal static partial class Program
 			Console.WriteLine("  right of way: " + lines + " junctions with a main line of " + (three + four + many) + " (" + three + " of three arms, " + four + " of four, " + many + " of more); " + day.RefusedGap + " refusals waiting for a gap");
 			Console.WriteLine("  cars stopped in a trunk junction crossing a carriageway: " + day.StoppedAcrossCars + " (" + day.StoppedAcross + " steps)" + (day.StoppedAcrossCars == 0 ? "  ok" : "  FAIL"));
 			ok &= day.StoppedAcrossCars == 0;
+			Console.WriteLine("  steps a car stood for a car out of the junction pulling in just past it: " + day.HeldOutOfBox + (day.HeldOutOfBox == 0 ? "  ok" : "  FAIL"));
+			ok &= day.HeldOutOfBox == 0;
+			foreach (string note in day.HeldOutOfBoxNotes) Console.WriteLine("    pulling in: " + note);
 			foreach (string note in day.StoppedAcrossNotes) Console.WriteLine("    across: " + note);
 			Console.WriteLine("  junction lanes: " + day.IntoJunctionLanes + " into one to turn off, " + day.Merged + " merged out of one, " + day.Missed + " turns missed (went on and round), " + day.GaveUp + " gave up their way at a junction kept full (a gridlock) and took another");
 			{
