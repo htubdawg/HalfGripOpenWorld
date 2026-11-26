@@ -50,15 +50,23 @@ Last written 2026-11-26.
      yard (5: a hub that has to leave one lane out, the yard's stub too short for its cut).
   2. **1 lane held back too far**: lane 1103 into node 280 (5743, -9552), Glenford: a street meeting the trunk at about 60°; the right
      turn in from the trunk turns about 120° and swings across the mouth of the street's other lane, so the car coming out waits 29.5
-     back (two car lengths are 28). Decide: square the street onto the trunk, or let acute mouths hold three cars.
+     back (two car lengths are 28). **Decided: square the street onto the trunk** (as `Squared` does for lanes: find the street's
+     road with `jview near 5743 -9552 45`, see why its end isn't squared, likely a village street laid without `SquareEnd`), then
+     re-run the full meshcheck. Don't loosen the hold check.
 - `tools/check.sh` compiles clean; the full `meshcheck` passes every check but `lanes`; `preview` repeatable.
 - `LANES_WHY=all` lists every off-paving connector; `jview beside` lists road ends close beside another road.
 
 ## Next
 
-1. The two small `lanes` failures above (then phase 1 is done).
+1. The two small `lanes` failures above (then phase 1 is done): square the street at node 280 first, then the 20 brushing connectors
+   (`LANES_WHY=all`).
 2. Phase 2 (population and schedules), as `docs/TRAFFIC_REWORK.md` §6: `Traffic.cs`'s households, cars and places carried over;
    activity chains per car from the race seed; a new `tools/trafficsim` that reports the demand against the surveys.
+
+## Working with the owner
+
+- The owner doesn't know the map's place or street names and hasn't memorised the map: never ask them to decide about a place by its
+  name or node number. Make the call yourself (they said "figure it out yourself"), and when you do need them, show a picture.
 
 ## Checks
 
