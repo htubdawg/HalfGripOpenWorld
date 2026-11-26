@@ -36,6 +36,9 @@ namespace HalfGripOpenWorld
 				{
 					Seed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
 				}
+				// Logged at once (before anything below can fail): the traffic's day, the weather, the storms and the deer all come from it, so a
+				// report can be replayed exactly (trafficview --seed N).
+				Mod.Log.LogInfo("Race seed: " + Seed + (fromRoom ? " (the room's)" : " (not in a room: drawn at random)") + "; the traffic's day, weather, storms and deer come from it (trafficview --seed " + Seed + ")");
 				Night = null;
 				Pool();
 				if (day.Count == 0)

@@ -826,7 +826,7 @@ namespace HalfGripOpenWorld
 				{
 					legs += leg.Start >= 0.0 ? 1 : 0;
 				}
-				Mod.Log.LogInfo("Traffic: " + day.Cars.Count + " cars, " + legs + " trips on a " + (day.Weekend ? "weekend day" : "weekday") + " from the race's seed, built in " + (day.BuildMs + day.EarlierMs).ToString("0") + " ms over " + day.Pass + " passes (" + day.Rerouted + " trips routed round the first pass's queues, " + day.RouteChanged + " of them a different way; " + day.GaveUp + " gave up their way at a gridlock) (the map "
+				Mod.Log.LogInfo("Traffic: " + day.Cars.Count + " cars, " + legs + " trips on a " + (day.Weekend ? "weekend day" : "weekday") + " from the race's seed (" + raceSeed + "), built in " + (day.BuildMs + day.EarlierMs).ToString("0") + " ms over " + day.Pass + " passes (" + day.Rerouted + " trips routed round the first pass's queues, " + day.RouteChanged + " of them a different way; " + day.GaveUp + " gave up their way at a gridlock) (the map "
 					+ Traffic.BuildMs.ToString("0") + " ms: " + Traffic.Report + "); parking: at most " + parking.Busiest + " cars at one place, " + parking.Overflow + " stays at the kerb past a place's spaces; up to " + MostPhysics + " physics cars within " + (PhysicsReach / 3.3f).ToString("0") + " m");
 			}
 			if (!Mod.ShowTraffic.Value)

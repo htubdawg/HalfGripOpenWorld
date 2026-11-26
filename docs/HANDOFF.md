@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (night, later).
+Last written 2026-11-26 (night, last).
 
 ## Where things stand
 
@@ -12,15 +12,61 @@ Last written 2026-11-26 (night, later).
   latest commit (`git for-each-ref --sort=-committerdate refs/remotes`).
 - **Version 0.33.0** (`mod.json`), plus unreleased work on top: traffic lights, right of way fixes, lanes no longer laid on lanes,
   late drawn cars let off a stand, **the highway reworked**, the queues' fixes, Kingsbridge's left-turn lane (its arrow off: a
-  flashing yellow only), two room fixes, and now **routes that know the queues** (below). **The world changed** since 0.33.0 (node 6's
-  road is a lane wider) and the traffic's day too, so everyone in a room needs the same build. Bump the version with the next release.
-- None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 63).
-- **Next: ask the owner** (put to them 2026-11-26): with the routes in, the link's own queues are small and the waiting left is side
-  lanes waiting for a gap in the link's traffic (below). A second lane each way doesn't help that (four lanes to cross instead of
-  two). Proposed instead: the US rules' next step at those junctions, a four-way stop or a light where the counts call for one, kept
-  only where it lowers the per-trip waiting (the owner's "both" plan, docs/PLAN.md). The lane stays possible if they still want it.
+  flashing yellow only), two room fixes, **routes that know the queues** (the day built twice), and the **race seed in the log**.
+  **The world changed** since 0.33.0 (node 6's road is a lane wider) and the traffic's day too, so everyone in a room needs the same
+  build. Bump the version with the next release.
+- The owner has run the routes build (log: "built in 10635 ms over 2 passes" on their machine) and **reported cars standing still for
+  no reason** (next section). **Every waiting figure measured so far is suspect until that is fixed**, the routes' gain included.
+- **Next: the three steps in the next section, in order** (the owner agreed to the first; the second and third were proposed, start
+  them). The four-way stops and added lights (put to the owner, who said try them) are **paused** until the standing is fixed: their
+  measuring switches are in (`TV_ALLWAY`, `TV_LIT`), their first numbers below.
 
-## 2026-11-26 (night, later): routes that know the queues, built
+## The owner's report (2026-11-26, last): cars standing still for no reason
+
+A screenshot from the flying camera at (-2401, -5096), 14:30 on a weekend day: the T where a street from the east meets the Kingsbridge
+link south of the town (node 51 at (-2398, -5044), street from (-2185, -5070)). Two cars on the street at its mouth, cars on the link
+stopped, the junction empty: "All of these cars were sat doing absolutely nothing for 5 or more seconds. What in the world are they
+waiting for?" ... "you obviously coded something dumb". The log (`LogOutput.log`, 0.33.0 + this branch) had no race seed, so that day
+can't be rebuilt; **now `Weather.Pick` logs "Race seed: N ... (trafficview --seed N)"** at once, and the traffic line carries it.
+
+Traced on a day that matches (seed 5, 14:30; `tools/trafficview/trace.patch`, below): what the day's rules make cars wait for there.
+1. **A red light out of sight.** The link's southbound cars are in the queue for the trunk light (node 8, (-2535, -5359)), 300 units
+   south. The head car stands at node 132 (19 short of node 8), refused **next** (it would stand in node 132's box waiting at node 8),
+   not at node 8's line; each car behind leaves node 69's and node 132's boxes clear. About 10 cars spread over 300 units stand through
+   each red (25 to 40 s). From the player's place nothing explains it.
+2. **The junction held from 150 units out.** The street's car (turning left, 2>1) is refused **crossing** for main-line cars granted
+   node 51 when 148 to 155 away (3 to 4 s off), one after another, and **gap** for cars still coming (up to 287 away); the junction stands
+   empty while it waits. Seed 5's street: 13 trips a day, 267 s each on average (seeds 13 and 15: 93 and 98 s).
+3. **The day waits much more than the game's own driver.** The owner's log has physics cars "back on its timetable 50.7 to 96.8 s
+   early": driving the same legs, `TrafficDrive` was up to a minute and a half quicker than the day. The day's rules stand cars where
+   a driver wouldn't.
+
+**The plan (told to the owner):**
+1. ~~Log the race seed.~~ Done.
+2. **A trafficview check for standing with no visible reason**: a car stood more than a few seconds with no car close ahead in its lane,
+   no red at its own stop line and nothing crossing in front of it; report the seconds a day and where. (Recorded per step in
+   `Simulate`: `m.Binding`, `Asking`, the refusal reason; "visible" from what a driver at that spot can see.)
+3. **Fix the rules behind it one by one until that check is near zero**: queue at the light's own line (node 132 / node 8: the pair's
+   `ThroughNext` and `PairedNext`), grants not booking a junction long before the car gets there (`Asking`'s `ReachOf`, the `TooSoon` and
+   clear-time reckoning), the give-way look and margins; then the day and the physics cars should take the same time over the same leg
+   (trafficview's physics test reports lateness: make "early" near zero). Re-measure everything after (16 seeds; the routes, then the
+   four-way stops and lights).
+
+**Tracing**: `git apply tools/trafficview/trace.patch` (do not commit it applied), build trafficview, then
+`TV_DRIVE_ONLY=1 TV_DBGNODES=51,69,132,8 TV_DBGFROM=1150 TV_DBGTO=1220 dotnet <build>/trafficview.dll --seed 5`: every 2 s, each standing
+car refused at those nodes with its reason (0 light, 1 behind, 2 crossing, 3 gap, 4 room, 5 next, 6 stop), the car it crosses or gives
+way to (place, speed, how long ago granted, how far out) or the first car in its way out; `TV_DUMPAT=t` dumps every car round the link's
+south end at sim time t (the box is hard-coded in the patch). Lines say `p1`/`p2` for the pass; trafficview also builds seed + 1 (its
+lines differ: ignore them). Sim time t is (hour - 3) x 100.
+
+**The four-way stops and lights, first numbers (seed 1 only, before the report)**: all-way stops at the link's four busiest side
+junctions (nodes 42, 47 + 44, 49, 45) 23.0 s a trip to 51.6 (the link is too busy to stop everyone, as the US warrants said); lights at
+nodes 42, 47, 49, 45 22.4 (99%: 239 to 177 s; the signs check then fails for lights the signs don't know of, and one way in's heads
+can't be seen from its line). Not run on 16 seeds. To keep any light: a fixed site list read by `TrafficSignals.Build` and by
+`Signs.Lit` (so the fingerpost is hidden there), and the unseen head fixed. All-way stops would also need `TrafficDrive` (physics cars
+stopping), stop lines, and the signs list.
+
+## 2026-11-26 (night, later): routes that know the queues, built (figures suspect: see the owner's report above)
 
 Item 1 of "The new direction" is done.
 - **`Traffic.RouteTimed`**: Dijkstra over the edges arrived along (state 2e or 2e + 1: edge e driven A to B or B to A), so each turn

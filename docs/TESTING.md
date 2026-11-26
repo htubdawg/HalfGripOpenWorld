@@ -246,3 +246,5 @@ owner has reported on it.
      should be shorter than before. Some cars now go round by the back lanes south of the town (east of the link) and by the road
      to the trunk further west: say if any lane or street looks busier than it should, or if cars sit still in a ring of queues
      that never moves.
+   - **When reporting traffic:** the log now has a "Race seed: N" line near the race's start. With it, the day can be replayed exactly:
+     send the log with the screenshot and the overlay's position and time showing.

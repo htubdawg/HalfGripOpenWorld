@@ -1,0 +1,83 @@
+--- a/OpenWorld/src/TrafficDay.cs	2026-11-26 05:04:33.199572939 +0000
++++ b/OpenWorld/src/TrafficDay.cs	2026-11-26 05:12:07.434678469 +0000
+@@ -269,8 +269,35 @@
+ 			return r.M.V < 0.5 && r.M.Wait >= StopFor && r.NodeP - box - r.M.P < 4.0;
+ 		}
+ 
++		internal static int DbgNode = int.Parse(Environment.GetEnvironmentVariable("TV_DBGNODE") ?? "-1");
++		internal static double DbgFrom = double.Parse(Environment.GetEnvironmentVariable("TV_DBGFROM") ?? "0"), DbgTo = double.Parse(Environment.GetEnvironmentVariable("TV_DBGTO") ?? "0");
++		private Mover dbgComing; private int dbgComingIn, dbgComingOut, dbgComingK;
++		private Grant dbgGrant;
++		private string Who(Mover o)
++		{
++			if (o == null) return "-";
++			Seg s = o.L.Path[o.Seg];
++			Traffic.At(Network.Roads[Traffic.Edges[Math.Max(0, s.Edge)].Road], s.Edge >= 0 ? s.S0 + s.Dir * (o.P - s.P0) : 0, out double x, out double z, out double _);
++			return "leg " + o.Index + " car " + o.L.Car + " at (" + x.ToString("0") + ", " + z.ToString("0") + ") v " + o.V.ToString("0.0") + " wait " + o.Wait.ToString("0") + " binding " + o.Binding + " grants" + Grants(o) + " ahead " + (o.Ahead != null ? o.Ahead.Index.ToString() : "-");
++		}
+ 		private void Refusal(Request r, int reason)
+ 		{
++			if ((r.Node == DbgNode || ("," + Environment.GetEnvironmentVariable("TV_DBGNODES") + ",").Contains("," + r.Node + ",")) && now >= DbgFrom && now <= DbgTo && r.M.V < 0.5 && ((int)(now / Step)) % 8 == 0)
++			{
++				string extra = "";
++				if (reason == 2 && dbgGrant != null) extra = " | grant: " + Who(dbgGrant.M) + " move " + dbgGrant.InKey + ">" + dbgGrant.OutKey + " granted " + (now - dbgGrant.At).ToString("0.0") + " s ago, nodeP-P " + (dbgGrant.NodeP - dbgGrant.M.P).ToString("0") + " forced " + dbgGrant.Forced;
++				if (reason == 4 || reason == 5)
++				{
++					if (lanes.TryGetValue(r.OutLane, out List<Mover> ol))
++					{
++						Mover first = null; foreach (Mover o in ol) if (o != r.M && (first == null || o.LaneU < first.LaneU)) first = o;
++						extra = " | out lane " + r.OutLane + " (" + ol.Count + " cars) first: " + Who(first) + " laneU " + (first != null ? first.LaneU.ToString("0") : "-");
++						if (first != null) { int ak = Asking(first); extra += " asks " + (ak >= 0 ? "node " + NodeAfter(first.L.Path, ak) + " " + LinkIndex(NodeAfter(first.L.Path, ak), first.L.Path[ak].Edge) + ">" + LinkIndex(NodeAfter(first.L.Path, ak), first.L.Path[ak + 1].Edge) : "-"); }
++					}
++				}
++				if (reason == 3 && dbgComing != null) extra = " | coming: " + Who(dbgComing) + " move " + dbgComingIn + ">" + dbgComingOut + " seg " + dbgComingK + " to node " + (dbgComing.L.Path[dbgComingK].P0 + dbgComing.L.Path[dbgComingK].Len - dbgComing.P).ToString("0");
++				Console.WriteLine("DBG p" + Pass + " t " + now.ToString("0.0") + " (" + (3.0 + now / 100.0).ToString("0.00") + " h) node " + r.Node + " reason " + reason + " req " + r.InArm + ">" + r.OutArm + " " + Who(r.M) + " eta " + r.Eta.ToString("0.0") + extra);
++			}
+ 			if (r.M.V < 0.5)
+ 			{
+ 				int key = (r.Node * 16 + Math.Max(0, r.InArm)) * 8 + reason;
+@@ -2032,6 +2059,20 @@
+ 					}
+ 				}
+ 				now = w;
++				if (Pass == BuildPasses && Environment.GetEnvironmentVariable("TV_DUMPAT") != null && Math.Abs(w - double.Parse(Environment.GetEnvironmentVariable("TV_DUMPAT"))) < 0.01)
++				{
++					foreach (Mover m in movers)
++					{
++						Seg sg = m.L.Path[m.Seg];
++						if (sg.Edge < 0) continue;
++						Traffic.At(Network.Roads[Traffic.Edges[sg.Edge].Road], sg.S0 + sg.Dir * (m.P - sg.P0), out double x, out double z, out double _);
++						if (x > -2600 && x < -2330 && z > -5420 && z < -4980)
++						{
++							int ak = Asking(m);
++							Console.WriteLine("DUMP (" + x.ToString("0") + ", " + z.ToString("0") + ") leg " + m.Index + " v " + m.V.ToString("0.0") + " edge " + sg.Edge + "/" + sg.Dir + " binding " + m.Binding + " wait " + m.Wait.ToString("0") + " ahead " + (m.Ahead != null ? m.Ahead.Index.ToString() : "-") + " asks " + (ak >= 0 ? NodeAfter(m.L.Path, ak).ToString() : "-") + " grants" + Grants(m) + " light8 " + (TrafficSignals.Has(8) ? Lights.State(8, 0, 2, w) + "/" + Lights.State(8, 1, 2, w) + "/" + Lights.State(8, 2, 0, w) : ""));
++						}
++					}
++				}
+ 				RunLights(w);
+ 				Junctions(requests, refused);
+ 				// Accelerations, all from the same state, then the move.
+@@ -2890,6 +2931,7 @@
+ 								ok = false;
+ 								crossing = true;
+ 								RefusedCross++;
++								dbgGrant = g;
+ 								Refusal(r, 2);
+ 								break;
+ 							}
+@@ -2930,6 +2972,7 @@
+ 								ok = false;
+ 								crossing = true;
+ 								RefusedCross++;
++								dbgGrant = g;
+ 								Refusal(r, 2);
+ 								if (MainYields(node, g.InKey, g.OutKey, r.InArm, r.OutArm))
+ 								{
+@@ -3117,6 +3160,7 @@
+ 							}
+ 							if (TooSoon(r, box, o, k, inA, outA, tNear, tFar, vFar, margin, depth == 0))
+ 							{
++								dbgComing = o; dbgComingIn = inA; dbgComingOut = outA; dbgComingK = k;
+ 								return true;
+ 							}
+ 							break;

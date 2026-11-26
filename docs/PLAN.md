@@ -52,7 +52,8 @@ when one is done, delete it here.
   turn-lane plan above is superseded by these; the southbound left lane through the junction before the light was tried and made
   the waiting worse (docs/HANDOFF.md). Done (2026-11-26): the day is built twice, half the trips of the second pass routed round the
   first pass's queues by the hour (`TrafficDay.BuildPasses`, `RerouteShare`); a car kept out of a gridlock for three minutes takes
-  another way. Next: the link's second lane each way.
+  another way. The second lane each way was put to the owner again (the waiting moved to side lanes); they chose four-way stops or
+  lights where they help. Both paused for the owner's report of cars standing still for no reason (docs/HANDOFF.md): fix that first.
 - Judge traffic changes by how the waiting is shared (the owner, 2026-11-26): waiting spread fairly over everyone is fine; the same
   total moved onto other drivers who now wait longer is not. Report averages per trip, in plain words.
 - Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not
