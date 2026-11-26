@@ -132,6 +132,7 @@ internal static class Program
 			("median", MedianChecks),
 			("bays", BayChecks),
 			("lights", SignalChecks),
+			("lanes", LaneChecks),
 		};
 		foreach ((string name, Func<bool> check) in checks)
 		{
@@ -919,6 +920,292 @@ internal static class Program
 		Console.WriteLine("lights: " + SignalPoles.All.Count + " masts (" + far + " far side, " + shared + " sharing a pole) with " + heads + " heads; ways in with no mast " + SignalPoles.Skipped
 			+ ", ways in whose lights can't be seen from the stop line " + unseen + " of " + ways + ", poles on paving or in water " + onPaving + ", poles in each other " + together + ", ways in with no stop line " + noLine + ", spans " + spans + ", green boards " + boards + ", lit junctions with a fingerpost " + litNoSign + ", without lights or fingerpost " + signNoLight + ", heads past 180 ft " + tooFar + " (reported)" + (ok ? "  ok" : "  FAIL"));
 		return ok && SignalPoles.All.Count > 0;
+	}
+
+	private static readonly Dictionary<long, byte[]> laneMasks = new Dictionary<long, byte[]>();
+
+	/// <summary>Whether the drawn surfaces over the unit square holding (x, z) include one of <paramref name="bits"/> (as <see cref="SurfaceMask"/>).</summary>
+	private static bool Surface(double x, double z, int bits)
+	{
+		int tx = (int)Math.Floor(x / 250.0), tz = (int)Math.Floor(z / 250.0);
+		long key = ((long)tx << 32) | (uint)tz;
+		if (!laneMasks.TryGetValue(key, out byte[] mask))
+		{
+			laneMasks[key] = mask = SurfaceMask(tx, tz);
+		}
+		int i = Math.Min(249, Math.Max(0, (int)Math.Floor(x - tx * 250.0))), j = Math.Min(249, Math.Max(0, (int)Math.Floor(z - tz * 250.0)));
+		return (mask[j * 250 + i] & bits) != 0;
+	}
+
+	/// <summary>Kingsbridge's node 6 (the old traffic's "cars stuck here", where the road to Pinewick meets the town's link: <see cref="TurnBays.Sites"/>): its place, and the pair of moves that cross there (arms 2 to 0 against 0 to 1).</summary>
+	private const double Node6X = -2388.0, Node6Z = -4337.0;
+
+	/// <summary>
+	/// The lane graph and its conflict areas (docs/TRAFFIC_REWORK.md, phase 1): every lane coming to a junction has a way on and every one
+	/// leaving is reached; every connector's line and a car's width either side of it on the paving (a drive's ribbon for a drive);
+	/// every pair of connectors whose lines cross given a conflict area, node 6's Pinewick-road pair named; a car waiting at its stop line
+	/// short of every area it gives way at; at a junction with lights, each lane's end on the drawn stop line.
+	/// </summary>
+	private static bool LaneChecks()
+	{
+		Lanes.Ensure();
+		Console.WriteLine("    lane graph: " + Lanes.Report);
+		int deadIn = 0, unreached = 0;
+		for (int li = 0; li < Lanes.All.Count; li++)
+		{
+			Lanes.Lane l = Lanes.All[li];
+			if (l.Out.Count == 0 && Traffic.Links[l.To].Count >= 2)
+			{
+				deadIn++;
+				if (deadIn <= 6)
+				{
+					Traffic.Node n = Traffic.Nodes[l.To];
+					Console.WriteLine("    a lane with no way on: lane " + li + " (" + (l.Kind == Lanes.Bay ? "bay" : "lane " + l.Index) + ") into node " + l.To + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ")");
+				}
+			}
+			if (l.In.Count == 0 && l.Kind == Lanes.Through && l.From >= 0 && Traffic.Links[l.From].Count >= 2)
+			{
+				unreached++;
+				if (unreached <= 6)
+				{
+					Traffic.Node n = Traffic.Nodes[l.From];
+					Console.WriteLine("    a lane nothing leads into: lane " + li + " (lane " + l.Index + ") out of node " + l.From + " at (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ")");
+				}
+			}
+		}
+		// On the paving: the line and a car's half width either side.
+		const double half = 2.2;
+		int offPaving = 0, offConnectors = 0, points = 0;
+		var worstOff = new List<(int c, int off)>();
+		for (int ci = 0; ci < Lanes.Connectors.Count; ci++)
+		{
+			Lanes.Connector c = Lanes.Connectors[ci];
+			if (c.Turn == Lanes.Jump)
+			{
+				continue;
+			}
+			bool drive = Network.Roads[Traffic.Edges[Lanes.All[c.From].Edge].Road].Kind == RoadKind.Drive || Network.Roads[Traffic.Edges[Lanes.All[c.To].Edge].Road].Kind == RoadKind.Drive;
+			int bits = drive ? 1 | 8 : 1, off = 0;
+			for (int p = 0; p < c.X.Length; p++)
+			{
+				int a = Math.Max(0, p - 1), b = Math.Min(c.X.Length - 1, p + 1);
+				double hx = c.X[b] - c.X[a], hz = c.Z[b] - c.Z[a], len = Math.Sqrt(hx * hx + hz * hz);
+				if (len < 1e-9)
+				{
+					hx = 1.0;
+					hz = 0.0;
+					len = 1.0;
+				}
+				double rx = hz / len, rz = -hx / len;
+				foreach (double side in new[] { 0.0, -half, half })
+				{
+					points++;
+					if (!Surface(c.X[p] + rx * side, c.Z[p] + rz * side, bits))
+					{
+						off++;
+					}
+				}
+			}
+			if (off > 0)
+			{
+				offPaving += off;
+				offConnectors++;
+				worstOff.Add((ci, off));
+			}
+		}
+		worstOff.Sort((x, y) => y.off != x.off ? y.off.CompareTo(x.off) : x.c.CompareTo(y.c));
+		for (int k = 0; k < Math.Min(8, worstOff.Count); k++)
+		{
+			Lanes.Connector c = Lanes.Connectors[worstOff[k].c];
+			Traffic.Node n = Traffic.Nodes[c.Node];
+			Console.WriteLine("    off the paving: connector " + worstOff[k].c + " at node " + c.Node + " (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + ") arms " + c.InArm + ">" + c.OutArm
+				+ " " + TurnName(c.Turn) + ", " + worstOff[k].off + " of " + (c.X.Length * 3) + " points");
+		}
+		// Every pair whose lines cross has an area (an independent test: the segments themselves).
+		int crossings = 0, missed = 0;
+		HashSet<long> paired = new HashSet<long>();
+		foreach (Conflicts.Area area in Conflicts.All)
+		{
+			paired.Add(((long)area.A << 32) | (uint)area.B);
+		}
+		for (int n = 0; n < Traffic.Nodes.Count; n++)
+		{
+			List<int> here = Lanes.AtNode[n];
+			for (int i = 0; i < here.Count; i++)
+			{
+				for (int j = i + 1; j < here.Count; j++)
+				{
+					Lanes.Connector a = Lanes.Connectors[here[i]], b = Lanes.Connectors[here[j]];
+					if (a.Turn == Lanes.Jump || b.Turn == Lanes.Jump || a.From == b.From || a.To == b.To || !LinesCross(a, b))
+					{
+						continue;
+					}
+					crossings++;
+					if (!paired.Contains(((long)Math.Min(here[i], here[j]) << 32) | (uint)Math.Max(here[i], here[j])))
+					{
+						missed++;
+						if (missed <= 6)
+						{
+							Console.WriteLine("    crossing with no conflict area: node " + n + " connectors " + here[i] + " and " + here[j]);
+						}
+					}
+				}
+			}
+		}
+		// Node 6: the old traffic let 2>0 and 0>1 through together.
+		int six = -1;
+		double sixD = double.MaxValue;
+		for (int n = 0; n < Traffic.Nodes.Count; n++)
+		{
+			double d = (Traffic.Nodes[n].X - Node6X) * (Traffic.Nodes[n].X - Node6X) + (Traffic.Nodes[n].Z - Node6Z) * (Traffic.Nodes[n].Z - Node6Z);
+			if (d < sixD && Traffic.Links[n].Count >= 3)
+			{
+				sixD = d;
+				six = n;
+			}
+		}
+		bool sixOk = false;
+		string sixWhat = "not found";
+		if (six >= 0 && sixD < 30.0 * 30.0)
+		{
+			sixWhat = "no conflict area";
+			foreach (Conflicts.Area area in Conflicts.All)
+			{
+				Lanes.Connector a = Lanes.Connectors[area.A], b = Lanes.Connectors[area.B];
+				if (a.Node != six || b.Node != six)
+				{
+					continue;
+				}
+				if ((a.InArm == 2 && a.OutArm == 0 && b.InArm == 0 && b.OutArm == 1) || (b.InArm == 2 && b.OutArm == 0 && a.InArm == 0 && a.OutArm == 1))
+				{
+					sixOk = area.Kind == Conflicts.Crossing && area.Yield != Conflicts.Follow;
+					sixWhat = KindName(area.Kind) + ", " + YieldName(area, a.InArm == 2 ? "2>0" : "0>1", a.InArm == 2 ? "0>1" : "2>0") + ", " + (area.A1 - area.A0).ToString("0") + " and " + (area.B1 - area.B0).ToString("0") + " long";
+					break;
+				}
+			}
+		}
+		Console.WriteLine("    node 6 (" + (six >= 0 ? six.ToString() : "?") + " at " + (six >= 0 ? Traffic.Nodes[six].X.ToString("0") + ", " + Traffic.Nodes[six].Z.ToString("0") : "?") + "): 2>0 against 0>1: " + sixWhat);
+		// A car waiting to go on stands clear of every area it gives way at (or may come second to): its lane's hold, how far back from
+		// the stop line that is, within the lane and no more than two cars' lengths (drivers wait back from a narrow lane's mouth so a car
+		// can turn in past them). A lane shorter than a car (two junctions' boxes all but
+		// touching) is no place to wait: its cars are let through both junctions as one, reported.
+		int early = 0, chained = 0, held = 0;
+		double mostHold = 0.0;
+		for (int li = 0; li < Lanes.All.Count; li++)
+		{
+			Lanes.Lane l = Lanes.All[li];
+			if (l.Hold <= 0.0)
+			{
+				continue;
+			}
+			held++;
+			if (l.Length < Traffic.CarLength)
+			{
+				chained++;
+				continue;
+			}
+			mostHold = Math.Max(mostHold, l.Hold);
+			if (l.Hold > 2.0 * Traffic.CarLength || l.Hold > l.Length - Traffic.CarLength)
+			{
+				early++;
+				if (early <= 6)
+				{
+					Traffic.Node n = Traffic.Nodes[l.To];
+					Console.WriteLine("    a car can't wait clear of the cars it gives way to: lane " + li + " (" + Network.Roads[Traffic.Edges[l.Edge].Road].Kind + ") into node " + l.To + " (" + n.X.ToString("0") + ", " + n.Z.ToString("0") + "), held back " + l.Hold.ToString("0.0"));
+				}
+			}
+		}
+		// At a junction with lights, every lane's end is on its way in's drawn stop line.
+		int offLine = 0, lines = 0;
+		foreach (int node in TrafficSignals.Nodes)
+		{
+			List<int> links = Traffic.Links[node];
+			for (int k = 0; k < links.Count; k++)
+			{
+				if (!SignalPoles.StopLine(node, k, out int road, out double s0, out double s1, out double lo, out double hi))
+				{
+					continue;
+				}
+				lines++;
+				foreach (int ci in Lanes.AtNode[node])
+				{
+					Lanes.Connector c = Lanes.Connectors[ci];
+					Lanes.Lane l = Lanes.All[c.From];
+					if (c.InArm != k)
+					{
+						continue;
+					}
+					double off = Lanes.Offset(l, l.End) * -l.Dir;
+					if (l.End < s0 - 1.0 || l.End > s1 + 1.0 || off < lo - 0.5 || off > hi + 0.5)
+					{
+						offLine++;
+						if (offLine <= 6)
+						{
+							Console.WriteLine("    a lane ending off its stop line: node " + node + " arm " + k + " lane " + c.From + " ends at " + l.End.ToString("0.0") + " (line " + s0.ToString("0.0") + "-" + s1.ToString("0.0") + "), " + off.ToString("0.0") + " across (line " + lo.ToString("0.0") + " to " + hi.ToString("0.0") + ")");
+						}
+						break;
+					}
+				}
+			}
+		}
+		int[] kinds = new int[4], yields = new int[5];
+		foreach (Conflicts.Area area in Conflicts.All)
+		{
+			kinds[area.Kind]++;
+			yields[area.Yield]++;
+		}
+		bool ok = deadIn == 0 && unreached == 0 && offConnectors == 0 && missed == 0 && sixOk && early == 0 && offLine == 0;
+		Console.WriteLine("lanes:   " + Lanes.All.Count + " lanes, " + Lanes.Connectors.Count + " connectors, " + Conflicts.All.Count + " conflict areas (" + kinds[0] + " crossing, " + kinds[1] + " merging, " + kinds[2] + " diverging, " + kinds[3] + " head on; "
+			+ (yields[0] + yields[1]) + " give way, " + yields[2] + " kept apart by lights, " + yields[3] + " first come, " + yields[4] + " follow); lanes with no way on " + deadIn + ", lanes nothing leads into " + unreached
+			+ ", connectors off the paving " + offConnectors + " (" + offPaving + " of " + points + " points), crossing pairs " + crossings + " with no area " + missed + ", node 6's pair " + (sixOk ? "ok" : "MISSING")
+			+ ", lanes held back from the stop line " + held + " (most " + mostHold.ToString("0.0") + "; shorter than a car, let through as one " + chained + "), held back more than two cars or off the lane " + early + ", lanes ending off the stop line " + offLine + " of " + lines + " lines; " + Lanes.BuildMs.ToString("0") + " ms" + (ok ? "  ok" : "  FAIL"));
+		return ok;
+	}
+
+	private static string TurnName(int turn)
+	{
+		return turn == Lanes.Straight ? "on" : turn == Lanes.Left ? "left" : turn == Lanes.Right ? "right" : turn == Lanes.Round ? "round" : "jump";
+	}
+
+	private static string KindName(int kind)
+	{
+		return kind == Conflicts.Crossing ? "crossing" : kind == Conflicts.Merging ? "merging" : kind == Conflicts.Diverging ? "diverging" : "head on";
+	}
+
+	private static string YieldName(Conflicts.Area area, string a, string b)
+	{
+		switch (area.Yield)
+		{
+			case Conflicts.YieldA: return a + " gives way";
+			case Conflicts.YieldB: return b + " gives way";
+			case Conflicts.Apart: return "kept apart by the lights";
+			case Conflicts.FirstCome: return "first come" + (area.Tie == Conflicts.YieldA ? " (" + a + " yields on a tie)" : area.Tie == Conflicts.YieldB ? " (" + b + " yields on a tie)" : "");
+			default: return "follow";
+		}
+	}
+
+	/// <summary>Whether two connectors' lines cross (a segment of one crossing a segment of the other, ends shared by both left out).</summary>
+	private static bool LinesCross(Lanes.Connector a, Lanes.Connector b)
+	{
+		for (int i = 0; i + 1 < a.X.Length; i++)
+		{
+			for (int j = 0; j + 1 < b.X.Length; j++)
+			{
+				double rx = a.X[i + 1] - a.X[i], rz = a.Z[i + 1] - a.Z[i], sx = b.X[j + 1] - b.X[j], sz = b.Z[j + 1] - b.Z[j];
+				double den = rx * sz - rz * sx;
+				if (Math.Abs(den) < 1e-12)
+				{
+					continue;
+				}
+				double qx = b.X[j] - a.X[i], qz = b.Z[j] - a.Z[i];
+				double t = (qx * sz - qz * sx) / den, u = (qx * rz - qz * rx) / den;
+				if (t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private static bool SeaStrip()

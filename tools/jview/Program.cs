@@ -25,6 +25,10 @@ using UnityEngine;
 //   pairs                              road ends meeting road ends: counts by distance, bend and height step
 //   ends                               what every road end meets (a bigger road, one of its class, a smaller, nothing)
 //   stubs                              paved dead ends more than half cut out under other roads
+//   lanes <out.ppm> <x> <z> [span] [c...]  the lane graph over the meshes (Lanes, Conflicts): lanes' middles white, connectors by
+//                                      turn (going on blue, left orange, right green, round grey; swung wide brighter), stop points
+//                                      red ticks; with connector numbers, those alone, their conflict areas marked red along them
+//                                      and the car's body at each area's entry; the connectors and areas near the point on stdout
 //
 // The colours: asphalt by class (darker bigger), verge sand, sidewalk pale, tracks brown, ground green; centre lines one colour per
 // road. Marked: cyan, a road's own strip (cuts ignored) with nothing drawn on top (ground showing in a mouth); magenta, a smaller
@@ -175,6 +179,15 @@ internal static class Program
 		if (mode == "ends")
 		{
 			Ends();
+			return 0;
+		}
+		if (mode == "lanes")
+		{
+			double span = args.Length > 4 ? double.Parse(args[4]) : 100.0;
+			var only = new List<int>();
+			for (int k = 5; k < args.Length; k++) only.Add(int.Parse(args[k]));
+			LaneOverlay(double.Parse(args[2]), double.Parse(args[3]), span, only);
+			Render(args[1], double.Parse(args[2]), double.Parse(args[3]), span, 600, out string st);
 			return 0;
 		}
 		if (mode == "at")
@@ -557,7 +570,7 @@ internal static class Program
 				bool through = false;
 				if (cat[p] >= 0 && top[p] >= g - 0.005)
 				{
-					col = Textured && cat[p] == 0 ? TrunkTexel(texU[p], texV[p]) : Textured && cat[p] == 1 ? PrimaryTexel(texU[p], texV[p]) : Colours[cat[p]];
+					col = Textured && cat[p] == 0 ? TrunkTexel(texU[p], texV[p]) : Textured && cat[p] == 1 ? PrimaryTexel(texU[p], texV[p]) : Colours[Math.Min(cat[p], Colours.Length - 1)];
 					s = shade[p];
 					vis[p] = top[p];
 					roadPx++;
@@ -693,6 +706,7 @@ internal static class Program
 						}
 					}
 				}
+		Overlay?.Invoke(img, x0, z0, step, px);
 		if (file != "/dev/null") using (var f = File.Create(file))
 		{
 			byte[] head = System.Text.Encoding.ASCII.GetBytes("P6\n" + px + " " + px + "\n255\n");
@@ -701,6 +715,92 @@ internal static class Program
 		}
 		badOut = gapPx + 3 * pokePx + lipPx;
 		stats = "gap=" + gapPx + " poke=" + pokePx + " lip=" + lipPx + " through=" + terrainThrough + " fight=" + fights + " steps=" + steps;
+	}
+
+	/// <summary>Drawn over a picture before it is written (the lane graph): the image, its corner, a pixel's size and its pixels a side.</summary>
+	static Action<byte[], double, double, double, int> Overlay;
+
+	static void LaneOverlay(double cx, double cz, double span, List<int> only)
+	{
+		Lanes.Ensure();
+		Console.WriteLine(Lanes.Report);
+		var shown = new List<int>();
+		for (int c = 0; c < Lanes.Connectors.Count; c++)
+		{
+			var cc = Lanes.Connectors[c];
+			if (only.Count > 0 ? only.Contains(c) : Array.Exists(cc.X, x => Math.Abs(x - cx) < span / 2) && Math.Abs(cc.Z[0] - cz) < span)
+			{
+				bool inside = false;
+				for (int p = 0; p < cc.X.Length; p++) inside |= Math.Abs(cc.X[p] - cx) < span / 2 && Math.Abs(cc.Z[p] - cz) < span / 2;
+				if (inside) shown.Add(c);
+			}
+		}
+		foreach (int c in shown)
+		{
+			var cc = Lanes.Connectors[c];
+			Console.WriteLine("c" + c + " node " + cc.Node + " " + cc.InArm + ">" + cc.OutArm + " turn " + cc.Turn + (cc.Wide ? " wide" : "") + " len " + cc.Length.ToString("0.0") + " limit " + cc.Limit.ToString("0.0") + " lanes " + cc.From + ">" + cc.To + " areas " + Conflicts.Of[c].Count);
+			if (only.Count > 0)
+			{
+				foreach (int a in Conflicts.Of[c])
+				{
+					var ar = Conflicts.All[a];
+					int o = ar.A == c ? ar.B : ar.A;
+					if (only.Count > 1 && !only.Contains(o)) continue;
+					Console.WriteLine("   with c" + o + " kind " + ar.Kind + " yield " + ar.Yield + " tie " + ar.Tie + " A " + ar.A0.ToString("0.0") + "-" + ar.A1.ToString("0.0") + " B " + ar.B0.ToString("0.0") + "-" + ar.B1.ToString("0.0"));
+				}
+			}
+		}
+		Overlay = (img, x0, z0, step, px) =>
+		{
+			void Dot(double x, double z, int r, int g, int b, int rad)
+			{
+				int i = (int)((x - x0) / step), j = (int)((z - z0) / step);
+				for (int dj = -rad; dj <= rad; dj++)
+					for (int di = -rad; di <= rad; di++)
+					{
+						int ii = i + di, jj = j + dj;
+						if (ii < 0 || jj < 0 || ii >= px || jj >= px) continue;
+						int p = (px - 1 - jj) * px + ii;
+						img[p * 3] = (byte)r; img[p * 3 + 1] = (byte)g; img[p * 3 + 2] = (byte)b;
+					}
+			}
+			void Line(double ax, double az, double bx, double bz, int r, int g, int b, int rad)
+			{
+				double len = Math.Sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+				int n = Math.Max(1, (int)(len / (step * 0.5)));
+				for (int k = 0; k <= n; k++) Dot(ax + (bx - ax) * k / n, az + (bz - az) * k / n, r, g, b, rad);
+			}
+			if (only.Count == 0)
+			{
+				foreach (var l in Lanes.All)
+				{
+					double lo = Math.Min(l.Start, l.End), hi = Math.Max(l.Start, l.End);
+					for (double s = lo; s <= hi; s += step)
+					{
+						Lanes.Point(l, s, out double x, out double z, out double _, out double _, out double _);
+						if (Math.Abs(x - cx) < span / 2 && Math.Abs(z - cz) < span / 2) Dot(x, z, l.Kind == Lanes.Bay ? 255 : 230, l.Kind == Lanes.Bay ? 200 : 230, l.Kind == Lanes.Bay ? 60 : 230, 0);
+					}
+					Lanes.Point(l, l.End, out double ex, out double ez, out double _, out double hx, out double hz);
+					Line(ex + hz * 2.5, ez - hx * 2.5, ex - hz * 2.5, ez + hx * 2.5, 220, 30, 30, 0);
+				}
+			}
+			foreach (int c in shown)
+			{
+				var cc = Lanes.Connectors[c];
+				int[] col = cc.Turn == Lanes.Straight ? new[] { 60, 120, 255 } : cc.Turn == Lanes.Left ? new[] { 255, 150, 30 } : cc.Turn == Lanes.Right ? new[] { 40, 220, 80 } : new[] { 160, 160, 160 };
+				if (cc.Wide) col = new[] { Math.Min(255, col[0] + 80), Math.Min(255, col[1] + 80), Math.Min(255, col[2] + 80) };
+				for (int p = 0; p + 1 < cc.X.Length; p++) Line(cc.X[p], cc.Z[p], cc.X[p + 1], cc.Z[p + 1], col[0], col[1], col[2], 0);
+				if (only.Count == 0) continue;
+				foreach (int a in Conflicts.Of[c])
+				{
+					var ar = Conflicts.All[a];
+					int o = ar.A == c ? ar.B : ar.A;
+					if (only.Count > 1 && !only.Contains(o)) continue;
+					double f0 = ar.A == c ? ar.A0 : ar.B0, f1 = ar.A == c ? ar.A1 : ar.B1;
+					for (int p = 0; p < cc.X.Length; p++) if (cc.D[p] >= f0 && cc.D[p] <= f1) Dot(cc.X[p], cc.Z[p], 255, 0, 0, 1);
+				}
+			}
+		};
 	}
 
 	/// <summary>Two different surfaces at nearly one height: road on road, verge on road, and so on (a mesh with itself is not a fight).</summary>
