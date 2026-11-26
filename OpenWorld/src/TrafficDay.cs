@@ -263,6 +263,12 @@ namespace HalfGripOpenWorld
 		/// 5 it would stand in the box waiting at the next junction).</summary>
 		internal readonly Dictionary<int, double> RefusedFor = new Dictionary<int, double>();
 
+		/// <summary>Whether the car asking <paramref name="r"/> has stood at the junction's line long enough for a stop sign.</summary>
+		private static bool Stopped(Request r, double box)
+		{
+			return r.M.V < 0.5 && r.M.Wait >= StopFor && r.NodeP - box - r.M.P < 4.0;
+		}
+
 		private void Refusal(Request r, int reason)
 		{
 			if (r.M.V < 0.5)
@@ -545,9 +551,17 @@ namespace HalfGripOpenWorld
 				mainA = new int[n];
 				mainB = new int[n];
 				twoLaneMain = new bool[n];
+				allWay = new bool[n];
 				for (int node = 0; node < n; node++)
 				{
 					MainLine(node);
+					Traffic.Node here = Traffic.Nodes[node];
+					if (Traffic.Links[node].Count >= 3 && AllWayAt.Exists(p => (p.X - here.X) * (p.X - here.X) + (p.Z - here.Z) * (p.Z - here.Z) < 12.0 * 12.0))
+					{
+						// A four-way stop: no main line, everybody stops.
+						allWay[node] = true;
+						mainA[node] = mainB[node] = -1;
+					}
 					twoLaneMain[node] = mainA[node] >= 0 && twoLaneEdge[Traffic.Links[node][mainA[node]]] && twoLaneEdge[Traffic.Links[node][mainB[node]]];
 				}
 				// The lights, from the main lines.
@@ -1420,6 +1434,8 @@ namespace HalfGripOpenWorld
 			public int Node, SegIndex, InArm, OutArm;
 			public long InLane, OutLane;
 			public double Eta, NodeP;
+			/// <summary>Its place in the junction's order: when it gets there; at an all-way stop, how long it has stood at the line (longest first).</summary>
+			public double Order;
 		}
 
 		private readonly List<Mover> movers = new List<Mover>();
@@ -1525,6 +1541,22 @@ namespace HalfGripOpenWorld
 
 		/// <summary>Per node, the two arms (indices in <see cref="Traffic.Links"/>) of its main line, or -1 for both where it has none.</summary>
 		private static int[] mainA, mainB;
+
+		/// <summary>
+		/// Junctions near these places are all-way stops (MUTCD 2B.07, "four-way stops"; the owner, 2026-11-26: fine where they help):
+		/// every car stops at the line, then they go in the order they stopped, the car on the right first when two stopped together.
+		/// </summary>
+		internal static readonly List<(double X, double Z)> AllWayAt = new List<(double, double)>();
+		private static bool[] allWay = new bool[0];
+
+		/// <summary>Whether junction <paramref name="node"/> is an all-way stop.</summary>
+		internal static bool AllWay(int node)
+		{
+			return node >= 0 && node < allWay.Length && allWay[node];
+		}
+
+		/// <summary>How long a car stands at an all-way stop's line before it may go (a full stop, not a roll).</summary>
+		internal const double StopFor = 1.0;
 
 		/// <summary>
 		/// The main line of a junction, worked out once with the map: drivers know which road is the through road without a sign. Among
@@ -2760,12 +2792,17 @@ namespace HalfGripOpenWorld
 					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneKey(path[k + 1], 0),
 					Eta = ArriveTime(m.V, nodeP - box - m.P, Math.Max(m.V, DesiredAt(m.L.Profile, m.P + Math.Max(0.0, nodeP - box - m.P)))),
 				});
+				{
+					Request q = requests[requests.Count - 1];
+					q.Order = allWay[node] ? (Stopped(q, box) ? -m.Wait : 1e6 + q.Eta) : q.Eta;
+					requests[requests.Count - 1] = q;
+				}
 			}
-			requests.Sort((a, b) => a.Node != b.Node ? a.Node.CompareTo(b.Node) : a.Eta != b.Eta ? a.Eta.CompareTo(b.Eta) : a.M.Index.CompareTo(b.M.Index));
+			requests.Sort((a, b) => a.Node != b.Node ? a.Node.CompareTo(b.Node) : a.Order != b.Order ? a.Order.CompareTo(b.Order) : a.M.Index.CompareTo(b.M.Index));
 			for (int i = 0; i + 1 < requests.Count; i++)
 			{
 				Request a = requests[i], b = requests[i + 1];
-				if (a.Node == b.Node && b.Eta - a.Eta < 1.0 && a.InArm != b.InArm && RightOf(a.Node, b.InArm, a.InArm)
+				if (a.Node == b.Node && b.Order - a.Order < 1.0 && a.InArm != b.InArm && RightOf(a.Node, b.InArm, a.InArm)
 					&& !Yields(a.Node, b.InArm, b.OutArm, a.InArm, a.OutArm) && !Yields(a.Node, a.InArm, a.OutArm, b.InArm, b.OutArm))
 				{
 					requests[i] = b;
@@ -2804,6 +2841,12 @@ namespace HalfGripOpenWorld
 						}
 						// Stopped at the line to turn right from a side road: it may go on red, giving way to everybody as with no light.
 						onRed = true;
+					}
+					if (allWay[node] && !Stopped(r, box))
+					{
+						// An all-way stop: it stops at the line first. Holding nobody up, it is not kept in the refused list.
+						Refusal(r, 6);
+						continue;
 					}
 					bool ok = true, crossing = false;
 					bool force = r.M.Wait > ForceAfter;

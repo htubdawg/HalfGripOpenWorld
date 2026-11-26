@@ -275,7 +275,7 @@ internal static partial class Program
 	/// </summary>
 	private static string Reasons(TrafficDay day, int way)
 	{
-		string[] names = { "light", "behind", "crossing", "gap", "room", "next" };
+		string[] names = { "light", "behind", "crossing", "gap", "room", "next", "stop" };
 		string t = "";
 		for (int r = 0; r < names.Length; r++)
 		{
@@ -379,6 +379,17 @@ internal static partial class Program
 		if (Environment.GetEnvironmentVariable("TV_NOBAYS") == "1")
 		{
 			TurnBays.Sites = new (double, double)[0];
+		}
+		// TV_ALLWAY="x,z;x,z": all-way stops at the junctions there; TV_LIT="x,z;...": lights there whatever the roads (to measure).
+		foreach (string pl in (Environment.GetEnvironmentVariable("TV_ALLWAY") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+		{
+			string[] xz = pl.Split(',');
+			TrafficDay.AllWayAt.Add((double.Parse(xz[0]), double.Parse(xz[1])));
+		}
+		foreach (string pl in (Environment.GetEnvironmentVariable("TV_LIT") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+		{
+			string[] xz = pl.Split(',');
+			TrafficSignals.LitAt.Add((double.Parse(xz[0]), double.Parse(xz[1])));
 		}
 		// TV_PASSES=N: the day built N times, each pass's routes knowing the queues of those before (1: routes on empty roads only).
 		// TV_REROUTE=x: the share of trips that choose their way knowing the queues in a later pass.

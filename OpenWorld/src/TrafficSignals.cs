@@ -34,6 +34,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Junctions near these places get no light whatever their roads (trafficview TV_UNLIT, to measure; empty in the game).</summary>
 		internal static readonly List<(double X, double Z)> Unlit = new List<(double, double)>();
 
+		/// <summary>Junctions near these places get a light whatever their roads (where the waiting showed one helps).</summary>
+		internal static readonly List<(double X, double Z)> LitAt = new List<(double, double)>();
+
 		/// <summary>Seconds: the left arrow's least and most green (the bays hold about five cars each).</summary>
 		internal const double ArrowMin = 6.0, ArrowMax = 20.0;
 
@@ -109,11 +112,12 @@ namespace HalfGripOpenWorld
 						side = KindOf(links[arm]);
 					}
 				}
-				if (main > RoadKind.Primary || side > RoadKind.Secondary)
+				Traffic.Node here = Traffic.Nodes[node];
+				bool added = LitAt.Exists(p => (p.X - here.X) * (p.X - here.X) + (p.Z - here.Z) * (p.Z - here.Z) < 12.0 * 12.0);
+				if (!added && (main > RoadKind.Primary || side > RoadKind.Secondary))
 				{
 					continue;
 				}
-				Traffic.Node here = Traffic.Nodes[node];
 				if (Unlit.Exists(p => (p.X - here.X) * (p.X - here.X) + (p.Z - here.Z) * (p.Z - here.Z) < 40.0 * 40.0))
 				{
 					continue;
