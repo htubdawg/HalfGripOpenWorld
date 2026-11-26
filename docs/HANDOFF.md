@@ -24,6 +24,16 @@ Last written 2026-11-26 (night).
   colours or a pass (depth prepass) that doesn't follow the instances. Try a `MaterialPropertyBlock` with per-instance colour arrays.
 - **Paused until the standing-still fix is done:** four-way stops and more lights (the owner said try them; `docs/PLAN.md`).
 
+## Fixed 2026-11-26: all the traffic vanished at once (the owner's third report: "a car vanished as I collided with it")
+
+The log: `The traffic stopped: InvalidOperationException: Collection was modified` in `TrafficLate.SpaceTaken` (added last session).
+It walked the ledger while `At` dropped an entry for a car that had caught up. .NET 8 lets a Dictionary lose entries mid-walk; the
+game's Mono throws, and the throw stops all the traffic (every car gone). trafficview runs on .NET 8, so it never saw it. Fixed: the
+walk goes over a copy of the keys. And the ledger is now a `StrictMap` (end of `TrafficLate.cs`) that throws on any change mid-walk on
+both runtimes, so trafficview fails the way the game does. **Watch for this class of bug:** any `foreach` over a Dictionary whose body
+can remove, add or set an entry (directly or through a call) passes trafficview and crashes the game, unless the map is a `StrictMap`.
+The other loops over Dictionaries in the traffic code were read: they collect what to do and act after the loop.
+
 ## Next, first: the honest tests' failures (the owner, 2026-11-26: "stop cheating the traffic tests")
 
 **The tests were made honest** (this session). Every allowance that let a visible fault pass is gone; each check now fails on any:

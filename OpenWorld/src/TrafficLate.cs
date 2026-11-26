@@ -45,8 +45,10 @@ namespace HalfGripOpenWorld
 		}
 
 		private readonly TrafficDay day;
-		private readonly Dictionary<int, Entry> ledger = new Dictionary<int, Entry>();
+		private readonly StrictMap<int, Entry> ledger = new StrictMap<int, Entry>();
 		private readonly List<int> keys = new List<int>();
+		/// <summary>The ledger's cars for <see cref="SpaceTaken"/> (its own list: it may be asked while <see cref="Settle"/> walks <see cref="keys"/>).</summary>
+		private readonly List<int> spaceKeys = new List<int>();
 		private readonly List<int> caught = new List<int>();
 
 		/// <summary>Counts for the log and the overlay: made late, caught up in the background, retired.</summary>
@@ -511,13 +513,18 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			foreach (KeyValuePair<int, Entry> kv in ledger)
+			// Over a copy of the keys: At drops an entry whose car has caught up. .NET 8 (trafficview) lets a Dictionary lose entries while
+			// it is walked; the game's Mono throws, and the throw stopped all the traffic at once (the owner's log, 2026-11-26: a car
+			// vanished as the owner hit it).
+			spaceKeys.Clear();
+			spaceKeys.AddRange(ledger.Keys);
+			foreach (int key in spaceKeys)
 			{
-				if (kv.Key == car || kv.Value.Gone)
+				if (key == car || !ledger.TryGetValue(key, out Entry e) || e.Gone)
 				{
 					continue;
 				}
-				TrafficDay.Place p = At(kv.Key, w, out bool gone);
+				TrafficDay.Place p = At(key, w, out bool gone);
 				if (gone || p.Leg < 0)
 				{
 					continue;
@@ -525,11 +532,11 @@ namespace HalfGripOpenWorld
 				TrafficParking.Spot there;
 				if (p.State == TrafficDay.State.Parked)
 				{
-					there = day.Parking.Parked(kv.Key, p.Leg);
+					there = day.Parking.Parked(key, p.Leg);
 				}
 				else if (p.State == TrafficDay.State.Driving && !day.Legs[p.Leg].Appears && p.T < day.Legs[p.Leg].PullOut + 0.5)
 				{
-					there = day.Parking.Parked(kv.Key, LegBefore(kv.Key, p.Leg));
+					there = day.Parking.Parked(key, LegBefore(key, p.Leg));
 				}
 				else
 				{
@@ -589,5 +596,65 @@ namespace HalfGripOpenWorld
 			}
 			return best;
 		}
+	}
+
+	/// <summary>
+	/// A Dictionary that throws when it is changed (an entry removed, added or set) while it is being walked, as the game's Mono does and
+	/// .NET 8 doesn't (it lets an entry go mid-walk): trafficview runs on .NET 8, so a walk that changes it would pass there and stop all
+	/// the traffic in the game (the owner's log, 2026-11-26: the ledger walked while <see cref="TrafficLate.At"/> dropped a caught-up car).
+	/// </summary>
+	internal sealed class StrictMap<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
+	{
+		private readonly Dictionary<TKey, TValue> map = new Dictionary<TKey, TValue>();
+		private int version;
+
+		internal int Count => map.Count;
+
+		internal Dictionary<TKey, TValue>.KeyCollection Keys => map.Keys;
+
+		internal bool ContainsKey(TKey key) => map.ContainsKey(key);
+
+		internal bool TryGetValue(TKey key, out TValue value) => map.TryGetValue(key, out value);
+
+		internal TValue this[TKey key]
+		{
+			get => map[key];
+			set
+			{
+				map[key] = value;
+				version++;
+			}
+		}
+
+		internal bool Remove(TKey key)
+		{
+			version++;
+			return map.Remove(key);
+		}
+
+		internal void Clear()
+		{
+			version++;
+			map.Clear();
+		}
+
+		public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+		{
+			int v = version;
+			foreach (KeyValuePair<TKey, TValue> kv in map)
+			{
+				if (v != version)
+				{
+					throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+				}
+				yield return kv;
+				if (v != version)
+				{
+					throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+				}
+			}
+		}
+
+		System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 	}
 }
