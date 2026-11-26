@@ -73,8 +73,10 @@ the mesoscopic network and is still there when the player comes back.
 - The map, households, cars and places from `Traffic.cs`, fixed with the world.
 - Each race (from the race seed): each car's day as a chain of activities (home, work, school, shop, errand, visit, home) with a
   wanted departure time and a minimum stay. These are plans, not a timetable.
-- At the race start, warm up: run the mesoscopic model from 03:00 to the race's start hour, which takes seconds. The race starts
-  mid-day, with cars already at work, parked at the shops, and queued at the lights.
+- The simulation starts at the race's start hour, with its state built straight from the schedules (no warm-up): a car between
+  activities is parked at the one its plan has it at; a car on a trip is placed along its route as far as it would have got, lanes
+  spaced by the headway; queues at red lights seeded from the light's phase. The race starts mid-day with cars already at work,
+  parked at the shops and on the roads, and the simulation runs on from there.
 
 ### Mesoscopic level, the whole map (`Meso.cs`)
 - Every car is an entity with its route, link and entry time.
@@ -111,8 +113,13 @@ drawn masts and heads (`SignalPoles`, `SignalMesh`, `SignalHeads`) carried over.
 
 ### Rooms (`TrafficRoom` rewritten, modelled on `DeerRoom`)
 - The **host runs the whole-map meso**. The meso isn't recorded ahead of time and doesn't need to be deterministic. It sends link
-  events (car c entered link l at t; a few dozen a second for the whole map, small messages) so every machine keeps the same meso
-  picture for far drawing. A late joiner gets a snapshot.
+  events (car c entered link l at t, about 8 bytes), batched 5 times a second, so the other machines keep the same meso picture.
+  The load, from the survey's numbers (about 2,600 households; about 400 cars on the roads at the evening peak, plus about 100 on
+  the highway; cars drive in real time, a junction-to-junction stretch takes them about 7 s): about 70 events a second at the peak
+  for the whole map, about 600 bytes a second. Each machine is only sent the events within its far draw distance (interest
+  management), a few to a few dozen a second; the debug map overlay gets a coarse snapshot every few seconds. A late joiner gets a
+  full snapshot (about 500 cars at about 12 bytes, under 10 KB). For comparison, one physics car's state at 10 Hz is about 450
+  bytes a second.
 - Micro cars are owned per car by one machine (the nearest player's, granted by the host, handed over with hysteresis). Cars round
   two players near each other are owned by one machine, with stand-ins on the other. The owner reports boundary exits back to the
   host's meso.
