@@ -12,9 +12,9 @@ using HalfGripOpenWorld;
 internal static partial class Program
 {
 	private const double DriveStep = 0.05, DriveRun = 600.0, PhysReach = 300.0, PhysLeave = 400.0, BubbleEvery = 0.4;
-	private const int MostPhysical = 24;
+	private const int MostPhysical = 6;
 	/// <summary>How many more physics cars may be made, over <see cref="MostPhysical"/>, of cars that have to slow for something the day doesn't know of (TrafficCars.MostYieldPhysics).</summary>
-	private const int MostYieldPhysical = 16;
+	private const int MostYieldPhysical = 2;
 	/// <summary>TV_NOYIELDPHYS=1: held cars stay played back (as before 2026-11-26's plan), to compare.</summary>
 	private static readonly int YieldCar = int.TryParse(Environment.GetEnvironmentVariable("TV_YIELD_CAR"), out int yc) ? yc : -1;
 	private static readonly bool NoYieldPhysics = Environment.GetEnvironmentVariable("TV_NOYIELDPHYS") != null;
@@ -61,6 +61,15 @@ internal static partial class Program
 	private static bool Drive(TrafficDay day)
 	{
 		bool ok = DriveLine(day);
+		// TV_AT=x,z,hour: stand where and when an owner's report was (the race's seed and start hour from its log), for 10 minutes.
+		string atSpot = Environment.GetEnvironmentVariable("TV_AT");
+		if (!string.IsNullOrEmpty(atSpot))
+		{
+			string[] f = atSpot.Split(',');
+			double ax = double.Parse(f[0], System.Globalization.CultureInfo.InvariantCulture), az = double.Parse(f[1], System.Globalization.CultureInfo.InvariantCulture);
+			double ah = double.Parse(f[2], System.Globalization.CultureInfo.InvariantCulture);
+			return DriveRun1(day, TrafficDay.SimOfHour(ah), ax, az, false, "standing at " + ax.ToString("0") + ", " + az.ToString("0") + " from " + ah.ToString("0.00") + " h (TV_AT)") && ok;
+		}
 		double w0 = TrafficDay.SimOfHour(17.0);
 		// Where the most cars drive by at the evening rush, as the ledger's check stands.
 		List<(double x, double z, int c)> moving = new List<(double, double, int)>();
@@ -790,7 +799,7 @@ internal static partial class Program
 			}
 		}
 		bool ok = crashed.Count <= MostMeetings && crossed.Count <= MostCrossings && drawnCrashed.Count == 0 && hitPlayer == 0 && jumps == 0 && longWaits == 0 && hiddenByHold == 0;
-		Console.WriteLine("  physics cars, " + name + ", 10 minutes from 17:00: " + made + " made physical by the nearest and " + madeYield + " for having to slow (at most " + mostAtOnce + " at once), back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
+		Console.WriteLine("  physics cars, " + name + (name.Contains("TV_AT") ? ", 10 minutes: " : ", 10 minutes from 17:00: ") + made + " made physical by the nearest and " + madeYield + " for having to slow (at most " + mostAtOnce + " at once), back " + backOnTime + " on time and " + backLate + " late (most " + mostLate.ToString("0") + " s, mean "
 			+ (backLate > 0 ? sumLate / backLate : 0.0).ToString("0.0") + " s), " + waitedEnd + " back early at a trip's end, " + yielded + " drawn cars held behind another (" + hiddenByHold + " hidden by it), " + heldBack + " held back from pulling out onto one, " + unstuck + " late drawn cars let off a stand; " + crashed.Count + " pairs in each other (at most " + MostMeetings + ")"
 			+ (crashNote.Length > 0 ? " (first " + crashNote + ")" : "") + ", " + crossed.Count + " pairs crossing in a box (at most " + MostCrossings + ")" + (crossNote.Length > 0 ? " (first " + crossNote + ")" : "") + (blocked ? ", " + hitPlayer + " steps in the player's car" + hitNote : "")
 			+ "; jumps going back: worst " + worstJump.ToString("0.0") + (jumpNote.Length > 0 ? " (" + jumpNote + ")" : "") + ", " + jumps + " over 3; longest stop of any physics car " + longest.ToString("0") + " s"

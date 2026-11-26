@@ -24,6 +24,37 @@ Last written 2026-11-26 (night).
   colours or a pass (depth prepass) that doesn't follow the instances. Try a `MaterialPropertyBlock` with per-instance colour arrays.
 - **Paused until the standing-still fix is done:** four-way stops and more lights (the owner said try them; `docs/PLAN.md`).
 
+## Now (2026-11-26, late): physics cars off by default (the owner: "use less cars until you can figure this out")
+
+- **`TrafficPhysics` (24) is now `TrafficPhysicsCars`, default 0** (renamed so saved configs take the new default). The held-car extra
+  (`MostYieldPhysics`) is 2 over it (was 16). With 0, no traffic car drives itself: every car is drawn on its timetable, late cars wait
+  behind what is in their way, and a car the player is about to hit still becomes a real car (`TrafficLoose`). trafficview still
+  tests the physics cars at 6 + 2 (`Drive.cs` `MostPhysical`, `MostYieldPhysical`) so they can be fixed before they come back on.
+- **Why:** the owner's report "cars stuck here" (race seed 1596659352, weekend, 11:17, at Kingsbridge's light where the Pinewick road
+  comes in, node 6). Reproduced with the new `TV_AT=-2312,-4305,11.1` (stand at a place from an hour for 10 minutes): a physics car
+  coming in from the Pinewick road on green turning south (arms 2>0) meets one going north (0>1) still in the box past its middle.
+  `TrafficDay.Crosses` (order round the junction) says those ways don't cross; on the ground they do (the roads meet at about 60
+  degrees and the road north is widened for the bay, its lane shifted toward the Pinewick road). The knocked car stays across the line
+  and the queue behind it can't go. With 6 + 2 physics cars it still happened (5 meetings that run; 3 at 24 + 16).
+- **Tried and taken out the same day:** a stop-back per way in (cars stopping 6 short at node 6's Pinewick arm and node 42's arm 2,
+  clear of the widened lanes): the moving cars still met. A crossing table from the drawn ways' shapes (bodies overlapping anywhere along
+  two movements' ways): flagged 737 junctions, nearly all wrongly (cars passing on narrow roads, and the timing isn't looked at), and
+  still missed node 6's pair (the bodies met with their middles 9 apart). **Next:** a proper fix is a conflict found by the two cars'
+  ways **at the same time** (where each is when), or a box per way in (`Release` holding the grant until the car is clear of the
+  Pinewick road's mouth). Measure with `TV_AT` on the owner's seed, then the 16 seeds.
+
+## Fixed 2026-11-26: cars round the corner (late cars "parked at (0, 0)" in the ledger test)
+
+That note printed an away (out of sight) parking spot, so those cars weren't drawn at the world's middle. But a car pulling out of an
+out-of-sight space was drawn on its lane from its trip's first moment, and a held one went back to its unseen space and vanished, or
+stood in the lane where others drove. Now (`TrafficLate`): `RoundTheCorner` (not drawn until it has set off: T 0.5), `Appearing` and
+`StartBlocked` (it waits there while it would come out into a drawn car or in front of one that couldn't stop), `CanHoldBack` (only a
+car still in its space is held back into it; one pulling out or waiting on its lane is held where it is), and `Yield` never draws such a
+car back into its unseen space. Game (`TrafficCars.Draw`, `Seen`, the choice) and both trafficview tests the same. The ledger test now
+counts cars a hold would hide ("hidden by a hold", must be 0), and Drive.cs too ("hidden by it"). Seed 1's ledger test: overlapping
+because late 315 to 14 steps, hidden 0; what is left is late cars crossing at node 47. 16 seeds of `TV_DRIVE_ONLY=1` with it: no crash,
+fairness unchanged (mean 24.0 s), the known FAILs.
+
 ## Fixed 2026-11-26: all the traffic vanished at once (the owner's third report: "a car vanished as I collided with it")
 
 The log: `The traffic stopped: InvalidOperationException: Collection was modified` in `TrafficLate.SpaceTaken` (added last session).
