@@ -843,6 +843,10 @@ internal static partial class Program
 		ok &= day.Speeding == 0;
 		LongStands(day);
 		Fairness(day);
+		if (Environment.GetEnvironmentVariable("TV_WARRANTS") == "1")
+		{
+			Warrants.Report(day);
+		}
 		Console.WriteLine("  pull-outs forced after a minute: " + day.PullOutsForced);
 
 		// Counts: vehicles past each edge's middle in a game day x 36, by road class, against PennDOT.
