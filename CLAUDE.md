@@ -135,7 +135,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   verge at junctions (holes), roads carrying on end to end (joints), dead ends rounded off (deadends), tracks under paved roads
   (tucked), places where three or more roads end drawn as one plate (hubs), the far view meeting the tiles with no gap (farview),
   house walls reading whole storeys and roofs with undersides (facades), drives' houses and mailboxes clear of the roads and water
-  (homes), houses, towers and churches off the roads, sidewalks and tracks (clear), few country lane dead ends, no through way hooking round and no main road dead end (backroads), no paved road laid along another (alongside), no lane running in beside the road it ends on, no sliver lane, no buried road driven (beside), the deer's mesh and their spots, legs and
+  (homes), houses, towers and churches off the roads, sidewalks and tracks (clear), few country lane dead ends, no through way hooking round and no main road dead end (backroads), no paved road laid along another (alongside), no lane running in beside the road it ends on, no sliver lane, no buried road driven, no paved road hooking back into its end, no road ends 1 to 8 apart, no lane more than 30° off square, no two roads alone at a place unjoined (beside), the deer's mesh and their spots, legs and
   positions never in deep water, over a drop or on a road but at their crossing, the buck's antlers clear of the body and the ground in every pose, fawns few and only in families, dead deer's bodies coming to rest on the ground, fleeing deer never in deep water, on another road or jumping (deer), the highway's wrap: the trunk's tunnels paired, every lane landing in its lane, the tunnel floors clear of the ground (wrap), the
   sea's ring of water kept off the foot of the trunk's cutting at 7,548, -9,002 (seastrip), the trunk's median no lane: every junction
   lane a left-turn bay ending at a junction where its carriageway turns left, K-rail on a few stretches clear of junctions and bays
@@ -144,7 +144,7 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   for each, no fingerpost at a lit junction and none missing elsewhere (lights), the lane graph: every lane with a way on and reached,
   every connector and a car's half width either side on the paving, every pair of crossing lines given a conflict area, node 6's
   Pinewick-road pair (2>0 against 0>1) given an area or kept 2 apart, holds within two car lengths, lit lanes ending on the drawn
-  stop line (lanes; `LANES_WHY=1` sorts what is off the paving by kind);
+  stop line, the graph the same built twice (lanes; `LANES_WHY=1` sorts what is off the paving by kind, `LANES_WHY=all` lists it);
   exits 1 on a failure. It reads the drawn
   surface from `Network.Point` and `Network.Spans`, as `RoadMesh` does. Add a check for every bug fixed.
 - `dotnet run -c Release --project tools/jview -- at out.ppm <x> <z> [span]` draws the tiles' road meshes from above round a point,
