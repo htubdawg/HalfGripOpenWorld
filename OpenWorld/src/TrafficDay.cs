@@ -499,8 +499,7 @@ namespace HalfGripOpenWorld
 					for (int b = 0; b < TurnBays.Bays.Count; b++)
 					{
 						TurnBays.Bay bay = TurnBays.Bays[b];
-						// The edge up to its junction; and the one before it, where the bay runs back through the junction behind.
-						if (bay.Road == ed.Road && bay.S0 < Math.Max(ed.Sa, ed.Sb) - 1.0 && bay.S1 > Math.Min(ed.Sa, ed.Sb) + 1.0)
+						if (bay.Road == ed.Road && bay.S0 >= Math.Min(ed.Sa, ed.Sb) - 1.0 && bay.S1 <= Math.Max(ed.Sa, ed.Sb) + 1.0)
 						{
 							bayEdge[e] = b;
 						}
@@ -2497,7 +2496,7 @@ namespace HalfGripOpenWorld
 				{
 					M = m, Node = node, SegIndex = k, NodeP = nodeP,
 					InArm = LinkIndex(node, path[k].Edge), OutArm = LinkIndex(node, path[k + 1].Edge),
-					InLane = LaneOf(m, path[k]), OutLane = OutLaneOf(m, path, k),
+					InLane = LaneOf(m, path[k]), OutLane = TwoLane(path[k]) ? LaneOf(m, path[k + 1]) : LaneKey(path[k + 1], 0),
 					Eta = ArriveTime(m.V, nodeP - box - m.P, Math.Max(m.V, DesiredAt(m.L.Profile, m.P + Math.Max(0.0, nodeP - box - m.P)))),
 				});
 			}
@@ -3280,27 +3279,10 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			int b = bayEdge[s.Edge];
-			TurnBays.Bay bay = TurnBays.Bays[b];
-			double rs = RoadS(s, m.P);
-			if (rs < bay.S0 || rs > bay.S1)
-			{
-				return false;
-			}
-			// The seg up to the bay's junction: this one, or (a bay running back through the junction behind) the next, the car going
-			// straight on at that junction in the bay.
-			int k = m.Seg;
-			if (Math.Abs(RoadS(s, s.P0 + s.Len) - bay.Junction) > 30.0)
-			{
-				if (!bay.Through || BayOn(path, k + 1) != b || k + 2 >= path.Length)
-				{
-					return false;
-				}
-				k++;
-			}
-			Seg up = path[k];
-			int node = NodeAfter(path, k);
-			if (node < 0 || Math.Abs(RoadS(up, up.P0 + up.Len) - bay.Junction) > 30.0 || !LeftTurn(node, LinkIndex(node, up.Edge), LinkIndex(node, path[k + 1].Edge)))
+			TurnBays.Bay bay = TurnBays.Bays[bayEdge[s.Edge]];
+			double rs = RoadS(s, m.P), end = RoadS(s, s.P0 + s.Len);
+			int node = NodeAfter(path, m.Seg);
+			if (rs < bay.S0 || rs > bay.S1 || node < 0 || Math.Abs(end - bay.Junction) > 30.0 || !LeftTurn(node, LinkIndex(node, s.Edge), LinkIndex(node, path[m.Seg + 1].Edge)))
 			{
 				return false;
 			}
@@ -3316,31 +3298,6 @@ namespace HalfGripOpenWorld
 
 		/// <summary>Cars into a left-turn bay off the trunk (counted for trafficview).</summary>
 		internal int IntoBays;
-
-		/// <summary>
-		/// The lane mover <paramref name="m"/> leaves the node after its path's seg <paramref name="k"/> by: on the trunk the lane it is in;
-		/// in a left-turn bay that runs on through that junction (<see cref="TurnBays.Bay.Through"/>), going straight on, the bay beyond it;
-		/// else the road's one lane.
-		/// </summary>
-		private static long OutLaneOf(Mover m, Seg[] path, int k)
-		{
-			if (TwoLane(path[k]) || (m.Ix == MedianIx && BayOn(path, k) >= 0 && BayOn(path, k) == BayOn(path, k + 1)))
-			{
-				return LaneOf(m, path[k + 1]);
-			}
-			return LaneKey(path[k + 1], 0);
-		}
-
-		/// <summary>The left-turn bay on path seg <paramref name="k"/> for its way (as <see cref="Laned"/>), or -1.</summary>
-		private static int BayOn(Seg[] path, int k)
-		{
-			if (k >= path.Length)
-			{
-				return -1;
-			}
-			Seg s = path[k];
-			return s.Edge >= 0 && !TwoLane(s) && bayEdge[s.Edge] >= 0 && TurnBays.Bays[bayEdge[s.Edge]].Dir == (s.Dir > 0 ? 1 : -1) ? bayEdge[s.Edge] : -1;
-		}
 
 		/// <summary>
 		/// For mover <paramref name="m"/>, in the lane next to the junction lane it turns off from (the outer beside a deceleration lane,
@@ -4002,7 +3959,7 @@ namespace HalfGripOpenWorld
 			{
 				M = r.M, Node = next, SegIndex = k, NodeP = nodeP,
 				InArm = LinkIndex(next, path[k].Edge), OutArm = LinkIndex(next, path[k + 1].Edge),
-				InLane = r.OutLane, OutLane = OutLaneOf(r.M, path, k),
+				InLane = r.OutLane, OutLane = TwoLane(path[k]) ? LaneOf(r.M, path[k + 1]) : LaneKey(path[k + 1], 0),
 				Eta = ArriveTime(r.M.V, nodeP - nextBox - r.M.P, Math.Max(r.M.V, DesiredAt(r.M.L.Profile, nodeP - nextBox))),
 			};
 			if (q.InArm < 0 || q.OutArm < 0)

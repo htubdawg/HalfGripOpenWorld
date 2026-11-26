@@ -2027,7 +2027,7 @@ namespace HalfGripOpenWorld
 			// second behind (past the one behind), which the widening's taper keeps clear of. The road's own ends count (it begins or
 			// ends at a junction, or at nothing).
 			double back = double.MaxValue, backHalf = 0.0, ahead = double.MaxValue, beyond = double.MaxValue;
-			List<double> behind = new List<double>(), behindHalf = new List<double>();
+			List<double> behind = new List<double>();
 			double reach = TurnBays.Longest + TurnBays.Taper + 60.0;
 			Locate(main, js, out int jk, out double jt);
 			Centre(main, jk, jt, out double jx, out double jz);
@@ -2055,7 +2055,6 @@ namespace HalfGripOpenWorld
 					if (along < 0.0)
 					{
 						behind.Add(-along);
-						behindHalf.Add(other.Half);
 						if (-along < back)
 						{
 							back = -along;
@@ -2068,15 +2067,11 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
-			// The second junction behind, past the one behind, and its road's half width.
-			double beyondHalf = 0.0;
-			for (int i = 0; i < behind.Count; i++)
+			foreach (double d in behind)
 			{
-				double d = behind[i];
 				if (d > back + backHalf + 10.0 && d < beyond)
 				{
 					beyond = d;
-					beyondHalf = behindHalf[i];
 				}
 			}
 			beyond = Math.Min(beyond, dir > 0 ? js : length - js);
@@ -2087,25 +2082,16 @@ namespace HalfGripOpenWorld
 			double near = side.Half + TurnBays.StopBack;
 			double far = back < double.MaxValue ? back - backHalf - TurnBays.PastJunction : TurnBays.Longest;
 			far = Math.Min(far, TurnBays.Longest);
-			// Where the junction behind is so near that the bay would hold only a few cars, it runs on back through it as a through lane
-			// there (the owner, 2026-11-26: "we can have the left lane extend beyond a junction if its marked as a left/straight lane at
-			// the first one"), to where its taper, shortest, comes in just past the second junction behind.
-			double through = beyond < double.MaxValue ? beyond - beyondHalf - TurnBays.PastJunction - TurnBays.ShortTaper : double.MaxValue;
-			bool runs = back < double.MaxValue && through < double.MaxValue && far < TurnBays.Longest && through - (back + backHalf + TurnBays.PastJunction) >= TurnBays.Shortest;
-			if (runs)
-			{
-				far = through;
-			}
 			if (far - near < TurnBays.Shortest)
 			{
 				return;
 			}
 			// The widening: full from past the junction behind (or the bay's far end) to just past the T, its tapers clear of the
 			// junctions beyond.
-			double fullBack = runs ? far : back < double.MaxValue && back - backHalf - TurnBays.PastJunction <= TurnBays.Longest ? back + backHalf + TurnBays.PastJunction : far;
+			double fullBack = back < double.MaxValue && back - backHalf - TurnBays.PastJunction <= TurnBays.Longest ? back + backHalf + TurnBays.PastJunction : far;
 			double fullAhead = side.Half + TurnBays.PastJunction;
 			double taperAhead = Math.Max(TurnBays.ShortTaper, Math.Min(TurnBays.Taper, ahead - fullAhead - TurnBays.PastJunction * 2.0));
-			double taperBack = runs ? TurnBays.ShortTaper : Math.Max(TurnBays.ShortTaper, Math.Min(TurnBays.Taper, beyond - fullBack - TurnBays.PastJunction * 2.0));
+			double taperBack = Math.Max(TurnBays.ShortTaper, Math.Min(TurnBays.Taper, beyond - fullBack - TurnBays.PastJunction * 2.0));
 			double a0 = js - dir * (fullBack + taperBack), a1 = js - dir * fullBack, b0 = js + dir * fullAhead, b1 = js + dir * (fullAhead + taperAhead);
 			if (dir < 0)
 			{
@@ -2125,7 +2111,7 @@ namespace HalfGripOpenWorld
 			TurnBays.Bays.Add(new TurnBays.Bay
 			{
 				Road = o, Other = r, Dir = dir, Junction = js, S0 = Math.Min(s0, s1), S1 = Math.Max(s0, s1), SideHalf = side.Half,
-				Back = back < double.MaxValue ? js - dir * back : double.NaN, BackHalf = backHalf, Through = runs,
+				Back = back < double.MaxValue ? js - dir * back : double.NaN, BackHalf = backHalf,
 			});
 		}
 

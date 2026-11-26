@@ -968,52 +968,33 @@ namespace HalfGripOpenWorld
 					// The white line by the through lane, on the bay's right (traffic keeps right; the road's left is positive).
 					int white = -bay.Dir;
 					double off = white * (TurnBays.MiddleHalf(road, (bay.S0 + bay.S1) * 0.5) - 0.5);
-					// A bay running back through the junction behind is a lane there: its line is dotted (cars move in and out) up to
-					// past that junction, where the cars from it that turn left at the T move over, and solid from there.
-					double dotted = bay.Through ? Math.Abs(bay.Back - (bay.Dir > 0 ? bay.S0 : bay.S1)) + bay.BackHalf + BayDotted : BayDotted;
-					double solid0 = bay.Dir > 0 ? bay.S0 + dotted : bay.S0, solid1 = bay.Dir > 0 ? bay.S1 : bay.S1 - dotted;
+					double solid0 = bay.Dir > 0 ? bay.S0 + BayDotted : bay.S0, solid1 = bay.Dir > 0 ? bay.S1 : bay.S1 - BayDotted;
 					WhiteLine(m, road, i, a, b, solid0, solid1, off);
-					for (double d = 0.0; d + DotOn <= dotted; d += DotOn + DotOff)
+					for (double d = 0.0; d + DotOn <= BayDotted; d += DotOn + DotOff)
 					{
 						double d0 = bay.Dir > 0 ? bay.S0 + d : bay.S1 - d - DotOn;
 						WhiteLine(m, road, i, a, b, d0, d0 + DotOn, off);
 					}
-					BayArrow(m, road, i, a, b, bay, bay.Dir > 0 ? bay.S1 : bay.S0, LeftArrow);
-					if (bay.Through)
-					{
-						// Straight on only, before the junction behind (the lane-use arrow; the through lane beside it is straight or right).
-						BayArrow(m, road, i, a, b, bay, bay.Back - bay.Dir * (bay.BackHalf + ArrowBack), AheadArrow);
-					}
+					BayArrow(m, road, i, a, b, bay);
 				}
 			}
 		}
 
-		/// <summary>The bay's left arrow: a shaft up the bay's middle (1.2 wide, 9 long), then the head: a bar to the left at the shaft's
-		/// front, ending in a point. Each part from u0 to u1 back from the arrow's front, across from v0 to v1 to the drivers' left.</summary>
-		private static readonly (double u0, double u1, double v0a, double v1a, double v0b, double v1b)[] LeftArrow =
-		{
-			(14.0, 5.0, -0.6, 0.6, -0.6, 0.6),
-			(7.0, 5.0, 0.6, 3.0, 0.6, 3.0),
-			(8.6, 6.0, 3.0, 3.0, 3.0, 5.6),
-			(6.0, 3.4, 3.0, 5.6, 3.0, 3.0),
-		};
-
-		/// <summary>A straight-ahead arrow: the shaft and a pointed head.</summary>
-		private static readonly (double u0, double u1, double v0a, double v1a, double v0b, double v1b)[] AheadArrow =
-		{
-			(14.0, 5.0, -0.6, 0.6, -0.6, 0.6),
-			(5.0, 1.0, -2.4, 2.4, 0.0, 0.0),
-		};
-
-		/// <summary>How far before a junction's mouth the straight-ahead arrow's front is.</summary>
-		private const double ArrowBack = 12.0;
-
-		/// <summary>An arrow (<paramref name="parts"/>) up the bay's middle, its front at <paramref name="end"/> along the road.</summary>
-		private static void BayArrow(Mesher m, Network.Road road, int i, double a, double b, TurnBays.Bay bay, double end, (double u0, double u1, double v0a, double v1a, double v0b, double v1b)[] parts)
+		/// <summary>The bay's left arrow, back from its stop end: a shaft up the bay's middle, bending left at its head.</summary>
+		private static void BayArrow(Mesher m, Network.Road road, int i, double a, double b, TurnBays.Bay bay)
 		{
 			double sa = road.S[i], sb = road.S[i + 1];
-			// Along the bay from the arrow's front (u, growing back toward the cars coming), across it to their left (v): to road coordinates.
+			// Along the bay from its stop end (u, growing back toward the cars coming), across it to their left (v): to road coordinates.
+			double end = bay.Dir > 0 ? bay.S1 : bay.S0;
 			(double s, double off) At(double u, double v) => (end - bay.Dir * u, bay.Dir * v);
+			// The shaft (1.2 wide, 9 long), then the head: a bar to the left at the shaft's front, ending in a point.
+			(double u0, double u1, double v0a, double v1a, double v0b, double v1b)[] parts =
+			{
+				(14.0, 5.0, -0.6, 0.6, -0.6, 0.6),
+				(7.0, 5.0, 0.6, 3.0, 0.6, 3.0),
+				(8.6, 6.0, 3.0, 3.0, 3.0, 5.6),
+				(6.0, 3.4, 3.0, 5.6, 3.0, 3.0),
+			};
 			foreach ((double u0, double u1, double v0a, double v1a, double v0b, double v1b) in parts)
 			{
 				(double s0, double o0a) = At(u0, v0a);
