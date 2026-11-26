@@ -56,7 +56,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// A way through junction <see cref="Node"/> from lane <see cref="From"/> to lane <see cref="To"/>, as a polyline about a unit a point:
-		/// the path of a car's rear axle, from where it is when the car's front is at the stop line (<see cref="Axle"/> before the lane's
+		/// the path of a car's middle, from where it is when the car's front is at the stop line (<see cref="Axle"/> before the lane's
 		/// end) to the lane out. Distance along it is so also how far the car's front is past the stop line.
 		/// </summary>
 		internal sealed class Connector
@@ -92,26 +92,23 @@ namespace HalfGripOpenWorld
 		/// <summary>The sideways acceleration a driver takes a turn at: about 3 m/s² (a comfortable turn), in units a second squared.</summary>
 		internal const double TurnGrip = 3.0 * 3.3;
 		/// <summary>
-		/// A car's rear axle to its front, of its <see cref="Traffic.CarLength"/> (the wheelbase and the front overhang; the rear overhang
-		/// is the rest). The lines are where the rear axle goes: a car's body lies along the line's way at its rear axle, so on a bend its
-		/// front swings wide of the line, as a real car's does. A car with its front at a lane's end has its rear axle this far before it.
+		/// A car's middle to its front, half its <see cref="Traffic.CarLength"/>. The lines are where the car's middle goes, its body along
+		/// them; a car with its front at a lane's end has its middle this far before it, so a connector starts there and distance along it
+		/// is also how far the car's front is past the stop line.
 		/// </summary>
-		internal const double Axle = 11.0;
+		internal const double Axle = Traffic.CarLength * 0.5;
 		/// <summary>
-		/// The tightest a connector's line bends: about 4.2 m, a family car's rear axle on full lock (its turning circle is about 11 m
-		/// across at the kerb). The line starts where the rear axle of a car waiting at the stop line is (<see cref="Axle"/> back), so a
-		/// street corner's right turn fits; where even that is too tight (the sharp right off the Pinewick road at Kingsbridge's node 6,
-		/// where the old traffic's physics cars swung wide into the cars going the other way) the line swings wide and comes back to its
-		/// lane past the box.
+		/// The tightest a connector bends where no fillet fits and its plain curve is tighter still (a sharp V where two roads meet end to
+		/// end, an acute corner): one arc this tight or wider, joining the lane out further on, with a swing the other way first if even
+		/// that can't reach it.
 		/// </summary>
-		internal const double MinRadius = 14.0;
+		internal const double MinRadius = 4.0;
 		/// <summary>
-		/// The tightest a fillet round a corner may be (about 2.1 m for the rear axle; a street corner's right turn needs 7.5, tighter than a real car's): the map's drawn corners are
-		/// tighter than real ones (a street's mouth flares by a few units), and a line round a corner that keeps to the lanes' middles and
-		/// the paving is better than one wide enough for a real car that cuts over the kerb. Only where the corner is tighter still (a
-		/// hairpin) does the line swing wide at <see cref="MinRadius"/>.
+		/// The tightest a fillet round a corner may be. The owner (2026-11-26): "a car can go around a 90 degree turn no problem": the lines
+		/// keep to the lanes' middles and the drawn paving round a corner, however tight the map draws it (a street corner's right turn is
+		/// about 7.5 round), rather than a real car's turning circle (about 14), which would cut over the kerbs.
 		/// </summary>
-		internal const double FilletRadius = 7.0;
+		internal const double FilletRadius = 3.0;
 		/// <summary>The slowest a connector's limit goes (a dead end's turn round): about 6 mph.</summary>
 		internal const double Crawl = 6.0 * Traffic.Mph;
 
@@ -445,7 +442,12 @@ namespace HalfGripOpenWorld
 			Connector c = new Connector { Node = n, From = from, To = to, InArm = inArm, OutArm = outArm, Turn = turn, KeepClear = Traffic.Links[n].Count >= 3 };
 			Curve(c, x0, z0, y0, h0x, h0z, x1, z1, y1, h1x, h1z);
 			c.Join = b.Start;
-			if (turn != Round && Tightest(c) < FilletRadius)
+			// A turn keeps to its lanes' middles: along the lane in, round one arc tangent to both, along the lane out (Arc's fillet); a
+			// plain curve from a stop line far back (a road meeting another at a slant) would cut the corner's verge.
+			if (turn != Round && Arc(c, b, x0, z0, h0x, h0z, y1, true))
+			{
+			}
+			else if (turn != Round && Tightest(c) < FilletRadius)
 			{
 				if (!Arc(c, b, x0, z0, h0x, h0z, y1))
 				{
@@ -459,7 +461,7 @@ namespace HalfGripOpenWorld
 			Connectors.Add(c);
 		}
 
-		/// <summary>Where a connector from lane <paramref name="l"/> starts: the rear axle of a car whose front is at the lane's end, on the lane (straight on back from its end if the lane is shorter).</summary>
+		/// <summary>Where a connector from lane <paramref name="l"/> starts: the middle of a car whose front is at the lane's end, on the lane (straight on back from its end if the lane is shorter).</summary>
 		private static void RearAt(Lane l, out double x, out double z, out double y, out double hx, out double hz)
 		{
 			if (l.Length >= Axle)
@@ -535,13 +537,13 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Re-draws connector <paramref name="c"/>, whose plain curve bends tighter than a car can, the way a driver turns: one arc from the
-		/// rear axle's start, as wide as it must be (never tighter than <see cref="MinRadius"/>) to come out along lane
+		/// middle's start, as wide as it must be (never tighter than <see cref="MinRadius"/>) to come out along lane
 		/// <paramref name="to"/>'s middle, then straight on to the lane's start, or joining the lane further along if the arc comes out past
 		/// it (<see cref="Connector.Join"/>). Where even the tightest arc can't reach the lane (a hairpin like the right off the Pinewick
 		/// road at node 6) the car first swings the other way on the tightest arc, a little more each try, until it can. False if no swing up
 		/// to 80 degrees does, or the lane is joined beyond its reach: the caller tries a Bézier.
 		/// </summary>
-		private static bool Arc(Connector c, Lane to, double x0, double z0, double h0x, double h0z, double y1)
+		private static bool Arc(Connector c, Lane to, double x0, double z0, double h0x, double h0z, double y1, bool filletOnly = false)
 		{
 			Point(to, to.Start, out double px, out double pz, out double _, out double h1x, out double h1z);
 			double cross = h0x * h1z - h0z * h1x;
@@ -564,7 +566,9 @@ namespace HalfGripOpenWorld
 				// The arc is as wide as the shorter of the two straights to the meeting point allows; the rest of the longer is driven
 				// straight, before the arc (the lane in's) or after it (the lane out's).
 				double t = Math.Min(u, v), rho = t * (1.0 + dot) / Math.Abs(cross);
-				if (t > 0.0 && rho >= FilletRadius)
+				// (Not where the two lines meet far off, lanes nearly in line: the fillet would run out to there and back.)
+				double span = Math.Sqrt(wx * wx + wz * wz);
+				if (t > 0.0 && rho >= FilletRadius && u + v <= 2.0 * span + 10.0)
 				{
 					double lead = u - t, ax = x0 + h0x * lead, az = z0 + h0z * lead;
 					double alpha = side * Network.Atan2(cross, dot);
@@ -591,6 +595,10 @@ namespace HalfGripOpenWorld
 					c.Wide = false;
 					return true;
 				}
+			}
+			if (filletOnly)
+			{
+				return false;
 			}
 			for (int deg = 0; deg <= 80; deg += 2)
 			{

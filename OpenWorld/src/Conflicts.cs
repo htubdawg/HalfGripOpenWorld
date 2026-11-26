@@ -22,7 +22,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>How far back along the lane in a car's body is swept before its stop line (no further than the lane holds the whole car):
 		/// where a car waiting to give way must stand clear of the cars it gives way to (<see cref="Lanes.Lane.Hold"/>).</summary>
-		internal const double Approach = 2.0 * Traffic.CarLength;
+		internal const double Approach = 4.0 * Traffic.CarLength;
 
 		/// <summary>
 		/// Who gives way: the car on connector A, the car on B; neither because the lights never show them green together (<see cref="Apart"/>);
@@ -32,9 +32,9 @@ namespace HalfGripOpenWorld
 		internal const int YieldA = 0, YieldB = 1, Apart = 2, FirstCome = 3, Follow = 4;
 
 		/// <summary>
-		/// A conflict area between connectors <see cref="A"/> and <see cref="B"/> (A &lt; B): a car on A whose rear axle is between A0 and
+		/// A conflict area between connectors <see cref="A"/> and <see cref="B"/> (A &lt; B): a car on A whose middle is between A0 and
 		/// A1 along it (0 with its front at the stop line, negative before it; up to its length and the rear overhang, the tail leaving) can touch a car on B
-		/// whose rear axle is between B0 and B1.
+		/// whose middle is between B0 and B1.
 		/// </summary>
 		internal struct Area
 		{
@@ -217,7 +217,7 @@ namespace HalfGripOpenWorld
 		/// <summary>A car's body as swept: half its length and half its width (the game's enemy cars are about 14 by 5.4), with a little room.</summary>
 		internal const double HalfLength = Traffic.CarLength * 0.5 + 0.3, HalfWidth = 2.7 + 0.3;
 
-		/// <summary>Per connector, its car's body at each distance of the rear axle along it (a step apart, from the front at the stop line to the tail out of the box): middle, axis, and the box round them all.</summary>
+		/// <summary>Per connector, its car's body at each distance of its middle along it (a step apart, from the front at the stop line to the tail out of the box): middle, axis, and the box round them all.</summary>
 		private static Body[] bodies;
 
 		private sealed class Body
@@ -227,10 +227,9 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// The car's body along connector <paramref name="c"/>: for each distance of its rear axle along the line, from <see cref="Approach"/>
-		/// before 0 (its front at the stop line) to the line's length and the rear overhang (the tail out of the box), a rectangle along the line's way at the rear axle,
-		/// <see cref="Lanes.Axle"/> of it ahead of the axle: on a bend the front swings wide of the line, as a rigid car's does. Past the
-		/// line's ends it carries on straight, back along the lane in and on along the lane out.
+		/// The car's body along connector <paramref name="c"/>: for each distance of its middle along the line, from <see cref="Approach"/>
+		/// before 0 (its front at the stop line) to the line's length and half a car (the tail out of the box), a rectangle centred on the line along its way.
+		/// Past the line's ends it carries on straight, back along the lane in and on along the lane out.
 		/// </summary>
 		private static Body Sweep(Lanes.Connector c)
 		{
@@ -340,7 +339,7 @@ namespace HalfGripOpenWorld
 			return bodies[c];
 		}
 
-		/// <summary>Where along each connector its car's body can touch the other's: the first and last distances of each one's rear axle that do.</summary>
+		/// <summary>Where along each connector its car's body can touch the other's: the first and last distances of each one's middle that do.</summary>
 		private static bool Touch(int a, int b, out double a0, out double a1, out double b0, out double b1)
 		{
 			return Touch(a, b, 0.0, out a0, out a1, out b0, out b1);

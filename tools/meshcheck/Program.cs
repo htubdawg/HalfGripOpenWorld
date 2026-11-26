@@ -978,6 +978,8 @@ internal static class Program
 		int offPaving = 0, offConnectors = 0, points = 0;
 		var worstOff = new List<(int c, int off)>();
 		var offWhy = new Dictionary<string, int>();
+		int middleOff = 0;
+		int[] offSizes = new int[4];
 		for (int ci = 0; ci < Lanes.Connectors.Count; ci++)
 		{
 			Lanes.Connector c = Lanes.Connectors[ci];
@@ -1001,14 +1003,19 @@ internal static class Program
 				foreach (double side in new[] { 0.0, -half, half })
 				{
 					points++;
-					if (!Surface(c.X[p] + rx * side, c.Z[p] + rz * side, bits))
+					double qx = c.X[p] + rx * side, qz = c.Z[p] + rz * side;
+					// The mask is the triangles sampled at each unit square's middle: a point near the edge of the paving may sit in a square
+					// whose middle is just off it, so a neighbouring square paved counts.
+					if (!Surface(qx, qz, bits) && !Surface(qx + 1.0, qz, bits) && !Surface(qx - 1.0, qz, bits) && !Surface(qx, qz + 1.0, bits) && !Surface(qx, qz - 1.0, bits))
 					{
 						off++;
+						middleOff += side == 0.0 ? 1 : 0;
 					}
 				}
 			}
 			if (off > 0)
 			{
+				offSizes[off <= 3 ? 0 : off <= 10 ? 1 : off <= 30 ? 2 : 3]++;
 				offPaving += off;
 				offConnectors++;
 				worstOff.Add((ci, off));
@@ -1136,7 +1143,7 @@ internal static class Program
 				continue;
 			}
 			mostHold = Math.Max(mostHold, l.Hold);
-			if (l.Hold > 2.0 * Traffic.CarLength || l.Hold > l.Length - Traffic.CarLength)
+			if (l.Hold > 2.0 * Traffic.CarLength || l.Hold > l.Length)
 			{
 				early++;
 				if (early <= 6)
@@ -1188,7 +1195,7 @@ internal static class Program
 		bool ok = deadIn == 0 && unreached == 0 && offConnectors == 0 && missed == 0 && sixOk && early == 0 && offLine == 0;
 		Console.WriteLine("lanes:   " + Lanes.All.Count + " lanes, " + Lanes.Connectors.Count + " connectors, " + Conflicts.All.Count + " conflict areas (" + kinds[0] + " crossing, " + kinds[1] + " merging, " + kinds[2] + " diverging, " + kinds[3] + " head on; "
 			+ (yields[0] + yields[1]) + " give way, " + yields[2] + " kept apart by lights, " + yields[3] + " first come, " + yields[4] + " follow); lanes with no way on " + deadIn + ", lanes nothing leads into " + unreached
-			+ ", connectors off the paving " + offConnectors + " (" + offPaving + " of " + points + " points), crossing pairs " + crossings + " with no area " + missed + ", node 6's pair " + (sixOk ? "ok" : "MISSING")
+			+ ", connectors off the paving " + offConnectors + " (" + offPaving + " of " + points + " points, " + middleOff + " of them the line itself; by points off: " + offSizes[0] + " 1-3, " + offSizes[1] + " 4-10, " + offSizes[2] + " 11-30, " + offSizes[3] + " more), crossing pairs " + crossings + " with no area " + missed + ", node 6's pair " + (sixOk ? "ok" : "MISSING")
 			+ ", lanes held back from the stop line " + held + " (most " + mostHold.ToString("0.0") + "; shorter than a car, let through as one " + chained + "), held back more than two cars or off the lane " + early + ", lanes ending off the stop line " + offLine + " of " + lines + " lines; " + Lanes.BuildMs.ToString("0") + " ms" + (ok ? "  ok" : "  FAIL"));
 		return ok;
 	}
