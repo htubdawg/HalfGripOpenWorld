@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26.
+Last written 2026-11-26 (evening).
 
 ## Where things stand
 
@@ -16,88 +16,48 @@ Last written 2026-11-26.
   traffic's day too), so everyone in a room needs the same build. Bump the version with the next release.
 - None of the unreleased work has been tried in the game (`docs/TESTING.md` 58 to 62).
 
-## Node 6's turn lane and right on red (2026-11-25, the owner: "For node 6, install the actual turn lane" and "I'd like to keep right on red when it helps")
+## 2026-11-26: how the waiting is shared, node 6's arrow off, the US rules for lights and stops
 
-What was built (`TurnBays.cs`, new):
-- **The road**: `Network.Bays` (before `Junctions`, so mouths are cut against it) finds the T of main roads at each of
-  `TurnBays.Sites` (only node 6, (-2388, -4337)) and widens the Kingsbridge link by a lane (`Road.Wide`, `WideA0..WideB1`,
-  `Network.WideAt`, `Network.Widened`; `HalfAt` includes it): full from just north of node 42 (the lane junction 85 behind) to just
-  past the T, tapers 92 north and 50 south, fitted between the neighbouring junctions. The road index's paving tests use the widened
-  width, so the side roads' mouths meet its edge; plots, lots, towers, kerb spaces and poles stand back from it.
-- **Drawn** (`RoadMesh.WideStrip`, `BayPaint`): the texture's two halves pushed out to the edges, plain asphalt in the middle at the
-  texture's scale; two yellow lines (a painted median) coming together over the tapers; the bay from past node 42 to the stop line
-  (43 long: two cars) with its white line dotted 20 then solid and a white left arrow; no lines across the mouths. Looked at from
-  above with `JVIEW_TEX=1` (jview now textures main roads; `jview bays` lists the bays).
-- **Driven** (`TrafficDay`): `Laned` (the trunk, or the way up to a bay) gives the bay its own lane key (`MedianIx`); `IntoBay` moves
-  a car turning left at the bay's junction into it when there is room (it never moves back out; a car finding it full keeps to the
-  through lane and tries again). Drawn cars: through lanes half the widening out (`OnPath`), the bay on the centre line (`BayLane`).
-  `TrafficDrive` uses `Laned` too.
-- **Lights** (`TrafficSignals`): `BayArm` per lit node; the bay's left is on `ArrowPhase` but **protected and permissive**
-  (`Permissive`: it also goes on the main line's green, giving way; `State` green then, `Protected` false; `Apart` keeps it with the
-  main line); the arrow is called only after a left turner has stood waiting `BayArrowDelay` (8 s). `SignalPoles` hangs three heads
-  over the way in (two for the through lane, the arrow head over the bay), the stop line across the bay; `SignalHeads` shows a
-  flashing yellow arrow while permissive.
-- **Checks**: meshcheck `bays` (each site has its bay, a lane wider all along it, no other road meeting the widened stretch);
-  trafficview reports the bay (at a light with an arrow for it, cars into it; `TV_NOBAYS=1` drops it, `TV_ARROWDELAY=s` to measure).
+**trafficview now reports the waiting per trip** ("fairness:" line, after the long stands): per trip, the seconds stood still on the
+road (queues included; `TrafficDay.LegStood`) and at the front of a queue (`LegAsked`): mean, median, 90th, 99th percentile, the most,
+trips over 1 and 3 minutes; then the ten ways into junctions with the most standing (`StoodFor`), each with the trips through it and
+their mean. Judge every traffic change by it (the owner: spreading the waiting evenly is fine, some people waiting much longer is not).
 
-Also fixed on the way (found tracing the gridlocks the bay set off):
-- **`Room`**: a car let in needs room to stop clear of the box behind the car in front with the standstill gap (`MinGap`, 7; it was
-  4), and the room ends at the next junction's stop line (it counted the whole edge). Two cars let into node 42 one behind the other
-  stood one short of node 6's line, the second in node 42's box, and nodes 42 and 6 locked each other up for the rest of the day.
-- Not done: the junction's box is one size for all its ways in; widening the link pushed node 6's to 29 (the side road meets it at a
-  slant), and that alone cost seed 1 about 250 minutes, so `Traffic.ClearOfOthers` keeps the road's own width: a car waiting on the
-  road to Pinewick stands about 2 onto the widened shoulder in the acute corner, clear of the lane. A stop distance per way in would
-  fix it properly (about 30 uses of `Node.Box`).
+16 seeds each (`TV_DRIVE_ONLY=1`, ~23,540 trips a build): mean stood per trip / 90% / trips over 3 min:
+- before the bay (ff6280a): 30.0 s / 62 / 664;
+- room fixes, no bay (`TV_NOBAYS=1`): 32.5 / 74 / 798;
+- bay with its arrow after 8 s (as committed in aaf89ba): 38.2 / 105 / 1,110;
+- the same with a **lead left** (`TV_LEAD=1`: the bay's own arm keeps its through green beside the arrow): 38.1 / 105 / 1,120; it can't
+  help, since the arrow holds the cars coming up from the trunk either way;
+- arrow after 20 s: 37.5 / 106 / 1,128;
+- **no arrow** (lefts permissive only): **31.5 / 74 / 765**: the best with a bay, a little better than no bay.
+The arrow's green came out of the northbound commute (cars coming up from the trunk): their wait at node 44 doubled (22 to 45 s a trip)
+and the queue blocked the side streets at nodes 49 and 67. So **`TrafficSignals.BayArrowDelay` is now infinite** (no arrow; the head
+shows a flashing yellow arrow on the main green). `TV_ARROWDELAY=s` measures an arrow; `TV_LEAD=1` the lead left (code kept, off).
 
-The numbers, all 16 seeds (`TV_DRIVE_ONLY=1`), junction waiting / trips with a stand over 300 s / over 600 s:
-- before today: 5,559 / 271 / 63, all pass;
-- the room fixes alone (no bay, no right on red): 6,087 / 280 / 59;
-- **as committed (bay with its arrow, right on red off): 7,204 / 154 / 57**; 4 seeds fail one line, main-line cars held up by a car
-  giving way 102, 107, 114, 115 (limit 100; seed 16 was at 106 with the room fixes alone): mostly node 5's (a side car still in the
-  box when the trunk's green comes, as before) and node 6's permissive lefts;
-- the bay with permissive lefts only (no arrow): about the same as no bay (6,524 / 283 / 73 with right on red on);
-- the arrow at once (no delay): gridlocked seed 1 before the room fixes; worse than the delay after.
-So the bay halves the long stands but adds about 18% junction waiting: with it the southbound lefts get served, and that green
-comes out of the northbound morning commute up the link (the queue now backs up through nodes 44, 49, 67).
+With no arrow, seed 9 fails one line: physics cars at the evening peak (player standing at (-2380, -4348)) waiting 134 to 228 s at node
+49's lane from the east (-2213, -4590) joining the link's northbound queue, against 37 to 115 s for the same cars in the day: the
+physics driver is less willing to join a queue past a junction (held for no room) than the day's cars. Not looked into further (the
+junction work below will move these queues). Careful with `TV_DRIVE_NOTES`: each run's "long stop" lines come **before** its summary
+line, so the lines after the first run's summary belong to the second run (the player's car stopped across a lane).
 
-**The owner's answers (2026-11-26)** to the questions put after this work:
-1. Which is better, fewer long stands or less waiting in all: "it would matter what the average wait time is for everyone. If we
-   just spread the wait time out mostly equally it's probably fine, but if it's just different people now waiting longer, that's
-   dumb." So judge a change by **how the waiting is shared among the trips**, not the day's total alone. trafficview doesn't report
-   that yet: add, per seed, each trip's junction waiting (mean, median, 90th and 99th percentile, the most), and who waits (by node
-   and way in), then compare the build before the bay, the room fixes alone and the bay. The totals so far say the waiting got more
-   even overall (stands over 300 s from 280 to 154) but that the northbound commuters on the link now wait longer: exactly the case
-   the owner calls dumb if it holds up. Decide the bay's phasing from that (below).
-2. Whether node 6's main line should be the busiest pair: the owner didn't follow the jargon ("node, pair, link"). **Use plain words
-   with the owner**: "the junction where the road to Pinewick leaves Kingsbridge's road to the highway", "the cars coming up from the
-   highway into town". Only re-ask if the measurement shows it matters, as: "most cars at that light turn the corner between the
-   town and Pinewick; should the light treat that as the main road?"
-3. A longer turn lane: "I only want what makes sense to have." The engineer's call: do what a real road would have and the numbers
-   back.
-4. More turn lanes: "they should probably go everywhere it makes sense to have one." Standing decision now (docs/PLAN.md).
+**The owner (2026-11-26): "we obviously just need more left-turn lanes and shit everywhere. There is no possible way that having
+uncontrolled intersections is optimal."** Four-way stops are fine ("we can make the stop sign model later"). Standing decision now.
 
-**What is next** (in this order; plain words to the owner, show the numbers as averages per trip):
-1. trafficview: the waiting per trip as above (one line per seed, totals over 16), to judge every change below by.
-2. Node 6's light: try a through green for the cars coming down from town during the turn arrow (the left turners and the cars
-   going on together, the cars coming up held for the arrow only), the arrow's delay and its longest green; keep what makes the
-   waiting fairest per trip. If the commute up from the highway still pays for the turn lane, say so to the owner plainly.
-3. The turn lane's length: it holds two cars. Carry the widening further north (the taper toward node 2) and let the lane run back
-   through the lane junction behind it (node 42) as a centre lane, if the per-trip waiting says it helps.
-4. Turn lanes everywhere they make sense: a rule instead of `TurnBays.Sites` (a lit junction off the trunk where a main-line way
-   in has many left turners and room for two cars or more between junctions), lit junctions first; then unlit ones only where the
-   left turners hold up the main line. The rule's T's of main roads with room: node 8 (the link's junction with the road to
-   Redford; its other way in is 19 long, so one way only) and Northcote's road north meeting Millbrook's (-2885, 5832). A road can
-   only be widened once now (`Road.Wide` is one stretch): make it a list for two bays on one road (node 6 and node 8 are both on the
-   link). Look at each with `jview` (JVIEW_TEX=1) and keep meshcheck `bays` and `clear` passing.
-5. A stop distance per way in (`Node.Box` is one per junction), so a side road meeting a widened road at a slant stops further
-   back without pushing back every way in (cost seed 1 about 250 minutes when tried).
+**The US rules on the day's counts** (`TV_WARRANTS=1`, tools/trafficview/Warrants.cs: MUTCD 2009 signal warrant 1, conditions A, B and
+their combination, and 2B.07 multi-way stop, at the 70% volumes for country roads; an hour's count x 36 as an hourly volume, as the
+PennDOT comparison does), 4 seeds: **of the 16 lights, 4 to 6 are warranted** (nodes 3, 5, 6, 8, and 14 and 33 by condition B); the
+other trunk lights have side roads with 4 to 35 trips a day; **no new light and no four-way stop is warranted** (0 to 2 a seed, never
+the same junction). The waiting is not at uncontrolled junctions out in the country: it is in Kingsbridge, the queues from its two
+lights (nodes 6 and 8) backing through the close side junctions (42, 44, 49, 67, 2). Put to the owner (below) before building more.
 
-**Right on red**: measured on 16 seeds in each setting (also turning only into a gap 1.5 s more than a give way's, and counting the
-cars standing at the main line's stop line, so none is let go in the all red and caught by the main line's green): it never helped
-in total (6,347 against 6,087 without the bay, 6,851 against 6,524 with the permissive bay) and held main-line cars up over the limit
-on more seeds. Seed by seed it helps some (6, 10, 13, 15, 16) and costs others (1, 4, 8, 12). So it is **off**
-(`TrafficDay.RightOnRedOn`), its fixes kept; trafficview `TV_ROR=1` measures it. Tell the owner.
-
+**What is next**:
+1. The owner's answer to the question below.
+2. Then, as decided: turn lanes by a rule (a main road's way into a junction with left turners holding up the cars behind; room for
+   two cars or more), `Road.Wide` made a list for two on one road; four-way stops and lights where the rules (or the owner) say, with
+   Signs learning which junctions are controlled after the traffic map is built (they are laid out in `Network.Build` now, before it:
+   lay out boards for every candidate and decide which to draw later; `Hidden` keeps the ground, so nothing moves).
+3. The leftovers below, and seed 9's queue joining above.
 
 ## The owner's lights report (2026-11-25)
 

@@ -30,8 +30,10 @@ when one is done, delete it here.
   into the oncoming traffic at will; K-rails here and there; a wide grass median. Keep the general route (it may change a little)
   and the wrap.
 - Kingsbridge's node 6 (the owner, 2026-11-25: "install the actual turn lane"): a real left-turn lane, the road widened and painted,
-  with a left arrow at its light. Turn lanes go "everywhere it makes sense to have one" (the owner, 2026-11-26): decided by the
-  engineering and the numbers, not asked about one by one.
+  with a left arrow at its light (since 2026-11-26 a flashing yellow arrow only: a green arrow made the average trip stand 38 s
+  against 31.5 s; put to the owner). Turn lanes go "everywhere it makes sense to have one" (the owner, 2026-11-26): decided by the
+  engineering and the numbers, not asked about one by one. "There is no possible way that having uncontrolled intersections is
+  optimal" (the owner, 2026-11-26): more turn lanes and control; four-way stops are fine (a stop sign model later).
 - Judge traffic changes by how the waiting is shared (the owner, 2026-11-26): waiting spread fairly over everyone is fine; the same
   total moved onto other drivers who now wait longer is not. Report averages per trip, in plain words.
 - Right on red (the owner, 2026-11-25: "keep right on red when it helps"): on only where it helps. Measured over 16 seeds it did not

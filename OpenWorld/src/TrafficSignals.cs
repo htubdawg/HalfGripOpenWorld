@@ -37,8 +37,12 @@ namespace HalfGripOpenWorld
 		/// Seconds a left turner must have stood waiting in a bay off the trunk (its left permissive on the main line's green) before it calls
 		/// the arrow: the detector's delay, as at real permissive bays, so the arrow (which holds the main line red both ways) comes up only
 		/// for a car that cannot find a gap, not for every car that slows for one. The trunk's arrows are called at once (no permissive left).
+		/// Never (2026-11-26): measured over 16 days, any arrow at Kingsbridge's bay (at once, after 8 s or 20 s, or leading with the
+		/// bay's own through green) came out of the green of the cars coming up from the trunk, and left the average trip standing 38 s
+		/// against 31.5 s with the bay's lefts permissive only (and 32.5 s with no bay); the owner judges by how evenly the waiting is
+		/// shared. The bay's head shows a flashing yellow arrow on the main line's green. trafficview TV_ARROWDELAY=s measures it.
 		/// </summary>
-		internal static double BayArrowDelay = 8.0;
+		internal static double BayArrowDelay = double.PositiveInfinity;
 
 		/// <summary>
 		/// A lead left at a bay off the trunk (<see cref="BayArm"/>): when its arrow is called, only the oncoming main-line arm stops (its
