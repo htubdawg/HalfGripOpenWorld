@@ -250,6 +250,14 @@ namespace HalfGripOpenWorld
 		internal readonly Dictionary<int, double> WaitAt = new Dictionary<int, double>();
 		/// <summary>Seconds waited per node and kind (node * 4 + kind: 0 from a side arm, 1 on along the main line, 2 turning off it, 3 no main line). For trafficview.</summary>
 		internal readonly Dictionary<int, double> WaitKind = new Dictionary<int, double>();
+		/// <summary>
+		/// For trafficview's fairness report (the owner, 2026-11-26: a change that spreads the waiting evenly is fine, one that makes some
+		/// people wait much longer is not): seconds each leg stood still on the road (in a queue or at the front of one, past pulling out),
+		/// seconds it stood at the front asking a junction to let it in, and the standing by the junction and way in it was queuing for
+		/// (node * 16 + arm in; -1 past its last junction).
+		/// </summary>
+		internal readonly Dictionary<int, double> LegStood = new Dictionary<int, double>(), LegAsked = new Dictionary<int, double>();
+		internal readonly Dictionary<int, double> StoodFor = new Dictionary<int, double>();
 		internal int RefusedOrder, RefusedCross, RefusedRoom;
 		/// <summary>Refusals at a red light (or a green ending before the car would be through).</summary>
 		internal int RefusedSignal;
@@ -1798,6 +1806,13 @@ namespace HalfGripOpenWorld
 					{
 						StoppedOn.TryGetValue(path[m.Seg].Edge, out double sec);
 						StoppedOn[path[m.Seg].Edge] = sec + Step;
+						LegStood.TryGetValue(m.Index, out double ls);
+						LegStood[m.Index] = ls + Step;
+						{
+							int qn = NodeAfter(path, m.Seg), key = qn < 0 ? -1 : qn * 16 + Math.Max(0, LinkIndex(qn, path[m.Seg].Edge));
+							StoodFor.TryGetValue(key, out double sf);
+							StoodFor[key] = sf + Step;
+						}
 						if (TwoLane(path[m.Seg]))
 						{
 							// On the trunk: going on along it at the next junction, or turning off.
@@ -4283,6 +4298,8 @@ namespace HalfGripOpenWorld
 				if (v < 0.5)
 				{
 					m.Wait += Step;
+					LegAsked.TryGetValue(m.Index, out double la);
+					LegAsked[m.Index] = la + Step;
 					WaitAt.TryGetValue(node, out double sec);
 					WaitAt[node] = sec + Step;
 					{

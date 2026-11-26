@@ -40,6 +40,19 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static double BayArrowDelay = 8.0;
 
+		/// <summary>
+		/// A lead left at a bay off the trunk (<see cref="BayArm"/>): when its arrow is called, only the oncoming main-line arm stops (its
+		/// amber, step 9, and all red, step 10); the bay's own arm keeps its through green beside the arrow, as at a real lead-left signal,
+		/// instead of both main-line arms held red for the arrow. Off: both held (to measure; trafficview TV_LEAD=1).
+		/// </summary>
+		internal static bool LeadLeft = false;
+
+		/// <summary>Whether junction <paramref name="node"/>'s bay has a lead left (<see cref="LeadLeft"/>).</summary>
+		private static bool Lead(int node)
+		{
+			return LeadLeft && BayArm(node) >= 0 && !TrunkArrows(node);
+		}
+
 		/// <summary>The phases a movement goes on: the main line going on or turning right, the side arms, the main line's left turns on their arrow.</summary>
 		internal const int MainPhase = 0, SidePhase = 1, ArrowPhase = 2;
 
@@ -204,7 +217,8 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// One day's lights: each one's step in its cycle (0 main green, 1 main amber, 2 all red, 3 left arrow green, 4 its amber, 5 all
-		/// red, 6 side green, 7 side amber, 8 all red; the arrow's and the side's steps skipped when nobody waits for them), run from the
+		/// red, 6 side green, 7 side amber, 8 all red; 9 and 10 a lead left's oncoming amber and all red before 3; the arrow's and the
+		/// side's steps skipped when nobody waits for them), run from the
 		/// day's cars, and every change recorded (the day's clock, and the step it went to), so the light at any time can be read back.
 		/// </summary>
 		internal sealed class Lights
@@ -276,7 +290,20 @@ namespace HalfGripOpenWorld
 						case 0:
 							if ((waiting[i] || leftCalls) && t >= MainMin)
 							{
-								to = 1;
+								// A lead left goes straight to its arrow, the oncoming arm alone stopped; the side follows it if called.
+								to = leftCalls && Lead(Nodes[i]) ? 9 : 1;
+							}
+							break;
+						case 9:
+							if (t >= AmberTime)
+							{
+								to = 10;
+							}
+							break;
+						case 10:
+							if (t >= AllRed)
+							{
+								to = 3;
 							}
 							break;
 						case 3:
@@ -304,7 +331,7 @@ namespace HalfGripOpenWorld
 							{
 								// The arrow if a left turner waits, else the side (a side car turned the main line; as the lights without
 								// arrows always did).
-								to = leftCalls ? 3 : 6;
+								to = leftCalls && !Lead(Nodes[i]) ? 3 : 6;
 							}
 							break;
 						case 5:
@@ -347,12 +374,18 @@ namespace HalfGripOpenWorld
 				int st = StepAt(i, w);
 				switch (PhaseOf(node, arm, outArm))
 				{
-					case MainPhase: return st == 0 ? Green : st == 1 ? Amber : Red;
-					case ArrowPhase:
-						if (Permissive(node, arm, outArm) && st <= 1)
+					case MainPhase:
+						if (Lead(node) && arm == BayArm(node))
 						{
-							// On the main line's green (giving way), and its amber.
-							return st == 0 ? Green : Amber;
+							// The bay's own arm goes on through its arrow (a lead left).
+							return st == 0 || st == 9 || st == 10 || st == 3 ? Green : st == 1 || st == 4 ? Amber : Red;
+						}
+						return st == 0 ? Green : st == 1 || st == 9 ? Amber : Red;
+					case ArrowPhase:
+						if (Permissive(node, arm, outArm) && (st <= 1 || st == 9 || st == 10))
+						{
+							// On the main line's green (giving way), and its amber; still giving way while the oncoming arm clears.
+							return st == 1 ? Amber : Green;
 						}
 						return st == 3 ? Green : st == 4 ? Amber : Red;
 					default: return st == 6 ? Green : st == 7 ? Amber : Red;

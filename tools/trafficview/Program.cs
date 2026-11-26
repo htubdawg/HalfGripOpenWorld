@@ -266,6 +266,76 @@ internal static partial class Program
 			+ ", " + over300 + " trips with a stand over 300 s, " + over600 + " over 600 s  (reported)");
 	}
 
+	/// <summary>
+	/// How the day's waiting is shared among the trips (the owner, 2026-11-26: "if we just spread the wait time out mostly equally it's
+	/// probably fine, but if it's just different people now waiting longer, that's dumb"): per trip, the seconds stood still on the road
+	/// (queues included) and at the front of a queue asking to be let in; the mean, median, 90th and 99th percentile and the most; and
+	/// the ways into junctions where the standing is, each with the trips through it and their mean. Reported, not failed. The first
+	/// line is the one to compare builds by ("fairness:").
+	/// </summary>
+	private static void Fairness(TrafficDay day)
+	{
+		List<double> stood = new List<double>(), asked = new List<double>();
+		Dictionary<int, int> through = new Dictionary<int, int>();
+		for (int li = 0; li < day.Legs.Count; li++)
+		{
+			TrafficDay.Leg l = day.Legs[li];
+			if (l.Start < 0.0)
+			{
+				continue;
+			}
+			day.LegStood.TryGetValue(li, out double s);
+			day.LegAsked.TryGetValue(li, out double a);
+			stood.Add(s);
+			asked.Add(a);
+			for (int k = 0; k < l.Path.Length; k++)
+			{
+				int n = TrafficDay.NodeAfter(l.Path, k);
+				if (n >= 0)
+				{
+					int key = n * 16 + Math.Max(0, TrafficDay.LinkIndex(n, l.Path[k].Edge));
+					through.TryGetValue(key, out int c);
+					through[key] = c + 1;
+				}
+			}
+		}
+		string Spread(List<double> v)
+		{
+			v.Sort();
+			double sum = 0.0;
+			int over60 = 0, over180 = 0;
+			foreach (double x in v)
+			{
+				sum += x;
+				over60 += x > 60.0 ? 1 : 0;
+				over180 += x > 180.0 ? 1 : 0;
+			}
+			double At(double q) => v.Count == 0 ? 0.0 : v[Math.Min(v.Count - 1, (int)(q * v.Count))];
+			return "mean " + (sum / Math.Max(1, v.Count)).ToString("0.0") + " s, median " + At(0.5).ToString("0") + ", 90% " + At(0.9).ToString("0") + ", 99% " + At(0.99).ToString("0")
+				+ ", most " + (v.Count > 0 ? v[v.Count - 1] : 0.0).ToString("0") + "; over 1 min " + over60 + ", over 3 min " + over180;
+		}
+		Console.WriteLine("  fairness: " + stood.Count + " trips; stood still per trip " + Spread(stood) + "  (reported)");
+		Console.WriteLine("    at the front of a queue per trip " + Spread(asked));
+		List<KeyValuePair<int, double>> ways = new List<KeyValuePair<int, double>>(day.StoodFor);
+		ways.Sort((x, y) => y.Value.CompareTo(x.Value));
+		for (int i = 0; i < Math.Min(10, ways.Count); i++)
+		{
+			int key = ways[i].Key;
+			if (key < 0)
+			{
+				Console.WriteLine("      past the last junction: " + (ways[i].Value / 60.0).ToString("0.0") + " min");
+				continue;
+			}
+			int n = key / 16, arm = key % 16;
+			through.TryGetValue(key, out int c);
+			Traffic.Node node = Traffic.Nodes[n];
+			Traffic.Edge inEdge = Traffic.Edges[Traffic.Links[n][arm]];
+			Traffic.Node from = Traffic.Nodes[inEdge.A == n ? inEdge.B : inEdge.A];
+			Console.WriteLine("      node " + n + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") way in " + arm + " from (" + from.X.ToString("0") + ", " + from.Z.ToString("0") + ") (" + Network.Roads[inEdge.Road].Kind + (TrafficSignals.Nodes.Contains(n) ? ", lights" : "")
+				+ "): " + (ways[i].Value / 60.0).ToString("0.0") + " min stood by " + c + " trips through it, mean " + (ways[i].Value / Math.Max(1, c)).ToString("0.0") + " s");
+		}
+	}
+
 	private static int Main(string[] args)
 	{
 		bool ok = true;
@@ -280,6 +350,8 @@ internal static partial class Program
 		{
 			TrafficSignals.BayArrowDelay = arrowDelay;
 		}
+		// TV_LEAD=1: a lead left at the bays off the trunk (their own arm's through green kept beside the arrow).
+		TrafficSignals.LeadLeft = Environment.GetEnvironmentVariable("TV_LEAD") == "1";
 		// TV_NOBAYS=1: no left-turn bays off the trunk (to measure against).
 		if (Environment.GetEnvironmentVariable("TV_NOBAYS") == "1")
 		{
@@ -770,6 +842,7 @@ internal static partial class Program
 		Console.WriteLine("  over the limit + 5%: " + day.Speeding + " steps" + (day.Speeding > 0 ? ", worst " + (100.0 * (day.MaxOver - 1.0)).ToString("0") + "% over" : "") + (day.Speeding == 0 ? "  ok" : "  FAIL"));
 		ok &= day.Speeding == 0;
 		LongStands(day);
+		Fairness(day);
 		Console.WriteLine("  pull-outs forced after a minute: " + day.PullOutsForced);
 
 		// Counts: vehicles past each edge's middle in a game day x 36, by road class, against PennDOT.
