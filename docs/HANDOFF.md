@@ -33,6 +33,9 @@ walk goes over a copy of the keys. And the ledger is now a `StrictMap` (end of `
 both runtimes, so trafficview fails the way the game does. **Watch for this class of bug:** any `foreach` over a Dictionary whose body
 can remove, add or set an entry (directly or through a call) passes trafficview and crashes the game, unless the map is a `StrictMap`.
 The other loops over Dictionaries in the traffic code were read: they collect what to do and act after the loop.
+Checked on the owner's seed (`TV_DRIVE_ONLY=1 --seed 1922639714`): the old loop with the strict map crashes trafficview with the
+game's exception; the fix runs to the end (its FAILs are the known ones: right of way refused 77, one parked car touched at
+(-1386, 5446), the physics cars' lines). Not yet tested in game.
 
 ## Next, first: the honest tests' failures (the owner, 2026-11-26: "stop cheating the traffic tests")
 
