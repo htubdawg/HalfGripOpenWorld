@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 it. Long-term goals and the owner's standing decisions are in `docs/PLAN.md`. Open in-game tests are in `docs/TESTING.md`. Finished
 research is in `docs/research/`, for reference only.
 
-Last written 2026-11-26 (night, last).
+Last written 2026-11-26 (night, after the pop-in report).
 
 ## Where things stand
 
@@ -21,7 +21,27 @@ Last written 2026-11-26 (night, last).
   them). The four-way stops and added lights (put to the owner, who said try them) are **paused** until the standing is fixed: their
   measuring switches are in (`TV_ALLWAY`, `TV_LIT`), their first numbers below.
 
-## The owner's report (2026-11-26, last): cars standing still for no reason
+## The owner's report (2026-11-26, latest): cars pop in very close on the highway at speed
+
+The owner put this ahead of the plan below ("lets try to address this before moving forward"). Log: race seed 1030564886, a weekend,
+the race from 18:11, alone (room host), driving the trunk east from about (-3250, -7000) to (-750, -9250).
+- **The day is not it.** New trafficview check (`PopIn` in `Highway.cs`, `TV_POPLIST=1` lists the cases): a player on each way's lap at
+  168 km/h, cars chosen every 0.4 s as `TrafficCars.Choose` does (moving within 1500, parked within 750, on a loaded tile): moving cars
+  are first chosen 1,028 units or more away (10% at 1,240: the loaded tiles' edge), parked ones at 686 or more, on seeds 1030564886, 1
+  and 5. Only cars out of a tunnel or setting off from a space come in nearer. Also ruled out: the hiding next to physics cars (same lane
+  only, 4 units across), the physics cars' bodies (shown the frame they are taken).
+- **The suspect: far cars (past 250 units, 75 m) drawn instanced** since 0.33.0, the day before the first "popped in too near" report;
+  raising the reach (900 to 1500) didn't help, which fits. The game's car paint is its own shader (`_EntireColor`), and a shader with no
+  instancing variant draws every instance with one transform: the far cars would be missing (or in one place) until 75 m off. Not
+  provable here (no game assets). **Done:** `TrafficFar.CanInstance`: a material is instanced only if its shader's keyword space has
+  `INSTANCING_ON`, else its far cars are drawn one by one (`Graphics.RenderMesh`, which any shader can); logged once per shader, and the
+  timings line ends `far N (part draws: X instanced, Y one by one)`. If Unity leaves built-in keywords out of the keyword space, every
+  far car is drawn one by one: right, a little dearer.
+- **Next:** the owner's log (`docs/TESTING.md` 64). If cars still pop in with far cars drawn one by one (or with `TrafficInstanced`
+  off), look at `Pose` failing (no ground under a car on a tile not yet loaded at speed: `Streamer`'s ring loads nearest first, so the
+  leading edge comes last) and the far cars' matrices (`PartsOf`).
+
+## The owner's report (2026-11-26, before): cars standing still for no reason
 
 A screenshot from the flying camera at (-2401, -5096), 14:30 on a weekend day: the T where a street from the east meets the Kingsbridge
 link south of the town (node 51 at (-2398, -5044), street from (-2185, -5070)). Two cars on the street at its mouth, cars on the link

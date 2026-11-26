@@ -899,7 +899,7 @@ namespace HalfGripOpenWorld
 			{
 				v.Seen = false;
 			}
-			drawnMoving = drawnParked = lit = drawnFar = 0;
+			drawnMoving = drawnParked = lit = drawnFar = farInstanced = farSingly = 0;
 			drawX = cx;
 			drawZ = cz;
 			long drew = Perf.Now;
@@ -962,10 +962,10 @@ namespace HalfGripOpenWorld
 					+ ((int)hour).ToString("00") + ":" + ((int)((hour - Math.Floor(hour)) * 60.0)).ToString("00") + ")"
 					+ (late.MadeLate + late.Retired > 0 ? "; late " + late.Count + " (made " + late.MadeLate + ", caught up " + late.CaughtUp + ", hidden " + late.HiddenCount + ", retired " + late.Retired + ")" : "")
 					+ PhysicsStatus()
-					+ "\n" + Perf.Text(drawnMoving, drawnParked, physical.Count);
+					+ "\n" + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText();
 				if (Perf.LogDue())
 				{
-					Mod.Log.LogInfo("Traffic timings: " + Perf.Text(drawnMoving, drawnParked, physical.Count));
+					Mod.Log.LogInfo("Traffic timings: " + Perf.Text(drawnMoving, drawnParked, physical.Count) + FarText());
 				}
 			}
 		}

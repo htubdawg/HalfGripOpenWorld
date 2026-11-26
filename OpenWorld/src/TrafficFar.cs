@@ -121,6 +121,12 @@ namespace HalfGripOpenWorld
 			drawnFar++;
 		}
 
+		/// <summary>The far cars for the overlay's and the log's timings line: how many, and their parts' draws instanced and one by one.</summary>
+		private string FarText()
+		{
+			return "; far " + drawnFar + " (part draws: " + farInstanced + " instanced, " + farSingly + " one by one)";
+		}
+
 		/// <summary>Car view <paramref name="v"/> near this frame: its body shown (if it was far).</summary>
 		private static void ShowNear(View v)
 		{
@@ -154,9 +160,17 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					if (instancing)
+					// Instanced only where the material's shader can be: one without an instancing variant draws every car of the call
+					// with one transform (all in one place, or none to be seen), and the far cars were missing until 75 m off.
+					bool together = instancing && CanInstance(m);
+					if (together)
 					{
 						m = Instanced(m);
+						farInstanced += g.Count;
+					}
+					else
+					{
+						farSingly += g.Count;
 					}
 					RenderParams rp = new RenderParams(m)
 					{
@@ -169,7 +183,7 @@ namespace HalfGripOpenWorld
 					{
 						farParts[i] = g.Cars[i] * part.Local;
 					}
-					if (instancing)
+					if (together)
 					{
 						for (int start = 0; start < g.Count; start += 1023)
 						{
@@ -204,6 +218,41 @@ namespace HalfGripOpenWorld
 			}
 			return part.Plain;
 		}
+
+		/// <summary>
+		/// Whether <paramref name="m"/>'s shader has an instancing variant (<c>INSTANCING_ON</c> in its keywords), worked out once for each
+		/// material and logged once for each shader. The owner saw traffic on the highway appear only close up, at speed (2026-11-26), after
+		/// the far cars went instanced in 0.33.0: the game's car paint is its own shader, and a shader with no instancing variant draws
+		/// every instance with the same transform. Unknown (an error) counts as no: drawn one by one, which any shader can.
+		/// </summary>
+		private bool CanInstance(Material m)
+		{
+			if (canInstance.TryGetValue(m, out bool known))
+			{
+				return known;
+			}
+			bool ok = false;
+			string shader = m.shader != null ? m.shader.name : "none";
+			try
+			{
+				ok = m.shader != null && m.shader.keywordSpace.FindKeyword("INSTANCING_ON").isValid;
+			}
+			catch (Exception e)
+			{
+				Mod.Log.LogWarning("Traffic: could not tell whether shader " + shader + " can be instanced (far cars drawn one by one): " + e.Message);
+			}
+			canInstance[m] = ok;
+			if (loggedShaders.Add(shader))
+			{
+				Mod.Info("Traffic: far cars' parts with shader " + shader + " (first material " + m.name + ") drawn " + (ok ? "instanced" : "one by one (it has no instancing variant)"));
+			}
+			return ok;
+		}
+
+		private readonly Dictionary<Material, bool> canInstance = new Dictionary<Material, bool>();
+		private readonly HashSet<string> loggedShaders = new HashSet<string>();
+		/// <summary>Far cars' part draws this frame, instanced and one by one (each car counted once per part), for the overlay.</summary>
+		private int farInstanced, farSingly;
 
 		/// <summary>A copy of <paramref name="m"/> with instancing on (one for each material, kept for the race): the game's own are left as they are.</summary>
 		private Material Instanced(Material m)

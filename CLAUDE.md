@@ -170,7 +170,8 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   ends with the host's drivers and ledger; run it after any change to `TrafficRoom`.
 - `dotnet run -c Release --project tools/trafficview [-- --seed N] [--picture out.ppm] [--closeup out.ppm [x z span hour]]` builds the
   traffic's map and reports it (households, cars, places, routes found and joined), then race N's day of traffic twice and checks it
-  (the same twice, gaps, junction boxes, speeds, counts by road class against PennDOT, the hours against TPG 9, the wrap; the parking:
+  (the same twice, gaps, junction boxes, speeds, counts by road class against PennDOT, the hours against TPG 9, the wrap; on the highway no car
+  chosen to draw first close to a player at 168 km/h but out of a tunnel or setting off (pop-in); the parking:
   no two parked cars overlapping, no space on another road's paving, in water or in a building, the cost of choosing the cars near
   the player; the traffic lights' masts: every way in has one, poles off the paving, two heads seen ahead from the stop line, spans' far poles clear, no fingerpost drawn at a lit junction (the signs' rule agreeing with the lights'); the lateness ledger; stage 3's physics cars driven by `TrafficDrive` round a pretend player: none in another, in the
   player's car or crossing in a junction box beyond a few, no jump going back on the timetable, nobody waiting for ever; contact physics' touch test: cases by hand, and no car keeping to its lane about to touch a parked one; the cars' rest on their springs against the game's suspension run over time) and can draw

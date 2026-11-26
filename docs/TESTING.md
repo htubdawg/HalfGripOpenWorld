@@ -248,3 +248,13 @@ owner has reported on it.
      that never moves.
    - **When reporting traffic:** the log now has a "Race seed: N" line near the race's start. With it, the day can be replayed exactly:
      send the log with the screenshot and the overlay's position and time showing.
+64. Far traffic on the highway (2026-11-26, `traffic-test-branch`, not released). The owner saw cars appear very close on the highway at
+   speed. The day itself always puts the cars within reach well out (trafficview: moving cars first chosen at 310 m or more), so the
+   suspect is how cars past 75 m are drawn: instanced, and the game's car paint is its own shader. Far cars are now instanced only
+   where the shader has an instancing variant, else drawn one by one.
+   - Drive the highway at full speed both ways, by day: cars ahead and oncoming should be visible from far off (300 m and more), not
+     appear close. Say if any still appear close, and roughly how close.
+   - Send `LogOutput.log` with `ShowCoords` on: the lines `Traffic: far cars' parts with shader ...` say how each shader is drawn, and
+     each `Traffic timings` line ends with `far N (part draws: X instanced, Y one by one)`.
+   - If cars still appear close: set `TrafficInstanced` to false in the config and drive the same stretch again; say whether that
+     changes it.
