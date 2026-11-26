@@ -252,3 +252,8 @@ owner has reported on it.
    close; far cars were drawn on a layer the main camera doesn't show. Recheck in towns: parked cars down a long street should be
    visible from about 230 m, not appear at 75 m. If a pop-in is ever reported again, send the log: its `Traffic pop-in:` lines and the
    timings lines' `first drawn close this race N` say where to look.
+65. Far traffic's paint and tail lights (2026-11-26, `traffic-test-branch`, not released). The owner saw far cars (past about 75 m) in
+   the wrong paint, their tail lights showing through the body as if they drove backwards, until they came near. Far cars' painted
+   bodies are now drawn one car at a time (glass, lamps, wheels still instanced). Check: a far car has the same paint as when it comes
+   near, and a car coming toward you shows no red lamps. If it still looks wrong, try `TrafficInstanced` off and say whether that
+   fixes it, and send the log (its `far cars' parts with shader` lines).

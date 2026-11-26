@@ -8,8 +8,8 @@ namespace HalfGripOpenWorld
 	/// <summary>
 	/// Part of <see cref="TrafficCars"/>: the drawn cars far off, cheap. A car past <see cref="FarAt"/> keeps its body (posed, for the
 	/// physics cars and the touch test, which start from it) but switched off, and is drawn instead with every other far car of its look
-	/// and paint in one instanced call for each of the body's parts (the meshes as they are: body, glass, lamps, wheels standing still),
-	/// with no shadows, stood on the ground by raycasts every few frames. Near cars are as before, their shadows off past
+	/// and paint in one instanced call for each of the body's parts (the meshes as they are: glass, lamps, wheels standing still; the
+	/// painted body one call a car, see <see cref="CanInstance"/>), with no shadows, stood on the ground by raycasts every few frames. Near cars are as before, their shadows off past
 	/// <see cref="ShadowAt"/>. Ten times the highway's cars puts about 25 each way within the drawn reach: as copies of the enemy car's
 	/// bodies that would be 8 or 9 draw calls each and their shadows.
 	/// </summary>
@@ -229,10 +229,12 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Whether <paramref name="m"/>'s shader has an instancing variant (<c>INSTANCING_ON</c> in its keywords), worked out once for each
-		/// material and logged once for each shader. A shader with no instancing variant would draw every instance with the same transform;
-		/// the game's own car paint (GMTK/Car Body Channel Paint) and URP Lit have one (the owner's log, 2026-11-26), so this is a guard for
-		/// other bodies. Unknown (an error) counts as no: drawn one by one, which any shader can.
+		/// Whether <paramref name="m"/> may be drawn instanced: one of Unity's own URP shaders (<c>Universal Render Pipeline/...</c>, whose
+		/// every pass takes instancing) with an instancing variant (<c>INSTANCING_ON</c> in its keywords), worked out once for each material
+		/// and logged once for each shader. The game's own car paint (GMTK/Car Body Channel Paint) has the keyword, but drawn instanced its
+		/// far cars came out in the wrong paint and the tail lights showed through the body from the front, as if the cars drove backwards
+		/// (the owner, 2026-11-26): its paint or one of its passes doesn't follow the instances, so it is drawn one by one, as a renderer
+		/// draws it (the SRP batcher keeps that cheap). Glass, lamps and wheels (URP Lit) stay instanced. Unknown (an error) counts as no.
 		/// </summary>
 		private bool CanInstance(Material m)
 		{
@@ -244,7 +246,7 @@ namespace HalfGripOpenWorld
 			string shader = m.shader != null ? m.shader.name : "none";
 			try
 			{
-				ok = m.shader != null && m.shader.keywordSpace.FindKeyword("INSTANCING_ON").isValid;
+				ok = m.shader != null && shader.StartsWith("Universal Render Pipeline/", StringComparison.Ordinal) && m.shader.keywordSpace.FindKeyword("INSTANCING_ON").isValid;
 			}
 			catch (Exception e)
 			{
@@ -253,7 +255,7 @@ namespace HalfGripOpenWorld
 			canInstance[m] = ok;
 			if (loggedShaders.Add(shader))
 			{
-				Mod.Info("Traffic: far cars' parts with shader " + shader + " (first material " + m.name + ") drawn " + (ok ? "instanced" : "one by one (it has no instancing variant)"));
+				Mod.Info("Traffic: far cars' parts with shader " + shader + " (first material " + m.name + ") drawn " + (ok ? "instanced" : "one by one (not one of URP's own shaders, or no instancing variant)"));
 			}
 			return ok;
 		}
