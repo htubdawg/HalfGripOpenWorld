@@ -4262,9 +4262,51 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0 && slanted == 0;
+		// Two paved roads alone at a place (their ends one point, no other road's end or paving there) not drawn as one road round
+		// the bend: each cut square for the other, the outside of the corner ground (Harrow, Ivybridge).
+		int unjoined = 0;
+		for (int a = 0; a < tips.Count; a++)
+		{
+			int mates = 0, mate = -1;
+			for (int b = 0; b < tips.Count; b++)
+			{
+				if (b != a && Math.Abs(tips[a].x - tips[b].x) < 0.5 && Math.Abs(tips[a].z - tips[b].z) < 0.5)
+				{
+					mates++;
+					mate = b;
+				}
+			}
+			if (mates != 1 || mate < a)
+			{
+				continue;
+			}
+			Network.Road ra = Network.Roads[tips[a].r], rb = Network.Roads[tips[mate].r];
+			bool aEnd0 = Math.Abs(ra.X[0] - tips[a].x) + Math.Abs(ra.Z[0] - tips[a].z) < 0.01, bEnd0 = Math.Abs(rb.X[0] - tips[mate].x) + Math.Abs(rb.Z[0] - tips[mate].z) < 0.01;
+			if ((aEnd0 ? ra.Joined0 : ra.Joined1) || (bEnd0 ? rb.Joined0 : rb.Joined1) || Network.Hubs.Exists(h => Math.Abs(h.X - tips[a].x) < 1.0 && Math.Abs(h.Z - tips[a].z) < 1.0))
+			{
+				continue;
+			}
+			bool other = false;
+			for (int o = 0; o < Network.Roads.Count && !other; o++)
+			{
+				Network.Road od = Network.Roads[o];
+				if (o != tips[a].r && o != tips[mate].r && !Network.Unpaved(od.Kind) && od.Kind < RoadKind.Rally && LineDistance(od, tips[a].x, tips[a].z) < od.Half + 2.0)
+				{
+					other = true;
+				}
+			}
+			if (!other)
+			{
+				unjoined++;
+				if (unjoined <= 10)
+				{
+					Console.WriteLine("  two roads alone at (" + tips[a].x.ToString("0") + ", " + tips[a].z.ToString("0") + ") not joined: " + tips[a].r + " and " + tips[mate].r);
+				}
+			}
+		}
+		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0 && slanted == 0 && unjoined == 0;
 		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole, "
-			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 5 apart, " + slanted + " lanes meeting a road more than 30 degrees off square" + (ok ? "" : "  FAIL"));
+			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 5 apart, " + slanted + " lanes meeting a road more than 30 degrees off square, " + unjoined + " pairs of roads alone at a place not joined" + (ok ? "" : "  FAIL"));
 		return ok;
 	}
 

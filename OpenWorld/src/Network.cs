@@ -215,12 +215,12 @@ namespace HalfGripOpenWorld
 		private const double JointTurn = 0.25881904510252074;
 
 		/// <summary>
-		/// The sharpest bend for two roads that are the only ones ending at a place: 120 degrees, as its cosine (Harrow's corner turns 101). Two town streets meeting
+		/// The sharpest bend for two roads that are the only ones ending at a place: 125 degrees, as its cosine (Harrow's corner turns 101, Farm 62's yard 120.5). Two town streets meeting
 		/// end to end at about a right angle (an L) were neither a joint nor a hub (three roads or more), so each was cut square for the other
 		/// and the outside of the corner was ground (Harrow, the worst hole in meshcheck's holes); drawn as one road round the bend the
 		/// corner is paved, mitred.
 		/// </summary>
-		private const double CornerTurn = -0.5;
+		private const double CornerTurn = -0.573576436351046;
 
 		/// <summary>Length of the apron round a cut, over which the road is brought to meet the other road's surface.</summary>
 		private const double Apron = 16.0;
@@ -1517,6 +1517,13 @@ namespace HalfGripOpenWorld
 					line.Reverse();
 					line = Squared(line, ref pinEnd);
 				}
+				if (kind == RoadKind.Lane || kind == RoadKind.Street)
+				{
+					line.Reverse();
+					line = Faired(line, cl.Half);
+					line.Reverse();
+					line = Faired(line, cl.Half);
+				}
 				Road road = Make(kind, name, line);
 				if (road.Count < 6)
 				{
@@ -1672,6 +1679,58 @@ namespace HalfGripOpenWorld
 			pin = end.Y;
 			return Lines.Resample(pts, Step);
 		}
+
+		/// <summary>
+		/// A line whose last stretch (where its mouth or joint is drawn: half its width, the flare and its length) kinks more than 45
+		/// degrees, its tail from about 40 back replaced by a smooth curve to the same end. An end moved onto another road's end after
+		/// routing (<see cref="ToEnd"/>) kinked a lane 60 degrees 24 from its end, so it could not join the street it carries on into
+		/// (<see cref="Hooked"/>) and the corner between them was ground (Ivybridge). The line's last point is the end.
+		/// </summary>
+		private static List<(double x, double z)> Faired(List<(double x, double z)> line, double half)
+		{
+			int last = line.Count - 1;
+			if (last < 8)
+			{
+				return line;
+			}
+			double reach = half + Flare + FlareLength + Step;
+			Unit(line[last].x - line[last - 1].x, line[last].z - line[last - 1].z, out double lx, out double lz);
+			bool kinked = false;
+			double back = 0.0;
+			for (int i = last - 1; i >= 1 && back < reach; i--)
+			{
+				back += Math.Sqrt((line[i + 1].x - line[i].x) * (line[i + 1].x - line[i].x) + (line[i + 1].z - line[i].z) * (line[i + 1].z - line[i].z));
+				Unit(line[i].x - line[i - 1].x, line[i].z - line[i - 1].z, out double px, out double pz);
+				kinked |= px * lx + pz * lz < 0.7071;
+			}
+			if (!kinked)
+			{
+				return line;
+			}
+			// From the point about FairBack back, leaving along the line there, arriving along the chord.
+			int p = last;
+			back = 0.0;
+			while (p > 1 && back < FairBack)
+			{
+				back += Math.Sqrt((line[p].x - line[p - 1].x) * (line[p].x - line[p - 1].x) + (line[p].z - line[p - 1].z) * (line[p].z - line[p - 1].z));
+				p--;
+			}
+			(double x, double z) a = line[p], e = line[last];
+			Unit(a.x - line[p - 1].x, a.z - line[p - 1].z, out double hx, out double hz);
+			double dist = Math.Sqrt((e.x - a.x) * (e.x - a.x) + (e.z - a.z) * (e.z - a.z));
+			Unit(e.x - a.x, e.z - a.z, out double cx, out double cz);
+			double c1x = a.x + hx * dist * 0.4, c1z = a.z + hz * dist * 0.4, c2x = e.x - cx * dist * 0.3, c2z = e.z - cz * dist * 0.3;
+			List<(double x, double z)> faired = line.GetRange(0, p + 1);
+			for (int m = 1; m <= 12; m++)
+			{
+				double t = m / 12.0, u = 1.0 - t;
+				faired.Add((u * u * u * a.x + 3.0 * u * u * t * c1x + 3.0 * u * t * t * c2x + t * t * t * e.x, u * u * u * a.z + 3.0 * u * u * t * c1z + 3.0 * u * t * t * c2z + t * t * t * e.z));
+			}
+			return Lines.Resample(faired, Step);
+		}
+
+		/// <summary>How far back from its end a kinked line is faired (<see cref="Faired"/>).</summary>
+		private const double FairBack = 96.0;
 
 		/// <summary>How far beyond both roads' edges a lane's end still counts as alongside the road it ends on.</summary>
 		private const double BesideGap = 10.0;
