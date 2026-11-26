@@ -258,6 +258,20 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal readonly Dictionary<int, double> LegStood = new Dictionary<int, double>(), LegAsked = new Dictionary<int, double>();
 		internal readonly Dictionary<int, double> StoodFor = new Dictionary<int, double>();
+		/// <summary>For trafficview: seconds standing cars were refused at each way in, by reason ((node * 16 + arm in) * 8 + reason: 0 its
+		/// light, 1 behind a refused car it crosses, 2 crossing a car let in, 3 no gap in the cars it gives way to, 4 no room past the box,
+		/// 5 it would stand in the box waiting at the next junction).</summary>
+		internal readonly Dictionary<int, double> RefusedFor = new Dictionary<int, double>();
+
+		private void Refusal(Request r, int reason)
+		{
+			if (r.M.V < 0.5)
+			{
+				int key = (r.Node * 16 + Math.Max(0, r.InArm)) * 8 + reason;
+				RefusedFor.TryGetValue(key, out double s);
+				RefusedFor[key] = s + Step;
+			}
+		}
 		internal int RefusedOrder, RefusedCross, RefusedRoom;
 		/// <summary>Refusals at a red light (or a green ending before the car would be through).</summary>
 		internal int RefusedSignal;
@@ -2524,6 +2538,7 @@ namespace HalfGripOpenWorld
 							// Its light is red (or amber it can stop for): it stops at the line. It holds up nobody on the
 							// other green, so it is not kept in the refused list.
 							RefusedSignal++;
+							Refusal(r, 0);
 							continue;
 						}
 						// Stopped at the line to turn right from a side road: it may go on red, giving way to everybody as with no light.
@@ -2542,6 +2557,7 @@ namespace HalfGripOpenWorld
 						{
 							ok = false;
 							RefusedOrder++;
+							Refusal(r, 1);
 							break;
 						}
 					}
@@ -2570,6 +2586,7 @@ namespace HalfGripOpenWorld
 								ok = false;
 								crossing = true;
 								RefusedCross++;
+								Refusal(r, 2);
 								break;
 							}
 							// Compatible if the other is through before this one gets there, or this one is through before the other gets
@@ -2609,6 +2626,7 @@ namespace HalfGripOpenWorld
 								ok = false;
 								crossing = true;
 								RefusedCross++;
+								Refusal(r, 2);
 								if (MainYields(node, g.InKey, g.OutKey, r.InArm, r.OutArm))
 								{
 									if (mainHeld.Add(((long)r.M.Index << 32) | (uint)node) && MainHeldNotes.Count < 12)
@@ -2627,6 +2645,7 @@ namespace HalfGripOpenWorld
 						ok = false;
 						crossing = true;
 						RefusedGap++;
+						Refusal(r, 3);
 						// Cars in the lane it joins move over for it if they can (the trunk's inner lane).
 						joining.Add(r.OutLane);
 					}
@@ -2645,6 +2664,10 @@ namespace HalfGripOpenWorld
 						stuck = !roomless && !ThroughNext(r, box, pair, out chain);
 						ok = ok && !roomless && !stuck;
 						RefusedRoom += roomless || stuck ? 1 : 0;
+						if (roomless || stuck)
+						{
+							Refusal(r, roomless ? 4 : 5);
+						}
 					}
 					// The guard against a car kept waiting for ever by the order: after a long wait the order is let go, never a car
 					// in the box and never the room on its way out.

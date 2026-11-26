@@ -273,6 +273,20 @@ internal static partial class Program
 	/// the ways into junctions where the standing is, each with the trips through it and their mean. Reported, not failed. The first
 	/// line is the one to compare builds by ("fairness:").
 	/// </summary>
+	private static string Reasons(TrafficDay day, int way)
+	{
+		string[] names = { "light", "behind", "crossing", "gap", "room", "next" };
+		string t = "";
+		for (int r = 0; r < names.Length; r++)
+		{
+			if (day.RefusedFor.TryGetValue(way * 8 + r, out double sec) && sec >= 30.0)
+			{
+				t += (t.Length > 0 ? ", " : "") + names[r] + " " + (sec / 60.0).ToString("0.0");
+			}
+		}
+		return t.Length > 0 ? t + " min" : "-";
+	}
+
 	private static void Fairness(TrafficDay day)
 	{
 		List<double> stood = new List<double>(), asked = new List<double>();
@@ -332,7 +346,7 @@ internal static partial class Program
 			Traffic.Edge inEdge = Traffic.Edges[Traffic.Links[n][arm]];
 			Traffic.Node from = Traffic.Nodes[inEdge.A == n ? inEdge.B : inEdge.A];
 			Console.WriteLine("      node " + n + " at (" + node.X.ToString("0") + ", " + node.Z.ToString("0") + ") way in " + arm + " from (" + from.X.ToString("0") + ", " + from.Z.ToString("0") + ") (" + Network.Roads[inEdge.Road].Kind + (TrafficSignals.Nodes.Contains(n) ? ", lights" : "")
-				+ "): " + (ways[i].Value / 60.0).ToString("0.0") + " min stood by " + c + " trips through it, mean " + (ways[i].Value / Math.Max(1, c)).ToString("0.0") + " s");
+				+ "): " + (ways[i].Value / 60.0).ToString("0.0") + " min stood by " + c + " trips through it, mean " + (ways[i].Value / Math.Max(1, c)).ToString("0.0") + " s; refused at its front: " + Reasons(day, key));
 		}
 	}
 
@@ -352,6 +366,15 @@ internal static partial class Program
 		}
 		// TV_LEAD=1: a lead left at the bays off the trunk (their own arm's through green kept beside the arrow).
 		TrafficSignals.LeadLeft = Environment.GetEnvironmentVariable("TV_LEAD") == "1";
+		// TV_UNLIT="x,z;x,z": no light at the junctions there. TV_MAINMIN, TV_SIDEMIN, TV_SIDEMAX: the lights' greens (s).
+		foreach (string pl in (Environment.GetEnvironmentVariable("TV_UNLIT") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+		{
+			string[] xz = pl.Split(',');
+			TrafficSignals.Unlit.Add((double.Parse(xz[0]), double.Parse(xz[1])));
+		}
+		if (double.TryParse(Environment.GetEnvironmentVariable("TV_MAINMIN"), out double mainMin)) TrafficSignals.MainMin = mainMin;
+		if (double.TryParse(Environment.GetEnvironmentVariable("TV_SIDEMIN"), out double sideMin)) TrafficSignals.SideMin = sideMin;
+		if (double.TryParse(Environment.GetEnvironmentVariable("TV_SIDEMAX"), out double sideMax)) TrafficSignals.SideMax = sideMax;
 		// TV_NOBAYS=1: no left-turn bays off the trunk (to measure against).
 		if (Environment.GetEnvironmentVariable("TV_NOBAYS") == "1")
 		{

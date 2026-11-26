@@ -28,7 +28,11 @@ namespace HalfGripOpenWorld
 
 		/// <summary>Seconds: the main line's least green before a waiting side car turns it, the side's least and most green, how long
 		/// with no side car coming ends the side's green, amber, and all red after each amber.</summary>
-		internal const double MainMin = 22.0, SideMin = 7.0, SideMax = 28.0, SideGapOut = 2.5, AmberTime = 3.5, AllRed = 2.0;
+		internal static double MainMin = 22.0, SideMin = 7.0, SideMax = 28.0;
+		internal const double SideGapOut = 2.5, AmberTime = 3.5, AllRed = 2.0;
+
+		/// <summary>Junctions near these places get no light whatever their roads (trafficview TV_UNLIT, to measure; empty in the game).</summary>
+		internal static readonly List<(double X, double Z)> Unlit = new List<(double, double)>();
 
 		/// <summary>Seconds: the left arrow's least and most green (the bays hold about five cars each).</summary>
 		internal const double ArrowMin = 6.0, ArrowMax = 20.0;
@@ -106,6 +110,11 @@ namespace HalfGripOpenWorld
 					}
 				}
 				if (main > RoadKind.Primary || side > RoadKind.Secondary)
+				{
+					continue;
+				}
+				Traffic.Node here = Traffic.Nodes[node];
+				if (Unlit.Exists(p => (p.X - here.X) * (p.X - here.X) + (p.Z - here.Z) * (p.Z - here.Z) < 40.0 * 40.0))
 				{
 					continue;
 				}
