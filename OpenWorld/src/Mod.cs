@@ -32,6 +32,9 @@ namespace HalfGripOpenWorld
 		internal static ConfigEntry<bool> FarSkyline;
 		internal static ConfigEntry<bool> ShowDeer;
 		internal static ConfigEntry<float> DeerAmount;
+		internal static ConfigEntry<bool> ShowTraffic;
+		internal static ModKey FollowCarKey;
+		internal static ConfigEntry<bool> TrafficMap;
 		internal static ConfigEntry<bool> Teleport;
 		internal static ModKey TeleportKey;
 		internal static ConfigEntry<bool> ShowCoords;
@@ -67,9 +70,11 @@ namespace HalfGripOpenWorld
 			FarSkyline = ctx.Config.Bind("World", "FarSkyline", true, "With FarView on, paint the land past FarViewDistance into the sky, so on a clear day you see across the whole world (mountains 9 km off as hazy shapes on the horizon) and the fog no longer closes at the far view's edge. Off, it does, as before 0.20.0. Only changes your own view.");
 			ShowDeer = ctx.Config.Bind("World", "Deer", true, "Draw the white-tailed deer: small groups on the edges of woods and fields by the country lanes, grazing on the verges and now and then crossing the road one at a time, most out at dawn and dusk. Where they are is drawn from the race's seed, so in a room everybody has them in the same places. They notice a car coming and bolt, into cover or over the road in front of it; a shot or one of them killed sends them off too. Hitting one damages the car (more the faster) and kills it, and a deer can be shot. In a room everybody sees the same deer do the same thing, and a deer killed by anybody lies dead for everybody. Off, you see none and cannot hit or startle any.");
 			DeerAmount = ctx.Config.Bind("World", "DeerAmount", 1f, new ConfigDescription("How many deer groups there are, for trying out what feels right: 1 is the standard (160 groups, about 540 deer, over the whole country), 0.5 half, 0 none; above 1 there are only so many places deer can live, so 2 gives about a third more (about 215 groups) and 4 about half more (about 245). Only alone: in a Multiplayer room it is always 1, so everybody has the same deer. Takes effect at the next race.", new AcceptableValueRange<float>(0f, 4f)));
+			ShowTraffic = ctx.Config.Bind("World", "Traffic", true, "Draw the traffic: the households' cars driving to work, the shops and friends and back on plans worked out from the race's seed, and the cars passing through on the highway, every one simulated all race long wherever it is, so a queue you leave behind is still there when you come back. Parked on their drives, at the kerb and in the car parks between trips. Busiest at the evening rush, quiet at night. Off, you see none (they are still simulated).");
 			ShiftDistance = ctx.Config.Bind("World", "ShiftDistance", 1000f, new ConfigDescription("When the car is this many game units (1000 is about 300 m) from the scene's origin, the whole scene is moved back so the car is near 0,0 again. Smaller keeps the physics more precise and shifts more often. Only changes your own game.", new AcceptableValueRange<float>(250f, 4000f)));
 			Teleport = ctx.Config.Bind("Debug", "Teleport", false, "Let the Teleport key (Settings > Controls, F7 unless rebound) jump the car to the next of the world's key places (the spawn, the towns, the retail park, the villages, a filling station, the mountain pass, the circuits), and Shift with it to the one before, to test far parts of the world. Works in a Multiplayer room too, so it is off by default.");
-			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset, the tile count and the sky (the time, the rain, cloud and wetness at the car, the grip, the nearest storm) in the top left corner.");
+			ShowCoords = ctx.Config.Bind("Debug", "ShowCoords", false, "Show the car's world position, the origin offset, the tile count, the sky (the time, the rain, cloud and wetness at the car, the grip, the nearest storm) and the traffic (cars driving and parked, what it costs) in the top left corner. With it on, the Follow traffic car key (Settings > Controls, F11 unless rebound) picks the moving car nearest you (again: the next nearest; Shift: none) and shows its day and where it is however far it goes.");
+			TrafficMap = ctx.Config.Bind("Debug", "TrafficMap", false, "With ShowCoords on, show every traffic car in the world on a map in the top right corner, as the simulation has it however far off: moving cars green, cars standing in a queue or held at a junction red, those simulated in detail round you white (pink standing), you a yellow cross.");
 			WeatherSkip = ctx.Config.Bind("Debug", "WeatherSkip", false, "Let the Weather skip key (Settings > Controls, F5 unless rebound) move your own sky 5 minutes on (Shift: back), and the Weather fast key (F2 unless rebound) turn on and off a 10x speed for it: the time of day (an hour is 100 seconds) and the storms, to test them. Only your own view: in a Multiplayer room your sky is then out of step with the others' until the next race.");
 			Verbose = ctx.Config.Bind("Debug", "VerboseLog", false, "Write the detailed log (each origin shift, tile timings) to the BepInEx log. Off, only the world's build, warnings and errors are logged.");
 
@@ -121,6 +126,11 @@ namespace HalfGripOpenWorld
 			TeleportKey = ctx.Keys.Add(KeyCode.F7, "Teleport (Open World)", Controls.Section.Race, () => Teleport.Value);
 			WeatherSkipKey = ctx.Keys.Add(KeyCode.F5, "Weather skip (Open World)", Controls.Section.Race, () => WeatherSkip.Value);
 			WeatherFastKey = ctx.Keys.Add(KeyCode.F2, "Weather fast (Open World)", Controls.Section.Race, () => WeatherSkip.Value);
+			FollowCarKey = ctx.Keys.Add(KeyCode.F11, "Follow traffic car (Open World)", Controls.Section.Race, () => ShowCoords.Value);
+			if (FollowCarKey == null)
+			{
+				Log.LogWarning("The Follow traffic car key's default (F11) is taken: rebind it in Settings > Controls");
+			}
 			ctx.OnUnload(MapEntry.Remove);
 			ctx.PatchAll();
 		}

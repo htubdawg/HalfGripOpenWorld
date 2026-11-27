@@ -149,3 +149,19 @@ owner has reported on it.
      trunk's lights a green left arrow (about 10 s) between them; Kingsbridge's bay a flashing yellow arrow on the main road's green.
      Neighbouring lights are not in step. In a room both players see each light the same (within a second or so).
    - The highway as before: grass median, left-turn bays, K-rail, the wrap; Kingsbridge's widened road and its bay.
+70. Phase 5 of the traffic rework, first part (`traffic-rework-branch`, not released; alone only, not in a room yet).
+   - A second or two after the start the log says `Traffic: <n> cars on a weekday (or weekend day) from the race's seed ..., from hh:mm;
+     plans ...; built in ... ms ...; parking: ... cars with their own space at home, ... at the kerb, ... round the back`. No hitch at the
+     start (it is built on a worker).
+   - Cars drive the roads near you: into and out of the towns, through the lights, on the highway's two lanes each way. Say if a car
+     drives through another, stands in a junction, jumps, pops in or out within sight, or drives off the road.
+   - Parked cars on drive pads, at the kerb on town streets and in the shops' and the retail park's bays. A car leaving slides from its
+     spot onto the road over a couple of seconds, one arriving slides into its spot (a stand-in for pulling in and out: say how it looks).
+   - Stop your car in a lane: the cars behind stop behind you and queue; at a junction they don't drive into the box if you block the
+     way out. Drive off: the queue moves on. Come back a minute later: say if what you see fits (the queue gone or still clearing).
+   - Hitting a traffic car is like hitting a wall for now (no physics cars yet).
+   - `ShowCoords` on: the overlay's `traffic:` line (the hour, cars driving and parked, drawn, the simulation's and the drawing's ms). Say
+     the frame rate in Kingsbridge's centre at the evening rush and on the highway against before. F11 picks the nearest moving car:
+     follow it for a while and say if its day (the stops in brackets is where it is going) matches what it does. With `TrafficMap` on as
+     well, the map at the top right shows every car in the world; say if the dots move and queues show red at the lights.
+

@@ -1378,6 +1378,7 @@ namespace HalfGripOpenWorld
 					+ "tiles " + tiles.Count + " loaded, " + working.Count + " in work"
 					+ (Sky.Status != null ? "\n" + Sky.Status : "")
 					+ (Deer.Status != null ? "\n" + Deer.Status : "")
+					+ (TrafficCars.Status != null ? "\n" + TrafficCars.Status : "")
 					+ (FarView.Showing && FarView.Status != null ? "\n" + FarView.Status : "")
 					+ (FramePerf.Text() is string frame ? "\n" + frame : "");
 				// As tall as the text is (the deer's and the traffic's lines wrap), so nothing is cut off at the bottom.

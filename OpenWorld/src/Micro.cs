@@ -25,7 +25,7 @@ namespace HalfGripOpenWorld
 	/// thinking the other waits. No Unity types: <c>tools/trafficsim</c> runs it headless round pretend players; the game will drive its
 	/// nearest cars as physics cars from the same agents.</para>
 	/// </summary>
-	internal sealed class Micro
+	internal sealed partial class Micro
 	{
 		// ---- the figures ---------------------------------------------------------------------------------------------------
 
@@ -585,6 +585,7 @@ namespace HalfGripOpenWorld
 			Spawn();
 			for (int s = 0; s < Subs; s++)
 			{
+				LayBodies();
 				Sub();
 				T += Dt;
 				After?.Invoke(this);
@@ -1019,6 +1020,7 @@ namespace HalfGripOpenWorld
 						Consider(room, 0.0, -1);
 					}
 				}
+				BodiesAhead(lane, -1, a.X, 0.0, Consider);
 				if (Ahead(onLane[lane], i, a.X, out int j))
 				{
 					Consider(Agents[j].X - Traffic.CarLength - a.X, Agents[j].V, j);
@@ -1046,6 +1048,7 @@ namespace HalfGripOpenWorld
 				{
 					Consider(Agents[j].X - Traffic.CarLength - a.X, Agents[j].V, j);
 				}
+				BodiesAhead(-1, c, a.X, 0.0, Consider);
 				base0 = -a.X;
 				k = -1;
 				onIt = true;
@@ -1054,6 +1057,10 @@ namespace HalfGripOpenWorld
 			for (int hop = 0; hop < 6 && base0 < Look && c >= 0; hop++)
 			{
 				Siblings(c, -base0, i, Consider);
+				if (!onIt)
+				{
+					BodiesAhead(-1, c, 0.0, base0, Consider);
+				}
 				if (!onIt && onConn[c].Count > 0)
 				{
 					int f = onConn[c][0];
@@ -1074,6 +1081,7 @@ namespace HalfGripOpenWorld
 				base0 += cn.Length;
 				int to = cn.To;
 				double entry = Meso.JoinAt(c);
+				BodiesAhead(to, -1, entry, base0, Consider);
 				if (!LaneMicro[to])
 				{
 					if (MesoTail(to, out double along, out double vt))
@@ -1690,6 +1698,10 @@ namespace HalfGripOpenWorld
 			}
 			// Its front at the connector's end has its middle at the lane's start: half a car on, it is clear of the box.
 			double need = Driver.Gap0 + Lanes.Axle + (going + extra) * Meso.Jam;
+			if (!BodiesLeaveRoom(c, to, entry, need, Gone))
+			{
+				return false;
+			}
 			if (LaneMicro[to])
 			{
 				if (onLane[to].Count == 0)

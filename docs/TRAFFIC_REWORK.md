@@ -5,7 +5,8 @@ replaces the traffic of `traffic-test-branch` rather than repairing it. Revised 
 Phases 0 to 3 are done (the lane graph and conflict areas, the population and its plans, the meso headless: see `docs/HANDOFF.md`);
 phase 4 is built (the micro level and the boundary, every fault check passing on 64 seeds, trips taking the same time in both levels
 to 1%);
-the rest is not built yet.
+phase 5's first part is built (the live traffic drawn in the game alone, parked cars, the player's car seen by the drivers, the overlay,
+the follow-car key and the map; see §6); the rest is not built yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
 view. Traffic must be realistic and interactive.
@@ -271,6 +272,17 @@ network.
    boundary, physics cars stood in by the driver; consistency against meso (trips to 1%); all the fault checks green on 64 seeds.
 5. **In game, single player.** Far cars drawn from meso, near ones micro, the nearest physics; parked cars from the lots' state; the
    map overlay and the follow-car key; frame cost against the 130 to 140 fps goal.
+   First part built (2026-11-27, not yet run in the game): `TrafficLive` builds the plans, the meso and the micro on a worker at the
+   race's start hour (its first step round the spawn, so the junctions there turn micro before anything is drawn: the micro placed a car
+   17 units off where the meso drew it when they flipped in sight) and steps them on the race clock on the main thread (about 2 ms a
+   second of the race headless, half a millisecond a step); every car drawn smoothly between its last two steps' poses, a step behind.
+   `TrafficCars` draws the nearest 240 (the old drawing carried over: the enemy car's bodies painted, lamps, headlights, a kinematic
+   box each). `TrafficParking` stands parked cars in their spots (the old arithmetic; given out as the meso parks them); a car pulling
+   out or in is slid between its spot and the road over 2.5 s, a stand-in. The player's car is a body the micro's drivers see
+   (`MicroBodies`): they stop and queue behind it and keep out of a box it blocks or whose way out it blocks; trafficsim checks a block
+   of two minutes at node 6 (no car into it, a queue, cleared after). Debug: the overlay's line, the follow-car key (F11), the map
+   (`TrafficMap`). Still to do: physics cars for the nearest, pulling in and out driven rather than slid, the day's end (the
+   simulation stops at 03:00), the frame cost measured in the game.
 6. **Rooms.** Host meso, link events, ownership, stand-ins; `trafficsim` room checks.
 7. **Density and polish.** Full survey traffic, more through traffic on the highway (goal: ten times), lamps at night.
 

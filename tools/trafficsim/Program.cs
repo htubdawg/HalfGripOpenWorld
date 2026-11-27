@@ -60,9 +60,22 @@ internal static partial class Program
 			Geometry();
 			return 0;
 		}
+		if (Environment.GetEnvironmentVariable("TRAFFICSIM_GAME") == "only")
+		{
+			for (int seed = first; seed < first + seeds; seed++)
+			{
+				GameDay(seed, 10.0);
+			}
+			Console.WriteLine(failures == 0 ? "all checks pass" : failures + " failures; failing: " + string.Join(", ", failed));
+			return failures == 0 ? 0 : 1;
+		}
 		for (int seed = first; seed < first + seeds; seed++)
 		{
 			Schedules s = Schedules.Build(seed);
+			if (seed == first && Environment.GetEnvironmentVariable("TRAFFICSIM_GAME") != "0")
+			{
+				GameDay(seed, 10.0);
+			}
 			Console.WriteLine("seed " + seed + ": " + s.Report() + "; " + s.Routes + " routes, " + s.Unrouted + " unrouted, " + s.Late + " tours late for a car, "
 				+ s.Dropped + " given up");
 			Checks(s);
