@@ -10,7 +10,7 @@ using HalfGripOpenWorld;
 // simulated day against the surveys (hours, counts by road), the delays and the worst queues. Phase 4 (MicroDay.cs): the same day with the
 // micro level round pretend players, every visible fault failing it, and the micro against the meso (consistency).
 //   dotnet run -c Release --project tools/trafficsim -- [first seed] [seeds]
-// Builds the world and the traffic's map once (and checks 2 race seeds in 7 fall on a weekend), then the plans (Schedules.cs) for each race seed (16 from 1 by default) and checks:
+// Builds the world and the traffic's map once (and checks 2 race seeds in 7 fall on a weekend), then the plans (Schedules.cs) for each race seed (32 from 1 by default) and checks:
 // the plans the same built twice; every household's car there and no other; each car's day starting and ending at its home, its stops
 // wanted in order, every leg's route joined up from the stop it leaves to the stop it reaches; every car home before the next day on
 // empty roads; through cars on the trunk; the share of the day spent driving the survey's (Traffic.DrivingShare). For the first seed
@@ -39,7 +39,7 @@ internal static partial class Program
 	private static int Main(string[] args)
 	{
 		int first = args.Length > 0 ? int.Parse(args[0]) : 1;
-		int seeds = args.Length > 1 ? int.Parse(args[1]) : 16;
+		int seeds = args.Length > 1 ? int.Parse(args[1]) : 32;
 		var watch = System.Diagnostics.Stopwatch.StartNew();
 		Network.Ensure();
 		Console.WriteLine("layout built in " + watch.ElapsedMilliseconds + " ms");

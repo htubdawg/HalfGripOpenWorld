@@ -167,19 +167,19 @@ floating origin. Current release: see `OpenWorld/mod.json`.
   one group's reaction and kills of one deer from several machines at once, a late joiner, twenty players, stale messages, alone)
   and checks every machine ends with the host's reactions and kills; run it after any change to `DeerRoom`.
 - `dotnet run -c Release --project tools/trafficsim -- [first seed] [seeds]` is the traffic rework's headless test, grown phase by phase
-  (`docs/TRAFFIC_REWORK.md`, section 5). Phase 2: each race's plans over 16 seeds (repeatable, every household's car once, days from home
+  (`docs/TRAFFIC_REWORK.md`, section 5). Phase 2: each race's plans over 32 seeds (repeatable, every household's car once, days from home
   to home with stops in order and routes joined up, home by the day's end, through cars on the trunk, the survey's driving share, 2 seeds
   in 7 a weekend) and, for the first seed, the demand against the surveys (trips and cars moving by hour, purposes, trip lengths, a day's
   count by road class, parking, the state at the race's start). Phase 3: `Meso` over each seed's whole day from 03:00 (and the first
   seed's from its race's start hour): every car in one place every 10 s (conservation), no car held over 300 s at a lane's end
   (deadlock), every leg routed, every trip made and every car home by the day's end, repeatable; the simulated day against the surveys,
   delays per trip and the worst queues. Phase 4: the same day with `Micro` round three pretend players (one standing at node 6, two
-  driving the lane graph at random) on all 16 seeds, every visible fault failing it: two micro cars' bodies overlapping, two cars in one
+  driving the lane graph at random) on all 32 seeds, every visible fault failing it: two micro cars' bodies overlapping, two cars in one
   crossing, merging or head-on area past their lines together, a car standing in a box, standing over 10 s with nothing holding it (its
   driver's reasons followed car to car) or round a loop, held past 300 s, changing level in sight, moving further in a step than its speed
   takes it, and conservation across both levels every 10 s; and, for the first seed, the day with every junction micro against the meso
   alone (consistency; `TRAFFICSIM_EVERYWHERE=0` skips it). `TRAFFICSIM_FAULTS=<file>` writes every fault, `TRAFFICSIM_TRACE=<cars>` with
-  `TRAFFICSIM_TRACE_AT=<from>,<to>` (day seconds) prints those cars each micro step (meso ones too), `TRAFFICSIM_WORST=1` lists the lanes micro
+  `TRAFFICSIM_TRACE_AT=<from>,<to>` (day seconds from 03:00, a day 2,400 of them, 100 to the hour) prints those cars each micro step (meso ones too), `TRAFFICSIM_WORST=1` lists the lanes micro
   loses most on against the meso, `TRAFFICSIM_WHY=<lane>` prints what holds the micro cars standing on a lane. Run it after any change to `Traffic`, `Schedules`,
   `Meso`, `Micro`, `Driver`, `Lanes`, `Conflicts` or the lights. The old `tools/trafficview` went with the old traffic.
 - `dotnet run -c Release --project tools/stormview -- out.ppm [room seed] [minutes]` checks the storms (rain cover over 20 seeds,

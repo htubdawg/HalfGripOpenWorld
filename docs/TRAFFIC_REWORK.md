@@ -3,7 +3,8 @@
 Written 2026-11-26 on `traffic-rework-branch`, forked from `deer-test-branch` (Open World 0.31.1, which has no traffic code). It
 replaces the traffic of `traffic-test-branch` rather than repairing it. Revised the same day after the owner's answers (section 7).
 Phases 0 to 3 are done (the lane graph and conflict areas, the population and its plans, the meso headless: see `docs/HANDOFF.md`);
-phase 4 is built (the micro level and the boundary, every fault check passing on 16 seeds) but for tuning the meso to it (consistency);
+phase 4 is built (the micro level and the boundary, every fault check passing on 32 seeds) but for what is left of tuning the meso to it
+(consistency);
 the rest is not built yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
@@ -114,6 +115,12 @@ the mesoscopic network and is still there when the player comes back.
   along the same runs; where it merges into a stream it wants micro's gap (room for the car behind to slow to its speed and keep its
   time gap), and it looks for cars coming along the lane in and, where that is under 600, through the junction before. On a carriageway
   of one through lane no car passes another in its queue. The plans time each leg the same way (`Meso.LegTime`).
+- No catching the car ahead through a junction (`Meso.Behind`): a car going onto a connector is no nearer than a standing queue's
+  spacing behind the last car gone from its lane onto the same connector, or onto another while the two still share the road (their
+  diverging area), anywhere from the stop line to where they part. It comes on slower if that does it, else it waits. So the head of
+  a queue at a green really starts from standing, the next car follows it out about 2.6 s later rather than at the 2 s headway, and a
+  car turning off slowly holds up the one behind it going on, as the micro has them (the micro, taking a junction over, finds the cars
+  in its boxes where the meso has them: a fast car overtaking a slow one inside a shared stretch overlapped it there).
 
 ### Microscopic level, near each player (`Micro.cs`, `Driver.cs`)
 - An area round each player (about the drawn distance) where cars are lane agents: IDM following, gap acceptance at conflict areas,
@@ -149,7 +156,15 @@ the mesoscopic network and is still there when the player comes back.
     isn't coming. Too close to stop, it commits; committed, it still stops if the room or the areas go and it can still stop firmly.
     Two junctions whose boxes touch with a lane too short to stand on between them are decided as one at the first line. Standoffs: the
     one standing longer goes. A car waiting 15 s to merge into a stream is let in by the next car if it can slow comfortably (a zip
-    merge). Cars are decided one by one in index order, each seeing those already decided this step.
+    merge). Cars are decided one by one in index order, each seeing those already decided this step. A car committed through a
+    junction whose box runs straight on into the next is firm at the next too (others give way to it there), on its lane or its
+    connector.
+  - **Pulling out.** A gap on the lane (no car behind made to brake hard, none ahead within a car), clear of the cars in the box of the
+    junction the lane starts at (now or on their way through it), and not taking the room past that box that cars committed through
+    it count on. A car waiting more than 15 s to pull out (a drive at the head of a queue that hardly empties) is let out: the cars
+    coming up behind stop short of it if they can do so comfortably. A car coming in off a meso junction where a micro car already
+    is (one came on beside it and moved over in front) comes in a standing gap behind it, not later (the two can run side by side the
+    length of the road).
   - **Lanes.** Changes where the way on needs another lane (MOBIL's safety, finished before the stop line; a bay that opens at the junction
     behind is turned straight into), through cars passing on the trunk (MOBIL, keeping right); one that can't get over goes another way.
     A lane closer than a car's width to the one beside it (a bay's taper) counts as both.
@@ -188,7 +203,7 @@ drawn masts and heads (`SignalPoles`, `SignalMesh`, `SignalHeads`) carried over.
 
 ## 5. Tests (`tools/trafficsim` rewritten; no allowances)
 
-The game's own code headless (not a copy), over 16 seeds, a full day, pretend players driving set routes.
+The game's own code headless (not a copy), over 32 seeds, a full day, pretend players driving set routes.
 
 Fails on any visible fault:
 - two cars overlapping
@@ -222,7 +237,7 @@ network.
 3. **Meso, headless (done 2026-11-27).** The whole day, all cars, with lights and parking. Conservation, the surveys, the worst queues,
    deadlocks; build and run time.
 4. **Micro and the boundary, headless (built 2026-11-27; consistency to tune).** `Driver`, micro areas round pretend players, the
-   boundary, physics cars stood in by the driver; consistency against meso; all the fault checks green on 16 seeds.
+   boundary, physics cars stood in by the driver; consistency against meso; all the fault checks green on 32 seeds.
 5. **In game, single player.** Far cars drawn from meso, near ones micro, the nearest physics; parked cars from the lots' state; the
    map overlay and the follow-car key; frame cost against the 130 to 140 fps goal.
 6. **Rooms.** Host meso, link events, ownership, stand-ins; `trafficsim` room checks.
