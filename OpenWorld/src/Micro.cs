@@ -1484,7 +1484,9 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				double tIn = myD >= my0 ? 0.0 : Driver.Soonest(my0 - myD, a.V, cn.Limit);
-				double tOut = Driver.Soonest(my1 - myD, a.V, cn.Limit) + 0.5;
+				// Clear of it no sooner than at the turn's limit: a car faster now (coming off a faster connector, two junctions decided as one)
+				// slows to it before it gets there.
+				double tOut = Driver.Soonest(my1 - myD, Math.Min(a.V, cn.Limit), cn.Limit) + 0.5;
 				int mine = meA ? Conflicts.YieldA : Conflicts.YieldB;
 				Lanes.Connector oc = Lanes.Connectors[o];
 				Coming(o, i, o0);
@@ -1497,10 +1499,11 @@ namespace HalfGripOpenWorld
 					}
 					bool inside = dj >= o0;
 					// Committed, it is firm while it can move (one committed but held at its line by the queue ahead isn't coming yet).
-					bool free = !Held(b);
+					bool free = !Held(j, b);
 					bool firm = inside || on || (direct && b.Committed && free);
 					// Standing, it comes only if it has decided to and nothing (a queue, a lane change) holds it.
-					bool goes = firm || (b.V >= Rolling && free) || (direct && b.Go && free);
+					// Standing at a red that has just turned green, it will go (it hasn't decided again yet: cars decide in turn).
+					bool goes = firm || (b.V >= Rolling && free) || (direct && (b.Go || b.Reason == Why.Light) && free);
 					if (!goes)
 					{
 						continue;
@@ -1511,7 +1514,8 @@ namespace HalfGripOpenWorld
 						continue;
 					}
 					double tInJ = inside ? 0.0 : Driver.Soonest(o0 - dj, b.V, oc.Limit);
-					double tOutJ = b.V >= 1.0 ? (o1 - dj) / b.V + 0.5 : Driver.Soonest(o1 - dj, b.V, oc.Limit) + 1.0;
+					double vOutJ = Math.Min(b.V, oc.Limit);
+					double tOutJ = vOutJ >= 1.0 ? (o1 - dj) / vOutJ + 0.5 : Driver.Soonest(o1 - dj, b.V, oc.Limit) + 1.0;
 					double behind = Meso.Margin;
 					if (area.Kind == Conflicts.Merging)
 					{
@@ -1582,7 +1586,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether car <paramref name="b"/> stands held by something not moving (a light, a car standing ahead, no room, a gap it waits for): it isn't coming yet.</summary>
-		private bool Held(Agent b, int depth = 0)
+		private bool Held(int j, Agent b, int depth = 0)
 		{
 			if (b.V >= Rolling)
 			{
@@ -1594,9 +1598,25 @@ namespace HalfGripOpenWorld
 				case Why.Bend:
 				case Why.Stop:
 					return false;
+				case Why.Light:
+					// Its reason is from its last decision: the light may have turned green since (each car deciding in turn at the change
+					// would otherwise take the others as still held, and go together).
+					if (b.Conn < 0)
+					{
+						int nc = NextConn(j, b.Lane);
+						if (nc >= 0)
+						{
+							Lanes.Connector bc = Lanes.Connectors[nc];
+							if (bc.Turn == Lanes.Jump || !TrafficSignals.Has(bc.Node) || TrafficSignals.State(bc.Node, bc.InArm, bc.OutArm, T - M.RaceStart) == TrafficSignals.Green)
+							{
+								return false;
+							}
+						}
+					}
+					return true;
 				case Why.Leader:
 					Agent lead = b.ReasonCar < 0 ? null : Agents[b.ReasonCar];
-					if (lead != null && lead.V < Rolling && lead.Conn < 0 && depth < 8 && Held(lead, depth + 1))
+					if (lead != null && lead.V < Rolling && lead.Conn < 0 && depth < 8 && Held(b.ReasonCar, lead, depth + 1))
 					{
 						// Behind a car standing on its lane held itself (at its line, by a light or giving way): it can't come before that one
 						// goes, whatever it has decided about its own junction.
@@ -2410,7 +2430,13 @@ namespace HalfGripOpenWorld
 				double x = Math.Min(x0, StopLine(phys)), sp = sp0;
 				if (phys == lastLane)
 				{
-					x = Math.Min(x, lastX - Meso.Jam);
+					// A standing gap behind the car ahead and half a time gap at its speed: the meso spaces cars in time, not by their
+					// bodies, so two cars come onto one lane from two (out of the wrap's tunnels, a merge) can be side by side in its queue.
+					x = Math.Min(x, lastX - Meso.Jam - Math.Min(sp, lastV + 10.0) * Driver.TimeGap * 0.5);
+					if (x < Meso.StartOf(phys))
+					{
+						x = Math.Min(Meso.StartOf(phys), lastX - Meso.Jam);
+					}
 					// No faster than it can stop behind the car ahead (the meso has cars moving at the lane's speed up to its queue).
 					double room = Math.Max(0.0, lastX - Traffic.CarLength - x - Driver.Gap0);
 					sp = Math.Min(sp, Math.Sqrt(lastV * lastV + 2.0 * Driver.Brake * room));
