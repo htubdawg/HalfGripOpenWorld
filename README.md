@@ -67,8 +67,8 @@ mod for [HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools). Version **
 
 ## Install
 
-You need Windows and the game on Steam. The mod launcher from [HalfGripMods](https://github.com/4l3x4nd3r0/HalfGripMods) does
-everything: it installs BepInEx and HalfGripTools, and adds this mod from its GitHub link.
+You need the game on Steam. On Windows, the mod launcher from [HalfGripMods](https://github.com/4l3x4nd3r0/HalfGripMods) does
+everything: it installs BepInEx and HalfGripTools, and adds this mod from its GitHub link. On Linux, see [Linux](#linux) below.
 
 1. Download `HalfGrip-Mods-Installer.exe` from the [HalfGripMods releases](https://github.com/4l3x4nd3r0/HalfGripMods/releases)
    (the newest release called "installer") and double-click it. If Windows says "Windows protected your PC", press **More info**,
@@ -84,6 +84,30 @@ needs the same version). To stop playing it, switch it off in the game's mod man
 
 If something does not work, `BepInEx\LogOutput.log` in the game folder should have `Loaded Open World 0.32.1` and
 `Open World map made from TokyoNeon`.
+
+### Linux
+
+The game's native Linux build (what Steam runs on Linux unless Proton is switched on) takes the mod as it is: HalfGripTools and the
+mods are plain .NET, so only BepInEx changes, to its Linux build. The launcher is Windows only, so a script does its job:
+
+1. Close the game. Download [`tools/install-linux.sh`](tools/install-linux.sh) and run it:
+   `bash install-linux.sh --multiplayer` (leave out `--multiplayer` to skip the Multiplayer mod). It finds the game in the Steam
+   libraries (or give the game folder after the options), checks the downloads' checksums and installs BepInEx 5.4.23.5 for
+   Linux, the newest HalfGripTools and the newest Open World.
+2. In Steam, right-click Half Grip Demo > **Properties** > **General** > **Launch Options**, and paste `./run_bepinex.sh %command%`.
+3. Start the game from Steam.
+
+To update, run the script again (with `--multiplayer` to update that too; settings are kept). To play without mods, clear the
+launch option. The log is `BepInEx/LogOutput.log`, and the settings below are in `BepInEx/config/`.
+
+By hand, the same steps: unzip `BepInEx_linux_x64_5.4.23.5.zip` from the
+[BepInEx releases](https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5) into the game folder, set
+`executable_name="HalfGrip.x86_64"` near the top of `run_bepinex.sh` and make it executable (`chmod +x run_bepinex.sh`), unzip the
+[HalfGripTools](https://github.com/4l3x4nd3r0/HalfGripTools/releases) zip into the game folder, unzip `OpenWorld.zip` into
+`BepInEx/HalfGripMods/`, and for Multiplayer copy `mods/Multiplayer` from HalfGripMods to `BepInEx/HalfGripMods/Multiplayer`.
+
+With Proton switched on, Steam runs the Windows build instead. The Windows install should work there (not tested yet) with the
+launch option `WINEDLLOVERRIDES="winhttp=n,b" %command%`, without which Proton does not load BepInEx.
 
 ## Playing it
 
