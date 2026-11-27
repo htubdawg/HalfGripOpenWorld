@@ -10,36 +10,47 @@ Last written 2026-11-27.
 
 - **Branch: `traffic-rework-branch`** (the owner: stay on it). The traffic is being rebuilt from scratch: **read
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
-- **Phases 0 and 1 are done**: the world with the traffic simulation taken out, `Junctions.cs` and fixed-time `TrafficSignals`; the
-  lane graph (`Lanes.cs`: 2,846 lanes, 4,893 connectors, 3,056 of 3,080 turns fillets) and conflict areas (`Conflicts.cs`: 11,615).
-  Nothing in the game uses them yet (only the tools call `Lanes.Ensure`).
-- **Phase 2, population and schedules, is done** (`Schedules.cs`, new `tools/trafficsim`). Nothing in the game calls it yet either.
-  - Each race's plans from its seed (deterministic, under `Network`'s rules): every household car's day as a chain of stops with a
-    wanted leaving time and a least stay (`Leave`: a late car's next stops shift); tours from home, a third of commutes with a stop on
-    the way home; places by gravity, the roads out (not the wrap's tunnels) taking the share beyond the map; thinned to the survey's
-    driving share and given to the household's cars; 100 through cars circling the trunk; `At` gives a car's planned state at any
-    hour on empty roads (the meso's start). A weekend 2 days in 7. Built in about 0.3 s (about 8,600 routes).
-  - The weekday rates are now NHTS's purpose mix (work 0.54 a worker, shop 0.5, errand 0.62, social 0.55 a household); the old
-    traffic's 0.86 a worker made work 41% of tours (now 27%, NHTS 27%). The share kept is tried six times and the one nearest the
-    survey's driving used (98 to 100% on all 16 seeds).
-  - Seed 1 against the surveys (local traffic at `Traffic.TrafficAmount` 0.5, as the owner set): 0.67 trips a household with a car in
-    the 40-minute day (time runs 36 times fast; the survey's driving share kept, as before); peak 179 cars moving at 16:30 (survey
-    about 200 at half) plus 100 through; cars moving by hour within 2.5 points of PennDOT's TPG 9 every hour, peak hour 9.4% (K 9 to
-    11); trip starts by hour within 3.4 of NT-3's (they lead the cars moving by a world hour, as a drive spans one: matching the
-    counters is what the player sees); a day's count at real time, median: primary 2,950 (PennDOT 5,000 at full traffic), secondary
-    1,260 (1,800), trunk 22,000 (through cars); trips average 1.6 miles (NHTS 9.6, the map is 6 across); 2 of 273 places planned
-    fuller than their spaces (high-street kerbs, 4 of 2 at worst); at the race's start (13:07) 3,351 cars home, 113 parked out, 18
-    beyond the map, 111 on the road.
-- Only 1,904 households reach the main road graph (110 places and the eight footpath-only streets' houses left out; PLAN.md lists it).
+- **Phases 0 to 2 are done**: the world with the old traffic taken out, `Junctions.cs` and fixed-time `TrafficSignals`; the lane graph
+  (`Lanes.cs`) and conflict areas (`Conflicts.cs`); each race's plans (`Schedules.cs`).
+- **Phase 3, the meso headless, is done** (`Meso.cs`, run by `tools/trafficsim`). Nothing in the game calls it yet.
+  - How it works: `docs/TRAFFIC_REWORK.md` §4, "As built (phase 3)". Lanes are the queues; a car waits in the lane its next connector
+    leaves from; 2 s headway; storage at 16.5 units a car; junctions admit on the light and the conflict areas (cars already through,
+    cars given way to that are coming); routes on the lanes' live delays through the wrap; a full lot sends a car to the nearest place
+    for the same purpose with room.
+  - Two things the first runs showed, both fixed:
+    - A **standoff at two junctions whose boxes touch** (nodes 42/44/47, and 26/30): each car gave way to another one waiting, round
+      a loop, until 300 s. Now, between two cars both held at their lines, the one held longer goes. The check against cars already
+      in the junction still keeps them apart.
+    - **Long late tours came home after 03:00**: two 10-minute drives across the map, planned to 02:15 on free roads, lost a couple of
+      minutes at the lights. `Schedules` now keeps a tour only if its car is home by 02:30 with half its driving again to spare
+      (`HeldUp`). Seed 1 keeps 658 tours (was about 577) and still plans 100% of the survey's driving.
+  - Seed 1 (weekday), simulated from 03:00: all 1,364 trips made, 6 cars sent on from a full lot, none rerouted, everyone home. On
+    average a trip loses **16.7 s** to the lights and junctions over its free time (worst 140 s). Peak 221 cars on the road at 16:38,
+    plus 100 through. The hours still match the surveys (cars moving within 2.5 points of TPG 9, trips within 3.4 of NT-3). The worst
+    queue is 53 s at a light on a primary road (node 233). The simulated day's counts are close to the plan's, except the trunk: its
+    count is about two thirds of the plan's (15,300 a day against 22,300), because the through cars lose time at the lights and so
+    make fewer laps. The whole day
+    runs in about 0.4 s, half of it routing. From the race's start hour (13:07) it also passes.
+  - 16 seeds: all checks pass (conservation every 10 s, no deadlock, every leg routed, every trip made, everyone home, repeatable).
+- Only 1,904 households reach the main road graph. 110 places and the houses on the eight streets joined only by footpaths are left
+  out (PLAN.md lists it).
 
 ## Next
 
-1. **Phase 3 (meso, headless)**, as `docs/TRAFFIC_REWORK.md` §4 and §6: `Meso.cs`, every car from `Schedules.At` at the start hour,
-   links as queues (free-flow time, headway, storage, spill-back), junction admission from `Conflicts` and `TrafficSignals`, parking
-   with capacity (a full lot sends a car on to the next), routes on the lane graph (it joins the wrap; `Traffic.Route` doesn't) on
-   live link times. `trafficsim` grows conservation, the surveys from the simulated day, worst queues, deadlocks, build and run time.
-2. Optional world polish found on the way: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four
-   mild end kinks (lanes 30, 253, 259, 277).
+1. **Phase 4 (micro and the boundary, headless)**, as `docs/TRAFFIC_REWORK.md` §4 and §6: `Driver.cs` (IDM following, gap acceptance
+   at the conflict areas, keep-clear, lights, MOBIL on the trunk), micro areas round pretend players in trafficsim, the boundary (a car
+   leaving goes into its lane's queue at its real position and time; one coming in is placed where the meso has it, behind the queue's
+   last car). `Meso.Where` already gives a car's lane and distance (free speed, stopped behind the standing queue). Measure each lane's
+   time and capacity in micro against meso and set meso's figures from that (`Headway`, `Jam`, the 0.75 of a connector's limit). Then
+   all of §5's fault checks on 16 seeds.
+2. Things to decide in the meso when micro shows them:
+   - A car pulling out of a drive only waits for room on the lane, not for a gap in the moving cars.
+   - Only the head of the other lane is counted when giving way, not the cars behind it.
+   - Right on red (PLAN.md: "measure again in the rework"): try it in the meso and keep it only if the delay per trip drops.
+   - The day's end: cars are planned home by 02:30. In the game the day wraps (the next day's plans from 03:00), so the meso must run
+     on into it (phase 5).
+3. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
+   end kinks (lanes 30, 253, 259, 277).
 
 ## Working with the owner
 
@@ -51,4 +62,4 @@ Last written 2026-11-27.
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools from `tools/halfgriptools-stub`): compiles clean.
 - `trafficsim` (16 seeds): all checks pass.
 - Full `meshcheck`: all checks pass.
-- Not run in game (nothing in the game uses the lane graph or the plans yet; the world is unchanged this session).
+- Not run in game (nothing in the game uses the lane graph, the plans or the meso yet; the world is unchanged this session).

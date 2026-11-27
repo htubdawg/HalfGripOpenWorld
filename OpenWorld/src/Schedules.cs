@@ -36,6 +36,12 @@ namespace HalfGripOpenWorld
 		private const double LastOut = 18.0 * Hour;
 		/// <summary>Every car is planned home by 02:30, before the next day starts.</summary>
 		private const double HomeBy = Traffic.DaySeconds - 0.5 * Hour;
+		/// <summary>
+		/// The share of a tour's driving its plan allows again for being held up when it must be home by <see cref="HomeBy"/>: the lights
+		/// and junctions cost the simulation's trips about 10% of their free time on average and up to about a quarter (<see cref="Meso"/>),
+		/// so a long late tour planned to the minute on free roads came home after the day's end.
+		/// </summary>
+		private const double HeldUp = 0.5;
 		/// <summary>The least a car stays anywhere (real seconds): long enough to park, get out, do something and come back.</summary>
 		internal const double MinStay = 20.0;
 		/// <summary>A car is not taken out again until it has been home this long.</summary>
@@ -591,7 +597,7 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Gives household <paramref name="h"/>'s kept tours (in the order they leave) to its cars: each to the car home longest (lowest
 		/// index on a tie) if it has rested by then, else to the first back if within <see cref="WaitForCar"/> (the tour leaves late),
-		/// else none. A tour that would bring its car home after <see cref="HomeBy"/> is given up. Then, if <paramref name="make"/>, each
+		/// else none. A tour that would bring its car home after <see cref="HomeBy"/> (with <see cref="HeldUp"/> to spare) is given up. Then, if <paramref name="make"/>, each
 		/// car's day is chained (else only what was planned is counted). The tours are left as they were.
 		/// </summary>
 		private void Assign(int h, List<Tour> kept, bool make)
@@ -626,14 +632,16 @@ namespace HalfGripOpenWorld
 					Late++;
 				}
 				// When it would be home on empty roads, keeping to its stops' wanted times.
-				double at = depart;
+				double at = depart, driving = 0.0;
 				for (int j = 0; j < t.Stops.Length; j++)
 				{
 					at += t.Legs[j].Time;
+					driving += t.Legs[j].Time;
 					at = Math.Max(at + t.Stops[j].Stay, t.Stops[j].WantLeave + (depart - t.Depart));
 				}
 				at += t.Legs[t.Stops.Length].Time;
-				if (at > HomeBy)
+				driving += t.Legs[t.Stops.Length].Time;
+				if (at + HeldUp * driving > HomeBy)
 				{
 					Dropped++;
 					continue;

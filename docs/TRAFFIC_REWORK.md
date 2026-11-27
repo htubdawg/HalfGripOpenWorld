@@ -2,8 +2,8 @@
 
 Written 2026-11-26 on `traffic-rework-branch`, forked from `deer-test-branch` (Open World 0.31.1, which has no traffic code). It
 replaces the traffic of `traffic-test-branch` rather than repairing it. Revised the same day after the owner's answers (section 7).
-Phases 0 to 2 are done (the lane graph and conflict areas, the population and its plans: see `docs/HANDOFF.md`); phase 3 is next;
-the rest is not built yet.
+Phases 0 to 3 are done (the lane graph and conflict areas, the population and its plans, the meso headless: see `docs/HANDOFF.md`);
+phase 4 is next; the rest is not built yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
 view. Traffic must be realistic and interactive.
@@ -95,6 +95,17 @@ the mesoscopic network and is still there when the player comes back.
 - Route choice: shortest time on current link times, updated every few minutes, with en-route rerouting round long queues.
 - Parking: lots and kerbs have capacity; a full lot sends cars to the next one.
 - Position at any moment is interpolated along its link, for far drawing and the map.
+- As built (phase 3, `Meso.cs`): the links are the lanes. A car is queued in the lane of its carriageway (an edge one way) that its next
+  connector leaves from (lanes are changed along the stretch; a bay's cars drive its through lane first), so a left turner waiting in a
+  bay doesn't hold the cars going on, and on a road with one lane it does. A lane lets a car over its end no sooner than its free time,
+  2 s behind the car before (1,800 an hour, HCM's saturation flow) and only with room on the next lane (its length over 16.5 units a
+  car, at least one); a car stopping on a lane turns off past the standing queue. Through the junction: the light green (or amber for a
+  car that reached the line moving), no conflict area shared within 1 s with a car already through it, and where it gives way (or came
+  second) no car coming on the other connector before it would be through, unless that car can't go (red, no room) or has been held at
+  its line less long (the standoff rule: at two junctions whose boxes touch, cars could give way to each other round a loop). Routes:
+  Dijkstra over the carriageways at the lanes' live delays (smoothed over the cars leaving, or the head's wait so far) plus an eighth of
+  a light's cycle; again from the lane's end for a car held 45 s by anything but a red. Fixed step of a quarter second (the whole day
+  runs in about half a second headless, routes most of it). Deterministic, though it needn't be.
 
 ### Microscopic level, near each player (`Micro.cs`, `Driver.cs`)
 - An area round each player (about the drawn distance) where cars are lane agents: IDM following, gap acceptance at conflict areas,
@@ -171,8 +182,8 @@ network.
    node 42 and the trunk's bays.
 2. **Population and schedules (done 2026-11-27).** `Traffic.cs` carried over; activity chains per car (`Schedules.cs`); `trafficsim`
    checks them and reports the demand against the surveys.
-3. **Meso, headless.** The whole day, all cars, with lights and parking. Conservation, the surveys, the worst queues, deadlocks;
-   build and run time.
+3. **Meso, headless (done 2026-11-27).** The whole day, all cars, with lights and parking. Conservation, the surveys, the worst queues,
+   deadlocks; build and run time.
 4. **Micro and the boundary, headless.** `Driver`, micro areas round pretend players, the boundary, physics cars stood in by the
    driver; consistency against meso; all the fault checks green on 16 seeds.
 5. **In game, single player.** Far cars drawn from meso, near ones micro, the nearest physics; parked cars from the lots' state; the

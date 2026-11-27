@@ -3,7 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using HalfGripOpenWorld;
 
-// The traffic rework's headless checks (docs/TRAFFIC_REWORK.md, section 5), grown phase by phase. Phase 2: each race's plans.
+// The traffic rework's headless checks (docs/TRAFFIC_REWORK.md, section 5), grown phase by phase. Phase 2: each race's plans; phase 3:
+// the meso (Meso.cs) running each race's whole day from 03:00 on the lane graph, and the first seed's from its race's start hour as well:
+// every car in exactly one place every 10 s (conservation), no car held at a lane's end over Meso.Stuck (a deadlock), every leg routed,
+// every planned trip made and every car home by the day's end, the first seed's day the same run twice; for the first seed the
+// simulated day against the surveys (hours, counts by road), the delays and the worst queues.
 //   dotnet run -c Release --project tools/trafficsim -- [first seed] [seeds]
 // Builds the world and the traffic's map once (and checks 2 race seeds in 7 fall on a weekend), then the plans (Schedules.cs) for each race seed (16 from 1 by default) and checks:
 // the plans the same built twice; every household's car there and no other; each car's day starting and ending at its home, its stops
@@ -46,6 +50,9 @@ internal static class Program
 			weekends += Schedules.WeekendOf(seed) ? 1 : 0;
 		}
 		Console.WriteLine("weekend days: " + weekends + " of 7,000 race seeds (2,000 expected)");
+		watch.Restart();
+		Lanes.Ensure();
+		Console.WriteLine("lane graph: " + Lanes.Report);
 		Check(Math.Abs(weekends - 2000) < 120, "weekends", weekends + " of 7,000 seeds fall on a weekend");
 		for (int seed = first; seed < first + seeds; seed++)
 		{
@@ -56,6 +63,11 @@ internal static class Program
 			if (seed == first)
 			{
 				Demand(s);
+			}
+			Simulate(s, 0.0, seed == first);
+			if (seed == first)
+			{
+				Simulate(s, Schedules.StartOf(StartHourOf(seed)), true);
 			}
 		}
 		Console.WriteLine(failures == 0 ? "all checks pass" : failures + " failures; failing: " + string.Join(", ", failed));
@@ -452,6 +464,160 @@ internal static class Program
 		}
 		Console.WriteLine("  the race starts at " + Clock(hour) + ": " + home + " cars at home, " + away + " parked out, " + beyond + " beyond the map, " + driving
 			+ " on the road (and " + Schedules.Circling + " through)");
+	}
+
+	// ---- the simulation (Meso) ------------------------------------------------------------------------------------------
+
+	/// <summary>
+	/// Runs the meso from day second <paramref name="start"/> to the day's end and checks: every car in one place all day (conservation,
+	/// every 10 s), no car stuck at a lane's end for <see cref="Meso.Stuck"/> (a deadlock), every leg routed, every trip planned made
+	/// and every car home by the day's end; reports the day against the surveys, the delays and the worst queues if <paramref name="report"/>.
+	/// </summary>
+	private static void Simulate(Schedules s, double start, bool report)
+	{
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		Meso m = Meso.Start(s, start, start);
+		double built = watch.Elapsed.TotalMilliseconds;
+		int planned = 0;
+		foreach (Schedules.Car c in s.Cars)
+		{
+			if (c.Through)
+			{
+				continue;
+			}
+			double arrived = 0.0;
+			for (int i = 0; i < c.Legs.Length; i++)
+			{
+				double leave = Schedules.Leave(c.Stops[i], arrived);
+				planned += leave >= start ? 1 : 0;
+				arrived = leave + c.Legs[i].Time;
+			}
+		}
+		string where = "seed " + s.Seed + " from " + Clock(Schedules.HourOf(start));
+		bool conserved = true;
+		for (double t = start + 10.0; t <= Traffic.DaySeconds + 1e-9 && conserved; t += 10.0)
+		{
+			m.Run(t);
+			conserved = Check(m.Conserved(out string why), "conservation", where + " at " + Clock(Schedules.HourOf(t)) + ": " + why);
+		}
+		m.Run(Traffic.DaySeconds);
+		double ran = watch.Elapsed.TotalMilliseconds - built;
+		int notHome = 0, onRoad = 0;
+		foreach (Meso.Vehicle v in m.Cars)
+		{
+			if (v.Through)
+			{
+				continue;
+			}
+			Schedules.Car c = s.Cars[v.Car];
+			if (v.Mode == Meso.Mode.Driving)
+			{
+				onRoad++;
+			}
+			if (v.Mode != Meso.Mode.Parked || v.Stop != c.Stops.Length - 1)
+			{
+				notHome++;
+				if (notHome <= 5)
+				{
+					double planHome = 0.0, arr = 0.0;
+					for (int i = 0; i < c.Legs.Length; i++)
+					{
+						planHome = Schedules.Leave(c.Stops[i], arr) + c.Legs[i].Time;
+						arr = planHome;
+					}
+					m.Where(v.Car, out int ln, out int cn, out double al);
+					Console.WriteLine("    not home: car " + v.Car + " " + v.Mode + " stop " + v.Stop + " of " + c.Stops.Length + ", planned home at " + planHome.ToString("0")
+						+ ", trip from " + v.TripStart.ToString("0") + " free " + v.TripFree.ToString("0") + " s, lane " + ln + " conn " + cn + " held since " + v.HeldSince.ToString("0")
+						+ ", by a light " + v.HeldByLight + ", connector " + v.Next + " of " + v.Path.Count);
+				}
+			}
+		}
+		Console.WriteLine("  meso, " + where + ": " + m.Departures + " trips set off (" + planned + " planned from then), " + m.Arrivals + " arrived, "
+			+ m.Redirects + " sent on from a full lot, " + m.Reroutes + " rerouted round a queue, " + m.Unrouted + " unrouted; " + notHome + " not home at the day's end ("
+			+ onRoad + " on the road); started in " + built.ToString("0") + " ms, ran the day in " + ran.ToString("0") + " ms (" + m.Routes + " routes, "
+			+ m.RouteMs.ToString("0") + " ms)");
+		Check(m.Unrouted == 0, "meso routes", where + ": " + m.Unrouted + " legs with no way on the lane graph");
+		Check(m.StuckCars.Count == 0, "deadlock", where + ": " + m.StuckCars.Count + " cars held over " + Meso.Stuck + " s"
+			+ string.Concat(m.StuckCars.Take(5).Select(x => "; car " + x.car + " at the end of lane " + x.lane + " (node " + Lanes.All[x.lane].To + ") from "
+				+ Clock(Schedules.HourOf(x.since)))));
+		if (report || m.StuckCars.Count > 0)
+		{
+			foreach ((int car, int lane, double since) in m.StuckCars.Take(8))
+			{
+				Console.WriteLine("    stuck: car " + car + " " + m.Why(car));
+			}
+		}
+		Check(notHome == 0, "home", where + ": " + notHome + " cars not home at the day's end");
+		Check(start > 0.0 || m.Departures == planned, "trips", where + ": " + m.Departures + " of " + planned + " planned trips set off");
+		if (report)
+		{
+			// Not needed (the host runs it and sends what happens), but nothing in it is left to chance: the same day twice.
+			Meso again = Meso.Start(s, start, start);
+			again.Run(Traffic.DaySeconds);
+			Check(again.Arrivals == m.Arrivals && again.DelaySum == m.DelaySum && again.Redirects == m.Redirects, "meso repeatable", where + ": run twice differs");
+		}
+		if (!report)
+		{
+			return;
+		}
+		double trips = Math.Max(1, m.Arrivals);
+		Console.WriteLine("    delay over free roads: " + (m.DelaySum / trips).ToString("0.0") + " s a trip on average, worst " + m.WorstDelay.ToString("0")
+			+ " s; peak " + m.PeakMoving + " cars on the road at " + Clock(Schedules.HourOf(m.PeakAt)) + " (and " + Schedules.Circling + " through)");
+		if (start == 0.0)
+		{
+			double[] counted = s.Weekend ? Schedules.TripsSaturday : Schedules.TripsWeekday;
+			double sumStarts = m.StartsByHour.Sum(), sumMoving = m.MovingByHour.Sum();
+			double worstTrips = 0.0, worstMoving = 0.0;
+			for (int h = 0; h < 24; h++)
+			{
+				worstTrips = Math.Max(worstTrips, Math.Abs(m.StartsByHour[h] / sumStarts * 100.0 - counted[h]));
+				worstMoving = Math.Max(worstMoving, Math.Abs(m.MovingByHour[h] / sumMoving * 100.0 - Schedules.HoursCounted[h]));
+			}
+			Console.WriteLine("    simulated hours: trips within " + worstTrips.ToString("0.0") + " points of NT-3's, cars moving within " + worstMoving.ToString("0.0")
+				+ " of the counters' (TPG 9); peak hour " + (m.MovingByHour.Max() / sumMoving * 100.0).ToString("0.0") + "% of the day's driving");
+			Console.WriteLine("    a day's vehicles at real time (both ways), simulated: median by length, 90th percentile, busiest");
+			for (int k = 0; k <= (int)RoadKind.Drive; k++)
+			{
+				List<(double v, double len)> list = new List<(double, double)>();
+				for (int e = 0; e < Traffic.Edges.Count; e++)
+				{
+					if ((int)Network.Roads[Traffic.Edges[e].Road].Kind == k && Traffic.OnMain(e))
+					{
+						list.Add((m.EdgeCount[e] * RealDay, Traffic.Edges[e].Length));
+					}
+				}
+				if (list.Count == 0)
+				{
+					continue;
+				}
+				list.Sort((a, b) => a.v.CompareTo(b.v));
+				double total = list.Sum(x => x.len);
+				double Pct(double q)
+				{
+					double acc = 0.0;
+					foreach ((double v, double len) in list)
+					{
+						acc += len;
+						if (acc >= q * total)
+						{
+							return v;
+						}
+					}
+					return list[list.Count - 1].v;
+				}
+				Console.WriteLine("    " + ((RoadKind)k).ToString().ToLower().PadRight(10) + Pct(0.5).ToString("0").PadLeft(7) + Pct(0.9).ToString("0").PadLeft(8)
+					+ list[list.Count - 1].v.ToString("0").PadLeft(8));
+			}
+		}
+		Console.WriteLine("    the worst queues (longest a car stood at a lane's end, the most cars in it):");
+		foreach (int l in Enumerable.Range(0, m.Queues.Length).OrderByDescending(l => m.Queues[l].LongestHeld).ThenBy(l => l).Take(6))
+		{
+			Lanes.Lane lane = Lanes.All[l];
+			Traffic.Node n = Traffic.Nodes[lane.To];
+			Console.WriteLine("      lane " + l + " (" + Network.Roads[Traffic.Edges[lane.Edge].Road].Kind.ToString().ToLower() + ", into node " + lane.To + " at "
+				+ n.X.ToString("0") + ", " + n.Z.ToString("0") + (TrafficSignals.Has(lane.To) ? ", lit" : "") + "): " + m.Queues[l].LongestHeld.ToString("0") + " s, "
+				+ m.Queues[l].Most + " cars of " + m.Queues[l].Storage);
+		}
 	}
 
 	/// <summary>The hour a race from <paramref name="seed"/> starts at, as <c>Sky.StartHourOf</c> (Sky is left out of this tool).</summary>

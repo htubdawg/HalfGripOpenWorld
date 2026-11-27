@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The traffic rework's checks, headless (docs/TRAFFIC_REWORK.md, section 5). Phase 2: each race's plans (Schedules.cs) checked
-       and the demand they make measured against the surveys. See Program.cs. -->
+       and the demand they make measured against the surveys; phase 3: the meso (Meso.cs) run over each race's day. See Program.cs. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -14,6 +14,11 @@
     <Compile Include="../../OpenWorld/src/Plots.cs" />
     <Compile Include="../../OpenWorld/src/Traffic.cs" />
     <Compile Include="../../OpenWorld/src/Schedules.cs" />
+    <Compile Include="../../OpenWorld/src/Junctions.cs" />
+    <Compile Include="../../OpenWorld/src/TrafficSignals.cs" />
+    <Compile Include="../../OpenWorld/src/Lanes.cs" />
+    <Compile Include="../../OpenWorld/src/Conflicts.cs" />
+    <Compile Include="../../OpenWorld/src/Meso.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />
