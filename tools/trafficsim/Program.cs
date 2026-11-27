@@ -79,6 +79,7 @@ internal static partial class Program
 			if (seed == first && Environment.GetEnvironmentVariable("TRAFFICSIM_EVERYWHERE") != "0")
 			{
 				Meso meso = Meso.Start(s, 0.0, 0.0);
+				meso.Trips = new List<(int, int, double, double, bool)>();
 				meso.Run(Traffic.DaySeconds);
 				Consistency(meso, MicroDay(s, 0.0, true, true));
 			}
@@ -204,7 +205,9 @@ internal static partial class Program
 		{
 			Traffic.Edge e = Traffic.Edges[l.Route[i] >> 1], f = Traffic.Edges[l.Route[i + 1] >> 1];
 			int end = (l.Route[i] & 1) == 0 ? e.B : e.A, start = (l.Route[i + 1] & 1) == 0 ? f.A : f.B;
-			if (end != start)
+			// (Or through the wrap's tunnels: the far end's tunnel is the way on, by the lane graph's jump.)
+			bool jump = Meso.LanesOf(l.Route[i]).Any(ln => Lanes.All[ln].Out.Any(c => Lanes.Connectors[c].Turn == Lanes.Jump && Meso.CarriagewayOf(Lanes.Connectors[c].To) == l.Route[i + 1]));
+			if (end != start && !jump)
 			{
 				why = "edges " + (l.Route[i] >> 1) + " and " + (l.Route[i + 1] >> 1) + " don't meet";
 				return false;

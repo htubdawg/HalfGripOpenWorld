@@ -230,6 +230,22 @@ namespace HalfGripOpenWorld
 			return PhaseState(node, PhaseOf(node, arm, outArm), t);
 		}
 
+		/// <summary>How long the movement in along arm <paramref name="arm"/> of junction <paramref name="node"/> and out along <paramref name="outArm"/> has shown amber at race clock <paramref name="t"/> (seconds; -1 if it isn't amber).</summary>
+		internal static double AmberFor(int node, int arm, int outArm, double t)
+		{
+			if (State(node, arm, outArm, t) != Amber)
+			{
+				return -1.0;
+			}
+			// Back to the green's end, a tenth of a second at a time (amber lasts 3.5 s).
+			double back = 0.0;
+			while (back < AmberTime + 0.2 && State(node, arm, outArm, t - back - 0.1) == Amber)
+			{
+				back += 0.1;
+			}
+			return back;
+		}
+
 		/// <summary>Whether the movement's green or amber at race clock <paramref name="t"/> is its protected arrow (false: permissive on the main line's green, drawn as a flashing yellow arrow, or not green at all).</summary>
 		internal static bool Protected(int node, int arm, int outArm, double t)
 		{

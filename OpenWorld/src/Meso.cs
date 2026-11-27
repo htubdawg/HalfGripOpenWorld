@@ -94,6 +94,8 @@ namespace HalfGripOpenWorld
 			public int Reroutes;
 			/// <summary>This trip: when it set off and its time on free roads; the places it found full.</summary>
 			public double TripStart, TripFree;
+			/// <summary>When it first tried to set off on this trip (-1: not yet): a car waiting for a gap to pull out is delayed from then.</summary>
+			public double TriedOut = -1.0;
 			public List<int> Full;
 			/// <summary>Driven by the micro level (<see cref="Near"/>) near a player rather than by its queue: it is still in the queue of the
 			/// lane it is on (or, on a connector, the lane after it), so storage and conservation count it, but the meso leaves it alone.</summary>
@@ -142,6 +144,8 @@ namespace HalfGripOpenWorld
 		internal int Departures, Arrivals, Redirects, Reroutes, Unrouted, Overfull;
 		/// <summary>Seconds lost per trip over its free time, summed, and the trips.</summary>
 		internal double DelaySum;
+		/// <summary>For trafficsim's consistency check, when set: each trip's car, the stop it reached, how long it took (from first trying to set off), when it got there, whether it was sent on from a full lot.</summary>
+		internal List<(int Car, int Stop, double Took, double At, bool SentOn)> Trips = null;
 		internal double WorstDelay;
 		/// <summary>Per edge, the cars that came onto it (either way): the day's counts.</summary>
 		internal readonly int[] EdgeCount;
@@ -574,6 +578,10 @@ namespace HalfGripOpenWorld
 			int lane = ExitLane(v, cw);
 			bool full = Queues[lane].Cars.Count >= Queues[lane].Storage
 				|| (Near != null && Near.LaneMicro[lane] && !Near.CanPullOut(lane, Along(cw, v.ParkedAt.S)));
+			if (v.TriedOut < 0.0)
+			{
+				v.TriedOut = Now;
+			}
 			if (full && v.Mode == Mode.Parked)
 			{
 				// The road is queued past the drive: wait for a gap.
@@ -584,7 +592,8 @@ namespace HalfGripOpenWorld
 			Leave(v);
 			v.Stop++;
 			v.Mode = Mode.Driving;
-			v.TripStart = Now;
+			v.TripStart = v.TriedOut;
+			v.TriedOut = -1.0;
 			v.TripFree = FreeTime(v, v.ParkedAt.S);
 			Departures++;
 			StartsByHour[(int)Schedules.HourOf(Now) % 24]++;
@@ -615,6 +624,7 @@ namespace HalfGripOpenWorld
 			v.Next = 0;
 			v.Ends = false;
 			v.HeldSince = -1.0;
+			v.TriedOut = -1.0;
 			if (place >= 0)
 			{
 				Parked[place]++;
@@ -877,7 +887,8 @@ namespace HalfGripOpenWorld
 			v0 = 0.0;
 			run = 0;
 			target = Target(h, c, h.Next + 1);
-			if (!LightLets(cn, h.Ready))
+			double start = StartSpeed(h, cn.From, out run);
+			if (!LightLets(cn, h.Ready) && !AmberGoes(cn, start, run))
 			{
 				light = true;
 				return false;
@@ -886,7 +897,7 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			v0 = Behind(c, StartSpeed(h, cn.From, out run));
+			v0 = Behind(c, start);
 			return v0 >= 0.0 && Clear(h, c, v0);
 		}
 
@@ -1006,6 +1017,28 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// Whether the head of a queue pulling away (<paramref name="run"/> cars gone one behind another before it, reaching the line at
+		/// <paramref name="v0"/>) goes on at connector <paramref name="cn"/>'s amber, as a micro driver judges it: on if, when the amber
+		/// came on, it couldn't stop before the line braking comfortably. It has gathered speed from standing at <see cref="Driver.Accel"/>,
+		/// so <c>τ</c> seconds before the line it was <c>v0 τ - a τ² / 2</c> away. A queue still going at the green's end lets one or two
+		/// more cars through, as the micro's does.
+		/// </summary>
+		private bool AmberGoes(Lanes.Connector cn, double v0, int run)
+		{
+			if (run <= 0 || v0 <= 0.0 || cn.Turn == Lanes.Jump || !TrafficSignals.Has(cn.Node))
+			{
+				return false;
+			}
+			double tau = TrafficSignals.AmberFor(cn.Node, cn.InArm, cn.OutArm, Now - RaceStart);
+			if (tau < 0.0)
+			{
+				return false;
+			}
+			double away = tau < v0 / Driver.Accel ? v0 * tau - 0.5 * Driver.Accel * tau * tau : 0.5 * v0 * v0 / Driver.Accel;
+			return Driver.Stopping(v0, Driver.Brake) > away;
+		}
+
+		/// <summary>
 		/// Whether connector <paramref name="c"/>'s conflict areas are clear for car <paramref name="h"/> going now: no car already through
 		/// one of them within <see cref="Margin"/> of when this one would be, and, where it gives way (or the area is first come first served
 		/// and the other came first), no car coming to it on the other connector before this one would be through, unless that car can't
@@ -1049,12 +1082,8 @@ namespace HalfGripOpenWorld
 				// as far back as Micro.Approach).
 				Lanes.Connector oc = Lanes.Connectors[o];
 				int g = HeadOf(oc.From);
-				if (g < 0)
-				{
-					continue;
-				}
 				double lastGo = Queues[oc.From].LastExit;
-				foreach (int k in Queues[oc.From].Cars)
+				foreach (int k in g < 0 ? none : Queues[oc.From].Cars)
 				{
 					Vehicle gv = Cars[k];
 					if (gv.Ends || gv.Micro)
@@ -1144,21 +1173,48 @@ namespace HalfGripOpenWorld
 		/// the lane in is shorter.</summary>
 		private const double Lookback = 600.0;
 
+		/// <summary>No cars (a lane in with none on it: those on the lanes before are still looked for).</summary>
+		private static readonly List<int> none = new List<int>();
+
+		/// <summary>Scratch for <see cref="Upstream"/>: the connectors from the lane looked along to the one given way to.</summary>
+		private readonly List<int> chain = new List<int>();
+
 		/// <summary>
-		/// Whether a car on a lane into the junction before connector <paramref name="o"/>'s (its lane in, <paramref name="oc"/>.From, short)
-		/// comes on through to <paramref name="o"/> too soon for car <paramref name="h"/> to go now (coming onto <paramref name="cn"/> at
-		/// <paramref name="v0"/>, clear of the area <paramref name="my1"/> along it at <paramref name="myOut"/>): not one held at a red.
+		/// Whether a car on a lane into the junction before connector <paramref name="o"/>'s (its lane in, <paramref name="oc"/>.From, short),
+		/// or into the junction before that while the lanes between are short (to <see cref="Lookback"/> in all, as micro's drivers look back
+		/// along each car's route through the junctions: at three junctions in a row a fast car two junctions back is as near as one on the
+		/// lane in), comes on through to <paramref name="o"/> too soon for car <paramref name="h"/> to go now (coming onto <paramref
+		/// name="cn"/> at <paramref name="v0"/>, clear of the area <paramref name="my1"/> along it at <paramref name="myOut"/>): not one held
+		/// at a red.
 		/// </summary>
 		private bool Upstream(Vehicle h, Lanes.Connector cn, double v0, Lanes.Connector oc, int o, double o0, double my1, double myOut)
 		{
-			double along = reach[oc.From];
-			foreach (int kc in Lanes.All[oc.From].In)
+			chain.Clear();
+			chain.Add(o);
+			return Back(oc.From, reach[oc.From], cn, v0, oc, o0, my1, myOut, 0);
+		}
+
+		/// <summary><see cref="Upstream"/> for the lanes into lane <paramref name="lane"/>'s start (<see cref="chain"/>: the connectors from
+		/// <paramref name="lane"/>'s end on), <paramref name="dist"/> from there to the stop line of the connector given way to.</summary>
+		private bool Back(int lane, double dist, Lanes.Connector cn, double v0, Lanes.Connector oc, double o0, double my1, double myOut, int depth)
+		{
+			foreach (int kc in Lanes.All[lane].In)
 			{
 				Lanes.Connector kn = Lanes.Connectors[kc];
+				chain.Insert(0, kc);
 				foreach (int k in Queues[kn.From].Cars)
 				{
 					Vehicle gv = Cars[k];
-					if (gv.Ends || gv.Micro || gv.Ready <= Now || gv.Next + 1 >= gv.Path.Count || gv.Path[gv.Next] != kc || gv.Path[gv.Next + 1] != o)
+					if (gv.Ends || gv.Micro || gv.Ready <= Now || gv.Next + chain.Count > gv.Path.Count)
+					{
+						continue;
+					}
+					bool way = true;
+					for (int j = 0; j < chain.Count && way; j++)
+					{
+						way = gv.Path[gv.Next + j] == chain[j];
+					}
+					if (!way)
 					{
 						continue;
 					}
@@ -1170,20 +1226,33 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					// On at its free run's speed through the junction before and along the short lane.
-					double vk = Math.Min(gv.VOut, kn.Limit);
-					double tk = ConnTime(kn, vk, out double vOff);
-					double rest = Math.Max(0.0, along - JoinFrom(kc));
-					double tl = Driver.Run(rest, vOff, Lanes.All[oc.From].Limit, EndSpeed(oc.From, o), out double vLine);
-					double gIn = gv.Ready + tk + tl + PassAt(oc, vLine, o0);
+					// On at its free run's speed through the junctions before and along the short lanes.
+					double v = Math.Min(gv.VOut, kn.Limit), t = gv.Ready;
+					for (int j = 0; j + 1 < chain.Count; j++)
+					{
+						Lanes.Connector cj = Lanes.Connectors[chain[j]];
+						t += ConnTime(cj, j == 0 ? v : Math.Min(v, cj.Limit), out double vOff);
+						int next = chain[j + 1], on = Lanes.Connectors[next].From;
+						t += Driver.Run(Math.Max(0.0, reach[on] - JoinFrom(chain[j])), vOff, Lanes.All[on].Limit, EndSpeed(on, next), out v);
+					}
+					double vLine = v;
+					double gIn = t + PassAt(oc, vLine, o0);
 					double vj = Math.Max(vLine, Math.Min(oc.Limit, Math.Sqrt(vLine * vLine + 2.0 * Driver.Accel * Math.Max(0.0, o0))));
 					double vMe = Math.Min(cn.Limit, Math.Sqrt(v0 * v0 + 2.0 * Driver.Accel * Math.Max(0.0, my1)));
 					double need = Driver.Gap0 + vMe * Driver.TimeGap + Math.Max(0.0, vj - vMe) * Math.Max(0.0, vj - vMe) / (2.0 * Driver.Brake);
 					if (gIn < myOut + 0.5 + Math.Max(Margin, need / Math.Max(vj, 1.0)))
 					{
+						chain.RemoveAt(0);
 						return true;
 					}
 				}
+				double further = dist + kn.Length + reach[kn.From];
+				if (depth < 4 && further < Lookback && Back(kn.From, further, cn, v0, oc, o0, my1, myOut, depth + 1))
+				{
+					chain.RemoveAt(0);
+					return true;
+				}
+				chain.RemoveAt(0);
 			}
 			return false;
 		}
@@ -1229,6 +1298,7 @@ namespace HalfGripOpenWorld
 			Arrivals++;
 			double lost = Now - v.TripStart - v.TripFree;
 			DelaySum += Math.Max(0.0, lost);
+			Trips?.Add((v.Car, v.Stop, Now - v.TripStart, Now, v.Full != null));
 			WorstDelay = Math.Max(WorstDelay, lost);
 			Park(v, v.Stop, v.Target, v.TargetPlace, Now, false);
 		}
@@ -1438,12 +1508,73 @@ namespace HalfGripOpenWorld
 					u = cwOf[Lanes.Connectors[cc].From];
 				}
 				v.Path.Reverse();
+				Settle(v.Path, fromLane);
 				return true;
 			}
 			finally
 			{
 				RouteMs += watch.Elapsed.TotalMilliseconds;
 			}
+		}
+
+		/// <summary>
+		/// Route <paramref name="path"/>'s connectors chosen, from its end back, so a car can drive it lane by lane: each one through its
+		/// junction (the same turn onto the same carriageway) that lands where the next leaves from in the fewest lane changes, a change
+		/// counted only with <see cref="ChangeRoom"/> for it on the stretch between. The carriageways' search takes the cheapest connector
+		/// into a carriageway, but a micro car on a connector comes out in the lane it leads to, and where junctions follow close on each
+		/// other (four on the trunk within 300, a left-turn bay after them) it must be in the lane for the last of them from the stretch
+		/// before the first, or it missed its turn (and a car the meso handed the micro mid-junction came out in the wrong lane). The same
+		/// lane in kept on a tie; the first from <paramref name="fromLane"/> if the car is in it (-1: pulling out).
+		/// </summary>
+		private static void Settle(List<int> path, int fromLane)
+		{
+			for (int k = path.Count - 2; k >= 0; k--)
+			{
+				Lanes.Lane want = Lanes.All[Lanes.Connectors[path[k + 1]].From];
+				Lanes.Connector cur = Lanes.Connectors[path[k]];
+				int toCw = cwOf[cur.To];
+				int best = -1;
+				double bestScore = double.MaxValue;
+				foreach (int l in cwLanes[cwOf[cur.From]])
+				{
+					if (k == 0 && fromLane >= 0 && l != fromLane)
+					{
+						continue;
+					}
+					foreach (int o in Lanes.All[l].Out)
+					{
+						Lanes.Connector on = Lanes.Connectors[o];
+						if (on.Node != cur.Node || on.Turn != cur.Turn || cwOf[on.To] != toCw)
+						{
+							continue;
+						}
+						Lanes.Lane land = Lanes.All[on.To];
+						int changes = Math.Abs(land.Index - want.Index);
+						double room = Math.Min(reach[on.To], reach[Lanes.Connectors[path[k + 1]].From]) - Math.Max(StartOf(on.To), StartOf(Lanes.Connectors[path[k + 1]].From)) - want.Hold;
+						double score = changes + (room < changes * ChangeRoom(land) ? 1000.0 : 0.0) + (on.From == cur.From ? 0.0 : 0.5);
+						if (score < bestScore)
+						{
+							bestScore = score;
+							best = o;
+						}
+					}
+				}
+				if (best >= 0)
+				{
+					path[k] = best;
+				}
+			}
+		}
+
+		/// <summary>
+		/// The room a car is counted on to need on lane <paramref name="l"/> for each lane it moves over: twice what a change at the lane's
+		/// limit takes (on the trunk 500, its left-turn bays a little more), as with traffic alongside a gap may not come at once (stretches
+		/// of 320 and 475 on the trunk left cars standing at their ends, one needing two changes in 570 another). The micro's drivers choose
+		/// their lanes ahead by it too.
+		/// </summary>
+		internal static double ChangeRoom(Lanes.Lane l)
+		{
+			return 2.0 * l.Limit * Driver.ChangeTime + Traffic.CarLength;
 		}
 
 		/// <summary>For the micro level: car <paramref name="v"/>'s quickest way on from the end of lane <paramref name="lane"/> (its <see cref="Vehicle.Path"/> from there). False if none.</summary>
@@ -1492,6 +1623,154 @@ namespace HalfGripOpenWorld
 			return loss;
 		}
 
+		/// <summary>Scratch for <see cref="PlanRoute"/>, one per plans' builder (the plans may be built on a worker).</summary>
+		internal sealed class PlanScratch
+		{
+			internal double[] Cost;
+			internal int[] Via;
+			internal bool[] Seeded;
+			internal readonly List<int> Touched = new List<int>();
+			internal readonly Heap Heap = new Heap();
+		}
+
+		/// <summary>
+		/// For the plans (<see cref="Schedules"/>): the quickest way from <paramref name="from"/> to <paramref name="to"/> on empty roads by
+		/// the lane graph, as the meso routes a car setting off on them (<see cref="Route"/>'s costs with no queues: each stretch at its
+		/// limit, each junction's <see cref="PassCost"/> and <see cref="TurnLoss"/>), into <paramref name="route"/> as (edge, +1 along it
+		/// or -1). So a plan's leg is one a car can drive, timed by <see cref="LegTime"/> (the traffic's map takes turns the lane graph
+		/// has none for, as back up an acute fork, and its legs' times were for roads no car could take) and through the wrap's tunnels as
+		/// the meso goes. False if either end has no lanes or there is no way. Deterministic under <see cref="Network"/>'s rules.
+		/// </summary>
+		internal static bool PlanRoute(Traffic.Anchor from, Traffic.Anchor to, List<(int edge, int dir)> route, PlanScratch x)
+		{
+			Prepare();
+			route.Clear();
+			if (from.Edge == to.Edge)
+			{
+				int cw0 = 2 * from.Edge + (to.S >= from.S ? 0 : 1);
+				if (cwLanes[cw0].Count == 0)
+				{
+					return false;
+				}
+				route.Add((from.Edge, to.S >= from.S ? 1 : -1));
+				return true;
+			}
+			int cws = cwLanes.Length;
+			if (x.Cost == null || x.Cost.Length != cws)
+			{
+				x.Cost = new double[cws];
+				x.Via = new int[cws];
+				x.Seeded = new bool[cws];
+				for (int k = 0; k < cws; k++)
+				{
+					x.Cost[k] = double.MaxValue;
+					x.Via[k] = -1;
+				}
+				x.Touched.Clear();
+			}
+			double[] cost = x.Cost;
+			int[] via = x.Via;
+			bool[] seeded = x.Seeded;
+			foreach (int st in x.Touched)
+			{
+				cost[st] = double.MaxValue;
+				via[st] = -1;
+				seeded[st] = false;
+			}
+			x.Touched.Clear();
+			Heap heap = x.Heap;
+			heap.Clear();
+			void Reach(int cw, double c, int conn, bool seed)
+			{
+				if (c < cost[cw])
+				{
+					if (cost[cw] == double.MaxValue)
+					{
+						x.Touched.Add(cw);
+					}
+					cost[cw] = c;
+					via[cw] = conn;
+					seeded[cw] = seed;
+					heap.Push(c, cw);
+				}
+			}
+			for (int k = 0; k < 2; k++)
+			{
+				int cw = 2 * from.Edge + k;
+				if (cwLanes[cw].Count == 0)
+				{
+					continue;
+				}
+				if (cost[cw] == double.MaxValue)
+				{
+					x.Touched.Add(cw);
+				}
+				cost[cw] = 0.0;
+				via[cw] = -1;
+				double at = Along(cw, from.S);
+				foreach (int l in cwLanes[cw])
+				{
+					double t = Math.Max(0.0, reach[l] - at) / Lanes.All[l].Limit;
+					foreach (int c in Lanes.All[l].Out)
+					{
+						Reach(cwOf[Lanes.Connectors[c].To], t + PassCost(c) + TurnLoss(c), c, true);
+					}
+				}
+			}
+			double best = double.MaxValue;
+			int bestCw = -1;
+			while (heap.Count > 0)
+			{
+				int u = heap.Pop(out double c);
+				if (c > cost[u])
+				{
+					continue;
+				}
+				if (c >= best)
+				{
+					break;
+				}
+				if (u >> 1 == to.Edge)
+				{
+					double inner = Along(u, to.S) / Lanes.All[cwLanes[u][0]].Limit;
+					if (c + inner < best)
+					{
+						best = c + inner;
+						bestCw = u;
+					}
+				}
+				foreach (int l in cwLanes[u])
+				{
+					double t = reach[l] / Lanes.All[l].Limit;
+					foreach (int cc in Lanes.All[l].Out)
+					{
+						Reach(cwOf[Lanes.Connectors[cc].To], c + t + PassCost(cc) + TurnLoss(cc), cc, false);
+					}
+				}
+			}
+			if (bestCw < 0)
+			{
+				return false;
+			}
+			for (int u = bestCw; ;)
+			{
+				route.Add((u >> 1, (u & 1) == 0 ? 1 : -1));
+				if (via[u] < 0)
+				{
+					break;
+				}
+				bool first = seeded[u];
+				u = cwOf[Lanes.Connectors[via[u]].From];
+				if (first)
+				{
+					route.Add((u >> 1, (u & 1) == 0 ? 1 : -1));
+					break;
+				}
+			}
+			route.Reverse();
+			return true;
+		}
+
 		/// <summary>
 		/// For the plans (<see cref="Schedules"/>): the time on free roads, driven as a micro car drives (<see cref="Driver.Run"/>), along
 		/// carriageways <paramref name="route"/> (2 × edge, + 1 against its direction) from <paramref name="fromS"/> on the first to
@@ -1515,8 +1794,10 @@ namespace HalfGripOpenWorld
 					foreach (int c in Lanes.All[l].Out)
 					{
 						Lanes.Connector cn = Lanes.Connectors[c];
-						if (cwOf[cn.To] == next && cn.Turn != Lanes.Jump && (best < 0 || cn.Limit > Lanes.Connectors[best].Limit))
+						if (cwOf[cn.To] == next && (best < 0 || (Lanes.Connectors[best].Turn == Lanes.Jump && cn.Turn != Lanes.Jump)
+							|| ((cn.Turn == Lanes.Jump) == (Lanes.Connectors[best].Turn == Lanes.Jump) && cn.Limit > Lanes.Connectors[best].Limit)))
 						{
+							// (Through the wrap's tunnels by its jump only where that is the way: a route the meso takes round the highway.)
 							best = c;
 						}
 					}

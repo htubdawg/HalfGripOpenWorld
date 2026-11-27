@@ -465,6 +465,10 @@ internal static partial class Program
 	{
 		var watch = System.Diagnostics.Stopwatch.StartNew();
 		Meso m = Meso.Start(s, start, start);
+		if (everywhere)
+		{
+			m.Trips = new List<(int, int, double, double, bool)>();
+		}
 		Micro mi = new Micro(m);
 		List<Walker> walkers = Walkers(s.Seed);
 		if (everywhere)
@@ -526,6 +530,13 @@ internal static partial class Program
 		{
 			Check(false, "micro " + kv.Key, where + ": " + kv.Value + " cars");
 		}
+		// A car that can't get into the lane its way on needs (a lane too short to change on after the junction before, a bay it pulls out
+		// beside) goes the long way round: none should.
+		foreach ((int car, int lane, double t) in mi.MissedAt.Take(report ? 10 : 4))
+		{
+			Console.WriteLine("    missed its lane: car " + car + " on lane " + lane + " to node " + Lanes.All[lane].To + " at " + t.ToString("0.0"));
+		}
+		Check(mi.Missed == 0, "missed lane", where + ": " + mi.Missed + " cars missed their lane");
 		Check(notHome == 0, "home", where + ": " + notHome + " cars not home at the day's end");
 		Check(m.StuckCars.Count == 0, "deadlock", where + ": " + m.StuckCars.Count + " meso cars held over " + Meso.Stuck + " s");
 		return m;
@@ -569,6 +580,38 @@ internal static partial class Program
 				pz = lz;
 			}
 		}
+		string pathOf = Environment.GetEnvironmentVariable("TRAFFICSIM_PATH");
+		if (pathOf != null)
+		{
+			foreach (int c in pathOf.Split(',').Select(int.Parse))
+			{
+				Lanes.Connector cn = Lanes.Connectors[c];
+				Lanes.Lane to = Lanes.All[cn.To];
+				Console.WriteLine("  path connector " + c + " node " + cn.Node + " lane " + cn.From + " (index " + Lanes.All[cn.From].Index + ") to " + cn.To + " (index " + to.Index + ", reach " + Meso.Reach(cn.To).ToString("0") + " hold " + to.Hold.ToString("0") + " limit " + to.Limit.ToString("0")
+					+ ") turn " + cn.Turn + "; lanes of the next: " + string.Join(" ", Meso.LanesOf(Meso.CarriagewayOf(cn.To)).Select(l => l + ":" + string.Join("/", Lanes.All[l].Out.Select(o => o + "(" + Lanes.Connectors[o].Turn + ">" + Lanes.Connectors[o].To + ")")))));
+			}
+		}
+		string nodeOf = Environment.GetEnvironmentVariable("TRAFFICSIM_NODE");
+		if (nodeOf != null)
+		{
+			int n = int.Parse(nodeOf);
+			for (int k = 0; k < Traffic.Links[n].Count; k++)
+			{
+				Junctions.ArmOf(n, k, out double ax, out double az);
+				Traffic.Edge e = Traffic.Edges[Traffic.Links[n][k]];
+				Console.WriteLine("  arm " + k + " edge " + Traffic.Links[n][k] + " " + Network.Roads[e.Road].Kind + " dir " + ax.ToString("0.00") + ", " + az.ToString("0.00") + " length " + e.Length.ToString("0") + " nodes " + e.A + "-" + e.B);
+			}
+			for (int c = 0; c < Lanes.Connectors.Count; c++)
+			{
+				Lanes.Connector cn = Lanes.Connectors[c];
+				if (cn.Node != n)
+				{
+					continue;
+				}
+				Console.WriteLine("  connector " + c + " lane " + cn.From + " to " + cn.To + " turn " + cn.Turn + " arms " + cn.InArm + ">" + cn.OutArm + " length " + cn.Length.ToString("0.0") + " limit " + cn.Limit.ToString("0") + " areas "
+					+ string.Join(" ", Conflicts.Of[c].Select(a => { Conflicts.Area ar = Conflicts.All[a]; bool me = ar.A == c; return a + ":" + (me ? ar.B : ar.A) + "(kind " + ar.Kind + " yield " + ar.Yield + (me ? " A " : " B ") + (me ? ar.A0 : ar.B0).ToString("0") + "-" + (me ? ar.A1 : ar.B1).ToString("0") + ")"; })));
+			}
+		}
 		string lanesOf = Environment.GetEnvironmentVariable("TRAFFICSIM_LANE");
 		if (lanesOf != null)
 		{
@@ -593,13 +636,34 @@ internal static partial class Program
 	{
 		if (Environment.GetEnvironmentVariable("TRAFFICSIM_WORST") == "1")
 		{
-			var rows = Enumerable.Range(0, Lanes.All.Count).Select(l => (l, d: micro.LaneLost[l] - meso.LaneLost[l])).OrderByDescending(r => r.d).Take(25);
+			var diffs = Enumerable.Range(0, Lanes.All.Count).Select(l => (l, d: micro.LaneLost[l] - meso.LaneLost[l])).ToList();
+			var rows = diffs.OrderByDescending(r => r.d).Take(25).Concat(diffs.OrderBy(r => r.d).Take(25));
 			foreach ((int l, double d) in rows)
 			{
 				Lanes.Lane ln = Lanes.All[l];
-				Console.WriteLine("    worse in micro: lane " + l + " to node " + ln.To + " " + Network.Roads[Traffic.Edges[ln.Edge].Road].Kind + (TrafficSignals.Has(ln.To) ? " lit" : "") + " by " + d.ToString("0") + " s: meso "
+				Console.WriteLine("    worse in " + (d >= 0.0 ? "micro" : "meso") + ": lane " + l + " to node " + ln.To + " " + Network.Roads[Traffic.Edges[ln.Edge].Road].Kind + (TrafficSignals.Has(ln.To) ? " lit" : "") + " by " + d.ToString("0") + " s: meso "
 					+ (meso.LaneLost[l] / Math.Max(1, meso.LaneExits[l])).ToString("0.0") + " s over " + meso.LaneExits[l] + ", micro " + (micro.LaneLost[l] / Math.Max(1, micro.LaneExits[l])).ToString("0.0") + " s over " + micro.LaneExits[l]
 					+ "; outs " + string.Join(" ", ln.Out.Select(c => Lanes.Connectors[c].Turn + "@" + Lanes.Connectors[c].Limit.ToString("0") + "/" + ln.Limit.ToString("0"))) + " hold " + ln.Hold.ToString("0"));
+			}
+		}
+		// The same trips paired (a car's trip to the same stop), how long each took: where a car waits is booked to different lanes in the
+		// two (the micro holds a car at the first of two junctions decided as one, the meso on the short lane between), and a trip's delay
+		// is over its own route's free time (routes are chosen on the live delays, so the two may go different ways), so the trips' times
+		// are the measure. Not a trip sent on from a full lot in either (the lot filled in a different order: the drive on is no delay).
+		var mesoTrips = meso.Trips.ToDictionary(t => (t.Car, t.Stop), t => t);
+		var pairs = micro.Trips.Where(t => !t.SentOn && mesoTrips.TryGetValue((t.Car, t.Stop), out var o) && !o.SentOn).Select(t => (t.Car, t.Stop, me: mesoTrips[(t.Car, t.Stop)].Took, mi: t.Took, at: t.At, mesoAt: mesoTrips[(t.Car, t.Stop)].At)).ToList();
+		if (pairs.Count > 0)
+		{
+			var diffs = pairs.Select(p => p.mi - p.me).OrderBy(d => d).ToList();
+			double Pct(double f) => diffs[Math.Min(diffs.Count - 1, (int)(f * diffs.Count))];
+			Console.WriteLine("  consistency, the same trips (" + pairs.Count + "), how long each took: micro less meso " + diffs.Average().ToString("0.0") + " s on average, median " + Pct(0.5).ToString("0.0")
+				+ ", 10th to 90th percentile " + Pct(0.1).ToString("0.0") + " to " + Pct(0.9).ToString("0.0") + ", within 10 s " + (100.0 * diffs.Count(d => Math.Abs(d) <= 10.0) / diffs.Count).ToString("0") + "%");
+			if (Environment.GetEnvironmentVariable("TRAFFICSIM_WORST") == "1")
+			{
+				foreach (var p in pairs.OrderBy(p => p.mi - p.me).Take(10).Concat(pairs.OrderByDescending(p => p.mi - p.me).Take(10)))
+				{
+					Console.WriteLine("    trip: car " + p.Car + " to stop " + p.Stop + " meso " + p.me.ToString("0.0") + " s (arrived " + p.mesoAt.ToString("0") + "), micro " + p.mi.ToString("0.0") + " s (arrived " + p.at.ToString("0") + ")");
+				}
 			}
 		}
 		Console.WriteLine("  consistency, meso against micro everywhere: delay a trip " + (meso.DelaySum / Math.Max(1, meso.Arrivals)).ToString("0.0") + " s against "

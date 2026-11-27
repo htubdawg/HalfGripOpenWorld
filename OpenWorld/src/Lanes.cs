@@ -381,9 +381,17 @@ namespace HalfGripOpenWorld
 						case Left:
 							// From the bay if there is one, else the lane nearest the middle; into the lane nearest the middle (PA 3331).
 							Add(n, i, j, bay >= 0 ? bay : ins[throughIn - 1], outs[throughOut - 1], turn);
+							for (int k = throughOut - 2; k >= 0 && TooShortToChange(outs[k]); k--)
+							{
+								Add(n, i, j, bay >= 0 ? bay : ins[throughIn - 1], outs[k], turn);
+							}
 							break;
 						case Right:
 							Add(n, i, j, ins[0], outs[0], turn);
+							for (int k = 1; k < throughOut && TooShortToChange(outs[k]); k++)
+							{
+								Add(n, i, j, ins[0], outs[k], turn);
+							}
 							break;
 						case Round:
 							if (Offset(All[ins[0]], All[ins[0]].End) > 1.0 && Portal(n) < 0)
@@ -414,6 +422,16 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+		}
+
+		/// <summary>
+		/// Whether lane <paramref name="l"/> runs too short to change lanes on before the junction at its end (two junctions close together,
+		/// as where a side road meets the trunk just short of a median opening): a turn onto it goes into each of its through lanes, as a
+		/// driver who must turn again at once takes the lane for that turn (PA 3331's nearest lane, where the two junctions are one).
+		/// </summary>
+		private static bool TooShortToChange(int l)
+		{
+			return All[l].Length < All[l].Limit * Driver.ChangeTime + Traffic.CarLength;
 		}
 
 		private static int Throughs(List<int> lanes)

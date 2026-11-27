@@ -157,6 +157,8 @@ namespace HalfGripOpenWorld
 		private readonly double[] lastCross;
 		private readonly int[] platoon;
 		internal int Missed, Spawned, HandedOut, Flips;
+		/// <summary>For trafficsim: the first cars that missed their lane (the car, the lane, when).</summary>
+		internal readonly List<(int car, int lane, double t)> MissedAt = new List<(int, int, double)>();
 
 		// ---- the static geometry: lane samples, junction groups ---------------------------------------------------------------
 
@@ -431,7 +433,44 @@ namespace HalfGripOpenWorld
 		internal bool CanPullOut(int lane, double along)
 		{
 			int phys = Meso.LanesOf(Meso.CarriagewayOf(lane))[0];
-			return PullGap(phys, along, -1);
+			return PullGap(phys, along, -1) && !OneTrackBusy(phys, -1, out int _);
+		}
+
+		/// <summary>
+		/// Whether lane <paramref name="lane"/> is a drive (one track: both ways run down its middle) with a car other than <paramref
+		/// name="self"/> on it, or coming onto it, the other way (<paramref name="who"/>): a car going in waits at its mouth, one coming out
+		/// waits by the house, as drivers do on a drive one car wide.
+		/// </summary>
+		private bool OneTrackBusy(int lane, int self, out int who)
+		{
+			who = -1;
+			if (Network.Roads[Traffic.Edges[Lanes.All[lane].Edge].Road].Kind != RoadKind.Drive)
+			{
+				return false;
+			}
+			foreach (int l in Meso.LanesOf(Meso.CarriagewayOf(lane) ^ 1))
+			{
+				foreach (int j in onLane[l])
+				{
+					if (j != self && Agents[j] != null && Agents[j].Conn < 0 && Agents[j].Lane == l)
+					{
+						who = j;
+						return true;
+					}
+				}
+				foreach (int c in Lanes.All[l].In)
+				{
+					foreach (int j in onConn[c])
+					{
+						if (j != self)
+						{
+							who = j;
+							return true;
+						}
+					}
+				}
+			}
+			return false;
 		}
 
 		private bool PullGap(int phys, double along, int self, bool waved = false)
@@ -789,26 +828,6 @@ namespace HalfGripOpenWorld
 			return best;
 		}
 
-		/// <summary>A connector from lane <paramref name="lane"/> that does what connector <paramref name="c"/> does (the same turn onto the same carriageway), or -1.</summary>
-		private static int Equivalent(int lane, int c)
-		{
-			Lanes.Connector cn = Lanes.Connectors[c];
-			if (cn.From == lane)
-			{
-				return c;
-			}
-			int cw = Meso.CarriagewayOf(cn.To);
-			foreach (int o in Lanes.All[lane].Out)
-			{
-				Lanes.Connector on = Lanes.Connectors[o];
-				if (on.Turn == cn.Turn && Meso.CarriagewayOf(on.To) == cw)
-				{
-					return o;
-				}
-			}
-			return -1;
-		}
-
 		/// <summary>The connector car <paramref name="i"/> takes at the end of lane <paramref name="lane"/> (from that lane if it can: an equivalent of its route's), or -1 (its stop is on the lane).</summary>
 		private int NextConn(int i, int lane)
 		{
@@ -821,9 +840,110 @@ namespace HalfGripOpenWorld
 			{
 				return -1;
 			}
-			int c = v.Path[v.Next];
-			int e = Equivalent(lane, c);
-			return e >= 0 ? e : c;
+			return Pick(v, lane, v.Next);
+		}
+
+		/// <summary>
+		/// The connector car <paramref name="v"/> takes from lane <paramref name="lane"/> for its route's connector <paramref name="idx"/>:
+		/// one doing the same (the same turn onto the same carriageway) from which the car can still follow the rest of its route, from this
+		/// lane if there is one (the route's own first), else from another lane of the carriageway (the car must move over to it first),
+		/// else the route's own. The meso routes from lane to lane changing anywhere along a stretch, so a route's connector may land in the
+		/// wrong lane for the turn after; where the lane after a junction is too short to change lanes on (two junctions close together),
+		/// a car taking it missed its turn at the next.
+		/// </summary>
+		private static int Pick(Meso.Vehicle v, int lane, int idx)
+		{
+			int c = v.Path[idx];
+			int cw = Meso.CarriagewayOf(Lanes.Connectors[c].To);
+			int turn = Lanes.Connectors[c].Turn;
+			int First(int from)
+			{
+				if (Lanes.Connectors[c].From == from && CanFollow(v, Lanes.Connectors[c].To, idx + 1, 0))
+				{
+					return c;
+				}
+				foreach (int o in Lanes.All[from].Out)
+				{
+					Lanes.Connector on = Lanes.Connectors[o];
+					if (on.Turn == turn && Meso.CarriagewayOf(on.To) == cw && CanFollow(v, on.To, idx + 1, 0))
+					{
+						return o;
+					}
+				}
+				return -1;
+			}
+			int e = First(lane);
+			if (e >= 0)
+			{
+				return e;
+			}
+			e = First(Lanes.Connectors[c].From);
+			if (e >= 0)
+			{
+				return e;
+			}
+			foreach (int l in Meso.LanesOf(Meso.CarriagewayOf(lane)))
+			{
+				e = First(l);
+				if (e >= 0)
+				{
+					return e;
+				}
+			}
+			return c;
+		}
+
+		/// <summary>
+		/// Whether a car on lane <paramref name="lane"/> can follow its route from connector <paramref name="idx"/> on: by a connector from
+		/// this lane doing the same from which it can go on, or with room to change over to a lane that has one (the lanes after short ones
+		/// looked at too, <paramref name="depth"/> deep), <see cref="Meso.ChangeRoom"/> for each lane crossed: a driver gets into the lane
+		/// for a turn a few junctions on early.
+		/// </summary>
+		private static bool CanFollow(Meso.Vehicle v, int lane, int idx, int depth)
+		{
+			if (idx >= v.Path.Count || depth > 6)
+			{
+				return true;
+			}
+			Lanes.Lane l = Lanes.All[lane];
+			List<int> lanes = Meso.LanesOf(Meso.CarriagewayOf(lane));
+			if (Meso.Reach(lane) - l.Hold >= (lanes.Count - 1) * Meso.ChangeRoom(l))
+			{
+				// Room to get into any of its carriageway's lanes.
+				return true;
+			}
+			int c = v.Path[idx];
+			int cw = Meso.CarriagewayOf(Lanes.Connectors[c].To);
+			int turn = Lanes.Connectors[c].Turn;
+			bool Does(int from)
+			{
+				foreach (int o in Lanes.All[from].Out)
+				{
+					Lanes.Connector on = Lanes.Connectors[o];
+					if (on.Turn == turn && Meso.CarriagewayOf(on.To) == cw && CanFollow(v, on.To, idx + 1, depth + 1))
+					{
+						return true;
+					}
+				}
+				return false;
+			}
+			if (Does(lane))
+			{
+				return true;
+			}
+			foreach (int m in lanes)
+			{
+				if (m == lane)
+				{
+					continue;
+				}
+				double room = Math.Min(Meso.Reach(lane), Meso.Reach(m)) - Math.Max(Meso.StartOf(lane), Meso.StartOf(m)) - l.Hold;
+				if (room >= Math.Abs(Lanes.All[m].Index - l.Index) * Meso.ChangeRoom(l) && Does(m))
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/// <summary>The lane car <paramref name="i"/> on lane <paramref name="lane"/> must be in for its way on (the lane itself if fine).</summary>
@@ -945,7 +1065,8 @@ namespace HalfGripOpenWorld
 				}
 				onIt = false;
 				Lanes.Connector cn = Lanes.Connectors[c];
-				Merging(c, base0 + cn.Length, i, a.V, a.Conn >= 0, Consider);
+				// (Committed, it is as good as in its box: at two junctions decided as one, through the first and on into the second.)
+				Merging(c, base0 + cn.Length, i, a.V, a.Conn >= 0 || a.Committed, Consider);
 				if (g0 < double.MaxValue)
 				{
 					break;
@@ -997,7 +1118,7 @@ namespace HalfGripOpenWorld
 					double left = length - Agents[k].X;
 					// Ahead once on the lane if it gets there first (by time: two cars from two junctions can arrive together).
 					double theirs = left / Math.Max(Agents[k].V, 1.0);
-					// A car in its box goes ahead of one still on its lane; two in their boxes, the one there first.
+					// A car in its box goes ahead of one still on its lane; two in their boxes (or committed to them), the one there first.
 					if (k != self && (!meIn || (left < toEnd && (theirs < mine || (theirs == mine && k < self)))))
 					{
 						consider(toEnd - left - Traffic.CarLength, Agents[k].V, k);
@@ -1019,9 +1140,7 @@ namespace HalfGripOpenWorld
 			{
 				return -1;
 			}
-			int c = v.Path[idx];
-			int e = Equivalent(lane, c);
-			return e >= 0 ? e : c;
+			return Pick(v, lane, idx);
 		}
 
 		/// <summary>
@@ -1286,6 +1405,13 @@ namespace HalfGripOpenWorld
 					{
 						Take(Driver.StopAt(a.V, l.Limit, dist), Why.Change, blocker);
 					}
+					Agent bk = blocker >= 0 ? Agents[blocker] : null;
+					if (bk != null && bk.X > a.X - Traffic.CarLength - Driver.Gap0 && a.V > Rolling && dist < 2.0 * Meso.ChangeRoom(l))
+					{
+						// A car alongside or just ahead in the lane it wants, at much its speed (it could run beside it to the end): it
+						// eases off to drop in behind, as a driver does.
+						Take(-0.5 * Driver.Brake, Why.Change, blocker);
+					}
 				}
 			}
 			else if (v.Through && a.ChangeLeft <= 0.0)
@@ -1331,6 +1457,10 @@ namespace HalfGripOpenWorld
 			if (M.RouteFrom(v, lane) && v.Path.Count > 0 && Lanes.Connectors[v.Path[0]].From == lane)
 			{
 				Missed++;
+				if (MissedAt.Count < 20)
+				{
+					MissedAt.Add((i, lane, T));
+				}
 				return true;
 			}
 			v.Path.Clear();
@@ -1437,6 +1567,13 @@ namespace HalfGripOpenWorld
 				go = false;
 				w = Why.Room;
 			}
+			if (go && !inBox && OneTrackBusy(cn.To, i, out int ow))
+			{
+				// Into a drive with a car on it coming out: it waits at the mouth for it.
+				go = false;
+				w = Why.Room;
+				wc = ow;
+			}
 			if (go && mine && !inBox && !Clear(i, a, c, -(dist + Lanes.All[lane].Hold), out wc))
 			{
 				go = false;
@@ -1485,8 +1622,7 @@ namespace HalfGripOpenWorld
 			int c2 = v.Through ? ThroughFrom(to) : v.Next + 1 < v.Path.Count ? v.Path[v.Next + 1] : -1;
 			if (c2 >= 0 && !v.Through)
 			{
-				int e = Equivalent(to, c2);
-				c2 = e >= 0 ? e : c2;
+				c2 = Pick(v, to, v.Next + 1);
 			}
 			if (c2 < 0)
 			{
@@ -1650,11 +1786,12 @@ namespace HalfGripOpenWorld
 					{
 						continue;
 					}
-					if (area.Kind == Conflicts.Merging && !firm && a.StoodSince >= 0.0 && T - a.StoodSince > Courtesy
+					if (area.Kind == Conflicts.Merging && !firm && direct && a.StoodSince >= 0.0 && T - a.StoodSince > Courtesy
 						&& Driver.Stopping(b.V, Driver.Brake) + Driver.Gap0 < o0 - dj)
 					{
-						// Waiting long to merge into a stream: the next driver in it lets it in (it can slow comfortably), as in a zip
-						// merge; once this car is in the box, that one follows it (Merging).
+						// Waiting long to merge into a stream: the next driver in it, on the lane just before the junction, lets it in (it
+						// can slow comfortably), as in a zip merge; once this car is in the box, that one follows it (Merging). Not one a
+						// junction or more back: it doesn't see this car as the car ahead in time to slow for it.
 						continue;
 					}
 					if (firm)
@@ -2054,6 +2191,10 @@ namespace HalfGripOpenWorld
 					{
 						// Missed its lane: the quickest way on from where it is.
 						Missed++;
+						if (MissedAt.Count < 20)
+						{
+							MissedAt.Add((i, a.Lane, T));
+						}
 						if (!M.RouteFrom(v, a.Lane) || v.Path.Count == 0)
 						{
 							a.X = end;
@@ -2303,6 +2444,22 @@ namespace HalfGripOpenWorld
 								waving.Add((phys, x));
 							}
 							continue;
+						}
+						if (OneTrackBusy(phys, i, out int _))
+						{
+							// Out along a drive with a car on it coming in: it waits by the house.
+							continue;
+						}
+						int want = v.Ends ? phys : WantLane(i, phys);
+						if (want != phys && Lanes.All[want].Kind == Lanes.Bay && Lanes.All[want].Parent == phys && x >= Meso.StartOf(want) + Lanes.Axle)
+						{
+							// Its turn is from the bay beside it (a house short of a junction with a left-turn bay): it pulls out across into
+							// the bay, as a driver would, rather than into the lane it couldn't get out of in time.
+							if (!PullGap(want, x, i, waved))
+							{
+								continue;
+							}
+							phys = want;
 						}
 						pullNext.Remove(i);
 					}
@@ -2650,6 +2807,8 @@ namespace HalfGripOpenWorld
 						a.V = Math.Min(a.V, Math.Sqrt(vl * vl + 2.0 * Driver.Brake * Math.Max(0.0, gap - Driver.Gap0)));
 					}
 				}
+				int prevLane = -1;
+				double prevX = 0.0, prevV = 0.0;
 				foreach ((int car, double _, double _, int phys) in converting)
 				{
 					Agent a = Agents[car];
@@ -2663,7 +2822,21 @@ namespace HalfGripOpenWorld
 						}
 						a.V = Math.Min(a.V, Math.Sqrt(vl * vl + 2.0 * Driver.Brake * Math.Max(0.0, gap - Driver.Gap0)));
 					}
+					if (a != null && a.Conn < 0 && a.Lane == prevLane && a.X > prevX - Meso.Jam)
+					{
+						// Still behind the one before it in the queue (pulled back behind a car ahead of both, it would be measured against
+						// that car too, the lanes' order not yet sorted again, and land on it).
+						a.X = Math.Max(Meso.StartOf(a.Lane), prevX - Meso.Jam);
+						a.V = Math.Min(a.V, prevV);
+					}
+					if (a != null && a.Conn < 0)
+					{
+						prevLane = a.Lane;
+						prevX = a.X;
+						prevV = a.V;
+					}
 				}
+				Index();
 			}
 		}
 

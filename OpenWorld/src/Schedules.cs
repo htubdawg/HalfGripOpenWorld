@@ -334,6 +334,7 @@ namespace HalfGripOpenWorld
 		private int[] via;
 		private readonly List<int> touched = new List<int>();
 		private readonly List<(int edge, int dir)> route = new List<(int edge, int dir)>();
+		private readonly Meso.PlanScratch planScratch = new Meso.PlanScratch();
 
 		/// <summary>The quickest way by road from <paramref name="from"/> to <paramref name="to"/> on empty roads; null if there is none.</summary>
 		private Leg Way(Traffic.Anchor from, Traffic.Anchor to)
@@ -349,7 +350,9 @@ namespace HalfGripOpenWorld
 				}
 			}
 			Routes++;
-			if (!Traffic.Route(from, to, route, heap, cost, via, touched))
+			// By the lane graph, as the meso will drive it; by the traffic's map only where an end is off the lane graph (the meso can't
+			// drive that leg either: it counts it unrouted).
+			if (!Meso.PlanRoute(from, to, route, planScratch) && !Traffic.Route(from, to, route, heap, cost, via, touched))
 			{
 				return null;
 			}
