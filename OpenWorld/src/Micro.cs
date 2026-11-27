@@ -1271,8 +1271,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private void Junction(int i, Agent a, int lane, int c, double dist, double v0, ref double acc, ref Why why, ref int whyCar, bool mine)
 		{
-			bool inBox = a.Conn >= 0 && Lanes.Connectors[a.Conn].KeepClear
-				&& Meso.Reach(lane) - Lanes.All[lane].Hold - Meso.JoinAt(a.Conn) < Meso.Jam;
+			bool inBox = a.Conn >= 0 && Lanes.Connectors[a.Conn].To == lane && OneBox(a.Conn);
 			if (mine && a.Committed)
 			{
 				// Committed, but the room past the box gone (a queue backing up into it): it stops short if it still can, braking hard.
@@ -1501,7 +1500,8 @@ namespace HalfGripOpenWorld
 					// Committed, it is firm while it can move (one committed but held at its line by the queue ahead isn't coming yet).
 					bool free = !Held(j, b);
 					// (Or committed through the junction before on its way here: two junctions decided as one at the first line.)
-					bool firm = inside || on || (direct && b.Committed && free) || (b.Conn >= 0 && b.Committed);
+					// (Or on a connector whose box runs straight on into this one's: it is in one junction and clears it without stopping.)
+					bool firm = inside || on || (direct && b.Committed && free) || (b.Conn >= 0 && (b.Committed || (b.Conn != o && OneBox(b.Conn) && Lanes.Connectors[b.Conn].To == oc.From)));
 					// Standing, it comes only if it has decided to and nothing (a queue, a lane change) holds it.
 					// Standing at a red that has just turned green, it will go (it hasn't decided again yet: cars decide in turn).
 					bool goes = firm || (b.V >= Rolling && free) || (direct && (b.Go || b.Reason == Why.Light) && free);
@@ -1667,6 +1667,14 @@ namespace HalfGripOpenWorld
 
 		private readonly List<int> via = new List<int>();
 
+		/// <summary>Whether connector <paramref name="c"/>'s box runs straight on into the next junction's, past a lane too short to stand
+		/// on: a car through it is in one junction, and clears the next without stopping (<see cref="Junction"/>'s inBox).</summary>
+		private static bool OneBox(int c)
+		{
+			Lanes.Connector cn = Lanes.Connectors[c];
+			return cn.KeepClear && Meso.Reach(cn.To) - Lanes.All[cn.To].Hold - Meso.JoinAt(c) < Meso.Jam;
+		}
+
 		/// <summary>
 		/// The cars on lane <paramref name="lane"/>'s carriageway (its stop line <paramref name="endD"/> along the connector looked at, in
 		/// <see cref="via"/>'s last) whose way on is <see cref="via"/>, then back through the junction before it and the cars in that, as far
@@ -1687,7 +1695,9 @@ namespace HalfGripOpenWorld
 					double d = endD + b.X - reachL;
 					if (d >= o0 - Approach && Follows(k, l, -1))
 					{
-						coming.Add((k, d, false, via.Count == 1 && l == lane));
+						// Its decision is its own just before the connector looked at, or before the junction before where that one's box
+						// runs straight on into this one's (decided as one, Junction's inBox).
+						coming.Add((k, d, false, l == lane && (via.Count == 1 || (via.Count == 2 && OneBox(via[0])))));
 					}
 				}
 			}
