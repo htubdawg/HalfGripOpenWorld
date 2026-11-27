@@ -50,5 +50,5 @@ Last written 2026-11-27.
 
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools from `tools/halfgriptools-stub`): compiles clean.
 - `trafficsim` (16 seeds): all checks pass.
-- Full `meshcheck`: running at the time of writing (only doc comments changed outside the new files; it passed last session).
+- Full `meshcheck`: all checks pass.
 - Not run in game (nothing in the game uses the lane graph or the plans yet; the world is unchanged this session).
