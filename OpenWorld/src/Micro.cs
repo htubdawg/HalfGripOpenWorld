@@ -1500,7 +1500,8 @@ namespace HalfGripOpenWorld
 					bool inside = dj >= o0;
 					// Committed, it is firm while it can move (one committed but held at its line by the queue ahead isn't coming yet).
 					bool free = !Held(j, b);
-					bool firm = inside || on || (direct && b.Committed && free);
+					// (Or committed through the junction before on its way here: two junctions decided as one at the first line.)
+					bool firm = inside || on || (direct && b.Committed && free) || (b.Conn >= 0 && b.Committed);
 					// Standing, it comes only if it has decided to and nothing (a queue, a lane change) holds it.
 					// Standing at a red that has just turned green, it will go (it hasn't decided again yet: cars decide in turn).
 					bool goes = firm || (b.V >= Rolling && free) || (direct && (b.Go || b.Reason == Why.Light) && free);
@@ -1616,10 +1617,11 @@ namespace HalfGripOpenWorld
 					return true;
 				case Why.Leader:
 					Agent lead = b.ReasonCar < 0 ? null : Agents[b.ReasonCar];
-					if (lead != null && lead.V < Rolling && lead.Conn < 0 && depth < 8 && Held(b.ReasonCar, lead, depth + 1))
+					if (lead != null && lead.V < Rolling && b.Conn < 0 && lead.Conn < 0 && lead.Lane == b.Lane && depth < 8 && Held(b.ReasonCar, lead, depth + 1))
 					{
-						// Behind a car standing on its lane held itself (at its line, by a light or giving way): it can't come before that one
-						// goes, whatever it has decided about its own junction.
+						// Behind a car standing on its own lane held itself (at the same line, by a light or giving way): it can't come before
+						// that one goes, whatever it has decided about its own junction. (One standing beyond the junction is another matter:
+						// a car that has decided to go follows it through.)
 						return true;
 					}
 					// Behind a standing car, unless it has decided to go through its junction (following a slow car beyond it).
@@ -1716,9 +1718,16 @@ namespace HalfGripOpenWorld
 			int from = on >= 0 ? Lanes.Connectors[on].To : lane;
 			for (int t = 0; t < via.Count; t++)
 			{
-				if (Upcoming(j, t, from) != via[t])
+				int up = Upcoming(j, t, from);
+				if (up != via[t])
 				{
-					return false;
+					// Its own way on can't be taken from here (a lane too short to change out of): it will take another at the line, perhaps
+					// this one, so it is looked for as if it would.
+					bool missing = up >= 0 && Lanes.Connectors[up].From != from && Lanes.Connectors[via[t]].From == from;
+					if (!missing)
+					{
+						return false;
+					}
 				}
 				from = Lanes.Connectors[via[t]].To;
 			}
