@@ -10,46 +10,42 @@ Last written 2026-11-27.
 
 - **Branch: `traffic-rework-branch`** (the owner: stay on it). The traffic is being rebuilt from scratch: **read
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
-- **Phases 0 to 2 are done**: the world with the old traffic taken out, `Junctions.cs` and fixed-time `TrafficSignals`; the lane graph
-  (`Lanes.cs`) and conflict areas (`Conflicts.cs`); each race's plans (`Schedules.cs`).
-- **Phase 3, the meso headless, is done** (`Meso.cs`, run by `tools/trafficsim`). Nothing in the game calls it yet.
-  - How it works: `docs/TRAFFIC_REWORK.md` §4, "As built (phase 3)". Lanes are the queues; a car waits in the lane its next connector
-    leaves from; 2 s headway; storage at 16.5 units a car; junctions admit on the light and the conflict areas (cars already through,
-    cars given way to that are coming); routes on the lanes' live delays through the wrap; a full lot sends a car to the nearest place
-    for the same purpose with room.
-  - Two things the first runs showed, both fixed:
-    - A **standoff at two junctions whose boxes touch** (nodes 42/44/47, and 26/30): each car gave way to another one waiting, round
-      a loop, until 300 s. Now, between two cars both held at their lines, the one held longer goes. The check against cars already
-      in the junction still keeps them apart.
-    - **Long late tours came home after 03:00**: two 10-minute drives across the map, planned to 02:15 on free roads, lost a couple of
-      minutes at the lights. `Schedules` now keeps a tour only if its car is home by 02:30 with half its driving again to spare
-      (`HeldUp`). Seed 1 keeps 658 tours (was about 577) and still plans 100% of the survey's driving.
-  - Seed 1 (weekday), simulated from 03:00: all 1,364 trips made, 6 cars sent on from a full lot, none rerouted, everyone home. On
-    average a trip loses **16.7 s** to the lights and junctions over its free time (worst 140 s). Peak 221 cars on the road at 16:38,
-    plus 100 through. The hours still match the surveys (cars moving within 2.5 points of TPG 9, trips within 3.4 of NT-3). The worst
-    queue is 53 s at a light on a primary road (node 233). The simulated day's counts are close to the plan's, except the trunk: its
-    count is about two thirds of the plan's (15,300 a day against 22,300), because the through cars lose time at the lights and so
-    make fewer laps. The whole day
-    runs in about 0.4 s, half of it routing. From the race's start hour (13:07) it also passes.
-  - 16 seeds: all checks pass (conservation every 10 s, no deadlock, every leg routed, every trip made, everyone home, repeatable).
+- **Phases 0 to 3 are done**: the world with the old traffic taken out, `Junctions.cs` and fixed-time `TrafficSignals`; the lane graph
+  (`Lanes.cs`) and conflict areas (`Conflicts.cs`); each race's plans (`Schedules.cs`); the meso (`Meso.cs`).
+- **Phase 4 is built** (`Micro.cs`, `Driver.cs`; how it works: `docs/TRAFFIC_REWORK.md` §4, "As built (phase 4)"). Nothing in the game
+  calls it yet. `trafficsim` runs every seed's day with the micro level round three pretend players (one standing at Kingsbridge's
+  light, node 6; two driving the lane graph at random, through the wrap too) and fails on every visible fault: bodies overlapping, two
+  cars in one crossing/merging/head-on area past their lines, standing in a box, standing 10 s with nothing holding it or round a loop,
+  held 300 s, changing level in sight, a jump, conservation across both levels.
+  - **The 16 seeds (1 to 16): every check passes**, meso and micro. A day round three players runs in 4 to 6 s.
+  - **Not yet robust: on seeds 17 to 32, three fail**: seed 22 one car not home at the day's end; seed 25 a crossing at node 280
+    (a car at 13 u/s on connector 1195 into a through car at 53 u/s on 1190, 06:11) and a box stop at node 42 (connector 240, 15:57);
+    seed 28 a crossing at node 89 (connectors 461/463, 15:48; node 89 and 126 are two junctions close together). Run
+    `TRAFFICSIM_EVERYWHERE=0 dotnet run -c Release --project tools/trafficsim -- 17 16` to see them; `TRAFFICSIM_FAULTS=<file>` lists
+    every fault and `TRAFFICSIM_TRACE=<cars>` with `TRAFFICSIM_TRACE_AT=<from>,<to>` (day seconds; a game day is 2,400 s, an hour 100 s)
+    prints those cars every step. Every fault found this session had a cause worth fixing in the model, never in the check.
+  - **Consistency (§5) is measured, not yet tuned.** Seed 1 with every junction micro (its fault checks pass too) against the meso alone:
+    a trip loses **58.5 s** in micro against **16.7 s** in meso; micro's saturated headway at the lights is about **3.2 s** against the
+    meso's 2.0; on unlit lanes micro loses 1 to 4 s a car where meso loses under half a second (slowing for the turns ahead and pulling
+    away, which the meso's free time leaves out). The meso is optimistic: a car watched takes longer than one not watched.
+- Fixed on the way (both levels): the wrap's jump connectors had no join, so the meso put through cars coming out of a tunnel at the far
+  end of the next lane (`Lanes.JoinWrap` sets it now); a car off a connector now enters the next lane where its front is (`Meso.JoinFrom`)
+  rather than at the lane's start; a lane's hold now also keeps a car waiting at its red clear of cars crossing on the other green
+  (`Conflicts.Holds`; meshcheck passes).
 - Only 1,904 households reach the main road graph. 110 places and the houses on the eight streets joined only by footpaths are left
   out (PLAN.md lists it).
 
 ## Next
 
-1. **Phase 4 (micro and the boundary, headless)**, as `docs/TRAFFIC_REWORK.md` §4 and §6: `Driver.cs` (IDM following, gap acceptance
-   at the conflict areas, keep-clear, lights, MOBIL on the trunk), micro areas round pretend players in trafficsim, the boundary (a car
-   leaving goes into its lane's queue at its real position and time; one coming in is placed where the meso has it, behind the queue's
-   last car). `Meso.Where` already gives a car's lane and distance (free speed, stopped behind the standing queue). Measure each lane's
-   time and capacity in micro against meso and set meso's figures from that (`Headway`, `Jam`, the 0.75 of a connector's limit). Then
-   all of §5's fault checks on 16 seeds.
-2. Things to decide in the meso when micro shows them:
-   - A car pulling out of a drive only waits for room on the lane, not for a gap in the moving cars.
-   - Only the head of the other lane is counted when giving way, not the cars behind it.
-   - Right on red (PLAN.md: "measure again in the rework"): try it in the meso and keep it only if the delay per trip drops.
-   - The day's end: cars are planned home by 02:30. In the game the day wraps (the next day's plans from 03:00), so the meso must run
-     on into it (phase 5).
-3. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
+1. **Consistency**: set the meso's figures from the micro (§4: `Headway`, `Jam`, the 0.75 of a connector's limit, and a loss for slowing
+   into turns), or find why the micro is slow (its 3.2 s discharge is high against HCM's ~2 s: check how it is measured, IDM's 1.5 m/s²,
+   the decision distance at a green). Then both levels' delays should agree within a few seconds a trip.
+2. The three faults on seeds 17 to 32 (above), then run 32 seeds or more as the check.
+3. Still open in phase 4: a pretend player blocking a road (persistence: its queue still there on return, which needs a meso lane to know
+   about a block); a physics car stood in by the driver; the room checks belong to phase 6.
+4. Things to decide when they show: right on red (PLAN.md: measure again in the rework); the day's end (cars are planned home by 02:30,
+   in the game the day wraps, phase 5).
+5. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
    end kinks (lanes 30, 253, 259, 277).
 
 ## Working with the owner
@@ -60,6 +56,7 @@ Last written 2026-11-27.
 ## Checks
 
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools from `tools/halfgriptools-stub`): compiles clean.
-- `trafficsim` (16 seeds): all checks pass.
+- `trafficsim` seeds 1 to 16: all checks pass (seeds 17 to 32: three fail, above).
 - Full `meshcheck`: all checks pass.
-- Not run in game (nothing in the game uses the lane graph, the plans or the meso yet; the world is unchanged this session).
+- Not run in game (nothing in the game uses the lane graph, the plans, the meso or the micro yet; the world is unchanged but the waiting
+  holds, which only the traffic reads).

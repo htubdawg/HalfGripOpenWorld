@@ -147,7 +147,7 @@ internal static partial class Program
 		private readonly Micro mi;
 		private readonly Faults faults;
 		private readonly double[] px, pz, py, hx, hz;
-		private readonly double[] lastX, lastZ;
+		private readonly double[] lastX, lastZ, lastV;
 		private readonly int[] lastStep;
 		private int step;
 		private int events;
@@ -168,6 +168,7 @@ internal static partial class Program
 			hz = new double[n];
 			lastX = new double[n];
 			lastZ = new double[n];
+			lastV = new double[n];
 			lastStep = new int[n];
 			for (int i = 0; i < n; i++)
 			{
@@ -233,7 +234,7 @@ internal static partial class Program
 				{
 					double dx = px[i] - lastX[i], dz = pz[i] - lastZ[i], d = Math.Sqrt(dx * dx + dz * dz);
 					// A lane off its road's line runs longer round a bend than the road's distance its speed is in (up to a few percent).
-					if (d > (a.V * 1.2 + Driver.MaxBrake * Micro.Dt) * Micro.Dt + 0.5 && d < 1000.0)
+					if (d > (Math.Max(a.V, lastV[i]) * 1.2 + Driver.MaxBrake * Micro.Dt) * Micro.Dt + 0.5 && d < 1000.0)
 					{
 						faults.Add("jump", i, Where(i) + " moved " + d.ToString("0.0") + " in a step");
 					}
@@ -241,6 +242,7 @@ internal static partial class Program
 				lastStep[i] = step;
 				lastX[i] = px[i];
 				lastZ[i] = pz[i];
+				lastV[i] = a.V;
 			}
 			// Overlaps.
 			foreach (List<int> l in grid.Values)

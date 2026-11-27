@@ -123,8 +123,8 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
-		/// Each lane's hold: how far before its end a car waits so its body is clear of every area where it gives way (or may come second),
-		/// 0 at most junctions. Areas meeting head on along a drive are left out (the car coming out stands on the track it waits to leave).
+		/// Each lane's hold: how far before its end a car waits so its body is clear of every area where it gives way (or may come second,
+		/// or waits for its light), 0 at most junctions. Areas meeting head on along a drive are left out (the car coming out stands on the track it waits to leave).
 		/// </summary>
 		private static void Holds()
 		{
@@ -134,10 +134,11 @@ namespace HalfGripOpenWorld
 			}
 			foreach (Area area in All)
 			{
-				if (area.Yield == Follow || area.Yield == Apart || area.Kind == Opposing)
+				if (area.Yield == Follow || area.Kind == Opposing)
 				{
 					continue;
 				}
+				// Where the lights keep the two apart, a car waiting at its red still stands clear of the cars crossing on their green.
 				if (area.Yield != YieldB)
 				{
 					Hold(area.A, area.A0);

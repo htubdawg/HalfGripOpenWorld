@@ -71,7 +71,7 @@ namespace HalfGripOpenWorld
 				return double.MaxValue;
 			}
 			double need = (v * v - vMax * vMax) / (2.0 * Math.Max(dist, 0.5));
-			return need < Brake * 0.5 ? double.MaxValue : -need;
+			return need < Brake * 0.5 ? double.MaxValue : -Math.Min(need, MaxBrake);
 		}
 
 		/// <summary>The distance a car going <paramref name="v"/> needs to stop braking at <paramref name="b"/>.</summary>

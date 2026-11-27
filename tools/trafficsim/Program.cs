@@ -7,7 +7,8 @@ using HalfGripOpenWorld;
 // the meso (Meso.cs) running each race's whole day from 03:00 on the lane graph, and the first seed's from its race's start hour as well:
 // every car in exactly one place every 10 s (conservation), no car held at a lane's end over Meso.Stuck (a deadlock), every leg routed,
 // every planned trip made and every car home by the day's end, the first seed's day the same run twice; for the first seed the
-// simulated day against the surveys (hours, counts by road), the delays and the worst queues.
+// simulated day against the surveys (hours, counts by road), the delays and the worst queues. Phase 4 (MicroDay.cs): the same day with the
+// micro level round pretend players, every visible fault failing it, and the micro against the meso (consistency).
 //   dotnet run -c Release --project tools/trafficsim -- [first seed] [seeds]
 // Builds the world and the traffic's map once (and checks 2 race seeds in 7 fall on a weekend), then the plans (Schedules.cs) for each race seed (16 from 1 by default) and checks:
 // the plans the same built twice; every household's car there and no other; each car's day starting and ending at its home, its stops

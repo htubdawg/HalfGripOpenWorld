@@ -3,7 +3,8 @@
 Written 2026-11-26 on `traffic-rework-branch`, forked from `deer-test-branch` (Open World 0.31.1, which has no traffic code). It
 replaces the traffic of `traffic-test-branch` rather than repairing it. Revised the same day after the owner's answers (section 7).
 Phases 0 to 3 are done (the lane graph and conflict areas, the population and its plans, the meso headless: see `docs/HANDOFF.md`);
-phase 4 is next; the rest is not built yet.
+phase 4 is built (the micro level and the boundary, every fault check passing on 16 seeds) but for tuning the meso to it (consistency);
+the rest is not built yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
 view. Traffic must be realistic and interactive.
@@ -117,6 +118,35 @@ the mesoscopic network and is still there when the player comes back.
   conserved, keep their identity and schedule, and never jump or overlap.
 - Interaction: a crash, a block or a pushed car is real in micro. It slows the cars behind, which carries into meso through storage.
   A wrecked car is gone from its schedule; its household sees it.
+- As built (phase 4, `Micro.cs`, `Driver.cs`):
+  - **Where.** A junction is micro if a lane into or out of it comes within 1,900 of a player (and the far end of the wrap when a player
+    is near a tunnel); it goes back past 2,200. Junctions whose boxes touch (they share conflict areas, or a lane under 100 joins them)
+    and the wrap's two tunnels go together. A lane is micro if the junction at its end is, so a junction's cars are all micro or all meso,
+    and every hand-over is at least 1,900 from a player (sight is 1,400, the fog). A group turning micro while the meso has cars inside its
+    boxes waits for them (up to 3 s): the meso spaces cars in time, not by their bodies.
+  - **Boundary.** Every driving car is in exactly one lane's queue, micro or not (on a connector, the lane after it), so storage and
+    conservation hold across it. A car off a meso junction onto a micro lane is placed where the meso has it (no faster than it can stop
+    behind the car ahead or at its line; held back if a car changed lanes into its place since); one off a micro junction onto a meso
+    lane goes into that queue at its real position and time. The meso asks the micro for room on a micro lane (the last car's position
+    and the cars on their way in) and for a gap to pull out into. Turning micro, a group's cars are placed where the meso has them, spaced
+    a standing gap, slowed to what can stop behind the car ahead and at their line; turning meso, they go into the queues in order.
+  - **Driving.** IDM (1.5 m/s², 2 m/s² comfortable, 1.5 s, 0.75 m standing), the car ahead found along the car's own way through the
+    junctions ahead (the cars on the same connector, on the other connectors off the same lane while they share it, merging onto the same
+    lane first, then on the lane after), every bend and slower road within braking distance. Lanes move at the lane's speed, not the
+    road's distance (a lane round the outside of a bend in the road's line runs up to half as far again).
+  - **Junctions.** Within 120 of the line (or braking distance) a driver decides: the light (amber: on if it can't stop at 2 m/s²), room
+    past the box for its whole body (kept clear: the last car out projected no further than braking comfortably, nor past its own line),
+    and the conflict areas: no car in an area, or committed to it, while this one would be; where it gives way (or came second at a first
+    come area) no car coming within 1 s of it, looked for back along each car's own route as far as 600; merging in front of a car, room
+    for it to slow to this car's speed and keep its time gap. A car standing at its line and held (a light, a standing car ahead, no room)
+    isn't coming. Too close to stop, it commits; committed, it still stops if the room or the areas go and it can still stop firmly.
+    Two junctions whose boxes touch with a lane too short to stand on between them are decided as one at the first line. Standoffs: the
+    one standing longer goes. A car waiting 15 s to merge into a stream is let in by the next car if it can slow comfortably (a zip
+    merge). Cars are decided one by one in index order, each seeing those already decided this step.
+  - **Lanes.** Changes where the way on needs another lane (MOBIL's safety, finished before the stop line; a bay that opens at the junction
+    behind is turned straight into), through cars passing on the trunk (MOBIL, keeping right); one that can't get over goes another way.
+    A lane closer than a car's width to the one beside it (a bay's taper) counts as both.
+  - **What it costs.** A day round three players in 4 to 6 s headless (with every check after every step); with every junction micro, 21 s.
 
 ### Lane graph and conflicts (`Lanes.cs`, `Conflicts.cs`)
 - Built once after `Network`, deterministic under `Network`'s rules.
@@ -184,8 +214,8 @@ network.
    checks them and reports the demand against the surveys.
 3. **Meso, headless (done 2026-11-27).** The whole day, all cars, with lights and parking. Conservation, the surveys, the worst queues,
    deadlocks; build and run time.
-4. **Micro and the boundary, headless.** `Driver`, micro areas round pretend players, the boundary, physics cars stood in by the
-   driver; consistency against meso; all the fault checks green on 16 seeds.
+4. **Micro and the boundary, headless (built 2026-11-27; consistency to tune).** `Driver`, micro areas round pretend players, the
+   boundary, physics cars stood in by the driver; consistency against meso; all the fault checks green on 16 seeds.
 5. **In game, single player.** Far cars drawn from meso, near ones micro, the nearest physics; parked cars from the lots' state; the
    map overlay and the follow-car key; frame cost against the 130 to 140 fps goal.
 6. **Rooms.** Host meso, link events, ownership, stand-ins; `trafficsim` room checks.
