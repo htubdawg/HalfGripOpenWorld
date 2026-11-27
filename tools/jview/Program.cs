@@ -62,7 +62,8 @@ internal static class Program
 			int rr = int.Parse(args[1]);
 			var road = Network.Roads[rr];
 			var others = args[2].Split(',').Select(int.Parse).ToList();
-			var mi = typeof(Network).GetMethod("Meet", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+			// (Network.Meet() is another method of the name: this is the one taking the road, the others and a distance.)
+			var mi = typeof(Network).GetMethods(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).First(m => m.Name == "Meet" && m.GetParameters().Length == 5);
 			var su = typeof(Network).GetMethod("Surface", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 			for (double sv = 0; sv <= 24; sv += 2)
 			{

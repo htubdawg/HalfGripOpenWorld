@@ -2,7 +2,7 @@
 
 Written 2026-11-26 on `traffic-rework-branch`, forked from `deer-test-branch` (Open World 0.31.1, which has no traffic code). It
 replaces the traffic of `traffic-test-branch` rather than repairing it. Revised the same day after the owner's answers (section 7).
-Phase 0 is done; phase 1 (the lane graph and conflict areas) is in progress (see `docs/HANDOFF.md`); the rest is not built yet.
+Phases 0 and 1 are done (the lane graph and conflict areas: see `docs/HANDOFF.md`); phase 2 is next; the rest is not built yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
 view. Traffic must be realistic and interactive.
@@ -160,7 +160,7 @@ network.
 
 0. **Base (done 2026-11-26).** Carry over the world work from `traffic-test-branch` (the highway rework with median, bays and K-rail, Kingsbridge's turn
    lane, `Wrap`, `FramePerf`, `Plots`, the signal masts and heads), with `check.sh`, `preview` and `meshcheck` passing. No traffic yet.
-1. **Lane graph and conflict areas.** `meshcheck` checks; a `jview` mode that draws connectors and conflict areas. Look at node 6,
+1. **Lane graph and conflict areas (done 2026-11-27).** `meshcheck` checks; a `jview` mode that draws connectors and conflict areas. Look at node 6,
    node 42 and the trunk's bays.
 2. **Population and schedules.** `Traffic.cs` carried over; activity chains per car; `trafficsim` reports the demand against the
    surveys.

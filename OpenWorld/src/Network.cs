@@ -462,6 +462,7 @@ namespace HalfGripOpenWorld
 			Bays();
 			// The junctions, now every road is in, and the dead ends; then the samples near bridges.
 			Junctions();
+			UnpavedMouths();
 			DeadEnds();
 			Abutments();
 			Index();
@@ -1559,7 +1560,9 @@ namespace HalfGripOpenWorld
 		/// A lane's end that runs in alongside the road it ends on, cut back to where it first comes close and taken square onto that road
 		/// from there. A link routed to a farm reached the farm's own lane a cell out and ran beside it, a lane's width of grass between,
 		/// all the way to the farmyard (77 road ends lay beside another road; the lane graph's lines ran over the grass between them).
-		/// The line's last point is the end; <paramref name="pin"/>, the end's height, is set when it moves.
+		/// The line's last point is the end; <paramref name="pin"/>, the end's height, is set when it moves. Where two roads meet at the
+		/// end (another lane's end on a lane passing through), each is looked at: the one the line was snapped to there was the lane
+		/// ending, not the farm's lane it ran beside (Farm 88's yard).
 		/// </summary>
 		private static List<(double x, double z)> Unbeside(List<(double x, double z)> line, double half, ref double pin)
 		{
@@ -1568,7 +1571,19 @@ namespace HalfGripOpenWorld
 			{
 				return line;
 			}
-			int on = segments.Hit;
+			int first = segments.Hit;
+			List<(double x, double z)> cut = Unbeside(line, half, first, ref pin);
+			if (cut == line && segments.Snap(line[last].x, line[last].z, 4.0, first, out double _, out double _, out double _) && segments.Hit >= 0)
+			{
+				cut = Unbeside(line, half, segments.Hit, ref pin);
+			}
+			return cut;
+		}
+
+		/// <summary>The line's end cut back from beside road <paramref name="on"/> (see the other overload), or the line itself.</summary>
+		private static List<(double x, double z)> Unbeside(List<(double x, double z)> line, double half, int on, ref double pin)
+		{
+			int last = line.Count - 1;
 			Road road = Roads[on];
 			if (Unpaved(road.Kind) || road.Kind >= RoadKind.Rally)
 			{
@@ -1643,10 +1658,29 @@ namespace HalfGripOpenWorld
 				}
 				m--;
 			}
-			List<(double x, double z)> cut = line.GetRange(0, m + 1);
-			cut.Add((ex, ez));
+			// Eased into the end from 40 or more back, leaving along the line (a quadratic whose handle lies along it): taken straight
+			// there, the line kinked up to 20 degrees where it was cut, and a road meeting it at the kink left a sliver of ground in its
+			// mouth (Kestrel's main road, where the Harrow road meets it).
+			int a = m;
+			while (a > 1 && Dist(line[a], (ex, ez)) < UnhookEase)
+			{
+				a--;
+			}
+			(double x, double z) A = line[a];
+			Unit(A.x - line[a - 1].x, A.z - line[a - 1].z, out double hx, out double hz);
+			double reachE = Dist(A, (ex, ez));
+			double cx = A.x + hx * reachE * 0.5, cz = A.z + hz * reachE * 0.5;
+			List<(double x, double z)> cut = line.GetRange(0, a + 1);
+			for (int q = 1; q <= 16; q++)
+			{
+				double t = q / 16.0, u = 1.0 - t;
+				cut.Add((u * u * A.x + 2.0 * u * t * cx + t * t * ex, u * u * A.z + 2.0 * u * t * cz + t * t * ez));
+			}
 			return Lines.Resample(cut, Step);
 		}
+
+		/// <summary>How far back from its end an unhooked line starts to bend round to it (<see cref="Unhook"/>).</summary>
+		private const double UnhookEase = 40.0;
 
 		/// <summary>How near a line must pass its end for the rest of it to count as a hook back to it.</summary>
 		private const double HookReach = 20.0;
@@ -1797,7 +1831,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>A back road's end that lands this near another road's end goes to that end (see <see cref="ToEnd"/>).</summary>
-		private const double EndSnap = 30.0;
+		private const double EndSnap = 40.0;
 
 		/// <summary>
 		/// A lane's (or smaller road's) end snapped onto the road last hit (<see cref="Segments.Snap"/>) at (x, z): if that is within
@@ -2192,6 +2226,60 @@ namespace HalfGripOpenWorld
 			/// <summary>An arm's end cut where a hub's plate takes over (<see cref="Hub"/>): no mouth, and its ground and lookups stay as the road's.</summary>
 			public bool Hub;
 		}
+
+		/// <summary>
+		/// A farm track's, footpath's or drive's end on another such ribbon takes that ribbon's slope across its own width, fading out
+		/// over <see cref="UnpavedMouth"/> behind: ribbons are drawn flat across, and a footpath meeting a track that climbs 1 in 10
+		/// had its uphill edge 0.14 under the track's bed (-7226, 3381). Paved mouths get their cross-fall from their cut (Level).
+		/// </summary>
+		private static void UnpavedMouths()
+		{
+			for (int r = 0; r < Roads.Count; r++)
+			{
+				Road road = Roads[r];
+				if (!Unpaved(road.Kind) || road.Kind >= RoadKind.Rally || road.Count < 3)
+				{
+					continue;
+				}
+				for (int end = 0; end < 2; end++)
+				{
+					int k = end == 0 ? 0 : road.Count - 1;
+					// (Not where it carries on into another road end to end: the two keep one edge.)
+					if ((end == 0 ? road.Joined0 : road.Joined1) || !segments.Snap(road.X[k], road.Z[k], 1.0, r, out double _, out double _, out double _) || segments.Hit < 0)
+					{
+						continue;
+					}
+					int on = segments.Hit;
+					Road other = Roads[on];
+					if (!Unpaved(other.Kind) || other.Kind >= RoadKind.Rally || EndsAt(other, road.X[k], road.Z[k]) || !segments.Nearest(on, road.X[k], road.Z[k], 2.0, out double _, out int seg, out double _))
+					{
+						continue;
+					}
+					double ds = other.S[seg + 1] - other.S[seg];
+					if (ds <= 1e-9)
+					{
+						continue;
+					}
+					double grade = (other.Y[seg + 1] - other.Y[seg]) / ds;
+					double ox = (other.X[seg + 1] - other.X[seg]) / ds, oz = (other.Z[seg + 1] - other.Z[seg]) / ds;
+					Side(road, k, out double sx, out double sz);
+					double tilt = grade * (sx * ox + sz * oz);
+					for (int j = 0; j < road.Count; j++)
+					{
+						int at = end == 0 ? j : road.Count - 1 - j;
+						double back = Math.Abs(road.S[at] - road.S[k]);
+						if (back >= UnpavedMouth)
+						{
+							break;
+						}
+						road.Tilt[at] += tilt * (1.0 - back / UnpavedMouth);
+					}
+				}
+			}
+		}
+
+		/// <summary>How far back from its end an unpaved road's cross-fall to the ribbon it meets fades out (<see cref="UnpavedMouths"/>).</summary>
+		private const double UnpavedMouth = 24.0;
 
 		/// <summary>
 		/// Where each road (in the order built) runs onto the paving of a road that should be drawn over it, it is cut out, so the two

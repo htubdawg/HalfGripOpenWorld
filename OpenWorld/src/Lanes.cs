@@ -78,6 +78,8 @@ namespace HalfGripOpenWorld
 			public double Join;
 			/// <summary>Whether it swings wide of the plain curve (<see cref="MinRadius"/>).</summary>
 			public bool Wide;
+			/// <summary>Whether it is a fillet (along the lane in, one arc, along the lane out): meshcheck counts them.</summary>
+			public bool Fillet;
 		}
 
 		internal static readonly List<Lane> All = new List<Lane>();
@@ -109,6 +111,10 @@ namespace HalfGripOpenWorld
 		/// about 7.5 round), rather than a real car's turning circle (about 14), which would cut over the kerbs.
 		/// </summary>
 		internal const double FilletRadius = 3.0;
+
+		/// <summary>How far inside the lanes' corner a right turn's fillet may cut, toward the kerb on that side.</summary>
+		internal const double RightCut = 1.5;
+
 		/// <summary>The slowest a connector's limit goes (a dead end's turn round): about 6 mph.</summary>
 		internal const double Crawl = 6.0 * Traffic.Mph;
 
@@ -572,7 +578,7 @@ namespace HalfGripOpenWorld
 			double det = h0x * -h1z - h0z * -h1x;
 			if (Math.Abs(det) > 1e-9)
 			{
-				double u = (wx * -h1z - wz * -h1x) / det, v = (h0x * wz - h0z * wx) / det;
+				double u = (wx * -h1z - wz * -h1x) / det, v = -(h0x * wz - h0z * wx) / det;
 				// The arc is as wide as the shorter of the two straights to the meeting point allows; the rest of the longer is driven
 				// straight, before the arc (the lane in's) or after it (the lane out's).
 				double t = Math.Min(u, v), rho = t * (1.0 + dot) / Math.Abs(cross);
@@ -580,6 +586,18 @@ namespace HalfGripOpenWorld
 				double span = Math.Sqrt(wx * wx + wz * wz);
 				if (t > 0.0 && rho >= FilletRadius && u + v <= 2.0 * span + 10.0)
 				{
+					// A right turn's arc cuts inside the lanes' corner toward the kerb there by rho (1 / cos(half the turn) - 1): no more
+					// than RightCut (a wide arc at a shallow fork ran over the kerb's corner, node 16), never tighter than a fillet.
+					double half = Math.Sqrt((1.0 + dot) * 0.5);
+					if (side < 0.0 && half > 1e-6 && half < 1.0)
+					{
+						double most = Math.Max(FilletRadius, RightCut / (1.0 / half - 1.0));
+						if (rho > most)
+						{
+							rho = most;
+							t = rho * Math.Abs(cross) / (1.0 + dot);
+						}
+					}
 					double lead = u - t, ax = x0 + h0x * lead, az = z0 + h0z * lead;
 					double alpha = side * Network.Atan2(cross, dot);
 					List<double> fx = new List<double> { x0 };
@@ -603,6 +621,7 @@ namespace HalfGripOpenWorld
 					Resample(c, fx, fz, c.Y[0], y1);
 					c.Join = to.Start;
 					c.Wide = false;
+					c.Fillet = true;
 					return true;
 				}
 			}

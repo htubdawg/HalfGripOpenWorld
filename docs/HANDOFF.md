@@ -4,64 +4,47 @@ The one handoff: **overwrite it** at the end of each session with where things s
 session notes; git keeps them (`git log -p docs/HANDOFF.md`). Standing decisions go in `docs/PLAN.md`, open in-game tests in
 `docs/TESTING.md`, finished research in `docs/research/`.
 
-Last written 2026-11-26.
+Last written 2026-11-27.
 
 ## Where things stand
 
 - **Branch: `traffic-rework-branch`** (the owner: stay on it). The traffic is being rebuilt from scratch: **read
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
 - **Phase 0 is done**: the world from `traffic-test-branch` with the traffic simulation taken out; `Junctions.cs` and a fixed-time
-  `TrafficSignals` from the race clock (see `git log -p docs/HANDOFF.md` for the details).
-- **Phase 1, the lane graph and conflict areas, is nearly done.** Nothing in the game uses it yet (`Lanes.Ensure` is called only by
-  the tools), so the game is unchanged by it.
-  - `Lanes.cs`: 2,898 lanes (26 bays: the trunk's from `TrunkLanes`, Kingsbridge's from `TurnBays`), 4,970 connectors, the wrap
-    joining the trunk's lanes (a `Jump` connector of no length). A lane ends at its junction's box, the stop line (on a stretch too
-    short for both boxes, at the lit end's drawn stop line). **Connector lines are the path of the car's middle**, starting 7 behind
-    the stop line (`Lanes.Axle`). Every connector first tries a **fillet** (radius 3 or more, along the lanes in and out); else a plain
-    Bézier; if that bends tighter than radius 3, one arc of radius 4 or more joining the lane out further on, with a swing the other
-    way first for a hairpin; else a grid of Béziers. No turns over 150°. A bay whose junction has no left turn carries on into the
-    inner lane. **The owner on turning radii:** "a car can go around a 90 degree turn no problem": lines fit the drawn paving.
-  - `Conflicts.cs`: 10,712 areas from swept car bodies (14 by 5.4, 0.3 all round), from four car lengths back to the tail leaving.
-    Kinds crossing, merging, diverging, head on; who gives way from the lights' phases, then main line, PA 3322, 3321, first come.
-    `Lane.Hold`: how far back a car waits clear of every area where it gives way.
-  - `Lanes.Rebuild` (tools only); `meshcheck lanes` checks the graph comes out the same built twice (it does).
-  - Looked at with `jview lanes` (`JVIEW_TEX=1`): node 6 (Kingsbridge's bay), old node 42 just north of it, a trunk crossing with its
-    median bays (node 480): lines on the lanes, bays' turns starting in the bays.
-- **Node 6 (the old "cars stuck here")**: the right off the Pinewick road (2>0) keeps 10.5 clear of the cars going on south (0>1).
-- **The world's drawing fixed where the lane graph showed it wrong (this session; world changes, all in `Network`).** The owner on
-  node 681: "what even is that road". Each fix has a meshcheck check (`beside`, tighter `holes`):
-  - `Unbeside`: a lane's end running in alongside the road it ends on is cut back and taken square onto it (farm links beside the
-    farm's lane to the yard). `ThroughShortest` (120) and `TurnsBack`: no through way that meets a road straight away or turns back
-    beside its own lane (slivers, V's). `Traffic.Driven` leaves out a road cut out whole.
-  - `Unhook`: a routed line that runs past its end and hooks back is cut before it heads away (Kestrel's main road; now a hub).
-  - `Meet`: road ends up to 8 apart brought to one point before joints and hubs, the move eased over 40. `Drives` moves the road
-    meeting a farm's lane onto the split sample.
-  - `Segments.Tee` (in `Paving`, so every "drawn over" question): at a T the road carrying on is drawn over the one ending on it,
-    whichever is bigger (a street ending on a lane cut the lane across its width). `Network.TeeOver` for jview.
-  - `CornerTurn` (125°): two roads alone at a place join round the bend (L corners of streets, farmyards).
-  - `Squared`: routed lanes meet the road they end on square (`SquareEnd`), where they can; `Faired`: a lane's or street's tail
-    kinking over 45° within its mouth's reach is smoothed from 96 back.
-  - `TryHub`: two ends and a road through make a hub; a road through near its own end left to `MakeHub`'s room test. Hubs 38 to 61.
-  - Totals: meshcheck holes 10,307 pixels to 2,178 (worst 1,168 to 268); joints 96 to 126; lanes 228 to 221; country lane dead ends 9
-    (at most 10); the lane graph's points off the paving 1,779 to 40.
-- `meshcheck lanes` still **FAILS** on two small counts:
-  1. **20 connectors touching off the paving** (40 of 500,187 points; 17 of them by 1 to 3 points). The worst: node 16 (-12072,
-     -5846) a right turn at a fork (7), node 89 (-2302, -2982) two streets' mouths side by side (7), node 570 (-7272, 1156) Farm 88's
-     yard (5: a hub that has to leave one lane out, the yard's stub too short for its cut).
-  2. **1 lane held back too far**: lane 1103 into node 280 (5743, -9552), Glenford: a street meeting the trunk at about 60°; the right
-     turn in from the trunk turns about 120° and swings across the mouth of the street's other lane, so the car coming out waits 29.5
-     back (two car lengths are 28). **Decided: square the street onto the trunk** (as `Squared` does for lanes: find the street's
-     road with `jview near 5743 -9552 45`, see why its end isn't squared, likely a village street laid without `SquareEnd`), then
-     re-run the full meshcheck. Don't loosen the hold check.
-- `tools/check.sh` compiles clean; the full `meshcheck` passes every check but `lanes`; `preview` repeatable.
-- `LANES_WHY=all` lists every off-paving connector; `jview beside` lists road ends close beside another road.
+  `TrafficSignals` from the race clock.
+- **Phase 1, the lane graph and conflict areas, is done.** The full `meshcheck` passes, `lanes` included. Nothing in the game uses
+  the graph yet (`Lanes.Ensure` is called only by the tools), so the game itself is unchanged by it; the world changes below do show.
+  - `Lanes.cs`: 2,846 lanes (26 bays), 4,893 connectors; `Conflicts.cs`: 11,615 areas. Lines are the path of the car's middle from 7
+    behind the stop line (see CLAUDE.md's table for the whole design).
+  - **The fillet was never on until this session.** `Arc`'s solve of `Q0 + u h0 = P1 - v h1` had `v`'s sign wrong, so 9 of about
+    4,100 turns took the fillet and the rest fell back to Béziers and arcs. Fixed: 3,056 of 3,080 turns are fillets now; meshcheck
+    `lanes` fails if fewer than half are. A right turn's fillet cuts no more than `RightCut` (1.5) inside the lanes' corner (a wide
+    arc at a shallow fork ran over the kerb's corner, node 16).
+  - Node 6 (the old "cars stuck here"): the right off the Pinewick road (2>0) keeps 10.5 clear of the cars going on south (0>1).
+- **World changes this session** (each found through the lane graph; all deterministic, so the world differs from the last build):
+  - `SquareEnd` (TownPlan): a street is squared from 45 off the road's middle **and 35 past its edge**: on the trunk (40 to its
+    edge) the curve fell right at the edge and the right turn in swung across the mouth (Glenford, node 280; the hold of 29.5 there
+    is now 23.5 at most anywhere).
+  - `Unhook`: an unhooked end eases into its point from 40 back instead of kinking up to 20° (Kestrel's main road, where the Harrow
+    road meets it; a sliver of ground in that mouth). meshcheck `beside` now fails on a routed road's end kinking over 18° at one
+    sample (4 mild ones of 12 to 15° remain, worst 15: lanes 30, 253, 259, 277, ends faired or squared; left alone).
+  - `EndSnap` 30 → 40: a link meeting a farm's lane up to 40 from its end goes to that end (a stub at node 573; 50 lanes' worth of
+    stubs and junctions joined up).
+  - `Unbeside` looks at a second road at the end point when the first it hits isn't the one run alongside (Farm 88's yard: the link to
+    Farm 104 ran back beside the yard lane; that was the map's worst hole, 268 pixels).
+  - `UnpavedMouths` (new, after `Junctions`): a track's, path's or drive's end on another such ribbon takes that ribbon's slope across
+    its width, fading over 24 (a footpath meeting a track climbing 1 in 10 at (-7226, 3381) had its edge 0.14 under the track's bed).
+  - Totals: holes 2,178 → 1,345 pixels (worst 268 → 113, at (11145, -10111)); joints 126 → 129; hubs 61 → 64; country lane dead ends
+    9 → 6; tracks 9 → 5 points off the bed (worst 0.76 → 0.32); ribbons worst 0.02.
+- Tools: meshcheck names the failing checks on its last line (some checks' own lines don't say FAIL); `ribbons` names its worst
+  sample's road and place; jview's `meet` mode works again (it broke when `Network.Meet()` was added).
 
 ## Next
 
-1. The two small `lanes` failures above (then phase 1 is done): square the street at node 280 first, then the 20 brushing connectors
-   (`LANES_WHY=all`).
-2. Phase 2 (population and schedules), as `docs/TRAFFIC_REWORK.md` §6: `Traffic.cs`'s households, cars and places carried over;
+1. **Phase 2 (population and schedules)**, as `docs/TRAFFIC_REWORK.md` §6: `Traffic.cs`'s households, cars and places carried over;
    activity chains per car from the race seed; a new `tools/trafficsim` that reports the demand against the surveys.
+2. Optional world polish found on the way: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes: `jview
+   lanes` there showed two right turns brushing it before the fillet fix); the four mild end kinks above.
 
 ## Working with the owner
 
@@ -70,7 +53,7 @@ Last written 2026-11-26.
 
 ## Checks
 
-- `tools/check.sh`: compiles clean.
-- `meshcheck lanes`: as above (FAIL: 20 connectors brushing off the paving, one hold).
-- Full `meshcheck`: every check passes but `lanes`.
-- Not run in game (nothing in the game uses the lane graph yet).
+- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools from `tools/halfgriptools-stub`): compiles clean.
+- Full `meshcheck`: all checks pass.
+- `preview`: repeatable; tile times 13.7 ms (town), 35.6 ms (country). Map looked at.
+- Not run in game (nothing in the game uses the lane graph yet; the world changes are small road-end fixes).

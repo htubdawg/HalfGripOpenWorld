@@ -142,14 +142,20 @@ internal static class Program
 			("lights", SignalChecks),
 			("lanes", LaneChecks),
 		};
+		// Some checks' lines don't say FAIL themselves: the failing ones are named at the end.
+		List<string> failed = new List<string>();
 		foreach ((string name, Func<bool> check) in checks)
 		{
 			if (args.Length == 0 || Array.IndexOf(args, name) >= 0)
 			{
-				ok &= check();
+				if (!check())
+				{
+					ok = false;
+					failed.Add(name);
+				}
 			}
 		}
-		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL");
+		Console.WriteLine(ok ? "all checks pass" : "SOME CHECKS FAIL: " + string.Join(", ", failed));
 		return ok ? 0 : 1;
 	}
 
@@ -1209,11 +1215,22 @@ internal static class Program
 		{
 			Console.WriteLine("    the lane graph built twice is not the same");
 		}
-		bool ok = deadIn == 0 && unreached == 0 && offConnectors == 0 && missed == 0 && sixOk && early == 0 && offLine == 0 && same;
+		// Most turns are fillets: a sign slip in the fillet's solve left 9 of about 4,100 taking it, every other line a fallback.
+		int turns = 0, fillets = 0;
+		foreach (Lanes.Connector c in Lanes.Connectors)
+		{
+			if (c.Turn == Lanes.Left || c.Turn == Lanes.Right)
+			{
+				turns++;
+				fillets += c.Fillet ? 1 : 0;
+			}
+		}
+		bool filletsOk = fillets * 2 > turns;
+		bool ok = deadIn == 0 && unreached == 0 && offConnectors == 0 && missed == 0 && sixOk && early == 0 && offLine == 0 && same && filletsOk;
 		Console.WriteLine("lanes:   " + (same ? "repeatable; " : "NOT repeatable; ") + Lanes.All.Count + " lanes, " + Lanes.Connectors.Count + " connectors, " + Conflicts.All.Count + " conflict areas (" + kinds[0] + " crossing, " + kinds[1] + " merging, " + kinds[2] + " diverging, " + kinds[3] + " head on; "
 			+ (yields[0] + yields[1]) + " give way, " + yields[2] + " kept apart by lights, " + yields[3] + " first come, " + yields[4] + " follow); lanes with no way on " + deadIn + ", lanes nothing leads into " + unreached
 			+ ", connectors off the paving " + offConnectors + " (" + offPaving + " of " + points + " points, " + middleOff + " of them the line itself; by points off: " + offSizes[0] + " 1-3, " + offSizes[1] + " 4-10, " + offSizes[2] + " 11-30, " + offSizes[3] + " more), crossing pairs " + crossings + " with no area " + missed + ", node 6's pair " + (sixOk ? "ok" : "MISSING")
-			+ ", lanes held back from the stop line " + held + " (most " + mostHold.ToString("0.0") + "; shorter than a car, let through as one " + chained + "), held back more than two cars or off the lane " + early + ", lanes ending off the stop line " + offLine + " of " + lines + " lines; " + Lanes.BuildMs.ToString("0") + " ms" + (ok ? "  ok" : "  FAIL"));
+			+ ", lanes held back from the stop line " + held + " (most " + mostHold.ToString("0.0") + "; shorter than a car, let through as one " + chained + "), held back more than two cars or off the lane " + early + ", lanes ending off the stop line " + offLine + " of " + lines + " lines, turns that are fillets " + fillets + " of " + turns + "; " + Lanes.BuildMs.ToString("0") + " ms" + (ok ? "  ok" : "  FAIL"));
 		return ok;
 	}
 
@@ -1695,7 +1712,8 @@ internal static class Program
 	private static bool Ribbons()
 	{
 		int samples = 0, bad = 0;
-		double worst = 0.0;
+		double worst = 0.0, wx = 0.0, wz = 0.0;
+		string wroad = "";
 		foreach (Network.Road r in Network.Roads)
 		{
 			if (!Network.Unpaved(r.Kind))
@@ -1719,13 +1737,19 @@ internal static class Program
 						if (over > -0.02)
 						{
 							bad++;
-							worst = Math.Max(worst, over);
+							if (over > worst)
+							{
+								worst = over;
+								wx = x;
+								wz = z;
+								wroad = r.Name;
+							}
 						}
 					}
 				}
 			}
 		}
-		Console.WriteLine("ribbons: " + bad + " of " + samples + " track and path surface samples with the ground through them, worst " + worst.ToString("0.00"));
+		Console.WriteLine("ribbons: " + bad + " of " + samples + " track and path surface samples with the ground through them, worst " + worst.ToString("0.00") + (bad > 0 ? " ('" + wroad + "' at " + wx.ToString("0") + ", " + wz.ToString("0") + ")" : ""));
 		return bad * 1000 < samples && worst < 0.1;
 	}
 
@@ -4312,10 +4336,57 @@ internal static class Program
 				}
 			}
 		}
-		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0 && slanted == 0 && unjoined == 0;
+		// No routed road's end kinks (its line turning more than 15 degrees from one sample to the next within 60 of the end): an unhooked
+		// end taken straight to its point kinked 20 degrees, and the road meeting it there left a sliver of ground in its mouth
+		// (Kestrel). Town streets turn their corners on purpose.
+		int kinks = 0;
+		double worstKink = 0.0;
+		for (int r = 0; r < Network.Roads.Count; r++)
+		{
+			Network.Road rd = Network.Roads[r];
+			if (rd.Kind != RoadKind.Primary && rd.Kind != RoadKind.Secondary && rd.Kind != RoadKind.Lane)
+			{
+				continue;
+			}
+			// A kink is a turn at one sample with the line straight either side (a bend, a squared end, turns over several).
+			for (int i = 2; i + 2 < rd.Count; i++)
+			{
+				if (rd.S[i] > 60.0 && rd.S[i] < rd.S[rd.Count - 1] - 60.0)
+				{
+					continue;
+				}
+				double deg = TurnAt(rd, i), before = TurnAt(rd, i - 1), after = TurnAt(rd, i + 1);
+				if (Math.Max(before, after) * 3.0 > deg)
+				{
+					continue;
+				}
+				worstKink = Math.Max(worstKink, deg);
+				if (deg > 18.0)
+				{
+					kinks++;
+					if (kinks <= 10)
+					{
+						Console.WriteLine("  kink of " + deg.ToString("0") + " degrees in road " + r + " (" + rd.Kind + ") at (" + rd.X[i].ToString("0") + ", " + rd.Z[i].ToString("0") + ")");
+					}
+				}
+			}
+		}
+		bool ok = ends == 0 && slivers == 0 && buried == 0 && hooks == 0 && apart == 0 && slanted == 0 && unjoined == 0 && kinks == 0;
 		Console.WriteLine("beside:  " + lanes + " lanes, " + ends + " ends running in beside the road they end on, " + slivers + " sliver lanes, " + buried + " driven roads cut out whole, "
-			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 8 apart, " + slanted + " lanes meeting a road more than 30 degrees off square, " + unjoined + " pairs of roads alone at a place not joined" + (ok ? "" : "  FAIL"));
+			+ hooks + " paved road ends hooking back, " + apart + " pairs of road ends 1 to 8 apart, " + slanted + " lanes meeting a road more than 30 degrees off square, " + unjoined + " pairs of roads alone at a place not joined, " + kinks + " routed road ends kinking over 18 degrees at one sample (worst " + worstKink.ToString("0") + ")" + (ok ? "" : "  FAIL"));
 		return ok;
+	}
+
+	/// <summary>How far (degrees) a road's line turns at sample i, from the piece before it to the piece after.</summary>
+	private static double TurnAt(Network.Road rd, int i)
+	{
+		double ax = rd.X[i] - rd.X[i - 1], az = rd.Z[i] - rd.Z[i - 1], bx = rd.X[i + 1] - rd.X[i], bz = rd.Z[i + 1] - rd.Z[i];
+		double la = Math.Sqrt(ax * ax + az * az), lb = Math.Sqrt(bx * bx + bz * bz);
+		if (la < 1e-6 || lb < 1e-6)
+		{
+			return 0.0;
+		}
+		return Math.Acos(Math.Max(-1.0, Math.Min(1.0, (ax * bx + az * bz) / (la * lb)))) * 180.0 / Math.PI;
 	}
 
 	/// <summary>A hash of the whole lane graph and its conflict areas (every number's bits), for the repeatability check.</summary>

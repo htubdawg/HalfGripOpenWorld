@@ -1177,7 +1177,7 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Brings a street that ends on a road at a slant (more than 25 degrees off square) round to meet it square: from the last point
-		/// of its line 45 or more from that road, a curve (a cubic leaving along the street, arriving along the road's normal) to the
+		/// of its line 45 or more from that road and 35 past its edge, a curve (a cubic leaving along the street, arriving along the road's normal) to the
 		/// point of the road nearest it. If no such point is within 220 back, or the curve would cross another road, the street instead
 		/// stops 60 short of the road, a dead end. Changes <paramref name="end"/> to the new end.
 		/// </summary>
@@ -1205,7 +1205,10 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
-			// Back along the street to a point 45 or more from the road.
+			// Back along the street to a point 45 or more from the road, and 35 or more past its edge: the trunk is 40 to its edge each
+			// side, and a street squared from 45 off its middle turned through its curve right at the trunk's edge, so a right turn in
+			// off the trunk swung across the mouth (Glenford, 5743, -9552).
+			double clear = Math.Max(45.0, HalfOf(road.Kind) + 35.0);
 			double back = 0.0, d = 0.0;
 			int p = n - 1;
 			int seg = 0;
@@ -1218,12 +1221,12 @@ namespace HalfGripOpenWorld
 				{
 					break;
 				}
-				if (segments.Nearest(end.Road, pts[p].x, pts[p].z, 400.0, out d, out seg, out along) && d >= 45.0)
+				if (segments.Nearest(end.Road, pts[p].x, pts[p].z, 400.0, out d, out seg, out along) && d >= clear)
 				{
 					break;
 				}
 			}
-			bool ok = back <= 220.0 && d >= 45.0 && p > 0;
+			bool ok = back <= 220.0 && d >= clear && p > 0;
 			List<(double x, double z)> curve = new List<(double x, double z)>();
 			double ex = 0.0, ez = 0.0, ey = 0.0;
 			if (ok)
