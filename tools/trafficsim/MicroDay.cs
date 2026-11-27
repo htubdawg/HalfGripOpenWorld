@@ -176,7 +176,7 @@ internal static partial class Program
 			}
 		}
 
-		private string Where(int i)
+		internal string Where(int i)
 		{
 			Micro.Agent a = mi.Agents[i];
 			string at = a.Conn >= 0 ? "connector " + a.Conn + " (node " + Lanes.Connectors[a.Conn].Node + ") " + a.X.ToString("0.0") + " in" : "lane " + a.Lane + " (to node " + Lanes.All[a.Lane].To + ") at " + a.X.ToString("0.0") + " of " + Meso.Reach(a.Lane).ToString("0.0");
@@ -488,6 +488,11 @@ internal static partial class Program
 			if (!v.Through && (v.Mode != Meso.Mode.Parked || v.Stop != s.Cars[v.Car].Stops.Length - 1))
 			{
 				notHome++;
+				if (notHome <= 5)
+				{
+					Console.WriteLine("    not home: car " + v.Car + " " + v.Mode + " stop " + v.Stop + " of " + s.Cars[v.Car].Stops.Length + ", trip from " + v.TripStart.ToString("0")
+						+ " free " + v.TripFree.ToString("0") + " s, planned " + string.Join(" ", s.Cars[v.Car].Stops.Select(st => st.WantLeave < 1e9 ? st.WantLeave.ToString("0") + "+" + st.Stay.ToString("0") : "end")) + " legs " + string.Join(" ", s.Cars[v.Car].Legs.Select(lg => lg.Time.ToString("0"))) + ", " + (v.Mode == Meso.Mode.Driving ? (v.Micro ? w.Where(v.Car) : "meso lane " + v.Lane + " " + m.Why(v.Car)) : "parked"));
+				}
 			}
 		}
 		double ms = watch.Elapsed.TotalMilliseconds;
@@ -574,9 +579,19 @@ internal static partial class Program
 	/// <summary>Consistency (§5): the first seed's day at every junction micro against the meso alone, by road class: the time lost per car on a lane.</summary>
 	private static void Consistency(Meso meso, Meso micro)
 	{
+		if (Environment.GetEnvironmentVariable("TRAFFICSIM_WORST") == "1")
+		{
+			var rows = Enumerable.Range(0, Lanes.All.Count).Select(l => (l, d: micro.LaneLost[l] - meso.LaneLost[l])).OrderByDescending(r => r.d).Take(25);
+			foreach ((int l, double d) in rows)
+			{
+				Lanes.Lane ln = Lanes.All[l];
+				Console.WriteLine("    worse in micro: lane " + l + " to node " + ln.To + " " + Network.Roads[Traffic.Edges[ln.Edge].Road].Kind + (TrafficSignals.Has(ln.To) ? " lit" : "") + " by " + d.ToString("0") + " s: meso "
+					+ (meso.LaneLost[l] / Math.Max(1, meso.LaneExits[l])).ToString("0.0") + " s over " + meso.LaneExits[l] + ", micro " + (micro.LaneLost[l] / Math.Max(1, micro.LaneExits[l])).ToString("0.0") + " s over " + micro.LaneExits[l]
+					+ "; outs " + string.Join(" ", ln.Out.Select(c => Lanes.Connectors[c].Turn + "@" + Lanes.Connectors[c].Limit.ToString("0") + "/" + ln.Limit.ToString("0"))) + " hold " + ln.Hold.ToString("0"));
+			}
+		}
 		Console.WriteLine("  consistency, meso against micro everywhere: delay a trip " + (meso.DelaySum / Math.Max(1, meso.Arrivals)).ToString("0.0") + " s against "
-			+ (micro.DelaySum / Math.Max(1, micro.Arrivals)).ToString("0.0") + " s (on the lanes up to their lines " + (meso.LaneLost.Sum() / Math.Max(1, meso.Arrivals)).ToString("0.0") + " s against "
-			+ (micro.LaneLost.Sum() / Math.Max(1, micro.Arrivals)).ToString("0.0") + " s, the rest through the junctions and at the trip's ends); seconds lost per car on a lane, by road class (lit lanes apart):");
+			+ (micro.DelaySum / Math.Max(1, micro.Arrivals)).ToString("0.0") + " s; seconds lost per car on a lane, by road class (lit lanes apart):");
 		for (int k = 0; k <= (int)RoadKind.Drive; k++)
 		{
 			for (int lit = 0; lit < 2; lit++)

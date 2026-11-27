@@ -657,6 +657,19 @@ namespace HalfGripOpenWorld
 				end = v.DestAlong;
 			}
 			v.Ready = at + Driver.Run(Math.Max(0.0, end - from), vIn, l.Limit, EndSpeed(v, lane), out v.VOut);
+			if (conn >= 0 && Throughs(cw) == 1)
+			{
+				// No passing on a road one lane each way: at its end no sooner than the cars already on it (a slower car ahead holds it up,
+				// as it does a micro car). Its lane's queue keeps the order they came on in.
+				foreach (int ahead in Queues[lane].Cars)
+				{
+					Vehicle o = Cars[ahead];
+					if (!o.Ends && !o.Micro && ahead != v.Car)
+					{
+						v.Ready = Math.Max(v.Ready, o.Ready);
+					}
+				}
+			}
 			v.HeldSince = -1.0;
 			v.HeldByLight = false;
 			v.Micro = false;

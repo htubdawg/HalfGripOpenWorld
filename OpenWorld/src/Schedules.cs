@@ -37,7 +37,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Every car is planned home by 02:30, before the next day starts.</summary>
 		private const double HomeBy = Traffic.DaySeconds - 0.5 * Hour;
 		/// <summary>
-		/// The share of a tour's driving its plan allows again for being held up when it must be home by <see cref="HomeBy"/>: the lights
+		/// The share of a car's day's driving (to the end of each tour) its plan allows again for being held up when it must be home by <see cref="HomeBy"/>: the lights
 		/// and junctions cost the simulation's trips about 10% of their free time on average and up to about a quarter (<see cref="Meso"/>),
 		/// so a long late tour planned to the minute on free roads came home after the day's end.
 		/// </summary>
@@ -611,7 +611,7 @@ namespace HalfGripOpenWorld
 		{
 			Traffic.Household home = Traffic.Households[h];
 			int n = home.Cars;
-			double[] free = new double[n];
+			double[] free = new double[n], drove = new double[n];
 			List<(Tour tour, double depart)>[] mine = new List<(Tour, double)>[n];
 			for (int c = 0; c < n; c++)
 			{
@@ -648,11 +648,14 @@ namespace HalfGripOpenWorld
 				}
 				at += t.Legs[t.Stops.Length].Time;
 				driving += t.Legs[t.Stops.Length].Time;
-				if (at + HeldUp * driving > HomeBy)
+				// Spare for being held up on all its day's driving so far, not this tour's alone: a car late back from one tour sets off late
+				// on the next.
+				if (at + HeldUp * (drove[best] + driving) > HomeBy)
 				{
 					Dropped++;
 					continue;
 				}
+				drove[best] += driving;
 				free[best] = at + Rest;
 				mine[best].Add((t, depart));
 				Kept++;
