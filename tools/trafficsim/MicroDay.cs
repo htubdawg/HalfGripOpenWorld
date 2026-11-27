@@ -221,6 +221,13 @@ internal static partial class Program
 						Console.WriteLine("      trace " + mi.T.ToString("0.000") + " " + Where(i) + " go " + a.Go + " committed " + a.Committed + " acc " + a.A.ToString("0.0")
 							+ (a.Conn < 0 ? "" : TrafficSignals.Has(Lanes.Connectors[a.Conn].Node) ? " light " + TrafficSignals.State(Lanes.Connectors[a.Conn].Node, Lanes.Connectors[a.Conn].InArm, Lanes.Connectors[a.Conn].OutArm, mi.T - mi.M.RaceStart) : ""));
 					}
+					else if (mi.M.Cars[i].Mode == Meso.Mode.Driving)
+					{
+						Meso.Vehicle v = mi.M.Cars[i];
+						mi.M.Where(i, out int wl, out int wc, out double wa);
+						Console.WriteLine("      trace " + mi.T.ToString("0.000") + " meso car " + i + " lane " + v.Lane + " conn " + v.Conn + " (" + wl + "/" + wc + " at " + wa.ToString("0.0")
+							+ ") entered " + v.Entered.ToString("0.00") + " connAt " + v.ConnAt.ToString("0.00") + " ready " + v.Ready.ToString("0.00") + " v " + v.V.ToString("0.0") + " vConn " + v.VConn.ToString("0.0") + " vOut " + v.VOut.ToString("0.0"));
+					}
 				}
 			}
 			PeakMicro = Math.Max(PeakMicro, act.Count);
@@ -486,7 +493,8 @@ internal static partial class Program
 		double ms = watch.Elapsed.TotalMilliseconds;
 		Console.WriteLine("  micro, " + where + ": " + m.Arrivals + " arrived, " + notHome + " not home; peak " + w.PeakMicro + " micro cars (" + w.PeakInSight + " in sight), "
 			+ (w.MicroCarSeconds / 3600.0).ToString("0") + " car hours driven micro; " + mi.Spawned + " came in, " + mi.HandedOut + " handed out, " + mi.Flips + " junction groups changed level, "
-			+ mi.Missed + " missed their lane; saturated headway at the lights " + (mi.Headways > 0 ? (mi.HeadwaySum / mi.Headways).ToString("0.00") + " s over " + mi.Headways : "not seen")
+			+ mi.Missed + " missed their lane; headway at the lights from a standing queue " + (mi.Headways > 0 ? (mi.HeadwaySum / mi.Headways).ToString("0.00") + " s over " + mi.Headways : "not seen")
+			+ ", from its fifth car (HCM's saturation headway) " + (mi.Sats > 0 ? (mi.SatSum / mi.Sats).ToString("0.00") + " s over " + mi.Sats : "not seen")
 			+ "; delay " + (m.DelaySum / Math.Max(1, m.Arrivals)).ToString("0.0") + " s a trip; ran in " + (ms / 1000.0).ToString("0.0") + " s");
 		foreach (string f in faults.First.Take(report ? 24 : 10))
 		{
@@ -567,7 +575,8 @@ internal static partial class Program
 	private static void Consistency(Meso meso, Meso micro)
 	{
 		Console.WriteLine("  consistency, meso against micro everywhere: delay a trip " + (meso.DelaySum / Math.Max(1, meso.Arrivals)).ToString("0.0") + " s against "
-			+ (micro.DelaySum / Math.Max(1, micro.Arrivals)).ToString("0.0") + " s; seconds lost per car on a lane, by road class (lit lanes apart):");
+			+ (micro.DelaySum / Math.Max(1, micro.Arrivals)).ToString("0.0") + " s (on the lanes up to their lines " + (meso.LaneLost.Sum() / Math.Max(1, meso.Arrivals)).ToString("0.0") + " s against "
+			+ (micro.LaneLost.Sum() / Math.Max(1, micro.Arrivals)).ToString("0.0") + " s, the rest through the junctions and at the trip's ends); seconds lost per car on a lane, by road class (lit lanes apart):");
 		for (int k = 0; k <= (int)RoadKind.Drive; k++)
 		{
 			for (int lit = 0; lit < 2; lit++)

@@ -103,6 +103,94 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>
+		/// The time a car alone on the road takes over <paramref name="dist"/>, coming on at <paramref name="vIn"/>, wanting <paramref
+		/// name="vMax"/> and slowing to <paramref name="vOut"/> by the end (a turn, a slower road, its stop), driven as a micro car drives
+		/// it: pulling away by <see cref="Free"/>, braking once it needs half its comfortable braking (<see cref="SlowTo"/>, which then holds
+		/// that). <paramref name="vEnd"/>: its speed at the end. What the meso takes as a free road's time, so that a car takes as long
+		/// watched as not (<c>docs/TRAFFIC_REWORK.md</c> §5, consistency): a flat speed limit leaves out the seconds lost slowing into turns
+		/// and pulling away, which a micro car loses.
+		/// </summary>
+		internal static double Run(double dist, double vIn, double vMax, double vOut, out double vEnd)
+		{
+			return Drive(dist, vIn, vMax, vOut, double.MaxValue, out double _, out vEnd);
+		}
+
+		/// <summary>Where a car driven as in <see cref="Run"/> is <paramref name="time"/> after coming on (at most <paramref name="dist"/>), and its speed then.</summary>
+		internal static double RunAt(double dist, double vIn, double vMax, double vOut, double time, out double vNow)
+		{
+			Drive(dist, vIn, vMax, vOut, Math.Max(0.0, time), out double x, out vNow);
+			return x;
+		}
+
+		/// <summary><see cref="Run"/> and <see cref="RunAt"/>: the time it ends (at <paramref name="dist"/> or <paramref name="tCap"/>), where and how fast.</summary>
+		private static double Drive(double dist, double vIn, double vMax, double vOut, double tCap, out double x, out double vEnd)
+		{
+			vMax = Math.Max(vMax, 0.5);
+			vOut = Math.Min(Math.Max(vOut, 0.0), vMax);
+			double v = Math.Min(Math.Max(0.0, vIn), vMax), t = 0.0;
+			x = 0.0;
+			const double dt = 0.1, b = Brake * 0.5;
+			while (x < dist && t < tCap)
+			{
+				double left = dist - x;
+				if (v > vOut && (v * v - vOut * vOut) >= 2.0 * b * left)
+				{
+					// Braking to the end at what it needs (from then on that holds).
+					double need = (v * v - vOut * vOut) / (2.0 * Math.Max(left, 1e-6));
+					double tb = 2.0 * left / Math.Max(v + vOut, 1e-6);
+					if (t + tb <= tCap)
+					{
+						x = dist;
+						vEnd = vOut;
+						return t + tb;
+					}
+					double tau = tCap - t;
+					x += v * tau - 0.5 * need * tau * tau;
+					vEnd = v - need * tau;
+					return tCap;
+				}
+				if (v >= vMax * 0.995)
+				{
+					// Cruising near the limit (IDM only creeps the last of the way up), on to where braking starts.
+					double brakeAt = v > vOut ? (v * v - vOut * vOut) / (2.0 * b) : 0.0;
+					double run = Math.Max(0.0, left - brakeAt), tc = run / v;
+					if (t + tc >= tCap)
+					{
+						x += v * (tCap - t);
+						vEnd = v;
+						return tCap;
+					}
+					t += tc;
+					x += run;
+					if (brakeAt <= 0.0)
+					{
+						x = dist;
+						break;
+					}
+					// Exactly at the braking point: nudge past rounding so the braking branch takes it.
+					x = Math.Max(x, dist - brakeAt * (1.0 - 1e-9));
+					continue;
+				}
+				double a = Free(v, vMax);
+				double h = Math.Min(dt, tCap - t);
+				double step = v * h + 0.5 * a * h * h;
+				if (step >= left)
+				{
+					// The end within this step.
+					double tt = a > 1e-9 ? (-v + Math.Sqrt(v * v + 2.0 * a * left)) / a : left / Math.Max(v, 1e-6);
+					x = dist;
+					vEnd = v + a * tt;
+					return t + tt;
+				}
+				x += step;
+				v += a * h;
+				t += h;
+			}
+			vEnd = v;
+			return t;
+		}
+
+		/// <summary>
 		/// The latest a car going <paramref name="v"/> (at least <paramref name="vMin"/>: a car pulling away) is through <paramref
 		/// name="dist"/> at its speed: when it is sure to be clear of somewhere.
 		/// </summary>

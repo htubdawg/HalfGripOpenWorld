@@ -151,7 +151,11 @@ namespace HalfGripOpenWorld
 		/// <summary>The time between two cars over a stop line at a light, the second having stood in the queue (a saturated flow's headway): sum and count.</summary>
 		internal double HeadwaySum;
 		internal int Headways;
+		/// <summary>The same from the fifth car of a standing queue on (HCM's saturation headway: the first four lose time pulling away).</summary>
+		internal double SatSum;
+		internal int Sats;
 		private readonly double[] lastCross;
+		private readonly int[] platoon;
 		internal int Missed, Spawned, HandedOut, Flips;
 
 		// ---- the static geometry: lane samples, junction groups ---------------------------------------------------------------
@@ -347,6 +351,7 @@ namespace HalfGripOpenWorld
 			Crossings = new int[Lanes.All.Count];
 			Lost = new double[Lanes.All.Count];
 			lastCross = new double[Lanes.All.Count];
+			platoon = new int[Lanes.All.Count];
 			for (int l = 0; l < lastCross.Length; l++)
 			{
 				lastCross[l] = double.MinValue;
@@ -1068,8 +1073,8 @@ namespace HalfGripOpenWorld
 				if (al < along)
 				{
 					along = al;
-					double free = mv.From + Math.Max(0.0, M.Now - mv.Entered) * Lanes.All[lane].Limit;
-					v = al < free - 0.01 ? 0.0 : Lanes.All[lane].Limit;
+					double free = Meso.FreeAlong(mv, M.Now, out double fs);
+					v = al < free - 0.01 ? 0.0 : fs;
 					any = true;
 				}
 			}
@@ -1577,7 +1582,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether car <paramref name="b"/> stands held by something not moving (a light, a car standing ahead, no room, a gap it waits for): it isn't coming yet.</summary>
-		private bool Held(Agent b)
+		private bool Held(Agent b, int depth = 0)
 		{
 			if (b.V >= Rolling)
 			{
@@ -1590,8 +1595,15 @@ namespace HalfGripOpenWorld
 				case Why.Stop:
 					return false;
 				case Why.Leader:
+					Agent lead = b.ReasonCar < 0 ? null : Agents[b.ReasonCar];
+					if (lead != null && lead.V < Rolling && lead.Conn < 0 && depth < 8 && Held(lead, depth + 1))
+					{
+						// Behind a car standing on its lane held itself (at its line, by a light or giving way): it can't come before that one
+						// goes, whatever it has decided about its own junction.
+						return true;
+					}
 					// Behind a standing car, unless it has decided to go through its junction (following a slow car beyond it).
-					return !b.Go && (b.ReasonCar < 0 || Agents[b.ReasonCar] == null || Agents[b.ReasonCar].V < Rolling);
+					return !b.Go && (lead == null || lead.V < Rolling);
 				default:
 					return true;
 			}
@@ -1892,8 +1904,8 @@ namespace HalfGripOpenWorld
 						}
 						c = v.Path[0];
 					}
-					Crossed(a.Lane, a, v);
-					M.Crossed(a.Lane, v);
+					Crossed(a.Lane, a, v, c);
+					M.Crossed(a.Lane, v, c);
 					if (v.Through)
 					{
 						v.Path.Clear();
@@ -1952,6 +1964,7 @@ namespace HalfGripOpenWorld
 					a.X = x;
 					v.Entered = T;
 					v.From = x;
+					v.V = a.V;
 					a.Stood = false;
 					if (bay != to)
 					{
@@ -1969,7 +1982,7 @@ namespace HalfGripOpenWorld
 				Log(Kind.Out, i);
 				Remove(i, to);
 				int exit = M.ExitLane(v, Meso.CarriagewayOf(to));
-				M.Enter(v, exit, c0, Math.Min(x, Meso.Reach(exit)), T);
+				M.Enter(v, exit, c0, Math.Min(x, Meso.Reach(exit)), T, true, a.V);
 				HandedOut++;
 				return;
 			}
@@ -2045,15 +2058,22 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>The headway between two cars over a stop line at a light, the second having stood: the saturation flow micro drives at.</summary>
-		private void Crossed(int lane, Agent a, Meso.Vehicle v)
+		private void Crossed(int lane, Agent a, Meso.Vehicle v, int c)
 		{
 			Crossings[lane]++;
 			Lanes.Lane l = Lanes.All[lane];
-			Lost[lane] += Math.Max(0.0, T - v.Entered - Math.Max(0.0, Meso.Reach(lane) - v.From) / l.Limit);
-			if (TrafficSignals.Has(l.To) && T - lastCross[lane] < 4.0 && a.Stood)
+			Lost[lane] += Math.Max(0.0, T - v.Entered - Meso.LaneFree(v, lane, c));
+			bool queued = a.Stood && T - lastCross[lane] < 4.0;
+			platoon[lane] = queued ? platoon[lane] + 1 : a.Stood ? 1 : 0;
+			if (TrafficSignals.Has(l.To) && queued)
 			{
 				HeadwaySum += T - lastCross[lane];
 				Headways++;
+				if (platoon[lane] >= 5)
+				{
+					SatSum += T - lastCross[lane];
+					Sats++;
+				}
 			}
 			lastCross[lane] = T;
 		}
@@ -2085,8 +2105,7 @@ namespace HalfGripOpenWorld
 					if (v.Conn >= 0 && Meso.CarriagewayOf(Lanes.Connectors[v.Conn].To) == cw)
 					{
 						Lanes.Connector cn = Lanes.Connectors[v.Conn];
-						speed = Meso.PassSpeed(cn);
-						x = v.From + Math.Max(0.0, T - v.Entered) * speed;
+						x = Meso.FreeAlong(v, T, out speed);
 						phys = BayFor(i, cn.To, x);
 						// No faster than it can still stop at the lane's end from (the junction there may hold it).
 						speed = Math.Min(speed, Math.Sqrt(2.0 * Driver.Brake * Math.Max(0.0, Meso.Reach(l) - Lanes.All[l].Hold - x)));
@@ -2357,10 +2376,11 @@ namespace HalfGripOpenWorld
 					}
 					// Going through one of its junctions: on the connector where the meso has it.
 					M.Where(i, out int _, out int _, out double d);
+					Driver.RunAt(cn.Length, v.VConn, cn.Limit, Lanes.All[cn.To].Limit, M.Now - v.ConnAt, out double vNow);
 					M.Queues[v.Lane].Cars.Remove(i);
 					M.Queues[cn.To].Cars.Add(i);
 					v.Lane = cn.To;
-					Agents[i] = new Agent { Conn = v.Conn, X = d, V = Meso.PassSpeed(cn) };
+					Agents[i] = new Agent { Conn = v.Conn, X = d, V = vNow };
 					v.Micro = true;
 					Insert(i);
 					Log(Kind.FlipIn, i);
@@ -2372,14 +2392,14 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				M.Where(i, out int _, out int _, out double along);
-				double free = v.From + Math.Max(0.0, M.Now - v.Entered) * Lanes.All[v.Lane].Limit;
+				double free = Meso.FreeAlong(v, M.Now, out double fs);
 				int phys = v.Lane;
 				Lanes.Lane pl = Lanes.All[phys];
 				if (pl.Kind == Lanes.Bay && along < Meso.StartOf(phys) + Lanes.Axle)
 				{
 					phys = pl.Parent;
 				}
-				converting.Add((i, along, along < free - 0.01 ? 0.0 : Lanes.All[v.Lane].Limit, phys));
+				converting.Add((i, along, along < free - 0.01 ? 0.0 : fs, phys));
 			}
 			// Front first, each kept a standing gap behind the one before in its lane.
 			converting.Sort((p, q) => p.lane != q.lane ? p.lane.CompareTo(q.lane) : q.x != p.x ? q.x.CompareTo(p.x) : p.car.CompareTo(q.car));
@@ -2463,14 +2483,14 @@ namespace HalfGripOpenWorld
 				}
 			}
 			converting.Sort((p, q) => q.x != p.x ? q.x.CompareTo(p.x) : p.car.CompareTo(q.car));
-			foreach ((int car, double x, double _, int lane) in converting)
+			foreach ((int car, double x, double sp, int lane) in converting)
 			{
 				Meso.Vehicle v = M.Cars[car];
 				Log(Kind.FlipOut, car);
 				Remove(car, lane);
 				int cw = Meso.CarriagewayOf(lane);
 				int to = v.Through ? lane : M.ExitLane(v, cw);
-				M.Enter(v, to, v.Conn, x, M.Now, false);
+				M.Enter(v, to, v.Conn, x, M.Now, false, sp);
 			}
 			foreach (int car in onConnectors)
 			{
@@ -2478,12 +2498,14 @@ namespace HalfGripOpenWorld
 				Meso.Vehicle v = M.Cars[car];
 				int c = a.Conn;
 				Lanes.Connector cn = Lanes.Connectors[c];
-				double speed = Meso.PassSpeed(cn), d = Math.Min(a.X, cn.Length);
+				double d = Math.Min(a.X, cn.Length);
 				Log(Kind.FlipOut, car);
 				Remove(car, cn.To);
 				int target = M.Target(v, c, v.Next);
-				M.Enter(v, target, c, Meso.JoinFrom(c), M.Now + (cn.Length - d) / speed, false);
-				v.ConnAt = M.Now - d / speed;
+				double rest = Driver.Run(cn.Length - d, a.V, cn.Limit, Lanes.All[cn.To].Limit, out double vOff);
+				M.Enter(v, target, c, Meso.JoinFrom(c), M.Now + rest, false, vOff);
+				v.VConn = a.V;
+				v.ConnAt = M.Now - Meso.PassAt(cn, a.V, d);
 				M.Passed(c, v.ConnAt, car);
 			}
 			groupMicro[g] = false;
