@@ -91,7 +91,8 @@ when one is done, delete it here.
 **Traffic**
 - Turn lanes on the towns' roads (agreed 2026-11-24, not started).
 - **The rework** (`docs/TRAFFIC_REWORK.md`, phases 0 to 7): NPC cars on schedules, one live simulation at two levels (mesoscopic over
-  the whole map, microscopic near players, the nearest physics cars), junction conflicts from the drawn geometry. Phases 0 and 1 done.
+  the whole map, microscopic near players, the nearest physics cars), junction conflicts from the drawn geometry. Phases 0 to 2 done
+  (the lane graph, conflict areas, each race's plans).
 - Eight short town streets (three in Kingsbridge, five in Westhaven, about 110 houses) are joined to nothing but footpaths, so traffic
   leaves their houses out (the old trafficview listed them). Join each to the nearest road in `TownPlan`, or don't lay it; add a meshcheck
   check.

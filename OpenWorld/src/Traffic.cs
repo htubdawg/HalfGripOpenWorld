@@ -10,8 +10,8 @@ namespace HalfGripOpenWorld
 	/// filling stations, the market places, the courses' yards, the edges of the map where roads leave it) and where each one's cars park.
 	///
 	/// Built once after the layout, with plain arithmetic and ties broken by index, under the same rules as <see cref="Network"/>, so every
-	/// machine gets the same households and the same graph. No Unity types: <c>tools/trafficview</c> builds and checks it.
-	/// Each race's day of trips and the cars driving them are <see cref="TrafficDay"/>.
+	/// machine gets the same households and the same graph. No Unity types: <c>tools/trafficsim</c> builds and checks it.
+	/// Each race's plans for every car (its day's stops and the drives between them) are <see cref="Schedules"/>.
 	/// </summary>
 	internal static class Traffic
 	{
@@ -643,7 +643,7 @@ namespace HalfGripOpenWorld
 			/// <summary>How strongly it draws each purpose's trips (<see cref="Purpose"/>).</summary>
 			public double Work, Shop, Errand, Social;
 			public string Name;
-			/// <summary>Its lot in <see cref="Town.Lots"/> (-1: parked at the kerb, or a road out): where its cars park (<see cref="TrafficParking"/>).</summary>
+			/// <summary>Its lot in <see cref="Town.Lots"/> (-1: parked at the kerb, or a road out): where its cars park.</summary>
 			public int Lot = -1;
 		}
 

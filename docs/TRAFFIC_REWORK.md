@@ -2,7 +2,8 @@
 
 Written 2026-11-26 on `traffic-rework-branch`, forked from `deer-test-branch` (Open World 0.31.1, which has no traffic code). It
 replaces the traffic of `traffic-test-branch` rather than repairing it. Revised the same day after the owner's answers (section 7).
-Phases 0 and 1 are done (the lane graph and conflict areas: see `docs/HANDOFF.md`); phase 2 is next; the rest is not built yet.
+Phases 0 to 2 are done (the lane graph and conflict areas, the population and its plans: see `docs/HANDOFF.md`); phase 3 is next;
+the rest is not built yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
 view. Traffic must be realistic and interactive.
@@ -73,6 +74,12 @@ the mesoscopic network and is still there when the player comes back.
 - The map, households, cars and places from `Traffic.cs`, fixed with the world.
 - Each race (from the race seed): each car's day as a chain of activities (home, work, school, shop, errand, visit, home) with a
   wanted departure time and a minimum stay. These are plans, not a timetable.
+- As built (phase 2): tours from home (work, shop, errand, social; no school, as the world has none), a third of commutes with a shop or
+  errand on the way home, thinned so households spend the survey's share of the day driving, then given to the household's cars (a
+  tour waits up to an hour for a car still out, else is given up). A stop is left at the later of its wanted time and the arrival plus
+  its least stay (`Schedules.Leave`). Day seconds from 03:00, when every car is home; each car planned home by 02:30. Routes on the
+  traffic's map (`Traffic.Route`), which doesn't join the wrap's tunnels: the meso's routes on the lane graph will. `Schedules.At` gives
+  the planned state at any hour on empty roads, for the meso's start.
 - The simulation starts at the race's start hour, with its state built straight from the schedules (no warm-up): a car between
   activities is parked at the one its plan has it at; a car on a trip is placed along its route as far as it would have got, lanes
   spaced by the headway; queues at red lights seeded from the light's phase. The race starts mid-day with cars already at work,
@@ -162,8 +169,8 @@ network.
    lane, `Wrap`, `FramePerf`, `Plots`, the signal masts and heads), with `check.sh`, `preview` and `meshcheck` passing. No traffic yet.
 1. **Lane graph and conflict areas (done 2026-11-27).** `meshcheck` checks; a `jview` mode that draws connectors and conflict areas. Look at node 6,
    node 42 and the trunk's bays.
-2. **Population and schedules.** `Traffic.cs` carried over; activity chains per car; `trafficsim` reports the demand against the
-   surveys.
+2. **Population and schedules (done 2026-11-27).** `Traffic.cs` carried over; activity chains per car (`Schedules.cs`); `trafficsim`
+   checks them and reports the demand against the surveys.
 3. **Meso, headless.** The whole day, all cars, with lights and parking. Conservation, the surveys, the worst queues, deadlocks;
    build and run time.
 4. **Micro and the boundary, headless.** `Driver`, micro areas round pretend players, the boundary, physics cars stood in by the

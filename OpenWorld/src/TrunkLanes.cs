@@ -15,7 +15,7 @@ namespace HalfGripOpenWorld
 	///     lane, one coming out of a side road waits at its line for a gap and crosses in one go (never standing in the median);
 	///   - K-rails (a concrete barrier down the middle) on a few stretches well away from any junction (<see cref="Rails"/>).
 	/// Each direction's bay is on its own side of the centre line, so a crossroads' two bays sit back to back. The lanes are paint over the
-	/// trunk's drawn median: <see cref="RoadMesh"/> draws them (and the rails), <see cref="TrafficDay"/> drives them.
+	/// trunk's drawn median: <see cref="RoadMesh"/> draws them (and the rails), the traffic will drive them (<see cref="Lanes"/>).
 	/// </summary>
 	internal static class TrunkLanes
 	{

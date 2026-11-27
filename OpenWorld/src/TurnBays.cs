@@ -10,7 +10,7 @@ namespace HalfGripOpenWorld
 	/// (<see cref="Network.Road.Wide"/>, laid out by <see cref="Network"/> before the junctions are cut): the through lanes move out half a
 	/// lane each over a taper, and the middle between them is a painted median, the bay where it runs up to the T. The bay gets a left
 	/// arrow at the lights (<see cref="TrafficSignals.Arrows"/>, protected and permissive: the arrow when a car waits in it, else the
-	/// left on the main line's green giving way). <see cref="RoadMesh"/> paints it, <see cref="TrafficDay"/> drives it,
+	/// left on the main line's green giving way). <see cref="RoadMesh"/> paints it, the traffic will drive it (<see cref="Lanes"/>),
 	/// <see cref="SignalPoles"/> hangs its arrow head. The trunk's own bays are <see cref="TrunkLanes"/>.
 	/// </summary>
 	internal static class TurnBays
