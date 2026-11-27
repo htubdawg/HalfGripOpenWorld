@@ -15,7 +15,7 @@ Last written 2026-11-27.
 - **Phase 4 is built and its consistency largely tuned** (`Micro.cs`, `Driver.cs`; `docs/TRAFFIC_REWORK.md` §4, "As built (phase 4)"
   and the meso's "Consistency with the micro"). Nothing in the game calls it yet.
   - **trafficsim seeds 1 to 16: every check passes**, meso and micro round three pretend players. A day round three players runs in 2 to
-    6 s. Seeds 17 to 32: see "Checks" below.
+    6 s. **Seeds 17 to 32: five of 16 fail** (see Next 2).
   - **Consistency** (seed 1, every junction micro against the meso alone): a trip loses **20.4 s** in meso against **22.8 s** in micro
     (it was 16.7 against 58.5). Lit lanes agree within half a second by road class; unlit lanes lose 0.3 to 0.4 s a car more in micro.
   - What closed the gap: the meso's free roads are now a lone car's run as the micro drives it (`Driver.Run`: pulling away by IDM, braking
@@ -43,8 +43,11 @@ Last written 2026-11-27.
      lets the follower go at full speed a headway later.
    - Micro's HCM saturation headway (from the fifth car of a queue) is 2.9 s against the meso's 2.0 (only about 30 queues that long a
      day): look at how the micro pulls away at a green (IDM's 1.5 m/s² and the decision at the line) before changing the meso's figure.
-2. Run trafficsim on more seeds (32 or more) as the check; each change to the traffic so far showed a few rare micro faults the 16 seeds
-   hadn't.
+2. **Seeds 17 to 32** (`TRAFFICSIM_EVERYWHERE=0 dotnet run -c Release --project tools/trafficsim -- 17 16`): seeds 18, 22, 26, 28 and
+   30 fail. Most are one kind: a follower overlapping its leader where their two connectors run into one lane (node 17 connectors
+   107/105, 08:25 seed 18; node 458 1972/1970, 16:31 seed 26, with a box stop; node 5 18/16, 21:04 seed 28, with a box stop; two
+   through cars on trunk lane 127 at 20:49, seed 28), and a box stop at node 42 (connector 235, 14:32, seed 30); seed 22 has one car not
+   home. Each change to the traffic so far showed a few rare micro faults the 16 seeds hadn't: once these are fixed, make 32 seeds the check.
 3. Still open in phase 4: a pretend player blocking a road (persistence: its queue still there on return, which needs a meso lane to know
    about a block); a physics car stood in by the driver; the room checks belong to phase 6.
 4. Things to decide when they show: right on red (PLAN.md: measure again in the rework); the day's end (cars are planned home by 02:30,
@@ -60,6 +63,6 @@ Last written 2026-11-27.
 ## Checks
 
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools from `tools/halfgriptools-stub`): compiles clean.
-- `trafficsim` seeds 1 to 16: all checks pass.
+- `trafficsim` seeds 1 to 16: all checks pass. Seeds 17 to 32: five fail (Next 2).
 - Full `meshcheck`: passed at the start of this session; this session changed nothing it reads (the traffic only).
 - Not run in game (nothing in the game uses the lane graph, the plans, the meso or the micro yet).
