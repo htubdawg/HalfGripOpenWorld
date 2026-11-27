@@ -955,41 +955,77 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				// The car coming to the other connector: its lane's head, if that is its way.
+				// The cars coming to the other connector: its lane's head, if that is its way, and those still on their way along the lane
+				// behind it (a car on the road it gives way to coming fast is as much in the way as one at the line: micro's drivers look
+				// as far back as Micro.Approach).
 				Lanes.Connector oc = Lanes.Connectors[o];
 				int g = HeadOf(oc.From);
 				if (g < 0)
 				{
 					continue;
 				}
-				Vehicle gv = Cars[g];
-				if (gv.Next >= gv.Path.Count || gv.Path[gv.Next] != o)
+				double lastGo = Queues[oc.From].LastExit;
+				foreach (int k in Queues[oc.From].Cars)
 				{
-					continue;
+					Vehicle gv = Cars[k];
+					if (gv.Ends || gv.Micro)
+					{
+						continue;
+					}
+					bool head = k == g;
+					if (!head && gv.Ready <= Now)
+					{
+						// Standing behind the head: not before it goes (the head is looked at already).
+						continue;
+					}
+					if (gv.Ready > myOut + Margin)
+					{
+						break;
+					}
+					double go = Math.Max(Math.Max(gv.Ready, Now), lastGo + Headway);
+					lastGo = go;
+					if (gv.Next >= gv.Path.Count || gv.Path[gv.Next] != o)
+					{
+						continue;
+					}
+					if (area.Yield == Conflicts.FirstCome && (gv.Ready > h.Ready || (gv.Ready == h.Ready && area.Tie != mine)))
+					{
+						continue;
+					}
+					if (!LightLets(oc, gv.Ready))
+					{
+						continue;
+					}
+					if (head && gv.HeldSince >= 0.0 && !gv.HeldByLight && h.HeldSince >= 0.0 && (h.HeldSince < gv.HeldSince || (h.HeldSince == gv.HeldSince && h.Car < gv.Car)))
+					{
+						// It is held too (giving way to someone else, as at two junctions whose boxes touch, where each car can give way to
+						// another round a loop): the one waiting longer goes, as drivers sort out a standoff. The check above keeps them apart.
+						continue;
+					}
+					int gt = Target(gv, o, gv.Next + 1);
+					if (Queues[gt].Cars.Count >= Queues[gt].Storage)
+					{
+						// It can't go itself (no room past the junction): no need to wait for it.
+						continue;
+					}
+					double gv0 = gv.Ready >= Now ? gv.VOut : 0.0;
+					double gIn = go + PassAt(oc, gv0, o0);
+					double behind = Margin;
+					if (area.Kind == Conflicts.Merging)
+					{
+						// Merging ahead of it: room for it to come down to this car's speed comfortably and keep its time gap after (as a
+						// micro driver judges it, Micro.Clear).
+						double vj = Math.Max(gv0, Math.Min(oc.Limit, Math.Sqrt(gv0 * gv0 + 2.0 * Driver.Accel * Math.Max(0.0, o0))));
+						double vMe = Math.Min(cn.Limit, Math.Sqrt(v0 * v0 + 2.0 * Driver.Accel * Math.Max(0.0, my1)));
+						double need = Driver.Gap0 + vMe * Driver.TimeGap + Math.Max(0.0, vj - vMe) * Math.Max(0.0, vj - vMe) / (2.0 * Driver.Brake);
+						behind = Math.Max(behind, need / Math.Max(vj, 1.0));
+					}
+					if (gIn < myOut + 0.5 + behind)
+					{
+						return false;
+					}
 				}
-				if (area.Yield == Conflicts.FirstCome && (gv.Ready > h.Ready || (gv.Ready == h.Ready && area.Tie != mine)))
-				{
-					continue;
-				}
-				if (!LightLets(oc, gv.Ready))
-				{
-					continue;
-				}
-				if (gv.HeldSince >= 0.0 && !gv.HeldByLight && h.HeldSince >= 0.0 && (h.HeldSince < gv.HeldSince || (h.HeldSince == gv.HeldSince && h.Car < gv.Car)))
-				{
-					// It is held too (giving way to someone else, as at two junctions whose boxes touch, where each car can give way to
-					// another round a loop): the one waiting longer goes, as drivers sort out a standoff. The check above keeps them apart.
-					continue;
-				}
-				int gt = Target(gv, o, gv.Next + 1);
-				if (Queues[gt].Cars.Count >= Queues[gt].Storage)
-				{
-					// It can't go itself (no room past the junction): no need to wait for it.
-					continue;
-				}
-				double go = Math.Max(Math.Max(gv.Ready, Now), Queues[oc.From].LastExit + Headway);
-				double gIn = go + PassAt(oc, gv.Ready >= Now ? gv.VOut : 0.0, o0);
-				if (gIn < myOut + Margin)
+				if (reach[oc.From] < Lookback && Upstream(h, cn, v0, oc, o, o0, my1, myOut))
 				{
 					return false;
 				}
@@ -1013,6 +1049,54 @@ namespace HalfGripOpenWorld
 			Queue q = Queues[l];
 			run = Now - q.LastExit <= Headway + Step * 1.5 ? q.Run + 1 : 0;
 			return Math.Min(h.VOut, Math.Sqrt(2.0 * Driver.Accel * run * Jam));
+		}
+
+		/// <summary>How far back along the roads a driver giving way looks for cars coming (Micro's Approach): past the junction before where
+		/// the lane in is shorter.</summary>
+		private const double Lookback = 600.0;
+
+		/// <summary>
+		/// Whether a car on a lane into the junction before connector <paramref name="o"/>'s (its lane in, <paramref name="oc"/>.From, short)
+		/// comes on through to <paramref name="o"/> too soon for car <paramref name="h"/> to go now (coming onto <paramref name="cn"/> at
+		/// <paramref name="v0"/>, clear of the area <paramref name="my1"/> along it at <paramref name="myOut"/>): not one held at a red.
+		/// </summary>
+		private bool Upstream(Vehicle h, Lanes.Connector cn, double v0, Lanes.Connector oc, int o, double o0, double my1, double myOut)
+		{
+			double along = reach[oc.From];
+			foreach (int kc in Lanes.All[oc.From].In)
+			{
+				Lanes.Connector kn = Lanes.Connectors[kc];
+				foreach (int k in Queues[kn.From].Cars)
+				{
+					Vehicle gv = Cars[k];
+					if (gv.Ends || gv.Micro || gv.Ready <= Now || gv.Next + 1 >= gv.Path.Count || gv.Path[gv.Next] != kc || gv.Path[gv.Next + 1] != o)
+					{
+						continue;
+					}
+					if (gv.Ready > myOut + 4.0)
+					{
+						break;
+					}
+					if (!LightLets(kn, gv.Ready))
+					{
+						continue;
+					}
+					// On at its free run's speed through the junction before and along the short lane.
+					double vk = Math.Min(gv.VOut, kn.Limit);
+					double tk = ConnTime(kn, vk, out double vOff);
+					double rest = Math.Max(0.0, along - JoinFrom(kc));
+					double tl = Driver.Run(rest, vOff, Lanes.All[oc.From].Limit, EndSpeed(oc.From, o), out double vLine);
+					double gIn = gv.Ready + tk + tl + PassAt(oc, vLine, o0);
+					double vj = Math.Max(vLine, Math.Min(oc.Limit, Math.Sqrt(vLine * vLine + 2.0 * Driver.Accel * Math.Max(0.0, o0))));
+					double vMe = Math.Min(cn.Limit, Math.Sqrt(v0 * v0 + 2.0 * Driver.Accel * Math.Max(0.0, my1)));
+					double need = Driver.Gap0 + vMe * Driver.TimeGap + Math.Max(0.0, vj - vMe) * Math.Max(0.0, vj - vMe) / (2.0 * Driver.Brake);
+					if (gIn < myOut + 0.5 + Math.Max(Margin, need / Math.Max(vj, 1.0)))
+					{
+						return true;
+					}
+				}
+			}
+			return false;
 		}
 
 		/// <summary>The car at the head of lane <paramref name="l"/> (the first not stopping on it), or -1.</summary>

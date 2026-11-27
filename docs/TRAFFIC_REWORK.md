@@ -107,6 +107,13 @@ the mesoscopic network and is still there when the player comes back.
   Dijkstra over the carriageways at the lanes' live delays (smoothed over the cars leaving, or the head's wait so far) plus an eighth of
   a light's cycle; again from the lane's end for a car held 45 s by anything but a red. Fixed step of a quarter second (the whole day
   runs in about half a second headless, routes most of it). Deterministic, though it needn't be.
+- Consistency with the micro (2026-11-27): a free road's time is a lone car's as a micro car drives it (`Driver.Run`: pulling away by
+  IDM, braking for the turn ahead at half its comfortable braking), not the lane's length at its limit: every lane from the speed the
+  car came on at to its next turn's limit (0 at its stop), every connector from the speed it reached the line at (from standing if it
+  was held, with as many cars' room behind the line to pull away in as left one behind another before it). Conflict areas are timed
+  along the same runs; where it merges into a stream it wants micro's gap (room for the car behind to slow to its speed and keep its
+  time gap), and it looks for cars coming along the lane in and, where that is under 600, through the junction before. On a carriageway
+  of one through lane no car passes another in its queue. The plans time each leg the same way (`Meso.LegTime`).
 
 ### Microscopic level, near each player (`Micro.cs`, `Driver.cs`)
 - An area round each player (about the drawn distance) where cars are lane agents: IDM following, gap acceptance at conflict areas,

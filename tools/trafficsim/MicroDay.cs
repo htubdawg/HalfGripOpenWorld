@@ -197,6 +197,7 @@ internal static partial class Program
 			return false;
 		}
 
+		private static readonly int whyLane = int.Parse(Environment.GetEnvironmentVariable("TRAFFICSIM_WHY") ?? "-1");
 		private static readonly int[] trace = (Environment.GetEnvironmentVariable("TRAFFICSIM_TRACE") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
 		private static readonly double[] traceAt = (Environment.GetEnvironmentVariable("TRAFFICSIM_TRACE_AT") ?? "0,0").Split(',').Select(double.Parse).ToArray();
 
@@ -210,6 +211,17 @@ internal static partial class Program
 				mi.Pose(i, out px[i], out pz[i], out hx[i], out hz[i]);
 				py[i] = Height(i);
 				inSight += InSight(px[i], pz[i]) ? 1 : 0;
+			}
+			if (whyLane >= 0 && step % 8 == 0)
+			{
+				foreach (int i in act)
+				{
+					Micro.Agent a = mi.Agents[i];
+					if (a != null && a.Conn < 0 && a.Lane == whyLane && a.V < 1.0)
+					{
+						Console.WriteLine("      why " + mi.T.ToString("0") + " " + Where(i) + (a.ReasonCar >= 0 ? " | " + Where(a.ReasonCar) : ""));
+					}
+				}
 			}
 			if (trace.Length > 0 && mi.T >= traceAt[0] && mi.T <= traceAt[1])
 			{
