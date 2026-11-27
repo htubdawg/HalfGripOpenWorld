@@ -790,7 +790,7 @@ namespace HalfGripOpenWorld
 				h.Path.Add(on);
 			}
 			int c = h.Path[h.Next];
-			if (Go(h, c, out bool light, out int target))
+			if (Go(h, c, out bool light, out int target, out double v0, out int run))
 			{
 				cars.Remove(head);
 				Lanes.Connector cn = Lanes.Connectors[c];
@@ -801,7 +801,6 @@ namespace HalfGripOpenWorld
 				q.Delay += (Math.Max(0.0, lost) - q.Delay) * Smooth;
 				LaneExits[l]++;
 				LaneLost[l] += Math.Max(0.0, lost);
-				double v0 = StartSpeed(h, l, out int run);
 				q.Run = run;
 				h.VConn = v0;
 				List<Pass> ps = passes[c];
@@ -869,12 +868,14 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Whether car <paramref name="h"/>, at the head of its lane, can take connector <paramref name="c"/> now: its light (<paramref
-		/// name="light"/> set if that is what holds it), room on the lane it goes on to (<paramref name="target"/>), and the conflict areas.
+		/// name="light"/> set if that is what holds it), room on the lane it goes on to (<paramref name="target"/>), the conflict areas, and the car gone before it from the same lane (its speed onto the connector, <paramref name="v0"/>, and how many cars of a moving queue went before it, <paramref name="run"/>).
 		/// </summary>
-		private bool Go(Vehicle h, int c, out bool light, out int target)
+		private bool Go(Vehicle h, int c, out bool light, out int target, out double v0, out int run)
 		{
 			Lanes.Connector cn = Lanes.Connectors[c];
 			light = false;
+			v0 = 0.0;
+			run = 0;
 			target = Target(h, c, h.Next + 1);
 			if (!LightLets(cn, h.Ready))
 			{
@@ -885,7 +886,96 @@ namespace HalfGripOpenWorld
 			{
 				return false;
 			}
-			return Clear(h, c);
+			v0 = Behind(c, StartSpeed(h, cn.From, out run));
+			return v0 >= 0.0 && Clear(h, c, v0);
+		}
+
+		/// <summary>
+		/// The speed a car going onto connector <paramref name="c"/> at <paramref name="v0"/> can go on at without catching the car gone
+		/// before it from the same lane: onto the same connector (the head of a queue pulling away from standing, the car behind already
+		/// moving), or onto another while the two ways still share the road (their diverging area: a car turning off slowly holds up the
+		/// one behind it going on, as in the micro, where it is its leader, <see cref="Micro"/>'s Siblings). The micro, taking the junction
+		/// over, finds them where the meso has them. -1: not even from standing (it waits).
+		/// </summary>
+		private double Behind(int c, double v0)
+		{
+			Lanes.Connector cn = Lanes.Connectors[c];
+			double cap = Limit(c, cn.Length, c, cn.Length, v0);
+			foreach (int a in Conflicts.Of[c])
+			{
+				Conflicts.Area area = Conflicts.All[a];
+				if (cap < 0.0)
+				{
+					break;
+				}
+				if (area.Yield == Conflicts.Follow)
+				{
+					bool meA = area.A == c;
+					cap = Limit(c, meA ? area.A1 : area.B1, meA ? area.B : area.A, meA ? area.B1 : area.A1, cap);
+				}
+			}
+			return cap;
+		}
+
+		/// <summary>Scratch for <see cref="Limit"/>: when the car ahead is at each point looked at.</summary>
+		private readonly double[] dueAt = new double[7];
+
+		/// <summary>
+		/// <paramref name="v0"/>, or less, so that a car going onto connector <paramref name="c"/> now is no nearer than a standing queue's
+		/// spacing behind the last car onto connector <paramref name="o"/> anywhere from the stop line to <paramref name="my1"/> along (where
+		/// the shared road ends, <paramref name="o1"/> along that one). -1: not even from standing (the car ahead not a spacing on yet).
+		/// </summary>
+		private double Limit(int c, double my1, int o, double o1, double v0)
+		{
+			List<Pass> ps = passes[o];
+			if (ps.Count == 0 || my1 <= 0.0 || o1 <= 0.0)
+			{
+				return v0;
+			}
+			// The last one onto it is the nearest ahead (they came off the one lane in order).
+			Pass p = ps[ps.Count - 1];
+			Lanes.Connector cn = Lanes.Connectors[c], oc = Lanes.Connectors[o];
+			// Looked at from the stop line (the one ahead a spacing on before this one goes: a car pulling away from standing takes
+			// longer than the headway) to the end of the shared road, along which the two lines run together.
+			const int Points = 6; // dueAt's length less one
+			double[] due = dueAt;
+			for (int k = 0; k <= Points; k++)
+			{
+				due[k] = p.T + PassAt(oc, p.V0, o1 * k / Points + Jam) - Now;
+			}
+			bool Ok(double v)
+			{
+				for (int k = 0; k <= Points; k++)
+				{
+					if (PassAt(cn, v, my1 * k / Points) < due[k])
+					{
+						return false;
+					}
+				}
+				return true;
+			}
+			if (Ok(v0))
+			{
+				return v0;
+			}
+			if (!Ok(0.0))
+			{
+				return -1.0;
+			}
+			double lo = 0.0, hi = v0;
+			for (int it = 0; it < 16; it++)
+			{
+				double mid = 0.5 * (lo + hi);
+				if (Ok(mid))
+				{
+					lo = mid;
+				}
+				else
+				{
+					hi = mid;
+				}
+			}
+			return lo;
 		}
 
 		/// <summary>The lane a car taking connector <paramref name="c"/> drives next: the one its connector after leaves from (lanes are changed along the stretch), else the outer or a through car's own.</summary>
@@ -921,10 +1011,9 @@ namespace HalfGripOpenWorld
 		/// and the other came first), no car coming to it on the other connector before this one would be through, unless that car can't
 		/// go itself (its light red, no room past the junction) or has been held at its line less long than this one.
 		/// </summary>
-		private bool Clear(Vehicle h, int c)
+		private bool Clear(Vehicle h, int c, double v0)
 		{
 			Lanes.Connector cn = Lanes.Connectors[c];
-			double v0 = StartSpeed(h, cn.From, out int _);
 			foreach (int a in Conflicts.Of[c])
 			{
 				Conflicts.Area area = Conflicts.All[a];
@@ -1531,7 +1620,8 @@ namespace HalfGripOpenWorld
 			{
 				return why + ": no room";
 			}
-			return why + (Clear(v, c) ? ": free" : ": a conflict");
+			double v0 = Behind(c, StartSpeed(v, v.Lane, out int _));
+			return why + (v0 < 0.0 ? ": behind a slow car turning off" : Clear(v, c, v0) ? ": free" : ": a conflict");
 		}
 
 		/// <summary>

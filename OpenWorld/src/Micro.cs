@@ -2173,16 +2173,33 @@ namespace HalfGripOpenWorld
 						onLane[phys].Add(i);
 						onLane[phys].Sort(ByX);
 						bool alongside = false;
+						double behind = a.X;
 						foreach (int j in onLane[phys])
 						{
-							alongside |= j != i && Agents[j] != null && Math.Abs(Agents[j].X - a.X) < Traffic.CarLength + Driver.Gap0;
+							if (j != i && Agents[j] != null && Math.Abs(Agents[j].X - a.X) < Traffic.CarLength + Driver.Gap0)
+							{
+								alongside = true;
+								behind = Math.Min(behind, Agents[j].X - Meso.Jam);
+							}
 						}
 						if (alongside)
 						{
-							// A car is where it would be: it comes in a little later.
-							Agents[i] = null;
-							onLane[phys].Remove(i);
-							continue;
+							// A car is where it would be (one came on beside it from the next lane and moved over in front of it): a standing gap
+							// behind it if the lane has room there (the two can go on side by side the length of the road, so later may never
+							// come), else it comes in a little later.
+							bool room = behind >= Meso.StartOf(phys);
+							foreach (int j in onLane[phys])
+							{
+								room &= j == i || Agents[j] == null || Math.Abs(Agents[j].X - behind) >= Traffic.CarLength + Driver.Gap0;
+							}
+							if (!room)
+							{
+								Agents[i] = null;
+								onLane[phys].Remove(i);
+								continue;
+							}
+							a.X = behind;
+							onLane[phys].Sort(ByX);
 						}
 						if (Leader(i, phys, out double gap, out double vl, out int _))
 						{
