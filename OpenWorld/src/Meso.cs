@@ -1277,7 +1277,7 @@ namespace HalfGripOpenWorld
 					foreach (int c in Lanes.All[fromLane].Out)
 					{
 						Lanes.Connector cn = Lanes.Connectors[c];
-						Reach(cwOf[cn.To], PassTime(cn) + TurnLoss(c), c, true);
+						Reach(cwOf[cn.To], PassCost(c) + TurnLoss(c), c, true);
 					}
 				}
 				else
@@ -1297,7 +1297,7 @@ namespace HalfGripOpenWorld
 							foreach (int c in Lanes.All[l].Out)
 							{
 								Lanes.Connector cn = Lanes.Connectors[c];
-								Reach(cwOf[cn.To], t + PassTime(cn) + TurnLoss(c), c, true);
+								Reach(cwOf[cn.To], t + PassCost(c) + TurnLoss(c), c, true);
 							}
 						}
 					}
@@ -1330,7 +1330,7 @@ namespace HalfGripOpenWorld
 						foreach (int cc in Lanes.All[l].Out)
 						{
 							Lanes.Connector cn = Lanes.Connectors[cc];
-							Reach(cwOf[cn.To], c + t + PassTime(cn) + TurnLoss(cc), cc, false);
+							Reach(cwOf[cn.To], c + t + PassCost(cc) + TurnLoss(cc), cc, false);
 						}
 					}
 				}
@@ -1361,6 +1361,34 @@ namespace HalfGripOpenWorld
 		internal bool RouteFrom(Vehicle v, int lane)
 		{
 			return Route(v, -1, 0.0, v.Target, lane);
+		}
+
+		private static double[] passCost;
+
+		/// <summary>
+		/// A route's cost through connector <paramref name="c"/> on free roads: its time and what slowing into it from the lane in's limit
+		/// and pulling away to the lane out's costs over driving those stretches at their limits (<see cref="Driver.Run"/>), as a car
+		/// is timed through it; the turns' flat losses had routes taking many slow turns to save a little distance.
+		/// </summary>
+		private static double PassCost(int c)
+		{
+			if (passCost == null || passCost.Length != Lanes.Connectors.Count)
+			{
+				double[] pc = new double[Lanes.Connectors.Count];
+				for (int k = 0; k < pc.Length; k++)
+				{
+					Lanes.Connector cn = Lanes.Connectors[k];
+					double vin = Lanes.All[cn.From].Limit, vout = Lanes.All[cn.To].Limit, vc = Math.Min(cn.Limit, vin);
+					double b = Driver.Brake * 0.5, brakeD = (vin * vin - vc * vc) / (2.0 * b);
+					double slow = brakeD > 0.0 ? 2.0 * brakeD / (vin + vc) - brakeD / vin : 0.0;
+					double through = ConnTime(cn, vc, out double vOff);
+					const double Away = 1500.0;
+					double away = Driver.Run(Away, vOff, vout, vout, out double _) - Away / vout;
+					pc[k] = slow + through + Math.Max(0.0, away);
+				}
+				passCost = pc;
+			}
+			return passCost[c];
 		}
 
 		/// <summary>What a driver expects to lose taking connector <paramref name="c"/>: an eighth of a light's cycle where there is one (red about half the time, half a red's wait), a little giving way at a turn.</summary>
