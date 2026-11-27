@@ -876,7 +876,7 @@ namespace HalfGripOpenWorld
 					Connector c = new Connector
 					{
 						Node = n, From = ins[k], To = outs[k], InArm = 0, OutArm = 0, Turn = Jump, Limit = Math.Min(a.Limit, b.Limit),
-						X = new[] { x0, x1 }, Z = new[] { z0, z1 }, Y = new[] { y0, y1 }, D = new[] { 0.0, 0.0 }, Length = 0.0,
+						X = new[] { x0, x1 }, Z = new[] { z0, z1 }, Y = new[] { y0, y1 }, D = new[] { 0.0, 0.0 }, Length = 0.0, Join = b.Start,
 					};
 					a.Out.Add(Connectors.Count);
 					b.In.Add(Connectors.Count);

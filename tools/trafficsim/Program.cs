@@ -16,7 +16,7 @@ using HalfGripOpenWorld;
 // it reports the demand against the surveys: trips and cars on the road by hour (FHWA NT-3, PennDOT TPG 9), the purposes' mix and trip
 // lengths (NHTS 2017), counts by road class as a day's vehicles at real time (PennDOT's counters), the places' parking through the day,
 // and the state at the race's start hour. Exits 1 if a check fails, naming the failing checks on its last line.
-internal static class Program
+internal static partial class Program
 {
 	private static int failures;
 	private static readonly SortedSet<string> failed = new SortedSet<string>();
@@ -54,6 +54,11 @@ internal static class Program
 		Lanes.Ensure();
 		Console.WriteLine("lane graph: " + Lanes.Report);
 		Check(Math.Abs(weekends - 2000) < 120, "weekends", weekends + " of 7,000 seeds fall on a weekend");
+		if (Environment.GetEnvironmentVariable("TRAFFICSIM_GEOM") == "1")
+		{
+			Geometry();
+			return 0;
+		}
 		for (int seed = first; seed < first + seeds; seed++)
 		{
 			Schedules s = Schedules.Build(seed);
@@ -68,6 +73,13 @@ internal static class Program
 			if (seed == first)
 			{
 				Simulate(s, Schedules.StartOf(StartHourOf(seed)), true);
+			}
+			MicroDay(s, 0.0, seed == first, false);
+			if (seed == first && Environment.GetEnvironmentVariable("TRAFFICSIM_EVERYWHERE") != "0")
+			{
+				Meso meso = Meso.Start(s, 0.0, 0.0);
+				meso.Run(Traffic.DaySeconds);
+				Consistency(meso, MicroDay(s, 0.0, true, true));
 			}
 		}
 		Console.WriteLine(failures == 0 ? "all checks pass" : failures + " failures; failing: " + string.Join(", ", failed));

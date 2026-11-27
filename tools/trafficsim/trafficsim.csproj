@@ -11,6 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="MicroDay.cs" />
     <Compile Include="../../OpenWorld/src/Plots.cs" />
     <Compile Include="../../OpenWorld/src/Traffic.cs" />
     <Compile Include="../../OpenWorld/src/Schedules.cs" />
@@ -19,6 +20,8 @@
     <Compile Include="../../OpenWorld/src/Lanes.cs" />
     <Compile Include="../../OpenWorld/src/Conflicts.cs" />
     <Compile Include="../../OpenWorld/src/Meso.cs" />
+    <Compile Include="../../OpenWorld/src/Driver.cs" />
+    <Compile Include="../../OpenWorld/src/Micro.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />
