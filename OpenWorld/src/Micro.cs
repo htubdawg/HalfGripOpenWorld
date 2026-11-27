@@ -434,7 +434,7 @@ namespace HalfGripOpenWorld
 			return PullGap(phys, along, -1);
 		}
 
-		private bool PullGap(int phys, double along, int self)
+		private bool PullGap(int phys, double along, int self, bool waved = false)
 		{
 			double limit = Lanes.All[phys].Limit;
 			foreach (int i in Active)
@@ -473,6 +473,11 @@ namespace HalfGripOpenWorld
 				else
 				{
 					double gap = along - Traffic.CarLength - x;
+					if (waved && a.V < Rolling && gap > 0.5)
+					{
+						// Stopped short of it to let it out.
+						continue;
+					}
 					if (gap < Driver.Gap0 || Driver.Follow(a.V, limit, gap, 0.0) < -Driver.Brake)
 					{
 						return false;
@@ -486,6 +491,10 @@ namespace HalfGripOpenWorld
 				{
 					return false;
 				}
+			}
+			if (!RoomForBox(phys, along, self) || !ClearOfBox(phys, along, self))
+			{
+				return false;
 			}
 			// Cars coming through the junction behind from the lanes before it.
 			foreach (int c in Lanes.All[phys].In)
@@ -881,6 +890,15 @@ namespace HalfGripOpenWorld
 			bool onIt;
 			if (a.Conn < 0)
 			{
+				foreach ((int wl, double wx) in waving)
+				{
+					double room = wx - Traffic.CarLength - a.X;
+					if (wl == lane && room > 0.0 && Driver.Stopping(a.V, Driver.Brake) + Driver.Gap0 <= room)
+					{
+						// Letting a car out of a drive ahead.
+						Consider(room, 0.0, -1);
+					}
+				}
 				if (Ahead(onLane[lane], i, a.X, out int j))
 				{
 					Consider(Agents[j].X - Traffic.CarLength - a.X, Agents[j].V, j);
@@ -896,7 +914,7 @@ namespace HalfGripOpenWorld
 					gap = g0;
 					vLead = v0;
 					who = w0;
-					return false;
+					return g0 < Look;
 				}
 				k = 0;
 				onIt = false;
@@ -1031,6 +1049,107 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
+		}
+
+		/// <summary>
+		/// Whether a car pulling out onto lane <paramref name="phys"/> at <paramref name="along"/> is clear of the cars in the box of the
+		/// junction the lane starts at: a drive by the junction has it come on a car's length from the box, and a car turning through it
+		/// (one not onto this lane, say a right turn round the corner beside it) can pass within a body of there, now or on its way on.
+		/// </summary>
+		private bool ClearOfBox(int phys, double along, int self)
+		{
+			int node = FromNode(phys);
+			if (node < 0)
+			{
+				return true;
+			}
+			Line(new Agent { Lane = phys, X = along, ChangeFrom = -1 }, out double px, out double pz, out double _, out double _);
+			const double Near = Traffic.CarLength + 2.0;
+			foreach (int i in Active)
+			{
+				Agent a = Agents[i];
+				if (i == self || a == null)
+				{
+					continue;
+				}
+				int c = a.Conn;
+				double from = a.X;
+				if (c < 0)
+				{
+					// Committed at its line: in the box in a moment, the whole way through it looked at.
+					c = a.Committed ? NextConn(i, a.Lane) : -1;
+					from = 0.0;
+				}
+				if (c < 0 || Lanes.Connectors[c].Node != node)
+				{
+					continue;
+				}
+				Lanes.Connector cn = Lanes.Connectors[c];
+				for (double d = from; ; d += 4.0)
+				{
+					OnConnector(cn, Math.Min(d, cn.Length), out double x, out double z, out double _, out double _);
+					if ((x - px) * (x - px) + (z - pz) * (z - pz) < Near * Near)
+					{
+						return false;
+					}
+					if (d >= cn.Length)
+					{
+						break;
+					}
+				}
+			}
+			return true;
+		}
+
+		/// <summary>
+		/// Whether a car pulling out onto lane <paramref name="phys"/> at <paramref name="along"/> leaves the cars committed through (or in)
+		/// a junction's box behind onto it room to get clear of the box (<see cref="RoomPast"/>): else it would take the room they counted on
+		/// and leave one standing in the box.
+		/// </summary>
+		private bool RoomForBox(int phys, double along, int self)
+		{
+			int coming = 0;
+			double entry = double.MaxValue;
+			foreach (int c in Lanes.All[phys].In)
+			{
+				Lanes.Connector cn = Lanes.Connectors[c];
+				if (!cn.KeepClear || cn.Turn == Lanes.Jump)
+				{
+					continue;
+				}
+				int before = coming;
+				foreach (int k in onConn[c])
+				{
+					coming += k != self ? 1 : 0;
+				}
+				foreach (int k in onLane[cn.From])
+				{
+					Agent b = Agents[k];
+					if (k != self && b != null && b.Conn < 0 && b.Lane == cn.From && b.Committed && NextConn(k, cn.From) == c)
+					{
+						coming++;
+					}
+				}
+				if (coming > before)
+				{
+					entry = Math.Min(entry, Meso.JoinAt(c));
+				}
+			}
+			if (coming == 0 || along < entry)
+			{
+				return true;
+			}
+			// The first car standing or moving ahead of where it would come on: it and the cars from the box need room behind it.
+			double ahead = Meso.Reach(phys) - Lanes.All[phys].Hold + Traffic.CarLength;
+			foreach (int k in onLane[phys])
+			{
+				Agent b = Agents[k];
+				if (k != self && b != null && b.Conn < 0 && b.Lane == phys && b.X > along)
+				{
+					ahead = Math.Min(ahead, b.X + Driver.Stopping(b.V, Driver.Brake));
+				}
+			}
+			return ahead - Traffic.CarLength - entry >= Driver.Gap0 + Lanes.Axle + (coming + 1) * Meso.Jam;
 		}
 
 		/// <summary>The first car in <paramref name="list"/> (ordered along) ahead of <paramref name="x"/>, not car <paramref name="self"/>.</summary>
@@ -2120,8 +2239,21 @@ namespace HalfGripOpenWorld
 		// ---- coming in -------------------------------------------------------------------------------------------------------
 
 		/// <summary>The meso's cars due on micro lanes: off a meso junction (placed where the meso has them) or pulling out.</summary>
+		/// <summary>Cars waiting to pull out (this step's and the last's): since when. One waiting longer than <see cref="Courtesy"/> is let
+		/// out (<see cref="waving"/>).</summary>
+		private Dictionary<int, double> pullSince = new Dictionary<int, double>(), pullNext = new Dictionary<int, double>();
+
+		/// <summary>
+		/// Where cars have waited long to pull out (a drive at the head of a queue that hardly empties): the cars coming up behind stop
+		/// short of it if they can do so comfortably, as drivers wave one out, and it goes once the car ahead has moved off.
+		/// </summary>
+		private readonly List<(int lane, double x)> waving = new List<(int, double)>();
+
 		private void Spawn()
 		{
+			(pullSince, pullNext) = (pullNext, pullSince);
+			pullNext.Clear();
+			waving.Clear();
 			for (int l = 0; l < LaneMicro.Length; l++)
 			{
 				if (!LaneMicro[l] || M.Queues[l].Cars.Count == 0)
@@ -2158,10 +2290,21 @@ namespace HalfGripOpenWorld
 						x = Math.Min(hi, Math.Max(v.From, Math.Min(hi, Meso.StartOf(phys) + Traffic.CarLength)));
 						speed = 0.0;
 						kind = Kind.PullOut;
-						if (!PullGap(phys, x, i))
+						if (!pullSince.TryGetValue(i, out double since))
 						{
+							since = T;
+						}
+						pullNext[i] = since;
+						bool waved = T - since > Courtesy;
+						if (!PullGap(phys, x, i, waved))
+						{
+							if (waved)
+							{
+								waving.Add((phys, x));
+							}
 							continue;
 						}
+						pullNext.Remove(i);
 					}
 					Lanes.Lane pl = Lanes.All[phys];
 					if (pl.Kind == Lanes.Bay && x < Meso.StartOf(phys) + Lanes.Axle)
