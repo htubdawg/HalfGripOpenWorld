@@ -541,7 +541,7 @@ internal static partial class Program
 					m.Where(v.Car, out int ln, out int cn, out double al);
 					Console.WriteLine("    not home: car " + v.Car + " " + v.Mode + " stop " + v.Stop + " of " + c.Stops.Length + ", planned home at " + planHome.ToString("0")
 						+ ", trip from " + v.TripStart.ToString("0") + " free " + v.TripFree.ToString("0") + " s, lane " + ln + " conn " + cn + " held since " + v.HeldSince.ToString("0")
-						+ ", by a light " + v.HeldByLight + ", connector " + v.Next + " of " + v.Path.Count);
+						+ ", by a light " + v.HeldByLight + ", connector " + v.Next + " of " + v.Path.Count + "; planned legs " + string.Join(" ", c.Legs.Select(lg => lg.Time.ToString("0"))));
 				}
 			}
 		}

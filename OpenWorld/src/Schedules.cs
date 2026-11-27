@@ -380,6 +380,13 @@ namespace HalfGripOpenWorld
 				leg.Length += length;
 				leg.Time += edge.Length > 0.0 ? edge.Time * length / edge.Length : 0.0;
 			}
+			// As a car drives it (slowing into the turns, pulling away from standing), as the simulation will: the edges' times at their
+			// limits left long late tours coming home after the day's end.
+			double driven = Meso.LegTime(leg.Route, from.S, to.S);
+			if (driven >= 0.0)
+			{
+				leg.Time = driven;
+			}
 			return leg;
 		}
 

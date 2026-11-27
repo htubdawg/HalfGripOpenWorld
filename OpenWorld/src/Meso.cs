@@ -1278,6 +1278,53 @@ namespace HalfGripOpenWorld
 			return loss;
 		}
 
+		/// <summary>
+		/// For the plans (<see cref="Schedules"/>): the time on free roads, driven as a micro car drives (<see cref="Driver.Run"/>), along
+		/// carriageways <paramref name="route"/> (2 × edge, + 1 against its direction) from <paramref name="fromS"/> on the first to
+		/// <paramref name="toS"/> on the last, through the junctions by the fastest connector from one to the next; from standing and to a stop.
+		/// -1 where two carriageways have no connector between them. Deterministic under <see cref="Network"/>'s rules (the plans are).
+		/// </summary>
+		internal static double LegTime(int[] route, double fromS, double toS)
+		{
+			Prepare();
+			int cw = route[0];
+			if (cwLanes[cw].Count == 0)
+			{
+				return -1.0;
+			}
+			double at = Along(cw, fromS), t = 0.0, speed = 0.0;
+			for (int k = 0; k + 1 < route.Length; k++)
+			{
+				int next = route[k + 1], best = -1;
+				foreach (int l in cwLanes[cw])
+				{
+					foreach (int c in Lanes.All[l].Out)
+					{
+						Lanes.Connector cn = Lanes.Connectors[c];
+						if (cwOf[cn.To] == next && cn.Turn != Lanes.Jump && (best < 0 || cn.Limit > Lanes.Connectors[best].Limit))
+						{
+							best = c;
+						}
+					}
+				}
+				if (best < 0)
+				{
+					return -1.0;
+				}
+				Lanes.Connector bc = Lanes.Connectors[best];
+				t += Driver.Run(Math.Max(0.0, reach[bc.From] - at), speed, Lanes.All[bc.From].Limit, EndSpeed(bc.From, best), out speed);
+				t += ConnTime(bc, speed, out speed);
+				at = JoinFrom(best);
+				cw = next;
+			}
+			if (cwLanes[cw].Count == 0)
+			{
+				return -1.0;
+			}
+			t += Driver.Run(Math.Max(0.0, Along(cw, toS) - at), speed, Lanes.All[cwLanes[cw][0]].Limit, 0.0, out double _);
+			return t;
+		}
+
 		/// <summary>Car <paramref name="v"/>'s route's time on free roads from <paramref name="s"/> on its first stretch (for the delay a trip lost).</summary>
 		private double FreeTime(Vehicle v, double s)
 		{
