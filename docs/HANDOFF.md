@@ -50,8 +50,11 @@ Last written 2026-11-28 (seventh session that day).
   every pitch on the stretch, houses and blocked spots ignored, so the real shortfall is larger. The owner's point: the fix is parking
   that exists (a car park at every high street, office and church sized to what it needs; 728 home spaces; the meso's count the bays
   drawn), not cars rerouted round it. That changes the world's layout (a version for rooms). **Not started: the owner stopped it.**
-- **Nothing of this session but the handoff is pushed** (the owner stopped the work twice; the rest lives in the container and is lost
-  with it). What was written, to redo:
+- **This session's code is on the branch `traffic-rework-vanish`** (commit 84ff73e, one commit on top of this handoff), not on
+  `traffic-rework-branch`: its kerb reroute fails seed 7, so it is kept apart until the parking is built. Take from it what is worth
+  keeping (below); drop the kerb reroute (`Meso.Redirect`'s kerb part, `TrafficParking.KerbNear`) once places and homes have drawn
+  spaces. Its trafficsim state: `TRAFFICSIM_GAME=only` seeds 1 to 6 and 8 to 10 passed with the hold-back (since taken out, not rerun);
+  seed 7 failed (ways out and in hitting cars on the street by node 6). What it holds:
   - trafficsim `GameDay.cs`: a "game vanish" check: a car going from drawn to `None` or back within 400 units of the player
     (`TRAFFICSIM_VANISH` to change it) fails, the wrap's tunnels apart, with the car's state; every vanish anywhere tallied by cause.
     Before any fix: seeds 1 to 6, 8, 9 pass it, seed 7 fails (10 vanished, 2 appeared).
@@ -68,7 +71,7 @@ Last written 2026-11-28 (seventh session that day).
 
 ## Next
 
-0. **The vanishing cars** (above): ask the owner before starting anything. The owner's direction so far: the parking has to exist for
+0. **The vanishing cars** (above; the code so far on `traffic-rework-vanish`): ask the owner before starting anything. The owner's direction so far: the parking has to exist for
    the cars (count it, build it), not be worked round.
 1. The owner tests item 74 in game (`docs/TESTING.md`). Unknown: whether the game's controller backs as asked at manoeuvring speeds,
    and the wheelbase used for steering. Watch the frame time when cars plan ways near the player.
