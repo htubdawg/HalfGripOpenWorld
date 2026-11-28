@@ -26,8 +26,8 @@ Last written 2026-11-28 (second session that day).
     changed (the owner, 2026-11-28): a knocked car must not sit out its trips while watched** (see Next 1). Wrecked: gone from its
     day (`TrafficLive.LoseCar`, `Meso.LoseOutside`), burns and explodes as the others.
   - **Moving** (a micro car driving but not a physics car just then): a body on its brakes the micro reads (`TakeBody`, `Brake`).
-    Untouched, the player 60 away: given back. Knocked: gone from its day (`Mi.LoseCar`), as the physics cars. The owner's word on
-    hit parked cars may extend to these; not asked.
+    Untouched, the player 60 away: given back. Knocked: gone from its day (`Mi.LoseCar`). **Wrong, to be changed (the owner): it
+    must rejoin as a physics car does** (see Next 1).
   - Not ported: `TrafficRest` (the worked-out rest on the springs, so the swap shows no drop or bounce). This branch puts the body at
     the learned rest height (`RestPlace`) or 0.15 up until learned; if the owner sees a parked car drop and bounce as it turns real,
     port `TrafficRest.cs` and `Settle` from the old branch.
@@ -55,8 +55,10 @@ Last written 2026-11-28 (second session that day).
    driving from where it lies: the micro places it in the lane pulling out (`PullOutTime`), and instead of the drawn way, its body is
    taken (`Mi.TakeBody`, as `TakeNearest` does) astray from its line, so it finds its way back with `Micro.RejoinAim` (at a crawl,
    backing round if it must) and drives on. On its side or stuck off its line it leaves the day as the physics cars do. The same for a
-   car knocked while pulling in or out (an arriving one parks where it can, or is put back in its space only out of sight). Decide the
-   same for a moving contact car knocked (now gone from its day): likely make it a physics car that rejoins too. Add a trafficsim check
+   car knocked while pulling in or out (an arriving one parks where it can, or is put back in its space only out of sight). **A moving
+   contact car knocked must rejoin too** (the owner: it should already have been so; now it wrongly leaves its day): drop the brakes
+   and make it an ordinary physics car (`Contact`, `Brake` off, its engine on); it is already a driven body, so `Micro`'s astray logic
+   brings it back to its line, and only on its side, stuck or wrecked does it leave the day. Add a trafficsim check
    (a held car's departure comes: it drives off within a minute from where its stand-in body lies).
 2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
 3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5 (ways out and in, contact physics) and add the ways to TESTING.md item 74 for the
