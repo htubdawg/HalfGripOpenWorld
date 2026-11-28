@@ -73,6 +73,13 @@ namespace HalfGripOpenWorld
 		private readonly bool[] pulledUp;
 		/// <summary>Per car: its spot was given it before it arrived (<see cref="ArriveAlong"/>), so it is held while it is still driving.</summary>
 		private readonly bool[] early;
+		/// <summary>
+		/// Per car: held still where it is drawn (<see cref="Freeze"/>), its loose body standing in for it (the contact physics): its way out
+		/// or in and its wait to drive in don't go on, and a car held in the lane for its way out stays held, so when it is let go its drawn
+		/// copy carries on from just where the body stood.
+		/// </summary>
+		private readonly bool[] frozen;
+		private readonly List<int> frozenCars = new List<int>();
 
 		/// <summary>For the log and trafficsim: ways out and in driven, those no gentler than a car turns allowed, and the longest.</summary>
 		internal int WaysOut, WaysIn, TightWays;
@@ -130,6 +137,8 @@ namespace HalfGripOpenWorld
 			upAt = new double[n];
 			pulledUp = new bool[n];
 			early = new bool[n];
+			frozen = new bool[n];
+			m.Held = frozen;
 			x0 = new double[n];
 			z0 = new double[n];
 			hx0 = new double[n];
@@ -226,6 +235,7 @@ namespace HalfGripOpenWorld
 					DayIndex++;
 					Today = next;
 				}
+				HoldFrozen();
 				M.Run(M.Now + Meso.Step);
 				Snapshot();
 				steps++;
@@ -712,6 +722,117 @@ namespace HalfGripOpenWorld
 			y1[i] = manY[i];
 			k1[i] = Driving;
 			return true;
+		}
+
+		/// <summary>
+		/// Holds car <paramref name="i"/> still where it is drawn (<paramref name="on"/>), or lets it go on: a parked car, or one driving out of
+		/// its spot or into it, made a loose car by the contact physics stands as its body does until the player has gone (<see cref="frozen"/>).
+		/// </summary>
+		internal void Freeze(int i, bool on, double now = double.NaN)
+		{
+			if (frozen[i] == on)
+			{
+				return;
+			}
+			frozen[i] = on;
+			if (on)
+			{
+				frozenCars.Add(i);
+				if (!double.IsNaN(now) && t1 > t0)
+				{
+					// Drawn a step behind the clock (Pose): its clocks wound back to where it is drawn at day second now, and held there.
+					double back = t1 - Math.Max(t0, Math.Min(t1, now - Meso.Step));
+					if (man[i] != null)
+					{
+						manSince[i] += back;
+					}
+					if (pulledUp[i])
+					{
+						upAt[i] += back;
+					}
+					Micro.Agent a = Mi.Agents[i];
+					if (a != null && a.HoldUntil > Mi.T)
+					{
+						a.HoldUntil += back;
+					}
+					if (man[i] != null && WayPose(i))
+					{
+						x0[i] = x1[i];
+						z0[i] = z1[i];
+						hx0[i] = hx1[i];
+						hz0[i] = hz1[i];
+						y0[i] = y1[i];
+						k0[i] = k1[i];
+					}
+				}
+			}
+			else
+			{
+				frozenCars.Remove(i);
+			}
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="i"/> can be held still where it is drawn (<see cref="Freeze"/>): parked (or waiting in its spot to pull
+		/// out), driving out of its spot or into it, pulled up to drive in, or held standing in the lane. Not a car driving.
+		/// </summary>
+		internal bool CanStand(int i)
+		{
+			Micro.Agent a = Mi.Agents[i];
+			return k1[i] == Parked || man[i] != null || pulledUp[i] || (a != null && !a.Driven && a.HoldUntil > Mi.T);
+		}
+
+		/// <summary>Whether car <paramref name="i"/> is held still (<see cref="Freeze"/>).</summary>
+		internal bool Frozen(int i)
+		{
+			return frozen[i];
+		}
+
+		/// <summary>Before a step: the frozen cars' clocks held back a step (their ways, their wait to drive in, a hold in the lane for a way out).</summary>
+		private void HoldFrozen()
+		{
+			foreach (int i in frozenCars)
+			{
+				if (man[i] != null)
+				{
+					manSince[i] += Meso.Step;
+				}
+				if (pulledUp[i])
+				{
+					upAt[i] += Meso.Step;
+				}
+				Micro.Agent a = Mi.Agents[i];
+				if (a != null && a.HoldUntil > Mi.T)
+				{
+					a.HoldUntil += Meso.Step;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Car <paramref name="i"/> leaves the day from wherever it is (the contact physics: knocked as a loose car, its body is the car from now
+		/// on): out of the micro or its queue, or out of its spot (given back); its way dropped. Its household goes without it.
+		/// </summary>
+		internal void LoseCar(int i)
+		{
+			Freeze(i, false);
+			if (Mi.Agents[i] != null)
+			{
+				Mi.LoseCar(i);
+			}
+			else
+			{
+				M.LoseOutside(M.Cars[i]);
+			}
+			if (man[i] != null)
+			{
+				EndWay(i);
+			}
+			pulledUp[i] = false;
+			wayIn.Remove(i);
+			planned.Remove(i);
+			asked.Remove(i);
+			k0[i] = k1[i] = None;
 		}
 
 		/// <summary>Whether car <paramref name="i"/> is driving out of its spot or into it now (not to be made a physics car meanwhile).</summary>

@@ -255,6 +255,7 @@ internal static partial class Program
 			return;
 		}
 		BlockDay(seed);
+		ContactDay(seed);
 		PhysicsDay(seed, 10.0);
 	}
 
@@ -533,5 +534,204 @@ internal static partial class Program
 		Check(hits == 0, "game block", where + ": cars drove into the player's car (" + firstHit + ")");
 		Check(longest >= 2, "game block", where + ": no queue formed behind it (" + longest + " standing)");
 		Check(standingAfter <= 2, "game block", where + ": " + standingAfter + " still standing two minutes after it went");
+	}
+
+	/// <summary>
+	/// The contact physics' part in the simulation, with the player at node 6: a parked car and a car driving out of its spot or into it held
+	/// still (<see cref="TrafficLive.Freeze"/>) for a minute, as while their loose bodies stand in for them, must not move (nor a car held
+	/// in the lane for its way out), and let go must carry on from there with no jump; then a parked car, one on its way out or in and a
+	/// micro car driving knocked out of their day (<see cref="TrafficLive.LoseCar"/>) must be gone for good, never drawn again, with every
+	/// other car still in one place (conservation) and the day going on.
+	/// </summary>
+	private static void ContactDay(int seed)
+	{
+		double start = Schedules.StartOf(StartHourOf(seed));
+		Meso.Ensure();
+		Traffic.Node k6 = Traffic.Nodes[6];
+		TrafficLive live = TrafficLive.Build(seed, start, k6.X, k6.Z);
+		live.PlayerX = k6.X;
+		live.PlayerZ = k6.Z;
+		live.HasPlayer = true;
+		string where = "seed " + seed + " in game from " + TrafficLive.Clock(start) + ", contact cars at node 6";
+		const double frame = 1.0 / 60.0;
+		double race = 0.0;
+		int n = live.Count;
+		bool Near(int i, double reach)
+		{
+			byte k = live.Where(i, out double x, out double z);
+			return k != TrafficLive.None && (x - k6.X) * (x - k6.X) + (z - k6.Z) * (z - k6.Z) < reach * reach;
+		}
+		// A parked car and one on its way out or in, near the player (looked for over up to three minutes).
+		int parked = -1, way = -1;
+		while (race < 180.0 && (parked < 0 || way < 0))
+		{
+			race += frame;
+			live.Advance(live.DayAt(race));
+			for (int i = 0; i < n; i++)
+			{
+				if (parked < 0 && Near(i, 500.0) && live.Where(i, out double _, out double _) == TrafficLive.Parked && !live.Manoeuvring(i) && live.CanStand(i))
+				{
+					parked = i;
+				}
+				if (way < 0 && i != parked && Near(i, 800.0) && live.Manoeuvring(i))
+				{
+					way = i;
+				}
+			}
+		}
+		if (!Check(parked >= 0 && way >= 0, "game contact", where + ": no parked car (" + parked + ") or car on its way out or in (" + way + ") near the player"))
+		{
+			return;
+		}
+		int[] held = { parked, way };
+		double[] hx = new double[2], hz = new double[2], ax = new double[2];
+		double wound = 0.0;
+		for (int k = 0; k < 2; k++)
+		{
+			live.Pose(held[k], live.DayAt(race), out double dx, out double dz, out double _, out double _, out double _);
+			live.Freeze(held[k], true, live.DayAt(race));
+			live.Pose(held[k], live.DayAt(race), out hx[k], out hz[k], out double _, out double _, out double _);
+			ax[k] = live.Mi.Agents[held[k]] != null ? live.Mi.Agents[held[k]].X : double.NaN;
+			wound = Math.Max(wound, Math.Sqrt((dx - hx[k]) * (dx - hx[k]) + (dz - hz[k]) * (dz - hz[k])));
+		}
+		double moved = 0.0, agentMoved = 0.0;
+		double until = race + 60.0;
+		while (race < until)
+		{
+			race += frame;
+			live.Advance(live.DayAt(race));
+			for (int k = 0; k < 2; k++)
+			{
+				int c = held[k];
+				if (live.Pose(c, live.DayAt(race), out double x, out double z, out double _, out double _, out double _) != TrafficLive.None)
+				{
+					double mv = Math.Sqrt((x - hx[k]) * (x - hx[k]) + (z - hz[k]) * (z - hz[k]));
+					if (mv > moved + 1e-4 && Environment.GetEnvironmentVariable("TRAFFICSIM_CONTACT_TRACE") == "1")
+					{
+						Console.WriteLine("    held car " + c + " moved " + mv.ToString("0.00") + " at " + race.ToString("0.00") + " s, manoeuvring " + live.Manoeuvring(c) + ", " + live.M.Cars[c].Mode);
+					}
+					moved = Math.Max(moved, mv);
+				}
+				Micro.Agent a = live.Mi.Agents[c];
+				if (a != null && !double.IsNaN(ax[k]) && a.HoldUntil > live.Mi.T)
+				{
+					agentMoved = Math.Max(agentMoved, Math.Abs(a.X - ax[k]));
+				}
+			}
+		}
+		Check(wound < 0.6, "game contact", where + ": a car held still jumped " + wound.ToString("0.00") + " as it was held");
+		Check(moved < 0.6, "game contact", where + ": a car held still moved " + moved.ToString("0.00") + " (cars " + parked + ", " + way + ")");
+		Check(agentMoved < 0.6, "game contact", where + ": a car held in the lane for its way out moved " + agentMoved.ToString("0.00") + " while held still");
+		double jump = 0.0;
+		double[] lx = (double[])hx.Clone(), lz = (double[])hz.Clone();
+		foreach (int c in held)
+		{
+			live.Freeze(c, false);
+		}
+		until = race + 20.0;
+		while (race < until)
+		{
+			race += frame;
+			live.Advance(live.DayAt(race));
+			for (int k = 0; k < 2; k++)
+			{
+				if (live.Pose(held[k], live.DayAt(race), out double x, out double z, out double _, out double _, out double _) == TrafficLive.None)
+				{
+					continue;
+				}
+				jump = Math.Max(jump, Math.Sqrt((x - lx[k]) * (x - lx[k]) + (z - lz[k]) * (z - lz[k])));
+				lx[k] = x;
+				lz[k] = z;
+			}
+		}
+		Check(jump < 2.0, "game contact", where + ": a car let go jumped " + jump.ToString("0.0") + " in a frame");
+		// A parked car knocked (the owner: it carries on its day later): held while its body lies where it was knocked, then let go, it
+		// must still set off on its plans. The one held above: held again over its next departure time, then let go.
+		int again = parked;
+		double leave = live.M.Cars[again].LeaveAt;
+		bool setOff = false;
+		if (live.M.Cars[again].Mode == Meso.Mode.Parked && leave < live.M.Now + 1800.0)
+		{
+			live.Freeze(again, true, live.DayAt(race));
+			while (live.M.Now < leave + 60.0)
+			{
+				race += 0.25;
+				live.Advance(live.DayAt(race));
+			}
+			Check(live.M.Cars[again].Mode == Meso.Mode.Parked || live.Where(again, out double _, out double _) == TrafficLive.Parked, "game contact", where + ": a knocked parked car held still drove off");
+			live.Freeze(again, false);
+			for (double t = race + 600.0; race < t && !setOff; )
+			{
+				race += 0.25;
+				live.Advance(live.DayAt(race));
+				setOff = live.M.Cars[again].Mode != Meso.Mode.Parked;
+			}
+			Check(setOff, "game contact", where + ": a knocked parked car let go never set off on its day (car " + again + ")");
+		}
+		// Knocked out of the day: a parked car, one on its way out or in, a micro car driving (and its household's day goes on).
+		int lostParked = -1, lostWay = -1, lostDriving = -1;
+		until = race + 180.0;
+		while (race < until && (lostParked < 0 || lostWay < 0 || lostDriving < 0))
+		{
+			race += frame;
+			live.Advance(live.DayAt(race));
+			for (int i = 0; i < n; i++)
+			{
+				if (i == parked || i == way || live.M.Cars[i].Mode == Meso.Mode.Gone)
+				{
+					continue;
+				}
+				if (lostParked < 0 && Near(i, 500.0) && live.Where(i, out double _, out double _) == TrafficLive.Parked && !live.Manoeuvring(i))
+				{
+					lostParked = i;
+					live.LoseCar(i);
+				}
+				else if (lostWay < 0 && Near(i, 800.0) && live.Manoeuvring(i))
+				{
+					lostWay = i;
+					live.LoseCar(i);
+				}
+				else if (lostDriving < 0 && Near(i, 400.0) && live.Mi.Agents[i] != null && live.Mi.Agents[i].V > 3.0)
+				{
+					lostDriving = i;
+					live.LoseCar(i);
+				}
+			}
+		}
+		Check(lostParked >= 0 && lostWay >= 0 && lostDriving >= 0, "game contact", where + ": not every kind of car found to knock (" + lostParked + ", " + lostWay + ", " + lostDriving + ")");
+		int[] lost = { lostParked, lostWay, lostDriving };
+		int drawnAgain = 0, departures = live.M.Departures, bad = 0;
+		until = race + 300.0;
+		while (race < until)
+		{
+			race += frame;
+			live.Advance(live.DayAt(race));
+			foreach (int c in lost)
+			{
+				if (c >= 0 && (live.M.Cars[c].Mode != Meso.Mode.Gone || live.Pose(c, live.DayAt(race), out double _, out double _, out double _, out double _, out double _) != TrafficLive.None))
+				{
+					drawnAgain++;
+				}
+			}
+			int queued = 0, driving = 0;
+			foreach (Meso.Queue q in live.M.Queues)
+			{
+				queued += q.Cars.Count;
+			}
+			foreach (Meso.Vehicle v in live.M.Cars)
+			{
+				driving += v.Mode == Meso.Mode.Driving ? 1 : 0;
+				if (v.Mode == Meso.Mode.Gone && v.Lane >= 0)
+				{
+					bad++;
+				}
+			}
+			bad += queued != driving ? 1 : 0;
+		}
+		Console.WriteLine("  game, " + where + ": cars " + parked + " (parked) and " + way + " (on its way) held still a minute, moved " + moved.ToString("0.00") + ", let go with a jump of "
+			+ jump.ToString("0.0") + "; knocked out of the day " + string.Join(", ", lost) + ", " + (live.M.Departures - departures) + " departures after");
+		Check(drawnAgain == 0, "game contact", where + ": a car knocked out of its day came back (" + drawnAgain + " frames)");
+		Check(bad == 0, "game contact", where + ": the queues don't hold every car driving after cars were knocked out (" + bad + " frames)");
+		Check(live.M.Departures > departures, "game contact", where + ": the day stopped after cars were knocked out");
 	}
 }

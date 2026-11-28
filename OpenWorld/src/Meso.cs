@@ -540,6 +540,13 @@ namespace HalfGripOpenWorld
 				Vehicle v = Cars[i];
 				if ((v.Mode == Mode.Parked || v.Mode == Mode.Away) && v.LeaveAt == at)
 				{
+					if (Held != null && Held[i])
+					{
+						// Held in its space (the contact physics: its body stands in for it): it sets off once let go, late.
+						v.LeaveAt = Now + 1.0;
+						departures.Push(v.LeaveAt, i);
+						continue;
+					}
 					Depart(v);
 				}
 			}
@@ -1341,6 +1348,9 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>A car reaches its stop (or the lot it was going to): parks if there is room, else goes on to the next place with some.</summary>
+		/// <summary>Per car, held in its space and not to set off yet (the game's contact physics, <see cref="TrafficLive.Freeze"/>); null: none.</summary>
+		internal bool[] Held;
+
 		/// <summary>For the overlay: cars gone from the day (knocked off the road or wrecked).</summary>
 		internal int Gone;
 
@@ -1356,6 +1366,27 @@ namespace HalfGripOpenWorld
 			v.Path.Clear();
 			v.Next = 0;
 			Gone++;
+		}
+
+		/// <summary>
+		/// Car <paramref name="v"/>, not in the micro, leaves the day from wherever it is: parked (its place's space given back), or in a lane's
+		/// queue (taken out of it). The contact physics' knocked cars (<see cref="TrafficLive.LoseCar"/>); a micro car goes by <see cref="Micro.LoseCar"/>.
+		/// </summary>
+		internal void LoseOutside(Vehicle v)
+		{
+			if (v.Mode == Mode.Gone)
+			{
+				return;
+			}
+			if (v.Mode == Mode.Parked || v.Mode == Mode.Away)
+			{
+				Leave(v);
+			}
+			else if (v.Lane >= 0)
+			{
+				Queues[v.Lane].Cars.Remove(v.Car);
+			}
+			Lose(v);
 		}
 
 		internal void Arrive(Vehicle v)

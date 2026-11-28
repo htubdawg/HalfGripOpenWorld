@@ -595,6 +595,8 @@ namespace HalfGripOpenWorld
 				else
 				{
 					Draw(now, live.PlayerX, live.PlayerZ);
+					// The contact physics: a drawn car the player is about to touch becomes a real car (after the drawing: it has the drawn poses).
+					Contact(now);
 					Follow(now);
 				}
 			}
@@ -642,6 +644,15 @@ namespace HalfGripOpenWorld
 					drawn[c] = v;
 				}
 				v.Seen = true;
+				if (standing.ContainsKey(c))
+				{
+					// A contact car standing: its body is drawn, its copy hidden until it goes back.
+					if (v.Go.activeSelf)
+					{
+						v.Go.SetActive(false);
+					}
+					continue;
+				}
 				if (bodies.TryGetValue(c, out TrafficBody body) && body != null)
 				{
 					// A physics car: its body is drawn, its copy hidden (and its box with it) until the body is let go.

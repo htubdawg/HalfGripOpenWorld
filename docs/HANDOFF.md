@@ -4,62 +4,54 @@ The one handoff: **overwrite it** at the end of each session with where things s
 session notes; git keeps them (`git log -p docs/HANDOFF.md`). Standing decisions go in `docs/PLAN.md`, open in-game tests in
 `docs/TESTING.md`, finished research in `docs/research/`.
 
-Last written 2026-11-28.
+Last written 2026-11-28 (second session that day).
 
 ## Where things stand
 
 - **Branch: `traffic-rework-branch`** (the owner: stay on it). The traffic is being rebuilt from scratch: **read
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on, but **read it for what it
-  already solved**, see below).
+  already solved**).
 - **Phases 0 to 4 are done**; phase 5 (in game, alone): live traffic, parked cars, the player as a body, the nearest 24 moving cars as
   the game's real car (`TrafficPhysics`), the day's end. All tested by the owner except the day's end (item 73, not to be tested).
-- **This session: driving out of spots and into them, instead of the 2.5 s slide. Pushed as work in progress (commit a2113cf);
-  trafficsim fails.** What is in:
-  - `Manoeuvre.cs` (new, pure): a car's way between its spot and the lane, one or two legs (forwards, reverse, backing off then
-    forwards), cubic curves for the **rear axle** (front-wheel steering: the nose swings out; the middle is 4.4 ahead of the axle),
-    no tighter than 14 units at the axle, clear of the cars parked round it (the cheapest clear candidate), timed from standing
-    (4 m/s forwards, 2 m/s reverse, a pause at each gear change). A way in is planned as a way out driven backwards in time (headings
-    kept, gears swapped), so the kinematics stay front-steered.
-  - `Micro`: `PullOutAlong` (where a car pulling out comes onto the lane), `PullOutClear` (its way clear of standing cars and of cars
-    that couldn't stop), `PullOutTime` (held standing, `Agent.HoldUntil`, `Why.Manoeuvre`, while its drawn copy drives out),
-    `ArriveAlong` (asked once on its last lane: the game gives it its spot then and it pulls up beside it, `Agent.Dest`), `Arriving`.
-  - `TrafficLive`: plans and poses the ways (`Beside` picks the place by the spot that gives the quickest way; spots given early are
-    held, `early[]`); a car waiting for a gap stays drawn in its spot (it used to be drawn rolling off up the road); a car pulled up
-    waits up to 20 s for its way in to clear; the ways and the rest of their paths are bodies the drivers see.
-  - `TrafficCars`: the slide is gone. `TrafficPhysics`: a car held or manoeuvring isn't taken as a physics car.
-  - trafficsim (`GameDay.cs`): no jump leaving or reaching a spot, no tighter than a car turns, under 30 s, not in a micro car nor a
-    parked one. `TRAFFICSIM_WAYS=1` lists every way, `=bad` the failing ones.
-- **What fails** (`TRAFFICSIM_GAME=only` on seeds 1 to 10; seed 1 passes except one way of 34 s):
+- **This session: the old branch's contact physics ported** (TESTING.md item 74, not tested in game). In `TrafficPhysics.cs`
+  (`Contact`, `MakeContact`, `StandingBubble`, `Sweeps`): each frame after the drawing, any drawn car the player's car, swept along its
+  velocity 0.3 s plus 2 units (margin 0.2), is about to touch becomes the woken enemy car on its brakes (config `World.TrafficLoose`, 6,
+  apart from `TrafficPhysics`; a pool of 12 more for knocked cars). Two kinds:
+  - **Standing** (parked, pulling in or out, pulled up, held in the lane for a way out: `TrafficLive.CanStand`): its car is held still
+    (`TrafficLive.Freeze`: its way's clock, its wait to drive in and its hold in the lane stand still, its departure waits,
+    `Meso.Held`; wound back on freezing to where it is drawn, a step behind). Untouched, the player 60 away: released, drawn again in
+    place. **Knocked** (moved 0.5 or turned 3° after settling, hit by anything with a rigidbody, or damaged): **the owner, 2026-11-28:
+    a hit parked car still carries on its day later.** It lies where it ended up (a body the drivers see once 1.5 off its spot) until
+    the player is past sight (`LooseGone`), then is released and its car goes on from where it was held, late. Wrecked: gone from its
+    day (`TrafficLive.LoseCar`, `Meso.LoseOutside`), burns and explodes as the others.
+  - **Moving** (a micro car driving but not a physics car just then): a body on its brakes the micro reads (`TakeBody`, `Brake`).
+    Untouched, the player 60 away: given back. Knocked: gone from its day (`Mi.LoseCar`), as the physics cars. The owner's word on
+    hit parked cars may extend to these; not asked.
+  - Not ported: `TrafficRest` (the worked-out rest on the springs, so the swap shows no drop or bounce). This branch puts the body at
+    the learned rest height (`RestPlace`) or 0.15 up until learned; if the owner sees a parked car drop and bounce as it turns real,
+    port `TrafficRest.cs` and `Settle` from the old branch.
+  - trafficsim `ContactDay` (game path, every seed given): a parked car and one on its way held a minute don't move, let go don't
+    jump; a held parked car doesn't set off and sets off once let go; a parked car, one on its way and a moving one knocked out of
+    their day never come back and the queues still hold every car driving. Freezing jumps up to 0.5 out of sight (the drawn pose is a
+    blend between steps, the way's curve is not); the checks allow 0.6.
+- **Driving out of spots and into them (last session, still failing, see Next 1)**: `Manoeuvre.cs`, `Micro.PullOutAlong`/`PullOutClear`/
+  `PullOutTime`/`ArriveAlong`/`Arriving`, `TrafficLive.Beside`. Failures on `TRAFFICSIM_GAME=only` seeds 1 to 10 (seed 1: one way of
+  34 s):
   1. Kerb spots on the far side, facing against the car's way: a U-turn across a street is narrower than two turning radii, so no
-     plan fits (fallback curves of 0.4 units). Fix: give an arriving car a kerb space on its own side (`TrafficParking.TakeKerb` tries the
-     house's side first; pass the side of the lane it arrives on: a car on the right kerb faces the road's way when side is -1), and a
-     three-point turn family in `Manoeuvre.Plan` for a car leaving the other way (the meso can't know spots, so its direction stays).
-  2. Lot bays and pads far from the lane (55 off, E clamped 150 away): 30 s ways across the lot. Lots have no aisles known here
-     (`TrafficParking.LotSpaces` has the lot's frame); decide whether to plan via the lot's mouth or keep such cars without a way.
-  3. A way into a moving micro car (seeds 4, 7, 8) and into parked neighbours at the kerb (seed 7: a 19-unit kerb pitch for a 14-unit
-     car is tight even for a real car).
-  4. **Physics strays on seeds 5, 7, 8** (`physics stray`): caused by this change (the baseline passes); not looked into. Likely the
-     manoeuvres' bodies or `Agent.Dest` against the stand-in physics bodies.
-- **The owner's direction (2026-11-28): collision with parked cars and cars pulling in or out comes from the old branch's contact
-  physics, not from making them physics cars.** On `traffic-test-branch`: `TrafficCars.Contact` (a drawn car the player is about to
-  touch, swept along the player's velocity, becomes a loose real car just before contact), `TrafficRest` (the swap shows nothing: no
-  drop onto the springs, no bounce), `TrafficPhysics.LooseBubble` (untouched: back to drawn once the player is 60 units away; touched:
-  stays where knocked, retired from its day once the player is 500 away), config `TrafficLoose` (at most 6). This branch already has
-  the woken enemy car, `LearnRest` and wrecks lying loose; the contact sweep and the loose bubble are what is missing. Read those
-  files before designing anything; don't propose making every nearby car a physics car (the owner doesn't want it).
+     plan fits. Fix: give an arriving car a kerb space on its own side (`TrafficParking.TakeKerb` tries the house's side first; pass the
+     side of the lane it arrives on), and a three-point turn family in `Manoeuvre.Plan` for a car leaving the other way.
+  2. Lot bays and pads far from the lane (55 off): 30 s ways across the lot. Plan via the lot's mouth (`TrafficParking.LotSpaces` has
+     the lot's frame) or keep such cars without a way.
+  3. A way into a moving micro car (seeds 4, 7, 8) and into parked neighbours at the kerb (seed 7: a 19-unit kerb pitch is tight).
+  4. Physics strays on seeds 5, 7, 8 (`physics stray`), caused by the ways; not looked into.
 - Only 1,904 households reach the main road graph (PLAN.md lists it).
 
 ## Next
 
-1. **Port the old contact physics** (above) to the new traffic: any drawn car (parked, pulling in or out, moving but not a physics
-   car) the player is about to touch becomes a loose real car; a touched one leaves its day (`Micro.LoseCar` for a micro car; a parked
-   one: its household goes without it) and lies as a body the drivers see (`OtherBodies`); an untouched one goes back.
-2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
-   Undecided whether to drop the drawn ways for cars far from the player (the owner didn't object to drawn ways; the old branch drew
-   them).
-3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5, CLAUDE.md's file table (`Manoeuvre.cs`; `TrafficLive`, `Micro`, `TrafficCars`
-   rows), and add a TESTING.md item for the owner (cars pulling out and in; hitting parked cars).
-4. Later, as before: run `TrafficLive.Advance` on a worker if the frame time shows it; phase 6 rooms; seeds 65 to 96 now and then;
+1. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
+2. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5 (ways out and in, contact physics) and add the ways to TESTING.md item 74 for the
+   owner.
+3. Later, as before: run `TrafficLive.Advance` on a worker if the frame time shows it; phase 6 rooms; seeds 65 to 96 now and then;
    right on red when it shows; the hole at (11145, -10111) and four end kinks.
 
 ## Working with the owner

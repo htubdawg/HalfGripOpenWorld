@@ -49,10 +49,66 @@ namespace HalfGripOpenWorld
 
 		private int MostPhysics => physicsFailed || Mod.TrafficPhysics == null ? 0 : Math.Max(0, Mod.TrafficPhysics.Value);
 
+		/// <summary>The contact physics: at most this many drawn cars made real a moment before the player touches them, apart from <see cref="MostPhysics"/>.</summary>
+		private int MostLoose => physicsFailed || Mod.TrafficLoose == null ? 0 : Math.Max(0, Mod.TrafficLoose.Value);
+
+		/// <summary>An untouched contact car goes back to being drawn once the player is this far (units, about 18 m).</summary>
+		private const double LooseLeave = 60.0;
+
+		/// <summary>Bodies kept beyond <see cref="MostLoose"/> for knocked parked cars lying where they ended up (they don't count against it).</summary>
+		private const int MostKnocked = 12;
+
+		/// <summary>The player's car as a box for the touch test (half length and half width, units: the game's cars are about 14 by 5.3).</summary>
+		private const double PlayerHalfLength = 7.5, PlayerHalfWidth = 2.7;
+
+		/// <summary>
+		/// The touch test's margin (units). Small: a car driving down a narrow street passes the cars at its kerb about half a unit off, and
+		/// must not make each one loose; the sweep along the velocity gives the warning ahead.
+		/// </summary>
+		private const double TouchMargin = 0.2;
+
+		/// <summary>The contact cars made standing (parked, or driving out of a spot or into one), their cars held still (<see cref="TrafficLive.Freeze"/>).</summary>
+		private readonly Dictionary<int, TrafficBody> standing = new Dictionary<int, TrafficBody>();
+		private readonly List<int> standingDone = new List<int>();
+		/// <summary>For the overlay: contact cars made, gone back untouched, knocked out of their day.</summary>
+		private int madeLoose, looseBack, looseKnocked;
+
+		/// <summary>The physics cars proper (not the contact cars driving on their brakes).</summary>
+		private int PhysicsCount
+		{
+			get
+			{
+				int n = 0;
+				foreach (TrafficBody b in bodies.Values)
+				{
+					n += b != null && !b.Contact ? 1 : 0;
+				}
+				return n;
+			}
+		}
+
+		/// <summary>How many contact cars there are now (standing, or driving on their brakes).</summary>
+		private int ContactCount
+		{
+			get
+			{
+				int n = 0;
+				foreach (TrafficBody b in standing.Values)
+				{
+					n += b != null && !b.Touched ? 1 : 0;
+				}
+				foreach (TrafficBody b in bodies.Values)
+				{
+					n += b != null && b.Contact ? 1 : 0;
+				}
+				return n;
+			}
+		}
+
 		/// <summary>Whether car <paramref name="car"/> is a physics car now (its drawn copy hidden).</summary>
 		private bool IsPhysical(int car)
 		{
-			return bodies.ContainsKey(car);
+			return bodies.ContainsKey(car) || standing.ContainsKey(car);
 		}
 
 		/// <summary>
@@ -70,8 +126,26 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				Micro.Reading r = b.Reading(now);
+				if (b.FromStand && (r.X - b.MadeX) * (r.X - b.MadeX) + (r.Z - b.MadeZ) * (r.Z - b.MadeZ) < 1.5 * 1.5)
+				{
+					// A parked car knocked but still in its space: not in anybody's way (a car at the kerb is near enough a lane to block it).
+					continue;
+				}
 				if ((r.X - live.PlayerX) * (r.X - live.PlayerX) + (r.Z - live.PlayerZ) * (r.Z - live.PlayerZ) < (double)LooseGone * LooseGone)
 				{
+					live.OtherBodies.Add(new Micro.Body { X = r.X, Z = r.Z, Hx = r.Hx, Hz = r.Hz, Vx = r.Vx, Vz = r.Vz, HalfLong = Traffic.CarLength * 0.5, HalfWide = TrafficParking.CarWide * 0.5 });
+				}
+			}
+			foreach (TrafficBody b in standing.Values)
+			{
+				if (b == null || !b.Touched)
+				{
+					continue;
+				}
+				Micro.Reading r = b.Reading(now);
+				if ((r.X - b.MadeX) * (r.X - b.MadeX) + (r.Z - b.MadeZ) * (r.Z - b.MadeZ) >= 1.5 * 1.5)
+				{
+					// Knocked out of its space: in the way of the cars on the road until it goes back.
 					live.OtherBodies.Add(new Micro.Body { X = r.X, Z = r.Z, Hx = r.Hx, Hz = r.Hz, Vx = r.Vx, Vz = r.Vz, HalfLong = Traffic.CarLength * 0.5, HalfWide = TrafficParking.CarWide * 0.5 });
 				}
 			}
@@ -131,9 +205,24 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				double dx = x - cx, dz = z - cz;
-				int n = live.Mi.WayAhead(c, 4.0, b.WayX, b.WayZ, out bool jump);
-				if (!show || jump || dx * dx + dz * dz > (double)PhysicsFar * PhysicsFar)
+				if (b.Contact && (b.Touched || !b.Alive))
 				{
+					// A contact car knocked: out of its day (the next frame finds it gone and leaves it lying where it is).
+					looseKnocked++;
+					Mod.Info("Traffic: contact car " + c + " knocked out of its day at " + x.ToString("0") + ", " + z.ToString("0"));
+					b.Contact = false;
+					live.LoseCar(c);
+					continue;
+				}
+				int n = live.Mi.WayAhead(c, 4.0, b.WayX, b.WayZ, out bool jump);
+				bool away = b.Contact ? dx * dx + dz * dz > LooseLeave * LooseLeave || MostLoose == 0 : dx * dx + dz * dz > (double)PhysicsFar * PhysicsFar;
+				if (!show || jump || away)
+				{
+					if (b.Contact)
+					{
+						looseBack++;
+						Mod.Info("Traffic: contact car " + c + " back as it was (untouched)");
+					}
 					live.Mi.GiveBody(c, x, z);
 					HandBack(c, b, x, z);
 					Release(b);
@@ -154,6 +243,7 @@ namespace HalfGripOpenWorld
 			{
 				bodies.Remove(c);
 			}
+			StandingBubble(cx, cz, show);
 			for (int i = loose.Count - 1; i >= 0; i--)
 			{
 				TrafficBody b = loose[i];
@@ -169,7 +259,7 @@ namespace HalfGripOpenWorld
 					loose.RemoveAt(i);
 				}
 			}
-			if (show && Time.time >= nextTake && MostPhysics > bodies.Count)
+			if (show && Time.time >= nextTake && MostPhysics > PhysicsCount)
 			{
 				nextTake = Time.time + TakeEvery;
 				TakeNearest(now, cx, cz);
@@ -200,7 +290,7 @@ namespace HalfGripOpenWorld
 			candidates.Sort((p, q) => p.d != q.d ? p.d.CompareTo(q.d) : p.car.CompareTo(q.car));
 			foreach ((float _, int c) in candidates)
 			{
-				if (bodies.Count >= MostPhysics || bodySpare.Count == 0)
+				if (PhysicsCount >= MostPhysics || bodySpare.Count == 0)
 				{
 					break;
 				}
@@ -332,6 +422,15 @@ namespace HalfGripOpenWorld
 				Release(b);
 			}
 			bodies.Clear();
+			foreach (KeyValuePair<int, TrafficBody> kv in standing)
+			{
+				live?.Freeze(kv.Key, false);
+				if (kv.Value != null)
+				{
+					Release(kv.Value);
+				}
+			}
+			standing.Clear();
 			foreach (TrafficBody b in loose)
 			{
 				if (b != null)
@@ -345,7 +444,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The overlay's physics part.</summary>
 		private string PhysicsStatus()
 		{
-			if (MostPhysics == 0 && madePhysical == 0)
+			if (MostPhysics == 0 && madePhysical == 0 && MostLoose == 0 && madeLoose == 0)
 			{
 				return physicsFailed ? "; physics cars failed" : "";
 			}
@@ -354,7 +453,235 @@ namespace HalfGripOpenWorld
 			{
 				astray += b != null && b.Astray ? 1 : 0;
 			}
-			return "; physics " + bodies.Count + "/" + MostPhysics + " (made " + madePhysical + ", " + astray + " finding their way back, " + loose.Count + " loose, " + lostToDay + " gone from their day)";
+			return "; physics " + PhysicsCount + "/" + MostPhysics + " (made " + madePhysical + ", " + astray + " finding their way back, " + loose.Count + " loose, " + lostToDay + " gone from their day)"
+				+ "; contact " + ContactCount + "/" + MostLoose + " (made " + madeLoose + ", back " + looseBack + ", knocked " + looseKnocked + ")";
+		}
+
+		// ---- the contact physics (the old traffic's, on traffic-test-branch) ---------------------------------------------------
+
+		/// <summary>
+		/// The standing contact cars. Wrecked: out of their day, left lying where they are as loose cars. Knocked (the owner, 2026-11-28: a
+		/// parked car that is hit still carries on its day later): it lies where it ended up, its car still held, until the player is out of
+		/// sight of it (<see cref="LooseGone"/>), then is back in its space (or on its way out or in) as it was and its day goes on from there,
+		/// late if it missed its time. Untouched, with the player <see cref="LooseLeave"/> away (or the traffic hidden, or contact cars
+		/// switched off): back to being drawn, its car going on from just where it stood (<see cref="TrafficLive.Freeze"/>).
+		/// </summary>
+		private void StandingBubble(double cx, double cz, bool show)
+		{
+			if (standing.Count == 0)
+			{
+				return;
+			}
+			standingDone.Clear();
+			foreach (KeyValuePair<int, TrafficBody> kv in standing)
+			{
+				int c = kv.Key;
+				TrafficBody b = kv.Value;
+				if (b == null || !b.Alive)
+				{
+					standingDone.Add(c);
+					looseKnocked++;
+					live.LoseCar(c);
+					if (b != null)
+					{
+						Origin.World(b.Rb.position, out double kx, out double kz);
+						Mod.Info("Traffic: contact car " + c + " wrecked, out of its day at " + kx.ToString("0") + ", " + kz.ToString("0"));
+						b.Contact = false;
+						loose.Add(b);
+						lostToDay++;
+					}
+					continue;
+				}
+				Origin.World(b.Rb.position, out double x, out double z);
+				double dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
+				if (b.Touched)
+				{
+					if (!b.Counted)
+					{
+						b.Counted = true;
+						looseKnocked++;
+						Mod.Info("Traffic: contact car " + c + " knocked at " + x.ToString("0") + ", " + z.ToString("0") + ": it lies there until you are out of sight, then carries on its day");
+					}
+					if (show && d2 < (double)LooseGone * LooseGone)
+					{
+						continue;
+					}
+				}
+				else if (show && MostLoose > 0 && d2 < LooseLeave * LooseLeave)
+				{
+					continue;
+				}
+				standingDone.Add(c);
+				looseBack++;
+				live.Freeze(c, false);
+				Release(b);
+				Mod.Info("Traffic: contact car " + c + (b.Touched ? " back in its place out of sight, its day going on" : " back as it was (untouched)"));
+			}
+			foreach (int c in standingDone)
+			{
+				standing.Remove(c);
+			}
+		}
+
+		/// <summary>
+		/// The contact physics, each frame after the drawing: a drawn car (parked, driving out of its spot or into it, or driving and not a
+		/// physics car just then) that the player's car, swept along its velocity for a moment, would meet becomes a real car on its brakes
+		/// just before the touch. Untouched, it goes back to being drawn once the player has gone; knocked, it leaves its day.
+		/// </summary>
+		private void Contact(double now)
+		{
+			int most = MostLoose;
+			if (most == 0 || bodySpare.Count == 0 || tm.enemyCarPrefab == null)
+			{
+				return;
+			}
+			CarControllerNew player = tm.playerCarController;
+			Rigidbody prb = player != null ? player.rb : null;
+			if (prb == null)
+			{
+				return;
+			}
+			int count = ContactCount;
+			if (count >= most)
+			{
+				return;
+			}
+			Vector3 pp = prb.position, pv = prb.linearVelocity, pf = player.transform.forward;
+			float pfl = Mathf.Sqrt(pf.x * pf.x + pf.z * pf.z);
+			if (pfl < 1e-3f)
+			{
+				return;
+			}
+			Origin.World(pp, out double px, out double pz);
+			const double ahead = 0.3;
+			double speed = Math.Sqrt(pv.x * pv.x + pv.z * pv.z);
+			double near = 30.0 + speed * ahead;
+			double fx = pf.x / pfl, fz = pf.z / pfl;
+			foreach (int c in chosen)
+			{
+				if (count >= most || bodySpare.Count == 0)
+				{
+					return;
+				}
+				if (!drawn.TryGetValue(c, out View v) || !v.Go.activeSelf || IsPhysical(c) || double.IsNaN(v.LastX))
+				{
+					continue;
+				}
+				Vector3 at = v.Root.position;
+				if (Mathf.Abs(at.y - pp.y) > 8f)
+				{
+					continue;
+				}
+				double dx = v.LastX - px, dz = v.LastZ - pz;
+				if (dx * dx + dz * dz > near * near)
+				{
+					continue;
+				}
+				// The drawn car's box (its body's, as its collider), in the world.
+				Vector3 h = v.Root.forward;
+				float hl = Mathf.Sqrt(h.x * h.x + h.z * h.z);
+				if (hl < 1e-3f)
+				{
+					continue;
+				}
+				Origin.World(v.Root.TransformPoint(v.Look.Box.center), out double mx, out double mz);
+				Vector3 e = Vector3.Scale(v.Look.Box.extents, v.Root.lossyScale);
+				if (!Sweeps(px, pz, fx, fz, PlayerHalfLength, PlayerHalfWidth, pv.x, pv.z, ahead, 2.0, mx, mz, h.x / hl, h.z / hl, e.z, e.x, TouchMargin))
+				{
+					continue;
+				}
+				if (MakeContact(c, v, now))
+				{
+					count++;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Car <paramref name="c"/> made a contact car exactly where and as it is drawn: standing (parked, on its way out or in, or held in the
+		/// lane) on its brakes, its car held still; or, a micro car driving, a body on its brakes at its drawn speed that the micro reads as it
+		/// reads a physics car. False if it can't be (a car the meso drives, the way into the wrap's tunnel).
+		/// </summary>
+		private bool MakeContact(int c, View v, double now)
+		{
+			bool stand = live.CanStand(c);
+			Micro.Agent a = live.Mi.Agents[c];
+			if (!stand && (a == null || a.Driven || v.LastKind != TrafficLive.Driving || (a.Conn >= 0 && Lanes.Connectors[a.Conn].Turn == Lanes.Jump)))
+			{
+				return false;
+			}
+			TrafficBody b = bodySpare.Pop();
+			Wears(c, out int look, out int paint);
+			if (b.Skin != null)
+			{
+				b.Skin.ApplySkin(SkinFor(look, paint));
+			}
+			b.LookIndex = look;
+			b.Place(RestPlace(v.Root.position, look, 0.15f), v.Root.rotation);
+			bool parked = v.LastKind == TrafficLive.Parked;
+			if (stand)
+			{
+				b.BeginStanding(this, c, parked, v.LastX, v.LastZ);
+				live.Freeze(c, true, now);
+				standing[c] = b;
+			}
+			else
+			{
+				b.Begin(this, c, v.Root.forward * (float)a.V);
+				b.Contact = true;
+				b.Brake = true;
+				if (!live.Mi.TakeBody(c, b.Reading(now - Meso.Step)))
+				{
+					Release(b);
+					return false;
+				}
+				bodies[c] = b;
+			}
+			v.Go.SetActive(false);
+			if (v.Light != null)
+			{
+				v.Light.enabled = false;
+			}
+			madeLoose++;
+			Mod.Info("Traffic: car " + c + " a contact car (" + (parked ? "parked" : stand ? "standing" : "moving at " + (a.V / 3.3 * 3.6).ToString("0") + " km/h") + "), the player about to touch it");
+			return true;
+		}
+
+		/// <summary>
+		/// Whether the player's box (middle <paramref name="px"/>, <paramref name="pz"/>, facing unit <paramref name="fx"/>, <paramref name="fz"/>,
+		/// half length and width <paramref name="pl"/>, <paramref name="pw"/>) swept along its velocity for <paramref name="ahead"/> seconds and
+		/// <paramref name="extra"/> units more meets the other box (middle <paramref name="ox"/>, <paramref name="oz"/>, facing <paramref name="hx"/>,
+		/// <paramref name="hz"/>, half <paramref name="ol"/> by <paramref name="ow"/>), each grown by <paramref name="margin"/>: the separating axis
+		/// test of the two rectangles, the player's grown to cover its sweep (the old traffic's <c>TrafficDrive.Sweeps</c>).
+		/// </summary>
+		internal static bool Sweeps(double px, double pz, double fx, double fz, double pl, double pw, double vx, double vz, double ahead, double extra,
+			double ox, double oz, double hx, double hz, double ol, double ow, double margin = 0.0)
+		{
+			double speed = Math.Sqrt(vx * vx + vz * vz);
+			double sx = vx * ahead, sz = vz * ahead;
+			if (speed > 0.1)
+			{
+				sx += vx / speed * extra;
+				sz += vz / speed * extra;
+			}
+			// The sweep's middle, and the player's box grown by half the sweep along its length and its width.
+			double cx = px + sx * 0.5, cz = pz + sz * 0.5;
+			double rx = fz, rz = -fx;
+			double l = pl + Math.Abs(sx * fx + sz * fz) * 0.5 + margin, w = pw + Math.Abs(sx * rx + sz * rz) * 0.5 + margin;
+			double hrx = hz, hrz = -hx;
+			double l2 = ol + margin, w2 = ow + margin;
+			double dx = ox - cx, dz = oz - cz;
+			if (dx * dx + dz * dz > (l + w + l2 + w2) * (l + w + l2 + w2))
+			{
+				return false;
+			}
+			// Each box's reach along an axis: its half length times the cosine to it plus its half width times the sine.
+			double ff = Math.Abs(fx * hx + fz * hz), fr = Math.Abs(fx * hrx + fz * hrz);
+			double rf = Math.Abs(rx * hx + rz * hz), rr = Math.Abs(rx * hrx + rz * hrz);
+			return Math.Abs(dx * fx + dz * fz) <= l + l2 * ff + w2 * fr
+				&& Math.Abs(dx * rx + dz * rz) <= w + l2 * rf + w2 * rr
+				&& Math.Abs(dx * hx + dz * hz) <= l2 + l * ff + w * rf
+				&& Math.Abs(dx * hrx + dz * hrz) <= w2 + l * fr + w * rr;
 		}
 
 		// ---- the bodies --------------------------------------------------------------------------------------------------------
@@ -379,7 +706,8 @@ namespace HalfGripOpenWorld
 				warming = null;
 				return;
 			}
-			if (MostPhysics == 0 || bodySpare.Count >= WarmBodies || bodies.Count + bodySpare.Count >= MostPhysics + WarmBodies || tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
+			if ((MostPhysics == 0 && MostLoose == 0) || bodySpare.Count >= WarmBodies || bodies.Count + standing.Count + bodySpare.Count >= MostPhysics + MostLoose + MostKnocked + WarmBodies
+				|| tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
 			{
 				return;
 			}
@@ -589,6 +917,23 @@ namespace HalfGripOpenWorld
 		internal bool Alive = true;
 		/// <summary>Out of the day (wrecked, on its side, stuck off the road): no driver, on its brakes.</summary>
 		internal bool Loose;
+		/// <summary>
+		/// Made by the contact physics (<see cref="TrafficCars"/>'s <c>Contact</c>): a drawn car the player was about to touch, on its brakes
+		/// (<see cref="Brake"/> if it is a micro car driving, else <see cref="Loose"/> and its car held still, <see cref="TrafficLive.Freeze"/>).
+		/// <see cref="Touched"/> once anything with a body hit it, it was damaged, or it moved or turned from where it settled: then it
+		/// leaves its day; untouched, it goes back to being drawn once the player is away.
+		/// </summary>
+		internal bool Contact, Touched, Brake;
+		/// <summary>A knocked standing contact car already counted and logged.</summary>
+		internal bool Counted;
+		/// <summary>A contact car made standing (parked, or driving out of its spot or into it): where it was made (world x, z).</summary>
+		internal bool FromStand;
+		internal double MadeX, MadeZ;
+		/// <summary>Where a contact car settled (world x, z, scene y, its turn), the moment it first stood still, and how long since it was made.</summary>
+		private bool settled;
+		private double restX, restZ;
+		private float restY, contactAge;
+		private Quaternion restTurn;
 		/// <summary>Knocked off its line and finding its way back (<see cref="Micro.RejoinAim"/>), how far off it is (left +), the manoeuvre.</summary>
 		internal bool Astray;
 		internal double Off;
@@ -648,6 +993,8 @@ namespace HalfGripOpenWorld
 			Owner = owner;
 			Car = car;
 			Loose = false;
+			Contact = Touched = Brake = FromStand = settled = Counted = false;
+			contactAge = 0f;
 			Astray = false;
 			rejoin = default;
 			Age = 0f;
@@ -680,6 +1027,25 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>
+		/// Made by the contact physics standing (a parked car, or one driving out of its spot or into it, held still meanwhile): on its brakes,
+		/// no driver, its engine off; its lamps dark if it was parked.
+		/// </summary>
+		internal void BeginStanding(TrafficCars owner, int car, bool parked, double x, double z)
+		{
+			Begin(owner, car, Vector3.zero);
+			Loose = true;
+			Contact = true;
+			FromStand = true;
+			MadeX = x;
+			MadeZ = z;
+			Lamps(!parked);
+			if (Ec.audioSource != null)
+			{
+				Ec.audioSource.Stop();
+			}
+		}
+
 		/// <summary>Out of the day: no driver from now on, its brakes on, its engine off (lamps still lit: it stopped where it was).</summary>
 		internal void Loosen()
 		{
@@ -699,6 +1065,7 @@ namespace HalfGripOpenWorld
 		{
 			Car = -1;
 			Loose = false;
+			Contact = Touched = Brake = FromStand = false;
 			Astray = false;
 			ClearTrails();
 			Rb.linearVelocity = Vector3.zero;
@@ -721,7 +1088,11 @@ namespace HalfGripOpenWorld
 			}
 			float dt = Time.fixedDeltaTime;
 			Age += dt;
-			if (Loose || !Alive)
+			if (Contact && !Touched)
+			{
+				Feel(dt);
+			}
+			if (Loose || !Alive || Brake)
 			{
 				Cc.engineAccel = 0f;
 				Cc.brakeAccel = Alive ? Cc.carStats.brakeDeccel : 0f;
@@ -736,6 +1107,43 @@ namespace HalfGripOpenWorld
 			rejoin = default;
 			Steer(dt);
 			Pedals(dt);
+		}
+
+		/// <summary>
+		/// A contact car's touch test (the old traffic's): once it first stands still (one moving braked to a stop, one standing settled on its
+		/// springs) where it stands is kept, and moved half a unit or turned three degrees from there it has been touched.
+		/// </summary>
+		private void Feel(float dt)
+		{
+			contactAge += dt;
+			Vector3 pos = Rb.position;
+			Origin.World(pos, out double x, out double z);
+			if (!settled)
+			{
+				if (contactAge >= 0.75f && Rb.linearVelocity.sqrMagnitude < 0.09f && Rb.angularVelocity.sqrMagnitude < 0.01f)
+				{
+					settled = true;
+					restX = x;
+					restZ = z;
+					restY = pos.y;
+					restTurn = Rb.rotation;
+				}
+				return;
+			}
+			double dx = x - restX, dz = z - restZ, dy = pos.y - restY;
+			if (dx * dx + dz * dz + dy * dy > 0.25 || Quaternion.Angle(restTurn, Rb.rotation) > 3f)
+			{
+				Touched = true;
+			}
+		}
+
+		/// <summary>A contact car hit by anything with a body (the player's car, another car, a drawn car's box) has been touched.</summary>
+		private void OnCollisionEnter(Collision c)
+		{
+			if (Contact && c.rigidbody != null)
+			{
+				Touched = true;
+			}
 		}
 
 		/// <summary>
@@ -888,6 +1296,7 @@ namespace HalfGripOpenWorld
 			{
 				return;
 			}
+			Touched |= Contact;
 			Health -= amount;
 			if (Health > 0f)
 			{
