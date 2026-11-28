@@ -15,6 +15,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="MicroDay.cs" />
     <Compile Include="GameDay.cs" />
+    <Compile Include="PhysicsDay.cs" />
     <Compile Include="../../OpenWorld/src/TrafficLive.cs" />
     <Compile Include="../../OpenWorld/src/TrafficParking.cs" />
     <Compile Include="../../OpenWorld/src/Plots.cs" />
@@ -28,6 +29,7 @@
     <Compile Include="../../OpenWorld/src/Driver.cs" />
     <Compile Include="../../OpenWorld/src/Micro.cs" />
     <Compile Include="../../OpenWorld/src/MicroBodies.cs" />
+    <Compile Include="../../OpenWorld/src/MicroPhysics.cs" />
     <Compile Include="../../OpenWorld/src/Noise.cs" />
     <Compile Include="../../OpenWorld/src/Rng.cs" />
     <Compile Include="../../OpenWorld/src/Heap.cs" />

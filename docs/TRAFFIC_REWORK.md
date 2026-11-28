@@ -6,7 +6,8 @@ Phases 0 to 3 are done (the lane graph and conflict areas, the population and it
 phase 4 is built (the micro level and the boundary, every fault check passing on 64 seeds, trips taking the same time in both levels
 to 1%);
 phase 5's first part is built (the live traffic drawn in the game alone, parked cars, the player's car seen by the drivers, the overlay,
-the follow-car key and the map; see §6); the rest is not built yet.
+the follow-car key and the map; see §6), and its physics cars (2026-11-28, `MicroPhysics.cs`, `TrafficPhysics.cs`); the rest is not built
+yet.
 
 **The goal (the owner):** cars are NPCs on schedules, and the world can perceive and measure them carrying on outside any player's
 view. Traffic must be realistic and interactive.
@@ -281,8 +282,21 @@ network.
    out or in is slid between its spot and the road over 2.5 s, a stand-in. The player's car is a body the micro's drivers see
    (`MicroBodies`): they stop and queue behind it and keep out of a box it blocks or whose way out it blocks; trafficsim checks a block
    of two minutes at node 6 (no car into it, a queue, cleared after). Debug: the overlay's line, the follow-car key (F11), the map
-   (`TrafficMap`). Still to do: physics cars for the nearest, pulling in and out driven rather than slid, the day's end (the
-   simulation stops at 03:00), the frame cost measured in the game.
+   (`TrafficMap`).
+   Physics cars (2026-11-28, not yet run in the game): the nearest 24 drawn micro cars within 300 units become the enemy car woken
+   without AI or guns (`TrafficPhysics`), let go past 400. Each stays its micro agent (`MicroPhysics`): it decides as the others do, but
+   its place and speed are read back from the body every step (projected onto its lane or connector; back as well as on, never into the
+   car behind; held at its line if it hasn't decided to go), and the body is pedalled from the driver's acceleration and steered by pure
+   pursuit along the agent's way ahead (`WayAhead`). The reading stands for the time the other cars are drawn at (a step behind the clock),
+   so the micro sees the body where the player sees it beside the drawn cars. A body knocked off its line or on its side for 2.5 s, or
+   wrecked, leaves the day (`Meso.Mode.Gone`; its household goes without it) and lies where it is as a loose car on its brakes, which the
+   drivers see as a body in the road (they queue behind a wreck in their lane) until the player is past sight (1,500 away; a wreck
+   burns and explodes as the game's do). trafficsim drives stand-in
+   bodies through the same calls (`PhysicsDay.cs`): no body in another car, none straying, none standing for nothing, conservation, a
+   shove leaving the day, a wreck in its lane driven round or queued behind (it showed lane changes ignored bodies: a car moved into a
+   wreck's lane at highway speed; they count them now), on 24 seeds and with a sluggish body (0.6 s late, more drag).
+   Still to do: the physics cars run in the game (the controller's response, the swap's look), pulling in and out driven rather than slid,
+   the day's end (the simulation stops at 03:00), the frame cost measured in the game.
 6. **Rooms.** Host meso, link events, ownership, stand-ins; `trafficsim` room checks.
 7. **Density and polish.** Full survey traffic, more through traffic on the highway (goal: ten times), lamps at night.
 

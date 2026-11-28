@@ -94,7 +94,8 @@ when one is done, delete it here.
   the whole map, microscopic near players, the nearest physics cars), junction conflicts from the drawn geometry. Phases 0 to 3 done
   (the lane graph, conflict areas, each race's plans, the meso running every car's day headless); phase 4 done (the micro level round
   pretend players, the boundary, every visible fault check passing on 64 seeds, trips taking the same time in micro as in meso to 1%);
-  phase 5 under way (the live traffic drawn in the game alone, parked cars, the player's car seen by the drivers; no physics cars yet).
+  phase 5 under way (the live traffic drawn in the game alone, parked cars, the player's car seen by the drivers, the nearest moving
+  cars physics cars; not yet run in the game).
 - Eight short town streets (three in Kingsbridge, five in Westhaven, about 110 houses) are joined to nothing but footpaths, so traffic
   leaves their houses out (the old trafficview listed them). Join each to the nearest road in `TownPlan`, or don't lay it; add a meshcheck
   check.

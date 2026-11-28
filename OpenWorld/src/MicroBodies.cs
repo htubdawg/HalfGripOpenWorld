@@ -31,6 +31,17 @@ namespace HalfGripOpenWorld
 		/// <summary>For trafficsim and the overlay: how many lanes and connectors the bodies cover now.</summary>
 		internal int Blocked => blocks.Count;
 
+		/// <summary>For trafficsim: what the bodies cover, as text.</summary>
+		internal string BlocksText()
+		{
+			System.Text.StringBuilder sb = new System.Text.StringBuilder();
+			foreach ((int lane, int conn, double rear, double front, double v) in blocks)
+			{
+				sb.Append(lane >= 0 ? "lane " + lane : "conn " + conn).Append(' ').Append(rear.ToString("0.0")).Append("..").Append(front.ToString("0.0")).Append("; ");
+			}
+			return sb.ToString();
+		}
+
 		/// <summary>How close to a lane's line (beyond the body's own half extent across it) a body blocks it: half a car and a little.</summary>
 		private const double BlockReach = Traffic.CarLength * 0.2 + 0.5;
 
@@ -253,6 +264,36 @@ namespace HalfGripOpenWorld
 				if (bl == to && front > entry && rear + gone(v, rear) - entry < need)
 				{
 					return false;
+				}
+			}
+			return true;
+		}
+
+		/// <summary>
+		/// Whether a car with its front at <paramref name="x"/> going <paramref name="v"/> may change into lane <paramref name="to"/> for the
+		/// bodies on it: none alongside it, none ahead it would have to brake harder than <see cref="Driver.SafeBrake"/> for; its acceleration
+		/// in the new lane (<paramref name="accNew"/>, MOBIL's) lowered for the nearest ahead, so a lane with a wreck in it isn't one worth
+		/// moving into (a through car moved right into a wreck's lane 120 short of it and couldn't stop).
+		/// </summary>
+		private bool BodiesLetChange(int to, double x, double v, double limit, ref double accNew)
+		{
+			foreach ((int bl, int bc, double rear, double front, double bv) in blocks)
+			{
+				if (bl != to)
+				{
+					continue;
+				}
+				if (front > x - Traffic.CarLength - Driver.Gap0 && rear < x + Driver.Gap0)
+				{
+					return false;
+				}
+				if (rear >= x + Driver.Gap0)
+				{
+					accNew = Math.Min(accNew, Driver.Follow(v, limit, rear - x, bv));
+					if (accNew < -Driver.SafeBrake)
+					{
+						return false;
+					}
 				}
 			}
 			return true;

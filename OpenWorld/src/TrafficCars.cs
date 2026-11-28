@@ -19,7 +19,7 @@ namespace HalfGripOpenWorld
 	/// scene's on every frame, so an origin shift needs nothing here. A car pulling out of its spot or into one is drawn sliding from the one
 	/// pose to the other over a couple of seconds (the meso parks a car at its stop's point on the road; its spot is beside it).</para>
 	/// </summary>
-	internal sealed class TrafficCars : MonoBehaviour
+	internal sealed partial class TrafficCars : MonoBehaviour
 	{
 		/// <summary>One line (or a few) for the debug overlay (ShowCoords).</summary>
 		internal static string Status;
@@ -399,7 +399,7 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>Whether a material glows (a lamp): emission on and brighter than a trace.</summary>
-		private static bool Glows(Material m)
+		internal static bool Glows(Material m)
 		{
 			if (m == null || !m.HasProperty("_EmissionColor"))
 			{
@@ -577,8 +577,12 @@ namespace HalfGripOpenWorld
 					live.HasBody = true;
 				}
 				double now = live.DayAt(tm.TimeSinceRaceStart);
+				bool show = Mod.ShowTraffic.Value && car != null;
+				// The physics cars' bodies read into their agents first: the step places them where their bodies are.
+				ReadBodies(now);
 				live.Advance(now);
-				if (!Mod.ShowTraffic.Value || car == null)
+				Bodies(now, live.PlayerX, live.PlayerZ, show);
+				if (!show)
 				{
 					Clear();
 					Status = null;
@@ -592,6 +596,14 @@ namespace HalfGripOpenWorld
 			catch (Exception e)
 			{
 				Mod.Log.LogWarning("The traffic stopped: " + e);
+				try
+				{
+					ClearPhysics();
+				}
+				catch (Exception e2)
+				{
+					Mod.Log.LogWarning("The traffic's physics cars could not be let go: " + e2.Message);
+				}
 				Clear();
 				failed = true;
 				Live = null;
@@ -625,6 +637,19 @@ namespace HalfGripOpenWorld
 					drawn[c] = v;
 				}
 				v.Seen = true;
+				if (bodies.TryGetValue(c, out TrafficBody body) && body != null)
+				{
+					// A physics car: its body is drawn, its copy hidden (and its box with it) until the body is let go.
+					if (v.Go.activeSelf)
+					{
+						v.Go.SetActive(false);
+					}
+					bool beam = lights && lit < MostLit;
+					body.Headlamp(beam);
+					lit += beam ? 1 : 0;
+					drawnMoving++;
+					continue;
+				}
 				if (!Place(v, c, now, cx, cz, dt))
 				{
 					v.Go.SetActive(false);
@@ -660,7 +685,7 @@ namespace HalfGripOpenWorld
 				Schedules p = live.Plans;
 				Status = "traffic: " + TrafficLive.Clock(live.M.Now) + " on a " + (p.Weekend ? "weekend day" : "weekday") + ", " + live.DrivingNow + " driving (" + live.MicroNow + " near), "
 					+ live.ParkedNow + " parked; drawn " + drawnMoving + " moving, " + drawnParked + " parked, " + lit + " lit; simulation " + live.StepMs.ToString("0.00")
-					+ " ms a second, choosing " + chooseMs.ToString("0.0") + " ms, drawing " + drawMs.ToString("0.00") + " ms a frame" + (followText != null ? "\n" + followText : "");
+					+ " ms a second, choosing " + chooseMs.ToString("0.0") + " ms, drawing " + drawMs.ToString("0.00") + " ms a frame" + PhysicsStatus() + (followText != null ? "\n" + followText : "");
 			}
 			else
 			{

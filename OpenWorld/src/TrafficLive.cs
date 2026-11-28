@@ -37,6 +37,9 @@ namespace HalfGripOpenWorld
 		internal Micro.Body PlayerBody;
 		internal bool HasBody;
 
+		/// <summary>Other bodies on the roads the drivers see: physics cars gone from their day (wrecks, cars knocked off their line) where they lie.</summary>
+		internal readonly List<Micro.Body> OtherBodies = new List<Micro.Body>();
+
 		/// <summary>Per car its pose at the step before last (0) and the last step (1): middle, way faced, road height (scene), what it is doing.</summary>
 		private readonly double[] x0, z0, hx0, hz0, y0, x1, z1, hx1, hz1, y1;
 		private readonly byte[] k0, k1;
@@ -73,6 +76,7 @@ namespace HalfGripOpenWorld
 				{
 					mi.Bodies.Add(PlayerBody);
 				}
+				mi.Bodies.AddRange(OtherBodies);
 			};
 			Parking = new TrafficParking(plans);
 			int n = plans.Cars.Count;
@@ -144,6 +148,8 @@ namespace HalfGripOpenWorld
 				Snapshot();
 				steps++;
 			}
+			// The boundary's events are trafficsim's: the game keeps none (a day's would pile up).
+			Mi.Events.Clear();
 			stepSum += (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 			if (now - stepSince >= 1.0 || now < stepSince)
 			{

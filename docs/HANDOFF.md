@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 session notes; git keeps them (`git log -p docs/HANDOFF.md`). Standing decisions go in `docs/PLAN.md`, open in-game tests in
 `docs/TESTING.md`, finished research in `docs/research/`.
 
-Last written 2026-11-27.
+Last written 2026-11-28.
 
 ## Where things stand
 
@@ -12,49 +12,54 @@ Last written 2026-11-27.
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
 - **Phases 0 to 4 are done** (the lane graph and conflict areas, each race's plans, the meso, the micro and the boundary; every fault
   check passing on seeds 1 to 64, trips taking the same time watched or not).
-- **Phase 5 (in game, alone) has its first part built, not yet run in the game** (TESTING.md item 70 is what to try):
-  - `TrafficLive.cs`: the race's plans, meso and micro built on a worker at the race's start hour, the first step run round the spawn
-    (the junctions there turn micro before any car is drawn; done in sight, the micro placed a car 17 units off where the meso drew
-    it), then stepped on the race clock on the main thread (`tm.TimeSinceRaceStart`, the same clock the lights are drawn from; the sky's
-    debug skip isn't followed). Every car's pose after each meso step is kept with the one before and drawn between them, a step
-    (0.25 s) behind the clock. The simulation stops at the day's end (03:00; every car is home by 02:30).
-  - `TrafficCars.cs`: the old drawing carried over (the enemy car's bodies painted, lamps, the nearest six headlights at night, a
-    kinematic box on the Enemy layer each, so a traffic car is a wall to hit for now); the nearest 240 (moving to 1,500 units, parked
-    750), no shadows past 250. No instanced far drawing (the old one drew wrong and was off by default). The wheels stand at the springs'
-    full length (the old rest-on-springs needed a woken physics body).
-  - `TrafficParking.cs`: where parked cars stand (the old spots' arithmetic: drive pads, cottages, farmyards, the kerb on streets and
-    secondary roads, the lots' bays), given out as the meso parks cars and back as they leave. A car pulling out or in is slid between
-    its spot and the road over 2.5 s (a stand-in for driving it).
-  - `MicroBodies.cs` (part of `Micro`): the player's car is a body the micro's drivers see: laid onto every lane and connector it covers,
-    it is the car ahead for a driver whose way runs through it (at its speed along the lane), and a car keeps out of a junction box it
-    blocks or whose way out it blocks. So a queue the player causes is real and persists.
-  - Debug: the overlay's `traffic:` line (ShowCoords), the Follow traffic car key (F11, shown with ShowCoords; the car's day and where
-    it is), `Debug.TrafficMap` (every car in the world on a map, queues red). Config `World.Traffic` is read again.
-- **trafficsim's phase 5 checks** (`GameDay.cs`, first seed; `TRAFFICSIM_GAME=only` for just them): the game's path frame by frame
-  for 10 minutes round a pretend player (poses, no jumps in sight, parked cars apart and off other roads, keeping up with the clock), and
-  the player's car blocking the busiest lane into node 6 for two minutes (no car into it, a queue, cleared after). Seeds 1 to 8 pass.
-  Headless cost: built in 1.2 to 2 s, the simulation about 2 ms a second of the race (half a millisecond a meso step, four a second),
-  the worst frame under 15 ms. Mono in the game will be slower: measure.
+- **Phase 5 (in game, alone): the first part and the physics cars are built, neither run in the game yet** (TESTING.md items 70 and 71):
+  - `TrafficLive.cs`: the race's plans, meso and micro built on a worker at the race's start hour, the first step run round the spawn,
+    then stepped on the race clock on the main thread (`tm.TimeSinceRaceStart`, the lights' clock). Every car drawn between its last two
+    steps' poses, a step (0.25 s) behind the clock. Stops at the day's end (03:00).
+  - `TrafficCars.cs`: the drawn cars (the enemy car's meshes painted, lamps, the nearest six headlights at night, a kinematic box each);
+    the nearest 240. `TrafficParking.cs`: parked cars in their spots; a car pulling out or in slid over 2.5 s (a stand-in).
+  - `MicroBodies.cs`: the player's car is a body the micro's drivers see (they queue behind it, keep out of a box it blocks).
+  - **Physics cars (new)**: `MicroPhysics.cs` (part of `Micro`, pure) and `TrafficPhysics.cs` (part of `TrafficCars`). The nearest 24
+    drawn micro cars within 300 units (config `World.TrafficPhysics`) become the enemy car woken without AI or guns (the old traffic's
+    warm pool, skin, lamps and tyre-mark guards carried over), let go past 400. Each stays its micro agent: it decides as every car does,
+    but its X and V are read back from the body every micro step (its middle projected onto its lane or connector; back as well as on,
+    never into the car behind; held at the stop line while it hasn't decided to go). The reading is stamped with the time the drawn cars
+    are shown at (now less a meso step), so the micro sees the body where the player sees it beside them. The body is pedalled from the
+    driver's acceleration (plus the hill and about a unit a second² of the game's rolling resistance) and steered by pure pursuit along
+    `Micro.WayAhead` (the bicycle model on `carStats.wheelbase`). A body more than 14 off its line, turned over 60° from it or on its
+    side for 2.5 s, or wrecked (`TrafficDamagePatch`: no kill), leaves the day (`Micro.LoseCar`, `Meso.Mode.Gone`) and lies as a loose car
+    on its brakes, given to the micro as a body in the road (`TrafficLive.OtherBodies`), until the player is past sight (1,500).
+  - Fixed on the way: a lane change looked only at cars, not bodies (the player's car, a wreck): a through car moved right into a
+    wreck's lane 120 short of it at highway speed (`BodiesLetChange`: none alongside, none ahead needing more than safe braking, and
+    MOBIL's gain counts them); two cars the race's first picture put on one connector less than a car apart are spaced when their junction turns
+    micro (`FlipIn`; the physics check found it at the spawn); `Micro.Events` cleared each frame in the game (a day's would pile up).
+  - Debug: the overlay's `traffic:` line (now ending with `physics n/24 (made, loose, gone from their day)`), F11 follow car, the map.
+- **trafficsim's phase 5 checks** (`GameDay.cs`, `PhysicsDay.cs`; first seed, `TRAFFICSIM_GAME=only` for just them): the game's path
+  frame by frame for 10 minutes; the player's car blocking a lane into node 6 (now put down once the spot is clear: it landed on a car on
+  seeds 6 and 15 before); and the physics cars driven by stand-in bodies (acceleration 0.2 s late, drag, pure pursuit; `TRAFFICSIM_PHYS=
+  lag,drag`): no body in another car, none straying, none standing for nothing, conservation, a shove off the road leaving the day, a
+  wreck in its lane sliding to a stop and nothing driving into it. Seeds 1 to 24 pass, and seeds 1 to 3 with a sluggish body (0.6 s, 1.5).
+- What the stand-in can't tell: how the game's controller answers (grip, the springs, gears are not modelled: the engine force is set
+  directly), whether the swap from drawn to physics shows (the body is put at the drawn pose 0.15 up until each model's rest height is
+  learned), and the cost of 24 woken enemy cars.
 - Only 1,904 households reach the main road graph. 110 places and the houses on the eight streets joined only by footpaths are left
   out (PLAN.md lists it).
 
 ## Next
 
-1. **The owner runs TESTING.md item 70** (alone): the log's `Traffic:` line, cars on the roads, parked cars, stopping in a lane, the
-   frame rate. Fix what they report first.
-2. **Physics cars for the nearest** (phase 5's remaining big piece; the standing decision: every moving car near a player a physics
-   car). A physics car is a micro agent whose position comes from physics: the driver model gives the throttle and steering, the
-   agent's X is read back from the body (projected onto its lane), and a car pushed off its line or wrecked leaves the micro (a wreck
-   is gone from its plans; its household sees it). The old `TrafficPhysics.cs`/`TrafficDrive.cs` on `traffic-test-branch` are the model
-   for the body (the enemy car's prefab woken without AI or guns, the controller driven by code, rest on its springs) but not for the
-   timetable logic (there is none now). Also `TrafficRest.cs` (the wheels at rest) needs a woken body.
-3. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
-   double-buffered; the player's body would be a step old).
-4. Pulling in and out driven by the micro from the spot (the old `TrafficParking.Pull`/`Corner` are the drawing's model); the day's end
-   (wrap to the next day's plans at 03:00, or keep everyone home).
-5. Try seeds 65 to 96 of the full trafficsim now and then (each change so far showed a rare fault the earlier seeds hadn't).
-6. Things to decide when they show: right on red (PLAN.md: measure again in the rework).
-7. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
+1. **The owner runs TESTING.md items 70 and 71** (alone): the log's `Traffic:` line, cars on the roads, parked cars, stopping in a
+   lane, the physics cars (the swap, how they drive, ramming and shooting one), the frame rate with `TrafficPhysics` 24 and 0. Fix what
+   they report first. If the physics cars drive badly, the knobs are in `TrafficBody.Steer` (look-ahead, gain) and `Pedals` (the rolling
+   allowance); the log line `Traffic: physics car bodies: mass, engine, brakes, wheelbase` says what the controller has.
+2. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
+   double-buffered; the bodies' readings and the player's body would be a step old).
+3. Pulling in and out driven by the micro from the spot (the old `TrafficParking.Pull`/`Corner` are the drawing's model; a physics car
+   would then drive into its spot); the day's end (wrap to the next day's plans at 03:00, or keep everyone home).
+4. Parked cars as physics cars when the player is about to hit one (the old `TrafficLoose`), if the owner wants them pushable.
+5. Phase 6, rooms (TRAFFIC_REWORK.md §4 Rooms): the host's meso, link events, per-car ownership of micro and physics cars.
+6. Try seeds 65 to 96 of the full trafficsim now and then (each change so far showed a rare fault the earlier seeds hadn't).
+7. Things to decide when they show: right on red (PLAN.md: measure again in the rework).
+8. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
    end kinks (lanes 30, 253, 259, 277).
 
 ## Working with the owner
@@ -64,8 +69,8 @@ Last written 2026-11-27.
 
 ## Checks
 
-- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles clean.
-- `trafficsim`: seeds 1 to 32 (the default) pass, with the new phase 5 checks on seed 1; `TRAFFICSIM_GAME=only` passes on seeds 1 to 8.
+- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles clean (one old warning).
+- `trafficsim`: seeds 1 to 32 (the default) pass, with the phase 5 checks on seed 1; `TRAFFICSIM_GAME=only` passes on seeds 1 to 24.
 - `meshcheck`: not affected (it compiles none of the traffic's files).
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
 - Not run in game yet.

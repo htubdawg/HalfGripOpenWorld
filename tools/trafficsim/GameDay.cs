@@ -164,6 +164,7 @@ internal static partial class Program
 		Check(behind == 0, "game clock", where + ": the simulation fell behind the clock in " + behind + " frames");
 		Check(buildMs < 6000.0, "game build", where + ": built in " + buildMs.ToString("0") + " ms");
 		BlockDay(seed);
+		PhysicsDay(seed, 10.0);
 	}
 
 	/// <summary>
@@ -213,6 +214,22 @@ internal static partial class Program
 		double mid = Meso.Reach(lane) - 60.0;
 		Lanes.Point(Lanes.All[lane], Meso.RoadS(cw, mid), out double bx, out double bz, out double _, out double hx, out double hz);
 		TrafficParking.Spot block = new TrafficParking.Spot { X = bx, Z = bz, Hx = hx, Hz = hz };
+		// The player's car comes onto the spot only once no car is on it (a player can't land on a car), within a minute.
+		for (double until = race + 60.0; race < until; )
+		{
+			bool clear = true;
+			foreach (int c in live.Mi.Active)
+			{
+				live.Mi.Pose(c, out double x, out double z, out double ax, out double az);
+				clear &= !TrafficParking.Overlap(block, new TrafficParking.Spot { X = x, Z = z, Hx = ax, Hz = az }, 2.0);
+			}
+			if (clear)
+			{
+				break;
+			}
+			race += frame;
+			live.Advance(live.DayAt(race));
+		}
 		live.PlayerBody = new Micro.Body { X = bx, Z = bz, Hx = hx, Hz = hz, HalfLong = Traffic.CarLength * 0.5, HalfWide = TrafficParking.CarWide * 0.5 };
 		live.HasBody = true;
 		int hits = 0, longest = 0, standingAfter = 0, mesoBehind = 0;

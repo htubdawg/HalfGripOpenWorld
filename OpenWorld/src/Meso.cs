@@ -55,6 +55,8 @@ namespace HalfGripOpenWorld
 			Away,
 			/// <summary>On the roads, in lane <see cref="Vehicle.Lane"/>'s queue, heading for stop <see cref="Vehicle.Stop"/>.</summary>
 			Driving,
+			/// <summary>Out of the day: a physics car knocked off its line or wrecked (<see cref="Micro.LoseCar"/>). Its household goes without it.</summary>
+			Gone,
 		}
 
 		/// <summary>A car's live state.</summary>
@@ -1271,6 +1273,23 @@ namespace HalfGripOpenWorld
 		}
 
 		/// <summary>A car reaches its stop (or the lot it was going to): parks if there is room, else goes on to the next place with some.</summary>
+		/// <summary>For the overlay: cars gone from the day (knocked off the road or wrecked).</summary>
+		internal int Gone;
+
+		/// <summary>Car <paramref name="v"/>, already out of its queue, leaves the day: never parked, never setting off again.</summary>
+		internal void Lose(Vehicle v)
+		{
+			v.Mode = Mode.Gone;
+			v.Lane = -1;
+			v.Conn = -1;
+			v.Micro = false;
+			v.LeaveAt = double.MaxValue;
+			v.HeldSince = -1.0;
+			v.Path.Clear();
+			v.Next = 0;
+			Gone++;
+		}
+
 		internal void Arrive(Vehicle v)
 		{
 			if (v.TargetPlace >= 0)

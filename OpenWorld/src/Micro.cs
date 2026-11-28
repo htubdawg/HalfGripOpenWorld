@@ -93,6 +93,9 @@ namespace HalfGripOpenWorld
 			public bool Stood;
 			/// <summary>Where its drawn middle is off its line, settling to nothing over <see cref="Settle"/> (<see cref="OffLeft"/> to go).</summary>
 			public double OffX, OffZ, OffLeft;
+			/// <summary>Driven by a body (a physics car, <see cref="TakeBody"/>): its place and speed read from the body, not worked out; how long the body has strayed off its line.</summary>
+			public bool Driven;
+			public double StrayedFor;
 		}
 
 		/// <summary>What happens at the boundary, for trafficsim's checks.</summary>
@@ -110,6 +113,8 @@ namespace HalfGripOpenWorld
 			FlipIn,
 			/// <summary>A junction turned meso: its cars put into the queues.</summary>
 			FlipOut,
+			/// <summary>A physics car knocked off its line (or wrecked) left the day (<see cref="LoseCar"/>).</summary>
+			Lost,
 		}
 
 		internal struct Event
@@ -596,6 +601,7 @@ namespace HalfGripOpenWorld
 
 		private void Sub()
 		{
+			ReadBodies();
 			Index();
 			foreach (int i in Active)
 			{
@@ -740,6 +746,12 @@ namespace HalfGripOpenWorld
 
 		private void Integrate(Agent a, double stretch)
 		{
+			if (a.Driven)
+			{
+				// A physics car: where it is and its speed were read from its body (ReadBodies).
+				Tick(a);
+				return;
+			}
 			double v1 = a.V + a.A * Dt;
 			double dx;
 			if (v1 < 0.0)
@@ -777,6 +789,12 @@ namespace HalfGripOpenWorld
 				a.X += dx / stretch;
 			}
 			a.V = v1;
+			Tick(a);
+		}
+
+		/// <summary>The rest of a step's moving: the drawn settling, a lane change's progress, standing.</summary>
+		private void Tick(Agent a)
+		{
 			if (a.OffLeft > 0.0)
 			{
 				a.OffLeft = Math.Max(0.0, a.OffLeft - Dt);
@@ -2096,6 +2114,11 @@ namespace HalfGripOpenWorld
 					return false;
 				}
 			}
+			if (!BodiesLetChange(to, a.X, a.V, limit, ref accNew))
+			{
+				// A body in the lane it wants (the player's car, a wreck): alongside, or too near ahead to change in front of.
+				return false;
+			}
 			if (follow >= 0)
 			{
 				Agent b = Agents[follow];
@@ -2352,6 +2375,11 @@ namespace HalfGripOpenWorld
 		{
 			M.Queues[queue].Cars.Remove(i);
 			M.Cars[i].Micro = false;
+			if (Agents[i] != null && Agents[i].Driven)
+			{
+				// Its body is the game's to let go (it sees the agent gone).
+				BodiesNow--;
+			}
 			Agents[i] = null;
 			int k = Active.BinarySearch(i);
 			if (k >= 0)
@@ -2816,6 +2844,13 @@ namespace HalfGripOpenWorld
 					Agent a = Agents[car];
 					if (a != null && a.Conn >= 0 && Leader(car, -1, out double gap, out double vl, out int _))
 					{
+						if (gap < Driver.Gap0)
+						{
+							// Two cars where the meso has them on one connector closer than a car (the race's first picture of the roads
+							// had two side by side): the one behind back to a standing gap.
+							a.X = Math.Max(0.0, a.X - (Driver.Gap0 - gap));
+							gap = Driver.Gap0;
+						}
 						a.V = Math.Min(a.V, Math.Sqrt(vl * vl + 2.0 * Driver.Brake * Math.Max(0.0, gap - Driver.Gap0)));
 					}
 				}
