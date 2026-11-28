@@ -16,6 +16,8 @@
     <Compile Include="MicroDay.cs" />
     <Compile Include="GameDay.cs" />
     <Compile Include="PhysicsDay.cs" />
+    <Compile Include="StateDay.cs" />
+    <Compile Include="../../OpenWorld/src/TrafficState.cs" />
     <Compile Include="../../OpenWorld/src/TrafficLive.cs" />
     <Compile Include="../../OpenWorld/src/TrafficParking.cs" />
     <Compile Include="../../OpenWorld/src/Manoeuvre.cs" />

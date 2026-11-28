@@ -60,6 +60,16 @@ internal static partial class Program
 			Geometry();
 			return 0;
 		}
+		if (Environment.GetEnvironmentVariable("TRAFFICSIM_STATE") == "only")
+		{
+			for (int seed = first; seed < first + seeds; seed++)
+			{
+				StateDay(seed, 300.0, 10.0);
+				StateDay(seed, 100.0, 5.0, Traffic.DaySeconds - 150.0);
+			}
+			Console.WriteLine(failures == 0 ? "all checks pass" : failures + " failures; failing: " + string.Join(", ", failed));
+			return failures == 0 ? 0 : 1;
+		}
 		if (Environment.GetEnvironmentVariable("TRAFFICSIM_GAME") == "only")
 		{
 			for (int seed = first; seed < first + seeds; seed++)

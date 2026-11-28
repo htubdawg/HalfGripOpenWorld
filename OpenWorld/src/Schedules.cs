@@ -158,7 +158,8 @@ namespace HalfGripOpenWorld
 		internal readonly List<Car> Cars = new List<Car>();
 
 		/// <summary>For the log and trafficsim: what was planned and how long it took.</summary>
-		internal double BuildMs, Keep, TargetSeconds, CandidateSeconds, PlannedSeconds;
+		[NonSerialized] internal double BuildMs;
+		internal double Keep, TargetSeconds, CandidateSeconds, PlannedSeconds;
 		internal int Candidates, Kept, Dropped, Late, Unrouted, Routes;
 		internal readonly int[] TourCount = new int[4];
 		internal int Chained;

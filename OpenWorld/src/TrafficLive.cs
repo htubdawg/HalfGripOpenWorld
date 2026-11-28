@@ -37,7 +37,8 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal int DayIndex;
 		internal Schedules Today;
-		private System.Threading.Tasks.Task<Schedules> nextDay;
+		/// <summary>Not state (<see cref="TrafficState"/>): a loaded traffic begins the next day's plans again itself when it is due.</summary>
+		[NonSerialized] private System.Threading.Tasks.Task<Schedules> nextDay;
 
 		/// <summary>The player's car (world x, z), given to the micro as its one player; none before the race has a car.</summary>
 		internal double PlayerX, PlayerZ;
@@ -93,10 +94,10 @@ namespace HalfGripOpenWorld
 		internal List<(int car, double at, bool into, Manoeuvre way, TrafficParking.Spot spot)> Ways = null;
 
 		/// <summary>For the overlay and the log: the build's time, the last second's stepping time, cars driving, micro and parked.</summary>
-		internal double BuildMs, StepMs;
+		[NonSerialized] internal double BuildMs, StepMs;
 		internal int DrivingNow, MicroNow, ParkedNow;
-		private double stepSum;
-		private double stepSince;
+		[NonSerialized] private double stepSum;
+		[NonSerialized] private double stepSince;
 
 		private TrafficLive(Schedules plans, Meso m, double start)
 		{
@@ -190,6 +191,18 @@ namespace HalfGripOpenWorld
 			live.Snapshot();
 			live.BuildMs = watch.Elapsed.TotalMilliseconds;
 			return live;
+		}
+
+		/// <summary>
+		/// A traffic built from the seed at day second <paramref name="start"/> and not stepped: what <see cref="TrafficState.Load"/> fills with a
+		/// saved state (its call-backs wired as a build wires them).
+		/// </summary>
+		internal static TrafficLive Fresh(int seed, double start)
+		{
+			Traffic.Ensure();
+			Lanes.Ensure();
+			Schedules plans = Schedules.Build(seed);
+			return new TrafficLive(plans, Meso.Start(plans, start, start), start);
 		}
 
 		/// <summary>The day second the race clock <paramref name="raceSeconds"/> is at (the lights' clock counts from the race's start too).</summary>

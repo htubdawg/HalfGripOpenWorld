@@ -165,7 +165,7 @@ namespace HalfGripOpenWorld
 		internal readonly double[] StartsByHour = new double[24], MovingByHour = new double[24];
 		internal int PeakMoving;
 		internal double PeakAt;
-		internal double RouteMs, StepMs;
+		[NonSerialized] internal double RouteMs, StepMs;
 		internal int Routes;
 		/// <summary>Cars held longer than <see cref="Stuck"/> (each once), and where.</summary>
 		internal readonly List<(int car, int lane, double since)> StuckCars = new List<(int, int, double)>();

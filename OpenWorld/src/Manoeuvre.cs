@@ -320,10 +320,10 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				double x = v.X, z = v.Z, th = Math.Atan2(v.Hz, v.Hx);
+				double x = v.X, z = v.Z, th = DetMath.Atan2(v.Hz, v.Hx);
 				for (int move = 0; move < MostMoves && (best == null || way.Duration < best.Duration); move++)
 				{
-					Manoeuvre end = ToLane(new Pose(x, z, Math.Cos(th), Math.Sin(th)), l, parked, (best?.Duration ?? double.MaxValue) - way.Duration, laneBack);
+					Manoeuvre end = ToLane(new Pose(x, z, DetMath.Cos(th), DetMath.Sin(th)), l, parked, (best?.Duration ?? double.MaxValue) - way.Duration, laneBack);
 					if (end != null)
 					{
 						best = Join(way, end);
@@ -335,13 +335,13 @@ namespace HalfGripOpenWorld
 					double sign = fwd ? 1.0 : -1.0, r = TurnRadius, step = 0.5 / r, turned = 0.0;
 					double cx = x, cz = z, cth = th;
 					// No further round than the lane's way.
-					double left = (side > 0.0 ? Math.Atan2(l.Hz, l.Hx) - th : th - Math.Atan2(l.Hz, l.Hx)) % (2.0 * Math.PI);
+					double left = (side > 0.0 ? DetMath.Atan2(l.Hz, l.Hx) - th : th - DetMath.Atan2(l.Hz, l.Hx)) % (2.0 * Math.PI);
 					left = left < 0.0 ? left + 2.0 * Math.PI : left;
 					while (turned < Math.Min(0.5 * Math.PI, left) && turned * r < 40.0)
 					{
 						double nx = cx, nz = cz, nth = cth;
 						ReedsShepp.Step(kind, sign * step, ref nx, ref nz, ref nth);
-						if (!PoseClear(r * (nx - cx) + cx, r * (nz - cz) + cz, Math.Cos(nth), Math.Sin(nth), parked, 0.2))
+						if (!PoseClear(r * (nx - cx) + cx, r * (nz - cz) + cz, DetMath.Cos(nth), DetMath.Sin(nth), parked, 0.2))
 						{
 							break;
 						}
@@ -352,7 +352,7 @@ namespace HalfGripOpenWorld
 					{
 						break;
 					}
-					way = Join(way, Build(new Word { W = new[] { new ReedsShepp.Seg { Kind = kind, Length = sign * turned } }, R = r, From = new Pose(x, z, Math.Cos(th), Math.Sin(th)) }));
+					way = Join(way, Build(new Word { W = new[] { new ReedsShepp.Seg { Kind = kind, Length = sign * turned } }, R = r, From = new Pose(x, z, DetMath.Cos(th), DetMath.Sin(th)) }));
 					(x, z, th) = (cx, cz, cth);
 				}
 			}
@@ -477,7 +477,7 @@ namespace HalfGripOpenWorld
 			// The end in the start's frame: x ahead, y to the left (left of (hx, hz) is (-hz, hx)).
 			double dx = b.X - a.X, dz = b.Z - a.Z;
 			double fx = dx * a.Hx + dz * a.Hz, fy = -dx * a.Hz + dz * a.Hx;
-			double phi = Math.Atan2(-b.Hx * a.Hz + b.Hz * a.Hx, b.Hx * a.Hx + b.Hz * a.Hz);
+			double phi = DetMath.Atan2(-b.Hx * a.Hz + b.Hz * a.Hx, b.Hx * a.Hx + b.Hz * a.Hz);
 			List<Word> ways = new List<Word>();
 			foreach (double k in Radii)
 			{
@@ -548,7 +548,7 @@ namespace HalfGripOpenWorld
 		private static Manoeuvre FromWord(ReedsShepp.Seg[] w, double r, double ax, double az, double hx, double hz)
 		{
 			Manoeuvre m = new Manoeuvre();
-			double th = Math.Atan2(hz, hx), x = ax, z = az;
+			double th = DetMath.Atan2(hz, hx), x = ax, z = az;
 			int k = 0;
 			while (k < w.Length)
 			{
@@ -595,7 +595,7 @@ namespace HalfGripOpenWorld
 						}
 					}
 					double rx = x + lx * r, rz = z + ly * r;
-					double nhx = Math.Cos(lth), nhz = Math.Sin(lth);
+					double nhx = DetMath.Cos(lth), nhz = DetMath.Sin(lth);
 					l.Hx[j] = nhx;
 					l.Hz[j] = nhz;
 					l.X[j] = rx + nhx * RearAxle;

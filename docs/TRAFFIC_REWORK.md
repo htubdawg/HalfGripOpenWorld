@@ -214,30 +214,39 @@ the mesoscopic network and is still there when the player comes back.
 Run from the room clock with fixed-time plans, so every machine sees the same state with no messages; actuation later if wanted. The
 drawn masts and heads (`SignalPoles`, `SignalMesh`, `SignalHeads`) carried over.
 
-### Rooms (`TrafficRoom` rewritten, modelled on `DeerRoom`)
-- The **host runs the whole-map meso**. The meso isn't recorded ahead of time and doesn't need to be deterministic. It sends link
-  events (car c entered link l at t, about 8 bytes), batched 5 times a second, so the other machines keep the same meso picture.
-  The load, from the survey's numbers (about 2,600 households; about 400 cars on the roads at the evening peak, plus about 100 on
-  the highway; cars drive in real time, a junction-to-junction stretch takes them about 7 s): about 70 events a second at the peak
-  for the whole map, about 600 bytes a second. Each machine is only sent the events within its far draw distance (interest
-  management), a few to a few dozen a second; the debug map overlay gets a coarse snapshot every few seconds. A late joiner gets a
-  full snapshot (about 500 cars at about 12 bytes, under 10 KB). For comparison, one physics car's state at 10 Hz is about 450
-  bytes a second.
-- Micro cars are owned per car by one machine (the nearest player's, granted by the host, handed over with hysteresis). Cars round
-  two players near each other are owned by one machine, with stand-ins on the other. The owner reports boundary exits back to the
-  host's meso.
-- **Carry over the old branch's room** (`traffic-test-branch`: `TrafficRoom.cs`, `TrafficShared.cs`; read them first, its
-  `tools/trafficsim` drove it on pretend machines). What it solved and still applies: the host grants each claim on a car nobody
-  drives (a generation number per car, so a claim made before a change is refused; an unanswered claim given up after 2 s); the driver
-  releases a car or hands it to a player clearly nearer (hysteresis: a car 120 from its driver goes to a player under half as far); a
-  player leaving gives back every car it drove; each driver sends its cars' states about 15 times a second unreliably with its
-  player's place (5 a second with none), and the others play back a kinematic stand-in a little behind; hits on a stand-in go to its
-  driver; the host's clock is the room's; a late joiner gets Hello and a snapshot; reliable messages come in order from each sender.
-  **Loose cars go through the same claims** (no special path): a machine about to touch a drawn car claims it as loose (on a client
-  the sweep looks 0.5 s ahead instead of 0.3, for the grant's round trip; alone or on the host it is granted at once), and states
-  carry loose and touched flags so the stand-ins elsewhere show it standing, knocked, back in its space or burning. A knocked car
-  that drives off when its trip comes (HANDOFF, Next 1) stays its driver's as any physics car. What doesn't carry: the lateness
-  ledger (there is no timetable now; the host's meso and its link events replace it).
+### Rooms (`TrafficRoom` rewritten: lockstep, the host settling each step's inputs)
+Revised 2026-11-28 (phase 6 begun). The first plan (the host runs the meso and sends link events; each micro car owned by one machine,
+which runs its own micro and hands boundary exits back to the host's meso) would have split the one simulation in two: a meso that only
+mirrors the host's, micro cars run on different machines meeting at junctions, and the boundary across the network. But the whole
+simulation (`Schedules`, `Meso`, `Micro`, `MicroBodies`, `MicroPhysics`, `TrafficLive`, `TrafficParking`, `Manoeuvre`) is pure and
+already deterministic, and uses no C library maths (`Manoeuvre`'s and `ReedsShepp`'s trig is `DetMath`'s since 2026-11-28, exact to the
+last bits). So **every machine runs the same simulation, whole, from the same inputs, and the room's host settles the inputs**:
+- **Each step's inputs, one bundle from the host.** What the simulation takes from outside it, each meso step (a quarter second): every
+  player's place and car as a body (the micro runs round all the players on every machine; it already takes several), the loose cars'
+  bodies, physics cars' readings, and the changes the game makes (take a body, give it back, lose a car, hold a car still, let it go by
+  its body, wind a way's clock back, the debug skip). Each machine sends its own to the host, stamped with the step they are for; the
+  host closes each step's bundle a little after its time with whatever has come (a late input goes into the next; a stalled machine's
+  player is held where it was last heard), applies it and sends it to everybody. A machine steps only on the host's bundle for that step,
+  so all of them run the same steps from the same inputs, a little behind the host. Its own changes count only when they come back in a
+  bundle (alone: at the next step, as now). Bandwidth: a few dozen bytes a player and about 16 a physics car's reading, four times a
+  second.
+- **Who drives a physics car** is a change like the others: a machine asks to take a car's body, the host puts it in the bundle, and the
+  first in a step wins on every machine (the old room's claim, with the step order for its generation number). The old room's rules
+  carry over: the nearest player's machine takes it, hands it on to a player clearly nearer (a car 120 from its driver goes to a player
+  under half as far), and a player leaving gives back every car it drove (the host adds that to the next bundle). Only the driver sends
+  its readings. **Loose cars go through the same takes** (on a client the touch sweep looks 0.5 s ahead, for the round trip).
+- **Stand-ins.** A physics car another machine drives is drawn here from the simulation like any car (its place is its driver's
+  readings), and also from the old room's states (about 15 a second, unreliably, with its rotation, damage and flags: loose, touched,
+  wrecked), played back a little behind (`Playback`, carried over), so a car on its side or burning looks so everywhere; hits on a
+  stand-in go to its driver (`Damage`).
+- **A late joiner** is sent the host's whole traffic (`TrafficState`: every field of `TrafficLive` by reflection, about 700 KB
+  compressed, written in about 0.1 s, loaded into a fresh build in about a second on a worker) with the step it is at, and the bundles
+  after it. trafficsim saves a traffic, loads it and runs both on: byte for byte the same.
+- **Out of step.** Every few seconds the host's bundle carries a hash of its state; a machine whose own differs asks for the state again
+  (as a late joiner does). Nothing in the simulation may depend on this machine alone: parking and ways are part of it, so they are the
+  same everywhere.
+- **The clock** is the bundles' (step n is day second start + n/4 on every machine); the drawn lights stay on the race clock as now.
+- What doesn't carry from the old room: the lateness ledger, and the meso's link events (every machine has the whole meso).
 
 ### Perceived and measurable outside view
 - **The debug map overlay** shows every car in the world from the meso, with queues coloured.
@@ -332,7 +341,12 @@ network.
    within 300, those driving a way among them, are physics cars that drive it (`Manoeuvre.Follow`). Planning costs 0.3 ms on average,
    at most 800 words built (about 18 ms); trafficsim reports it.
    Still to do: the frame cost measured in the game.
-6. **Rooms.** Host meso, link events, ownership, stand-ins, loose cars claimed the same way (the old branch's `TrafficRoom` and `TrafficShared` carried over, §4 Rooms); `trafficsim` room checks.
+6. **Rooms.** Lockstep from the host's bundles of each step's inputs, physics cars and loose cars taken through them, stand-ins from the
+   old room's states, a late joiner given the whole state (§4 Rooms, revised 2026-11-28); `trafficsim` room checks.
+   Begun 2026-11-28: the trig made exact everywhere (`DetMath.Atan2`, `Asin`, `Acos`), and the whole state saved and loaded
+   (`TrafficState`; trafficsim's `TRAFFICSIM_STATE=only`: the loaded traffic byte for byte the saved one, and the two still the same
+   after ten minutes run side by side, also over the day's end). Next: the inputs as bundles (`TrafficLive` taking every change from
+   the game through one queue applied at a step), then `TrafficRoom` and its trafficsim check on pretend machines.
 7. **Density and polish.** Full survey traffic, more through traffic on the highway (goal: ten times), lamps at night.
 
 Each phase updates `docs/HANDOFF.md`, `docs/PLAN.md`, CLAUDE.md's file table and the README.

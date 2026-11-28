@@ -67,18 +67,18 @@ namespace HalfGripOpenWorld
 			switch (kind)
 			{
 				case 'L':
-					x += Math.Sin(th + t) - Math.Sin(th);
-					y += -Math.Cos(th + t) + Math.Cos(th);
+					x += DetMath.Sin(th + t) - DetMath.Sin(th);
+					y += -DetMath.Cos(th + t) + DetMath.Cos(th);
 					th += t;
 					break;
 				case 'R':
-					x += Math.Sin(th) - Math.Sin(th - t);
-					y += Math.Cos(th - t) - Math.Cos(th);
+					x += DetMath.Sin(th) - DetMath.Sin(th - t);
+					y += DetMath.Cos(th - t) - DetMath.Cos(th);
 					th -= t;
 					break;
 				default:
-					x += t * Math.Cos(th);
-					y += t * Math.Sin(th);
+					x += t * DetMath.Cos(th);
+					y += t * DetMath.Sin(th);
 					break;
 			}
 		}
@@ -111,20 +111,20 @@ namespace HalfGripOpenWorld
 		private static void Polar(double x, double y, out double r, out double theta)
 		{
 			r = Math.Sqrt(x * x + y * y);
-			theta = Math.Atan2(y, x);
+			theta = DetMath.Atan2(y, x);
 		}
 
 		private static void TauOmega(double u, double v, double xi, double eta, double phi, out double tau, out double omega)
 		{
-			double delta = Mod2Pi(u - v), a = Math.Sin(u) - Math.Sin(delta), b = Math.Cos(u) - Math.Cos(delta) - 1.0;
-			double t1 = Math.Atan2(eta * a - xi * b, xi * a + eta * b), t2 = 2.0 * (Math.Cos(delta) - Math.Cos(v) - Math.Cos(u)) + 3.0;
+			double delta = Mod2Pi(u - v), a = DetMath.Sin(u) - DetMath.Sin(delta), b = DetMath.Cos(u) - DetMath.Cos(delta) - 1.0;
+			double t1 = DetMath.Atan2(eta * a - xi * b, xi * a + eta * b), t2 = 2.0 * (DetMath.Cos(delta) - DetMath.Cos(v) - DetMath.Cos(u)) + 3.0;
 			tau = t2 < 0.0 ? Mod2Pi(t1 + Math.PI) : Mod2Pi(t1);
 			omega = Mod2Pi(tau - u + v - phi);
 		}
 
 		private static bool LpSpLp(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			Polar(x - Math.Sin(phi), y - 1.0 + Math.Cos(phi), out u, out t);
+			Polar(x - DetMath.Sin(phi), y - 1.0 + DetMath.Cos(phi), out u, out t);
 			v = 0.0;
 			if (t >= -Zero)
 			{
@@ -139,13 +139,13 @@ namespace HalfGripOpenWorld
 
 		private static bool LpSpRp(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			Polar(x + Math.Sin(phi), y - 1.0 - Math.Cos(phi), out double u1, out double t1);
+			Polar(x + DetMath.Sin(phi), y - 1.0 - DetMath.Cos(phi), out double u1, out double t1);
 			u1 *= u1;
 			t = u = v = 0.0;
 			if (u1 >= 4.0)
 			{
 				u = Math.Sqrt(u1 - 4.0);
-				double theta = Math.Atan2(2.0, u);
+				double theta = DetMath.Atan2(2.0, u);
 				t = Mod2Pi(t1 + theta);
 				v = Mod2Pi(t - phi);
 				return t >= -Zero && v >= -Zero;
@@ -167,12 +167,12 @@ namespace HalfGripOpenWorld
 
 		private static bool LpRmL(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			double xi = x - Math.Sin(phi), eta = y - 1.0 + Math.Cos(phi);
+			double xi = x - DetMath.Sin(phi), eta = y - 1.0 + DetMath.Cos(phi);
 			Polar(xi, eta, out double u1, out double theta);
 			t = u = v = 0.0;
 			if (u1 <= 4.0)
 			{
-				u = -2.0 * Math.Asin(0.25 * u1);
+				u = -2.0 * DetMath.Asin(0.25 * u1);
 				t = Mod2Pi(theta + 0.5 * u + Math.PI);
 				v = Mod2Pi(phi - t + u);
 				return t >= -Zero && u <= Zero;
@@ -187,7 +187,7 @@ namespace HalfGripOpenWorld
 			if (LpRmL(x, -y, -phi, out t, out u, out v)) add("RLR", new[] { t, u, v });
 			if (LpRmL(-x, -y, phi, out t, out u, out v)) add("RLR", new[] { -t, -u, -v });
 			// Backwards.
-			double xb = x * Math.Cos(phi) + y * Math.Sin(phi), yb = x * Math.Sin(phi) - y * Math.Cos(phi);
+			double xb = x * DetMath.Cos(phi) + y * DetMath.Sin(phi), yb = x * DetMath.Sin(phi) - y * DetMath.Cos(phi);
 			if (LpRmL(xb, yb, phi, out t, out u, out v)) add("LRL", new[] { v, u, t });
 			if (LpRmL(-xb, yb, -phi, out t, out u, out v)) add("LRL", new[] { -v, -u, -t });
 			if (LpRmL(xb, -yb, -phi, out t, out u, out v)) add("RLR", new[] { v, u, t });
@@ -196,11 +196,11 @@ namespace HalfGripOpenWorld
 
 		private static bool LpRupLumRm(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			double xi = x + Math.Sin(phi), eta = y - 1.0 - Math.Cos(phi), rho = 0.25 * (2.0 + Math.Sqrt(xi * xi + eta * eta));
+			double xi = x + DetMath.Sin(phi), eta = y - 1.0 - DetMath.Cos(phi), rho = 0.25 * (2.0 + Math.Sqrt(xi * xi + eta * eta));
 			t = u = v = 0.0;
 			if (rho <= 1.0)
 			{
-				u = Math.Acos(rho);
+				u = DetMath.Acos(rho);
 				TauOmega(u, -u, xi, eta, phi, out t, out v);
 				return t >= -Zero && v <= Zero;
 			}
@@ -209,11 +209,11 @@ namespace HalfGripOpenWorld
 
 		private static bool LpRumLumRp(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			double xi = x + Math.Sin(phi), eta = y - 1.0 - Math.Cos(phi), rho = (20.0 - xi * xi - eta * eta) / 16.0;
+			double xi = x + DetMath.Sin(phi), eta = y - 1.0 - DetMath.Cos(phi), rho = (20.0 - xi * xi - eta * eta) / 16.0;
 			t = u = v = 0.0;
 			if (rho >= 0.0 && rho <= 1.0)
 			{
-				u = -Math.Acos(rho);
+				u = -DetMath.Acos(rho);
 				if (u >= -0.5 * Math.PI)
 				{
 					TauOmega(u, u, xi, eta, phi, out t, out v);
@@ -237,14 +237,14 @@ namespace HalfGripOpenWorld
 
 		private static bool LpRmSmLm(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			double xi = x - Math.Sin(phi), eta = y - 1.0 + Math.Cos(phi);
+			double xi = x - DetMath.Sin(phi), eta = y - 1.0 + DetMath.Cos(phi);
 			Polar(xi, eta, out double rho, out double theta);
 			t = u = v = 0.0;
 			if (rho >= 2.0)
 			{
 				double r = Math.Sqrt(rho * rho - 4.0);
 				u = 2.0 - r;
-				t = Mod2Pi(theta + Math.Atan2(r, -2.0));
+				t = Mod2Pi(theta + DetMath.Atan2(r, -2.0));
 				v = Mod2Pi(phi - 0.5 * Math.PI - t);
 				return t >= -Zero && u <= Zero && v <= Zero;
 			}
@@ -253,7 +253,7 @@ namespace HalfGripOpenWorld
 
 		private static bool LpRmSmRm(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			double xi = x + Math.Sin(phi), eta = y - 1.0 - Math.Cos(phi);
+			double xi = x + DetMath.Sin(phi), eta = y - 1.0 - DetMath.Cos(phi);
 			Polar(-eta, xi, out double rho, out double theta);
 			t = u = v = 0.0;
 			if (rho >= 2.0)
@@ -278,7 +278,7 @@ namespace HalfGripOpenWorld
 			if (LpRmSmRm(x, -y, -phi, out t, out u, out v)) add("RLSL", new[] { t, -h, u, v });
 			if (LpRmSmRm(-x, -y, phi, out t, out u, out v)) add("RLSL", new[] { -t, h, -u, -v });
 			// Backwards.
-			double xb = x * Math.Cos(phi) + y * Math.Sin(phi), yb = x * Math.Sin(phi) - y * Math.Cos(phi);
+			double xb = x * DetMath.Cos(phi) + y * DetMath.Sin(phi), yb = x * DetMath.Sin(phi) - y * DetMath.Cos(phi);
 			if (LpRmSmLm(xb, yb, phi, out t, out u, out v)) add("LSRL", new[] { v, u, -h, t });
 			if (LpRmSmLm(-xb, yb, -phi, out t, out u, out v)) add("LSRL", new[] { -v, -u, h, -t });
 			if (LpRmSmLm(xb, -yb, -phi, out t, out u, out v)) add("RSLR", new[] { v, u, -h, t });
@@ -291,7 +291,7 @@ namespace HalfGripOpenWorld
 
 		private static bool LpRmSLmRp(double x, double y, double phi, out double t, out double u, out double v)
 		{
-			double xi = x + Math.Sin(phi), eta = y - 1.0 - Math.Cos(phi);
+			double xi = x + DetMath.Sin(phi), eta = y - 1.0 - DetMath.Cos(phi);
 			Polar(xi, eta, out double rho, out double _);
 			t = u = v = 0.0;
 			if (rho >= 2.0)
@@ -299,7 +299,7 @@ namespace HalfGripOpenWorld
 				u = 4.0 - Math.Sqrt(rho * rho - 4.0);
 				if (u <= Zero)
 				{
-					t = Mod2Pi(Math.Atan2((4.0 - u) * xi - 2.0 * eta, -2.0 * xi + (u - 4.0) * eta));
+					t = Mod2Pi(DetMath.Atan2((4.0 - u) * xi - 2.0 * eta, -2.0 * xi + (u - 4.0) * eta));
 					v = Mod2Pi(t - phi);
 					return t >= -Zero && v >= -Zero;
 				}
