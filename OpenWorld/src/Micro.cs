@@ -96,6 +96,10 @@ namespace HalfGripOpenWorld
 			/// <summary>Driven by a body (a physics car, <see cref="TakeBody"/>): its place and speed read from the body, not worked out; how long the body has strayed off its line.</summary>
 			public bool Driven;
 			public double StrayedFor;
+			/// <summary>A body knocked off its line finding its way back to it (<see cref="MicroPhysics"/>): how far off it is (left +), the best it
+			/// has got back to (<see cref="Micro.StrayScore"/>) and how long since it last got nearer, how long it has lain on its side.</summary>
+			public bool Astray;
+			public double Off, StrayBest, NoNearer, OnSide;
 		}
 
 		/// <summary>What happens at the boundary, for trafficsim's checks.</summary>
@@ -113,8 +117,12 @@ namespace HalfGripOpenWorld
 			FlipIn,
 			/// <summary>A junction turned meso: its cars put into the queues.</summary>
 			FlipOut,
-			/// <summary>A physics car knocked off its line (or wrecked) left the day (<see cref="LoseCar"/>).</summary>
+			/// <summary>A physics car left the day (<see cref="LoseCar"/>): wrecked, on its side, or stuck off its line.</summary>
 			Lost,
+			/// <summary>A physics car knocked off its line set out to find its way back to it.</summary>
+			Astray,
+			/// <summary>A physics car knocked off its line got back to it.</summary>
+			Rejoined,
 		}
 
 		internal struct Event

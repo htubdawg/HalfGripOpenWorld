@@ -14,8 +14,9 @@ namespace HalfGripOpenWorld
 	/// worked from the driver's acceleration and its steering follows the way ahead (<see cref="Micro.WayAhead"/>). Nothing is reconciled:
 	/// pushed back, slowed on a hill or held up by the player, it is where it is and the cars behind see it there.
 	///
-	/// <para>A body knocked off its line, on its side or wrecked leaves the day (its household goes without it) and stays where it is as a
-	/// loose car on its brakes until the player is well away. One the player drives away from is let go past <see cref="PhysicsFar"/>: its
+	/// <para>A body knocked off its line finds its way back to it at a crawl (<see cref="Micro.RejoinAim"/>), backing round if it must. One
+	/// wrecked, on its side or stuck off its line leaves the day (its household goes without it) and stays where it is as a loose car on its
+	/// brakes until the player is well away. One the player drives away from is let go past <see cref="PhysicsFar"/>: its
 	/// drawn copy takes over where it is. A body is never put down where it would be in another car.</para>
 	///
 	/// <para>The body's making, the warm pool, the skin, the lamps and the tyre marks' guards are carried over from the old traffic on
@@ -119,7 +120,7 @@ namespace HalfGripOpenWorld
 						b.Loosen();
 						loose.Add(b);
 						lostToDay++;
-						Mod.Info("Traffic: car " + c + " left its day (" + (b.Alive ? "knocked off the road" : "wrecked") + ") at " + x.ToString("0") + ", " + z.ToString("0"));
+						Mod.Info("Traffic: car " + c + " left its day (" + (!b.Alive ? "wrecked" : b.transform.up.y <= 0.5f ? "on its side" : "stuck off its line") + ") at " + x.ToString("0") + ", " + z.ToString("0"));
 					}
 					else
 					{
@@ -141,6 +142,13 @@ namespace HalfGripOpenWorld
 				}
 				b.Ways = n;
 				b.Want = (float)a.A;
+				bool astray = live.Mi.IsAstray(c, out double off);
+				if (astray != b.Astray)
+				{
+					Mod.Info("Traffic: car " + c + (astray ? " knocked off its line, finding its way back" : " back on its line") + " at " + x.ToString("0") + ", " + z.ToString("0"));
+				}
+				b.Astray = astray;
+				b.Off = off;
 			}
 			foreach (int c in letGo)
 			{
@@ -341,7 +349,12 @@ namespace HalfGripOpenWorld
 			{
 				return physicsFailed ? "; physics cars failed" : "";
 			}
-			return "; physics " + bodies.Count + "/" + MostPhysics + " (made " + madePhysical + ", " + loose.Count + " loose, " + lostToDay + " gone from their day)";
+			int astray = 0;
+			foreach (TrafficBody b in bodies.Values)
+			{
+				astray += b != null && b.Astray ? 1 : 0;
+			}
+			return "; physics " + bodies.Count + "/" + MostPhysics + " (made " + madePhysical + ", " + astray + " finding their way back, " + loose.Count + " loose, " + lostToDay + " gone from their day)";
 		}
 
 		// ---- the bodies --------------------------------------------------------------------------------------------------------
@@ -574,8 +587,12 @@ namespace HalfGripOpenWorld
 		internal int Car = -1, LookIndex;
 		internal float Age, Health = 100f;
 		internal bool Alive = true;
-		/// <summary>Out of the day (knocked off the road or wrecked): no driver, on its brakes.</summary>
+		/// <summary>Out of the day (wrecked, on its side, stuck off the road): no driver, on its brakes.</summary>
 		internal bool Loose;
+		/// <summary>Knocked off its line and finding its way back (<see cref="Micro.RejoinAim"/>), how far off it is (left +), the manoeuvre.</summary>
+		internal bool Astray;
+		internal double Off;
+		private Micro.Rejoin rejoin;
 
 		/// <summary>Its way ahead (world x, z, a point every 4 units from its middle) and how many points; the driver's acceleration (units a second²).</summary>
 		internal readonly double[] WayX = new double[16], WayZ = new double[16];
@@ -631,6 +648,8 @@ namespace HalfGripOpenWorld
 			Owner = owner;
 			Car = car;
 			Loose = false;
+			Astray = false;
+			rejoin = default;
 			Age = 0f;
 			Rb.isKinematic = false;
 			if (!woken)
@@ -680,6 +699,7 @@ namespace HalfGripOpenWorld
 		{
 			Car = -1;
 			Loose = false;
+			Astray = false;
 			ClearTrails();
 			Rb.linearVelocity = Vector3.zero;
 			Rb.angularVelocity = Vector3.zero;
@@ -708,8 +728,90 @@ namespace HalfGripOpenWorld
 				Cc.steeringAngleDeg = 0f;
 				return;
 			}
+			if (Astray)
+			{
+				Rejoin(dt);
+				return;
+			}
+			rejoin = default;
 			Steer(dt);
 			Pedals(dt);
+		}
+
+		/// <summary>
+		/// Knocked off its line: back to it at a crawl, heading for a point along its way ahead (<see cref="Micro.RejoinAim"/>), or backing up
+		/// with the wheels the other way to come round to it. The driver's acceleration still holds it back (a queue, a red light), never on.
+		/// </summary>
+		private void Rejoin(float dt)
+		{
+			Origin.World(Rb.position, out double x, out double z);
+			Vector3 f = transform.forward;
+			float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
+			double hx = f.x / fl, hz = f.z / fl;
+			float v = Cc.forwardSpeed;
+			bool back = Micro.RejoinAim(ref rejoin, x, z, hx, hz, v, Off, Ways, WayX, WayZ, dt, out double tx, out double tz);
+			double dx = tx - x, dz = tz - z;
+			double cross = hz * dx - hx * dz, dot = hx * dx + hz * dz;
+			double alpha = Math.Atan2(cross, dot);
+			float want;
+			if (back)
+			{
+				want = alpha >= 0.0 ? -35f : 35f;
+			}
+			else if (dot < Micro.RejoinLock * Math.Sqrt(dx * dx + dz * dz))
+			{
+				want = alpha >= 0.0 ? 40f : -40f;
+			}
+			else
+			{
+				double tl = Math.Max(6.0, Math.Sqrt(dx * dx + dz * dz));
+				double wheelbase = Math.Max(2.0, Cc.carStats != null ? Cc.carStats.wheelbase : 5.25);
+				want = Mathf.Clamp((float)(Math.Atan2(2.0 * wheelbase * Math.Sin(alpha), tl) * 180.0 / Math.PI), -40f, 40f);
+			}
+			steer = Mathf.Lerp(steer, want, Mathf.Clamp01(dt * 6f));
+			Cc.steeringAngleDeg = steer;
+			CarStats stats = Cc.carStats;
+			float hill = -Vector3.Dot(Physics.gravity, transform.forward);
+			if (back)
+			{
+				if (v > 0.5f)
+				{
+					Cc.engineAccel = 0f;
+					Cc.brakeAccel = stats.brakeDeccel;
+					return;
+				}
+				// Engine backwards: towards RejoinBack, the hill and rolling taken in.
+				float need = 1.5f * (-(float)Micro.RejoinBack - v) + hill - (v < -0.3f ? 1f : 0f);
+				if (need < 0f)
+				{
+					Cc.engineAccel = Mathf.Max(need, -(float)Driver.Accel * 2f);
+					Cc.brakeAccel = 0f;
+				}
+				else
+				{
+					Cc.engineAccel = 0f;
+					Cc.brakeAccel = Mathf.Min(stats.brakeDeccel, need);
+				}
+				return;
+			}
+			float a = Mathf.Min(Want, 1.5f * ((float)Micro.RejoinSpeed - v));
+			if (a <= 0.05f && Mathf.Abs(v) < 0.6f)
+			{
+				Cc.engineAccel = 0f;
+				Cc.brakeAccel = stats.brakeDeccel;
+				return;
+			}
+			float fwd = a + hill + (v > 0.3f ? 1f : 0f);
+			if (fwd > 0f)
+			{
+				Cc.engineAccel = Mathf.Min(fwd, (float)Driver.Accel * 2f);
+				Cc.brakeAccel = 0f;
+			}
+			else
+			{
+				Cc.engineAccel = 0f;
+				Cc.brakeAccel = Mathf.Min(stats.brakeDeccel, -fwd);
+			}
 		}
 
 		/// <summary>

@@ -170,8 +170,12 @@ owner has reported on it.
      one is drawn again past about 120 m.
    - Follow one: it should drive like the drawn ones (keep its lane, take the corners, stop at the line on red, give way, queue). Say if
      one weaves, cuts a corner onto the verge, runs a red light, stops short or rolls into the car ahead.
-   - Ram one, push one off the road, shoot one: pushed off its line (or on its side) for a few seconds it is gone from its day and
+   - Push one off the road (and one turned across it, facing away): after a second it should drive back onto its line slowly (about
+     9 km/h), turning on full lock or backing round if it faces away, backing off a wall or tree it is against, and carry on its way;
+     the log says `knocked off its line, finding its way back` and `back on its line`. Push one back onto the road by hand too. Say if
+     one sits still, circles, backs the wrong way or drives off across the country.
+   - Ram one onto its side, shoot one: on its side for 4 s (or stuck off the road 30 s getting nowhere) it is gone from its day and
      stands where it ended up on its brakes until you are out of sight of it; shot to nothing it burns and explodes as an enemy does,
      with no heal, ammo or combo. A car left standing in a lane is in the way as your car is: the cars behind stop and queue behind it
      (on the highway they pass it). Say if a drawn car drives into one.
-   - `ShowCoords`: the `traffic:` line ends with `physics n/24 (made, loose, gone from their day)`. Say the frame rate with 24 against 0.
+   - `ShowCoords`: the `traffic:` line ends with `physics n/24 (made, finding their way back, loose, gone from their day)`. Say the frame rate with 24 against 0.

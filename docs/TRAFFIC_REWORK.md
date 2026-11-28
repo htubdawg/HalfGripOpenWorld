@@ -288,12 +288,13 @@ network.
    its place and speed are read back from the body every step (projected onto its lane or connector; back as well as on, never into the
    car behind; held at its line if it hasn't decided to go), and the body is pedalled from the driver's acceleration and steered by pure
    pursuit along the agent's way ahead (`WayAhead`). The reading stands for the time the other cars are drawn at (a step behind the clock),
-   so the micro sees the body where the player sees it beside the drawn cars. A body knocked off its line or on its side for 2.5 s, or
-   wrecked, leaves the day (`Meso.Mode.Gone`; its household goes without it) and lies where it is as a loose car on its brakes, which the
+   so the micro sees the body where the player sees it beside the drawn cars. A body knocked off its line finds its way back to it at a
+   crawl, keeping its day (`Micro.RejoinAim`; the owner's first test: a pushed car made no attempt to get back); one on its side 4 s,
+   stuck off its line 30 s, or wrecked, leaves the day (`Meso.Mode.Gone`; its household goes without it) and lies where it is as a loose car on its brakes, which the
    drivers see as a body in the road (they queue behind a wreck in their lane) until the player is past sight (1,500 away; a wreck
    burns and explodes as the game's do). trafficsim drives stand-in
    bodies through the same calls (`PhysicsDay.cs`): no body in another car, none straying, none standing for nothing, conservation, a
-   shove leaving the day, a wreck in its lane driven round or queued behind (it showed lane changes ignored bodies: a car moved into a
+   shove found its way back from, a body on its side leaving the day, a wreck in its lane driven round or queued behind (it showed lane changes ignored bodies: a car moved into a
    wreck's lane at highway speed; they count them now), on 24 seeds and with a sluggish body (0.6 s late, more drag).
    Still to do: the physics cars run in the game (the controller's response, the swap's look), pulling in and out driven rather than slid,
    the day's end (the simulation stops at 03:00), the frame cost measured in the game.

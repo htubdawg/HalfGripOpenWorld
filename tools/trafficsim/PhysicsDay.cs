@@ -8,13 +8,16 @@ using HalfGripOpenWorld;
 // where the body is. Run frame by frame for 10 minutes round a pretend player driving the lane graph, the bodies taken and let go as the game
 // does (the nearest 24 within 300 units, let go past 400). Fails on: a body in another car (body or drawn); a body straying off its line in
 // ordinary driving; a micro car driven by a body standing 60 s with nothing holding it; the cars not conserved. Then one body is shoved off
-// the road: it must leave the day within a few seconds, and the rest carry on.
+// the road and turned across it: it must stay in its day and find its way back onto its line (Micro.RejoinAim, as the game's body does),
+// and the rest carry on; one rolled onto its side must leave the day.
 internal static partial class Program
 {
 	private sealed class StandIn
 	{
 		public int Car;
 		public double X, Z, Hx, Hz, V, A;
+		public bool Upright = true;
+		public Micro.Rejoin Rejoin;
 	}
 
 	private static void PhysicsDay(int seed, double minutes)
@@ -41,8 +44,10 @@ internal static partial class Program
 		}
 		Dictionary<int, double> stoodFree = new Dictionary<int, double>();
 		List<int> drop = new List<int>();
-		int shoved = -1;
-		double shovedAt = 0.0;
+		int shoved = -1, rolled = -1;
+		double shovedAt = 0.0, shovedBack = -1.0, rolledAt = 0.0;
+		bool shovedAstray = false;
+		string shovedHow = "back on its line";
 		// A body wrecked dead in its lane (as TrafficPhysics does on a wreck: out of the day at once), lying there as a loose body the
 		// drivers see; the cars behind must stop for it, not drive into it.
 		StandIn wreck = null;
@@ -81,13 +86,25 @@ internal static partial class Program
 					drop.Add(b.Car);
 					continue;
 				}
-				if ((pd > far && b.Car != shoved) || jump)
+				if ((pd > far && b.Car != shoved && b.Car != rolled) || jump)
 				{
 					mi.GiveBody(b.Car, b.X, b.Z);
 					drop.Add(b.Car);
 					continue;
 				}
-				Drive(b, a.A, n, xs, zs, frame);
+				if (!b.Upright)
+				{
+					b.V = 0.0;
+				}
+				else if (mi.IsAstray(b.Car, out double off))
+				{
+					RejoinDrive(b, a.A, off, n, xs, zs, frame);
+				}
+				else
+				{
+					b.Rejoin = default;
+					Drive(b, a.A, n, xs, zs, frame);
+				}
 				moved += b.V * frame;
 			}
 			foreach (int c in drop)
@@ -148,12 +165,49 @@ internal static partial class Program
 					}
 				}
 			}
+			if (shoved >= 0 && shovedBack < 0.0 && Environment.GetEnvironmentVariable("TRAFFICSIM_SHOVE_TRACE") == "1" && ((int)(race * 60) % 60) == 0
+				&& bodies.TryGetValue(shoved, out StandIn st))
+			{
+				Micro.Agent ta = mi.Agents[shoved];
+				Console.WriteLine("    shoved " + (race - shovedAt).ToString("0") + " s: at " + st.X.ToString("0.0") + ", " + st.Z.ToString("0.0") + " facing " + st.Hx.ToString("0.00") + ", " + st.Hz.ToString("0.00") + " V " + st.V.ToString("0.0")
+					+ (ta == null ? " no agent" : " lane " + ta.Lane + " conn " + ta.Conn + " X " + ta.X.ToString("0.0") + " off " + ta.Off.ToString("0.0") + " astray " + ta.Astray + " A " + ta.A.ToString("0.0") + " why " + ta.Reason + " " + ta.ReasonCar + " best " + ta.StrayBest.ToString("0.0") + " back " + st.Rejoin.Back.ToString("0.0")));
+			}
+			if (shoved >= 0 && shovedBack < 0.0)
+			{
+				Micro.Agent sa = mi.Agents[shoved];
+				shovedAstray |= sa != null && sa.Astray;
+				if (shovedAstray && sa != null && !sa.Astray && sa.Driven)
+				{
+					shovedBack = race;
+				}
+				else if (sa == null && live.M.Cars[shoved].Mode != Meso.Mode.Gone)
+				{
+					// Its agent gone but not from the day: it reached its stop (parked) on the way back, or was handed to the meso.
+					shovedBack = race;
+					shovedHow = live.M.Cars[shoved].Mode.ToString().ToLowerInvariant();
+				}
+			}
+			// The roll: a moving body put on its side where it is.
+			if (rolled < 0 && race >= end * 0.6)
+			{
+				foreach (StandIn b in bodies.Values)
+				{
+					if (b.Car != shoved && b.V > 2.0)
+					{
+						rolled = b.Car;
+						rolledAt = race;
+						b.Upright = false;
+						b.V = 0.0;
+						break;
+					}
+				}
+			}
 			if (wreck == null && race >= end * 0.75)
 			{
 				foreach (StandIn b in bodies.Values)
 				{
 					Micro.Agent a = mi.Agents[b.Car];
-					if (b.Car != shoved && b.V > 5.0 && a != null && a.Conn < 0)
+					if (b.Car != shoved && b.Car != rolled && b.V > 5.0 && a != null && a.Conn < 0)
 					{
 						wreck = b;
 						wreckAt = race;
@@ -208,23 +262,18 @@ internal static partial class Program
 				}
 				wreckQueue = Math.Max(wreckQueue, queue);
 			}
-			if (shoved >= 0 && bodies.TryGetValue(shoved, out StandIn sb))
-			{
-				// It lies where it was shoved, as a car off the road on its brakes.
-				sb.V = 0.0;
-				sb.A = 0.0;
-			}
 			// Every body clear of every other car drawn near it.
 			foreach (StandIn b in bodies.Values)
 			{
-				if (b.Car == shoved)
+				if (!b.Upright || mi.IsAstray(b.Car, out double _))
 				{
+					// Off the road (finding its way back) or on its side: the drivers don't see it as in their lane.
 					continue;
 				}
 				TrafficParking.Spot me = new TrafficParking.Spot { X = b.X, Z = b.Z, Hx = b.Hx, Hz = b.Hz };
 				foreach (int c in mi.Active)
 				{
-					if (c == b.Car || c == shoved)
+					if (c == b.Car || mi.IsAstray(c, out double _) || (bodies.TryGetValue(c, out StandIn oc) && !oc.Upright))
 					{
 						continue;
 					}
@@ -278,9 +327,13 @@ internal static partial class Program
 				}
 			}
 		}
-		int straysBefore = mi.Strays - (shoved >= 0 && live.M.Cars[shoved].Mode == Meso.Mode.Gone ? 1 : 0) - (wreck != null ? 1 : 0);
+		int straysBefore = mi.Strays - (shovedAstray ? 1 : 0);
+		int lostBefore = mi.LostCars - (wreck != null ? 1 : 0) - (rolled >= 0 && live.M.Cars[rolled].Mode == Meso.Mode.Gone ? 1 : 0);
+		bool rolledGone = rolled < 0 || live.M.Cars[rolled].Mode == Meso.Mode.Gone && mi.Agents[rolled] == null;
 		Console.WriteLine("  physics, " + where + ": " + taken + " bodies taken, " + bodies.Count + " at the end, they drove " + (moved / 3.3 / 1000.0).ToString("0.0") + " km; "
-			+ straysBefore + " strayed off their line driving; the shoved one (car " + shoved + ") " + (shoved >= 0 ? live.M.Cars[shoved].Mode.ToString().ToLowerInvariant() : "none") + "; gone from the day " + live.M.Gone);
+			+ straysBefore + " strayed off their line driving, " + lostBefore + " left the day driving; the shoved one (car " + shoved + ") "
+			+ (shoved < 0 ? "none" : shovedBack >= 0.0 ? shovedHow + " " + (shovedBack - shovedAt).ToString("0.0") + " s after" : live.M.Cars[shoved].Mode == Meso.Mode.Gone ? "gone from its day" : shovedAstray ? "still off its line" : "never astray")
+			+ "; the rolled one (car " + rolled + ") " + (rolled < 0 ? "none" : rolledGone ? "gone from its day" : "still in its day") + "; gone from the day " + live.M.Gone + ", rejoined " + mi.Rejoins);
 		Console.WriteLine("    the wreck: " + (wreck != null ? "car " + wreck.Car + " at " + wreck.X.ToString("0") + ", " + wreck.Z.ToString("0") + ", " + wreckHits + " car-frames in it, at most " + wreckQueue + " standing near it" : "none (no body moving)"));
 		foreach (string f in firsts)
 		{
@@ -289,10 +342,37 @@ internal static partial class Program
 		Check(wreckHits == 0, "physics wreck", where + ": cars drove into a wreck in their lane (" + wreckHits + " car-frames)");
 		Check(taken > 0 && moved > 300.0, "physics drive", where + ": the bodies hardly drove (" + taken + " taken, " + moved.ToString("0") + " units)");
 		Check(overlaps == 0, "physics overlap", where + ": " + overlaps + " frames a body was in another car");
-		Check(straysBefore == 0, "physics stray", where + ": " + straysBefore + " bodies strayed off their line driving");
+		Check(straysBefore == 0 && lostBefore == 0, "physics stray", where + ": " + straysBefore + " bodies strayed off their line driving, " + lostBefore + " left the day");
 		Check(standing == 0, "physics standing", where + ": " + standing + " bodies stood a minute with nothing holding them");
 		Check(unconserved == 0, "physics conservation", where + ": the cars not conserved " + unconserved + " times");
-		Check(shoved < 0 || live.M.Cars[shoved].Mode == Meso.Mode.Gone && mi.Agents[shoved] == null, "physics shove", where + ": the shoved body (car " + shoved + ") is still in the day");
+		Check(shoved < 0 || shovedBack >= 0.0 && shovedBack - shovedAt < 45.0, "physics shove", where + ": the shoved body (car " + shoved + ") didn't find its way back onto its line within 45 s");
+		Check(rolledGone, "physics roll", where + ": the body on its side (car " + rolled + ") is still in the day");
+	}
+
+	/// <summary>
+	/// A frame of an astray stand-in body finding its way back (as the game's body does, <see cref="Micro.RejoinAim"/>): at a crawl forward
+	/// towards a point along its way ahead, held back by its driver's acceleration, or backing up with the wheels the other way.
+	/// </summary>
+	private static void RejoinDrive(StandIn b, double want, double off, int n, double[] xs, double[] zs, double dt)
+	{
+		bool back = Micro.RejoinAim(ref b.Rejoin, b.X, b.Z, b.Hx, b.Hz, b.V, off, n, xs, zs, dt, out double tx, out double tz);
+		double dx = tx - b.X, dz = tz - b.Z, tl = Math.Max(1e-6, Math.Sqrt(dx * dx + dz * dz));
+		double sin = (b.Hx * dz - b.Hz * dx) / tl, cos = (b.Hx * dx + b.Hz * dz) / tl;
+		double alpha = Math.Atan2(sin, cos);
+		double target = back ? -Micro.RejoinBack : Math.Min(Micro.RejoinSpeed, b.V + Math.Max(0.0, want) * 2.0);
+		if (!back && want < 0.0)
+		{
+			target = Math.Max(0.0, b.V + want * dt);
+		}
+		double acc = Math.Max(-Driver.MaxBrake, Math.Min(Driver.Accel, 1.5 * (target - b.V)));
+		b.V += acc * dt;
+		// Forward: pure pursuit, no tighter than a car turns; back: full lock the other way (the nose comes round towards the point).
+		double curv = back ? -Math.Sign(alpha) / 12.0 : cos < Micro.RejoinLock ? Math.Sign(alpha) / 12.0 : Math.Max(-1.0 / 12.0, Math.Min(1.0 / 12.0, 2.0 * Math.Sin(alpha) / Math.Max(tl, 6.0)));
+		double turn = b.V * curv * dt;
+		double c = Math.Cos(turn), s = Math.Sin(turn);
+		(b.Hx, b.Hz) = (b.Hx * c - b.Hz * s, b.Hx * s + b.Hz * c);
+		b.X += b.Hx * b.V * dt;
+		b.Z += b.Hz * b.V * dt;
 	}
 
 	/// <summary>How late a stand-in body's acceleration follows its driver's (seconds) and the drag it has; TRAFFICSIM_PHYS=lag,drag to try others.</summary>
@@ -307,7 +387,7 @@ internal static partial class Program
 	/// <summary>A stand-in body's reading for the micro: where it is now, standing for the time the other cars are drawn at (a step behind).</summary>
 	private static Micro.Reading ReadingOf(StandIn b, double now)
 	{
-		return new Micro.Reading { X = b.X, Z = b.Z, Hx = b.Hx, Hz = b.Hz, Vx = b.V * b.Hx, Vz = b.V * b.Hz, At = now - Meso.Step, Upright = true };
+		return new Micro.Reading { X = b.X, Z = b.Z, Hx = b.Hx, Hz = b.Hz, Vx = b.V * b.Hx, Vz = b.V * b.Hz, At = now - Meso.Step, Upright = b.Upright };
 	}
 
 	/// <summary>
