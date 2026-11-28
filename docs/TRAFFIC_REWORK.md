@@ -226,6 +226,18 @@ drawn masts and heads (`SignalPoles`, `SignalMesh`, `SignalHeads`) carried over.
 - Micro cars are owned per car by one machine (the nearest player's, granted by the host, handed over with hysteresis). Cars round
   two players near each other are owned by one machine, with stand-ins on the other. The owner reports boundary exits back to the
   host's meso.
+- **Carry over the old branch's room** (`traffic-test-branch`: `TrafficRoom.cs`, `TrafficShared.cs`; read them first, its
+  `tools/trafficsim` drove it on pretend machines). What it solved and still applies: the host grants each claim on a car nobody
+  drives (a generation number per car, so a claim made before a change is refused; an unanswered claim given up after 2 s); the driver
+  releases a car or hands it to a player clearly nearer (hysteresis: a car 120 from its driver goes to a player under half as far); a
+  player leaving gives back every car it drove; each driver sends its cars' states about 15 times a second unreliably with its
+  player's place (5 a second with none), and the others play back a kinematic stand-in a little behind; hits on a stand-in go to its
+  driver; the host's clock is the room's; a late joiner gets Hello and a snapshot; reliable messages come in order from each sender.
+  **Loose cars go through the same claims** (no special path): a machine about to touch a drawn car claims it as loose (on a client
+  the sweep looks 0.5 s ahead instead of 0.3, for the grant's round trip; alone or on the host it is granted at once), and states
+  carry loose and touched flags so the stand-ins elsewhere show it standing, knocked, back in its space or burning. A knocked car
+  that drives off when its trip comes (HANDOFF, Next 1) stays its driver's as any physics car. What doesn't carry: the lateness
+  ledger (there is no timetable now; the host's meso and its link events replace it).
 
 ### Perceived and measurable outside view
 - **The debug map overlay** shows every car in the world from the meso, with queues coloured.
@@ -305,7 +317,7 @@ network.
    (`TrafficLive.SkipAhead`: 5 minutes run through in about a second; the lights' clock moved back as far so they match the drawn ones).
    trafficsim runs the game's path over the day's end on the first seed.
    Still to do: pulling in and out driven rather than slid, the frame cost measured in the game.
-6. **Rooms.** Host meso, link events, ownership, stand-ins; `trafficsim` room checks.
+6. **Rooms.** Host meso, link events, ownership, stand-ins, loose cars claimed the same way (the old branch's `TrafficRoom` and `TrafficShared` carried over, §4 Rooms); `trafficsim` room checks.
 7. **Density and polish.** Full survey traffic, more through traffic on the highway (goal: ten times), lamps at night.
 
 Each phase updates `docs/HANDOFF.md`, `docs/PLAN.md`, CLAUDE.md's file table and the README.

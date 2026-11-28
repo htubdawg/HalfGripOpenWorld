@@ -70,7 +70,8 @@ Last written 2026-11-28 (second session that day).
 2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
 3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5 (ways out and in, contact physics) and add the ways to TESTING.md item 74 for the
    owner.
-4. Later, as before: run `TrafficLive.Advance` on a worker if the frame time shows it; phase 6 rooms; seeds 65 to 96 now and then;
+4. Later, as before: run `TrafficLive.Advance` on a worker if the frame time shows it; phase 6 rooms (**nothing of rooms is in the new
+   traffic yet**: carry over the old branch's `TrafficRoom`/`TrafficShared`, loose cars included, as `TRAFFIC_REWORK.md` §4 Rooms says); seeds 65 to 96 now and then;
    right on red when it shows; the hole at (11145, -10111) and four end kinks.
 
 ## Working with the owner
