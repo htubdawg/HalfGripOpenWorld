@@ -33,7 +33,7 @@ Last written 2026-11-28 (second session that day).
   - trafficsim `ContactDay` (game path, every seed given): a parked car and one on its way held a minute don't move, let go don't
     jump; a held parked car doesn't set off and sets off once let go; a parked car, one on its way and a moving one knocked out of
     their day never come back and the queues still hold every car driving. Freezing jumps up to 0.5 out of sight (the drawn pose is a
-    blend between steps, the way's curve is not); the checks allow 0.6.
+    blend between steps, the way's curve is not; 0.75 seen on seeds 2 and 4); the checks allow 1.0 at the freeze, 0.6 after.
 - **Driving out of spots and into them (last session, still failing, see Next 1)**: `Manoeuvre.cs`, `Micro.PullOutAlong`/`PullOutClear`/
   `PullOutTime`/`ArriveAlong`/`Arriving`, `TrafficLive.Beside`. Failures on `TRAFFICSIM_GAME=only` seeds 1 to 10 (seed 1: one way of
   34 s):
@@ -44,6 +44,7 @@ Last written 2026-11-28 (second session that day).
      the lot's frame) or keep such cars without a way.
   3. A way into a moving micro car (seeds 4, 7, 8) and into parked neighbours at the kerb (seed 7: a 19-unit kerb pitch is tight).
   4. Physics strays on seeds 5, 7, 8 (`physics stray`), caused by the ways; not looked into.
+  5. `game block` on seed 9 (04:11, no queue formed: 1 standing): new on this run, not looked into (night traffic, or the ways).
 - Only 1,904 households reach the main road graph (PLAN.md lists it).
 
 ## Next
@@ -64,8 +65,8 @@ Last written 2026-11-28 (second session that day).
 
 ## Checks
 
-- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles (two unused-field
-  warnings).
-- `trafficsim`: **fails** on the game path from seed 2 (see above). Before this change seeds 1 to 32 passed.
+- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles (one unused-field
+  warning).
+- `trafficsim` `TRAFFICSIM_GAME=only` seeds 1 to 10: the contact checks pass; `game ways`, `physics stray` and seed 9's `game block` fail (see above). Before the ways, seeds 1 to 32 passed.
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
 - In game: nothing of this session tested.

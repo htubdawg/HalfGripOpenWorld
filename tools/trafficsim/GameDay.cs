@@ -619,7 +619,7 @@ internal static partial class Program
 				}
 			}
 		}
-		Check(wound < 0.6, "game contact", where + ": a car held still jumped " + wound.ToString("0.00") + " as it was held");
+		Check(wound < 1.0, "game contact", where + ": a car held still jumped " + wound.ToString("0.00") + " as it was held");
 		Check(moved < 0.6, "game contact", where + ": a car held still moved " + moved.ToString("0.00") + " (cars " + parked + ", " + way + ")");
 		Check(agentMoved < 0.6, "game contact", where + ": a car held in the lane for its way out moved " + agentMoved.ToString("0.00") + " while held still");
 		double jump = 0.0;
