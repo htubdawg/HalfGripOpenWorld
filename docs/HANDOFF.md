@@ -70,7 +70,7 @@ Last written 2026-11-28 (fifth session that day).
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles (one unused-field
   warning).
 - `trafficsim` `TRAFFICSIM_GAME=only` seeds 1 to 10: all checks pass. `TRAFFICSIM_WAYS=bad` lists bad ways, `=1` every way.
-- The full trafficsim on 1 to 32: see the commit's message / the run noted below.
+- The full trafficsim on 1 to 32: all checks pass (5.5 minutes).
 - The stub HalfGripTools: `dotnet build tools/halfgriptools-stub/HalfGripTools.csproj -c Release -p:GameDir=<game> -o <dir>`.
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
 - In game: nothing of the last three sessions tested.
