@@ -40,7 +40,8 @@ namespace HalfGripOpenWorld
 		/// <summary>How many kerb spaces either way from the door a car looks along before it is parked round the corner, out of sight.</summary>
 		private const int KerbTries = 7;
 
-		private readonly Schedules plans;
+		/// <summary>Each car's plans as the meso drives them (<see cref="Meso.Day"/>: the next day's once a car begins it).</summary>
+		private readonly Schedules.Car[] cars;
 
 		/// <summary>Per car: its own space at home (off the road or at the kerb; <see cref="Spot.Away"/> round the back).</summary>
 		private readonly Spot[] home;
@@ -76,18 +77,18 @@ namespace HalfGripOpenWorld
 		/// household with none at the kerb by its door (any more round the back, out of sight: a terrace street lined with every household's
 		/// every car is far busier than a real one).
 		/// </summary>
-		internal TrafficParking(Schedules plans)
+		internal TrafficParking(Schedules.Car[] cars)
 		{
-			this.plans = plans;
+			this.cars = cars;
 			EnsureHouses();
-			int n = plans.Cars.Count;
+			int n = cars.Length;
 			home = new Spot[n];
 			spot = new Spot[n];
 			held = new Hold[n];
 			bool[] own = new bool[n];
 			for (int c = 0; c < n; c++)
 			{
-				Schedules.Car car = plans.Cars[c];
+				Schedules.Car car = cars[c];
 				home[c] = new Spot { Away = true };
 				if (car.Household < 0)
 				{
@@ -104,7 +105,7 @@ namespace HalfGripOpenWorld
 			}
 			for (int c = 0; c < n; c++)
 			{
-				Schedules.Car car = plans.Cars[c];
+				Schedules.Car car = cars[c];
 				if (car.Household < 0 || own[c])
 				{
 					continue;
@@ -128,7 +129,7 @@ namespace HalfGripOpenWorld
 		internal Spot Park(int car, int stop, int place)
 		{
 			Leave(car);
-			Schedules.Car c = plans.Cars[car];
+			Schedules.Car c = cars[car];
 			Schedules.Stop st = c.Stops[Math.Max(0, Math.Min(stop, c.Stops.Length - 1))];
 			if (place < 0 && st.Kind == Schedules.StopKind.Home)
 			{

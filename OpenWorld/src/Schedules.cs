@@ -746,6 +746,37 @@ namespace HalfGripOpenWorld
 			return Math.Max(stop.WantLeave, arrived + stop.Stay);
 		}
 
+		/// <summary>
+		/// The seed of day <paramref name="day"/> of a race from <paramref name="raceSeed"/> (0 the race's own day, then each day after it
+		/// that a long race runs into): every machine works out the same, so a room's plans agree on later days as on the first.
+		/// </summary>
+		internal static int DaySeed(int raceSeed, int day)
+		{
+			if (day == 0)
+			{
+				return raceSeed;
+			}
+			return (int)(uint)Noise.Mix(Noise.Mix((ulong)(uint)raceSeed ^ 0xDA75_0000UL) ^ (ulong)(uint)day);
+		}
+
+		/// <summary>
+		/// Car <paramref name="c"/>'s day moved <paramref name="offset"/> day seconds on (the next day's plans for a race running past 03:00:
+		/// a car's day is planned from 0 and driven from the day's start on the race's clock). The day's last stop stays open (MaxValue).
+		/// </summary>
+		internal static Car Shifted(Car c, double offset)
+		{
+			Stop[] stops = new Stop[c.Stops.Length];
+			for (int i = 0; i < stops.Length; i++)
+			{
+				stops[i] = c.Stops[i];
+				if (stops[i].WantLeave < double.MaxValue)
+				{
+					stops[i].WantLeave += offset;
+				}
+			}
+			return new Car { Household = c.Household, Index = c.Index, Stops = stops, Legs = c.Legs, Through = c.Through, Start = c.Start, Way = c.Way };
+		}
+
 		internal enum State
 		{
 			/// <summary>Parked at stop <see cref="Where.Index"/> (or beyond the map, if that stop is <see cref="StopKind.Away"/>).</summary>

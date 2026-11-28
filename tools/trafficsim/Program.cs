@@ -65,6 +65,7 @@ internal static partial class Program
 			for (int seed = first; seed < first + seeds; seed++)
 			{
 				GameDay(seed, 10.0);
+				GameDay(seed, 8.0, Traffic.DaySeconds - 150.0);
 			}
 			Console.WriteLine(failures == 0 ? "all checks pass" : failures + " failures; failing: " + string.Join(", ", failed));
 			return failures == 0 ? 0 : 1;
@@ -75,6 +76,7 @@ internal static partial class Program
 			if (seed == first && Environment.GetEnvironmentVariable("TRAFFICSIM_GAME") != "0")
 			{
 				GameDay(seed, 10.0);
+				GameDay(seed, 8.0, Traffic.DaySeconds - 150.0);
 			}
 			Console.WriteLine("seed " + seed + ": " + s.Report() + "; " + s.Routes + " routes, " + s.Unrouted + " unrouted, " + s.Late + " tours late for a car, "
 				+ s.Dropped + " given up");

@@ -149,3 +149,15 @@ owner has reported on it.
      trunk's lights a green left arrow (about 10 s) between them; Kingsbridge's bay a flashing yellow arrow on the main road's green.
      Neighbouring lights are not in step. In a room both players see each light the same (within a second or so).
    - The highway as before: grass median, left-turn bays, K-rail, the wrap; Kingsbridge's widened road and its bay.
+73. The traffic's day's end (`traffic-rework-branch`, not released; alone only). A day is 40 minutes of the race (100 seconds an hour),
+   so a race started in the evening reached 03:00 within minutes and the traffic stopped there: the cars on the highway stood still.
+   Now the traffic goes on into the next day. Turn on `WeatherSkip` (Debug) as well as `ShowCoords`; the traffic now follows the Weather
+   skip key forward (F5 unless rebound: 5 minutes on, about two hours of the clock; Shift+F5 moves only the sky back, the traffic stays
+   ahead until the sky catches up).
+   - Press F5 a few times: the cars run on quickly for about a second each time (a fast-forward, nothing else), then drive normally; the
+     lights still match the cars (none drive through a red, none wait at a green).
+   - Skip to just before 03:00 (the overlay's `traffic:` line gives the traffic's clock) and drive on the highway: past 03:00 the through
+     cars keep going, the line says `(day 2)` and the log has `Traffic: the day's end; day 2 begins, ...` (send it). No hitch at 03:00.
+   - Skip on to the morning (05:00 to 08:00 of day 2): cars set off from homes, the roads fill as they did on day 1, and cars you saw
+     parked at home are the same ones that drive away (the follow-car key, F11, shows a car's day: its stops now day 2's).
+   Send `LogOutput.log`, and say if anything stands still, jumps or hitches.

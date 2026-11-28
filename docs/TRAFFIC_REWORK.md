@@ -296,8 +296,15 @@ network.
    bodies through the same calls (`PhysicsDay.cs`): no body in another car, none straying, none standing for nothing, conservation, a
    shove found its way back from, a body on its side leaving the day, a wreck in its lane driven round or queued behind (it showed lane changes ignored bodies: a car moved into a
    wreck's lane at highway speed; they count them now), on 24 seeds and with a sluggish body (0.6 s late, more drag).
-   Still to do: the physics cars run in the game (the controller's response, the swap's look), pulling in and out driven rather than slid,
-   the day's end (the simulation stops at 03:00), the frame cost measured in the game.
+   The physics cars run in the game (owner's tests 71 and 72, 2026-11-28): fine, a pushed car driving back to its line confirmed.
+   The day's end (2026-11-28): a day is 40 minutes of the race, so a race started in the evening reached 03:00 in minutes and the
+   simulation stopped (the through cars stood still on the highway). Now the next day's plans (`Schedules.DaySeed`: the race's seed
+   and the day, so a room agrees) are made on a worker 5 minutes of the race ahead, and at 03:00 every car home for the night begins its
+   next day (`Meso.NextDay`; one still out when it gets home, a gone one stays gone); the through cars circle on. The cars are each
+   household's own every day, so identities, home spaces and queues carry over. The traffic follows the weather's debug skip forward
+   (`TrafficLive.SkipAhead`: 5 minutes run through in about a second; the lights' clock moved back as far so they match the drawn ones).
+   trafficsim runs the game's path over the day's end on the first seed.
+   Still to do: pulling in and out driven rather than slid, the frame cost measured in the game.
 6. **Rooms.** Host meso, link events, ownership, stand-ins; `trafficsim` room checks.
 7. **Density and polish.** Full survey traffic, more through traffic on the highway (goal: ten times), lamps at night.
 

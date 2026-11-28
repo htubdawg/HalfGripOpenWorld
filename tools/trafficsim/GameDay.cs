@@ -11,10 +11,11 @@ using HalfGripOpenWorld;
 // clock. Measured: the build's time, and the simulation's cost a second of the race (the frame-time budget).
 internal static partial class Program
 {
-	private static void GameDay(int seed, double minutes)
+	private static void GameDay(int seed, double minutes, double from = -1.0)
 	{
 		double startHour = StartHourOf(seed);
-		double start = Schedules.StartOf(startHour);
+		double start = from >= 0.0 ? from : Schedules.StartOf(startHour);
+		bool dayEnd = from >= 0.0;
 		Meso.Ensure();
 		Walker w = Walkers(seed)[1];
 		var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -24,6 +25,10 @@ internal static partial class Program
 		live.PlayerZ = w.SZ;
 		live.HasPlayer = true;
 		string where = "seed " + seed + " in game from " + TrafficLive.Clock(start);
+		// The day's end: through cars' places just before 03:00, departures and arrivals after it.
+		double boundary = Traffic.DaySeconds;
+		double[] tx = null, tz = null;
+		int departuresAt = -1, arrivalsAt = -1, begunAtOnce = -1;
 		int n = live.Count;
 		double[] lx = new double[n], lz = new double[n];
 		byte[] lk = new byte[n];
@@ -52,6 +57,11 @@ internal static partial class Program
 			live.PlayerX = w.SX;
 			live.PlayerZ = w.SZ;
 			double now = live.DayAt(race);
+			if (dayEnd && now >= boundary - 60.0 && live.DayIndex == 0)
+			{
+				// The game has minutes of the race to make the next day's plans in; this clock runs far faster than the worker.
+				live.WaitForNextDay();
+			}
 			long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
 			live.Advance(now);
 			double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
@@ -61,9 +71,24 @@ internal static partial class Program
 				worstStep = ms;
 				worstAt = race;
 			}
-			if (live.M.Now + Meso.Step < Math.Min(now, Traffic.DaySeconds) - 1e-6)
+			if (live.M.Now + Meso.Step < now - 1e-6)
 			{
 				behind++;
+			}
+			if (dayEnd && tx == null && live.M.Now >= boundary - 10.0)
+			{
+				tx = new double[n];
+				tz = new double[n];
+				for (int i = 0; i < n; i++)
+				{
+					live.Where(i, out tx[i], out tz[i]);
+				}
+			}
+			if (dayEnd && departuresAt < 0 && live.DayIndex == 1)
+			{
+				departuresAt = live.M.Departures;
+				arrivalsAt = live.M.Arrivals;
+				begunAtOnce = live.M.Begun;
 			}
 			for (int i = 0; i < n; i++)
 			{
@@ -163,8 +188,110 @@ internal static partial class Program
 		Check(offPaving == 0, "game parking", where + ": " + offPaving + " parked cars on another road, in a house or the water");
 		Check(behind == 0, "game clock", where + ": the simulation fell behind the clock in " + behind + " frames");
 		Check(buildMs < 6000.0, "game build", where + ": built in " + buildMs.ToString("0") + " ms");
+		if (dayEnd)
+		{
+			DayEndChecks(live, where, n, tx, tz, departuresAt, arrivalsAt, begunAtOnce);
+			return;
+		}
 		BlockDay(seed);
 		PhysicsDay(seed, 10.0);
+	}
+
+	/// <summary>
+	/// The day's end (a race running past 03:00): the game's path from shortly before it into the next morning. Fails if the next day
+	/// doesn't begin, if a car home for the night hasn't begun it by the end (gone cars and those still out apart), if no car sets off or
+	/// arrives in the new day, or if a through car stopped circling. Reported: the cars that began it at once and the trips made since.
+	/// </summary>
+	private static void DayEndChecks(TrafficLive live, string where, int n, double[] tx, double[] tz, int departuresAt, int arrivalsAt, int begunAtOnce)
+	{
+		Check(live.DayIndex == 1 && departuresAt >= 0, "day's end", where + ": the next day did not begin (day " + live.DayIndex + ")");
+		if (departuresAt < 0 || tx == null)
+		{
+			return;
+		}
+		int still = 0, stopped = 0, through = 0, home = 0;
+		for (int i = 0; i < n; i++)
+		{
+			Meso.Vehicle v = live.M.Cars[i];
+			if (v.Through)
+			{
+				through++;
+				live.Where(i, out double x, out double z);
+				double d = Math.Sqrt((x - tx[i]) * (x - tx[i]) + (z - tz[i]) * (z - tz[i]));
+				if (v.Mode != Meso.Mode.Gone && d < 50.0)
+				{
+					stopped++;
+				}
+				continue;
+			}
+			bool raceDay = ReferenceEquals(live.M.Day[i], live.Plans.Cars[i]);
+			if (raceDay && v.Mode == Meso.Mode.Parked && v.Stop + 1 >= live.M.Day[i].Stops.Length)
+			{
+				still++;
+			}
+			home += !raceDay ? 1 : 0;
+		}
+		int departed = live.M.Departures - departuresAt, arrived = live.M.Arrivals - arrivalsAt;
+		Console.WriteLine("  day's end, " + where + ": day 2 a " + (live.Today.Weekend ? "weekend day" : "weekday") + ", " + begunAtOnce + " cars began it at 03:00, "
+			+ home + " by the end; since 03:00 " + departed + " set off, " + arrived + " arrived; " + (through - stopped) + " of " + through + " through cars still circling");
+		Check(still == 0, "day's end", where + ": " + still + " cars home for the night never began the next day");
+		Check(departed > 0 && arrived > 0, "day's end", where + ": no car set off (" + departed + ") or arrived (" + arrived + ") in the next day");
+		Check(stopped == 0, "day's end", where + ": " + stopped + " through cars stopped at the day's end");
+		LateHome(live.Seed);
+	}
+
+	/// <summary>
+	/// Cars still out at the day's end (none are on the seeds tried: every car is planned home by 02:30 with time to spare): the meso alone
+	/// from 18:00 given the next day's plans then, as if the day ended with the evening's cars out. Fails if a car still out begins its next
+	/// day before it is home for the night, or a car home for the night hasn't begun it once the evening is over.
+	/// </summary>
+	private static void LateHome(int seed)
+	{
+		Schedules plans = Schedules.Build(seed);
+		double at = Schedules.StartOf(18.0);
+		Meso m = Meso.Start(plans, at, at);
+		Schedules next = Schedules.Build(Schedules.DaySeed(seed, 1));
+		int n = m.Cars.Length, outThen = 0, early = 0, notBegun = 0;
+		bool[] wasOut = new bool[n];
+		for (int i = 0; i < n; i++)
+		{
+			Meso.Vehicle v = m.Cars[i];
+			wasOut[i] = !v.Through && !(v.Mode == Meso.Mode.Parked && v.Stop + 1 >= plans.Cars[i].Stops.Length);
+			outThen += wasOut[i] ? 1 : 0;
+		}
+		m.NextDay(next, Traffic.DaySeconds);
+		int begunAtOnce = m.Begun;
+		bool[] seen = new bool[n];
+		for (double t = at + Meso.Step; t <= Traffic.DaySeconds + 1e-9; t += Meso.Step)
+		{
+			m.Run(t);
+			for (int i = 0; i < n; i++)
+			{
+				Meso.Vehicle v = m.Cars[i];
+				if (seen[i] || v.Through || ReferenceEquals(m.Day[i], plans.Cars[i]))
+				{
+					continue;
+				}
+				// Just begun: parked at home at the next day's first stop (it rests a while before setting off).
+				seen[i] = true;
+				if (v.Mode != Meso.Mode.Parked || v.Stop != 0 || v.Place >= 0)
+				{
+					early++;
+				}
+			}
+		}
+		for (int i = 0; i < n; i++)
+		{
+			Meso.Vehicle v = m.Cars[i];
+			if (!v.Through && v.Mode != Meso.Mode.Gone && ReferenceEquals(m.Day[i], plans.Cars[i]))
+			{
+				notBegun++;
+			}
+		}
+		Console.WriteLine("  day's end with cars out, seed " + seed + " from 18:00: " + outThen + " cars out or not yet home for the night, " + begunAtOnce
+			+ " began the next day at once, " + (m.Begun - begunAtOnce) + " as they got home; " + notBegun + " never began it");
+		Check(notBegun == 0, "day's end", "seed " + seed + ": " + notBegun + " cars out at the day's end never began the next day once home");
+		Check(early == 0, "day's end", "seed " + seed + ": " + early + " cars began the next day anywhere but parked at home");
 	}
 
 	/// <summary>

@@ -129,6 +129,13 @@ namespace HalfGripOpenWorld
 		}
 
 		internal readonly Schedules Plans;
+		/// <summary>
+		/// Each car's plans as the meso drives them: the race's day (<see cref="Plans"/>) and, for a race running past 03:00, each car's next
+		/// day once it is home for the night (<see cref="NextDay"/>). The race's <see cref="Plans"/> are left as they were.
+		/// </summary>
+		internal readonly Schedules.Car[] Day;
+		/// <summary>Per car, the next day's plans waiting for it to get home (null: none, or begun).</summary>
+		private readonly Schedules.Car[] tomorrow;
 		internal readonly Vehicle[] Cars;
 		internal readonly Queue[] Queues;
 		/// <summary>The day second now, and the day second the race (the lights' clock) started at.</summary>
@@ -359,6 +366,8 @@ namespace HalfGripOpenWorld
 		{
 			Prepare();
 			Plans = plans;
+			Day = plans.Cars.ToArray();
+			tomorrow = new Schedules.Car[Day.Length];
 			Cars = new Vehicle[plans.Cars.Count];
 			Queues = new Queue[Lanes.All.Count];
 			for (int l = 0; l < Queues.Length; l++)
@@ -408,7 +417,7 @@ namespace HalfGripOpenWorld
 
 		private void Place(int i)
 		{
-			Schedules.Car c = Plans.Cars[i];
+			Schedules.Car c = Day[i];
 			Vehicle v = new Vehicle { Car = i, Through = c.Through };
 			Cars[i] = v;
 			if (c.Through)
@@ -562,7 +571,7 @@ namespace HalfGripOpenWorld
 		/// <summary>A parked car sets off for its next stop (if it can't get onto its road yet, it tries again next step).</summary>
 		private void Depart(Vehicle v)
 		{
-			Schedules.Car c = Plans.Cars[v.Car];
+			Schedules.Car c = Day[v.Car];
 			Schedules.Stop to = c.Stops[v.Stop + 1];
 			v.Target = to.At;
 			v.TargetPlace = PlaceOf(to);
@@ -615,7 +624,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Car <paramref name="v"/> parks at stop <paramref name="stop"/>, at <paramref name="at"/> (place <paramref name="place"/>), having come at <paramref name="arrived"/>.</summary>
 		private void Park(Vehicle v, int stop, Traffic.Anchor at, int place, double arrived, bool initial)
 		{
-			Schedules.Car c = Plans.Cars[v.Car];
+			Schedules.Car c = Day[v.Car];
 			v.Stop = stop;
 			v.Mode = c.Stops[stop].Kind == Schedules.StopKind.Away ? Mode.Away : Mode.Parked;
 			v.ParkedAt = at;
@@ -636,7 +645,66 @@ namespace HalfGripOpenWorld
 				}
 			}
 			v.Arrived = arrived;
+			if (stop + 1 >= c.Stops.Length && tomorrow[v.Car] != null)
+			{
+				// Home for the night after the day's end: straight on into the next day's plans.
+				Begin(v);
+				return;
+			}
 			v.LeaveAt = stop + 1 < c.Stops.Length ? Schedules.Leave(c.Stops[stop], arrived) : double.MaxValue;
+			if (v.LeaveAt < double.MaxValue)
+			{
+				departures.Push(v.LeaveAt, v.Car);
+			}
+		}
+
+		/// <summary>For the log and trafficsim: the days begun after the race's, and the cars that have begun the latest.</summary>
+		internal int Days, Begun;
+
+		/// <summary>
+		/// The day's end (03:00, for a race that runs on): <paramref name="next"/> is the next day's plans, planned from 0 as every day is and
+		/// driven <paramref name="offset"/> day seconds on. A car home for the night begins it now; one still out (held up, beyond the map)
+		/// when it gets home; one gone from the day stays gone (its household goes without it). The through cars circle on. The cars are the
+		/// same every day (each household's own, in the same order), so a car keeps its identity, its home space and its place in the queues.
+		/// </summary>
+		internal void NextDay(Schedules next, double offset)
+		{
+			if (next.Cars.Count != Day.Length)
+			{
+				throw new InvalidOperationException("the next day's plans have " + next.Cars.Count + " cars, not " + Day.Length);
+			}
+			Days++;
+			Begun = 0;
+			for (int i = 0; i < Day.Length; i++)
+			{
+				Schedules.Car c = next.Cars[i];
+				if (c.Through || Day[i].Through)
+				{
+					continue;
+				}
+				if (c.Household != Day[i].Household || c.Index != Day[i].Index)
+				{
+					throw new InvalidOperationException("car " + i + " is another household's in the next day's plans");
+				}
+				tomorrow[i] = Schedules.Shifted(c, offset);
+				Vehicle v = Cars[i];
+				if (v.Mode == Mode.Parked && v.Stop + 1 >= Day[i].Stops.Length)
+				{
+					Begin(v);
+				}
+			}
+		}
+
+		/// <summary>Car <paramref name="v"/>, parked at home at its day's last stop, begins its next day (its first stop that home).</summary>
+		private void Begin(Vehicle v)
+		{
+			Schedules.Car c = tomorrow[v.Car];
+			tomorrow[v.Car] = null;
+			Day[v.Car] = c;
+			Begun++;
+			v.Stop = 0;
+			// A car home late rests a little before setting off again.
+			v.LeaveAt = c.Stops.Length > 1 ? Math.Max(c.Stops[0].WantLeave, v.Arrived + Schedules.MinStay) : double.MaxValue;
 			if (v.LeaveAt < double.MaxValue)
 			{
 				departures.Push(v.LeaveAt, v.Car);
@@ -1325,7 +1393,7 @@ namespace HalfGripOpenWorld
 		/// <summary>The nearest place (straight line) drawing the stop's purpose with room, not one already found full; -1: none, park where it is.</summary>
 		private int NextPlace(Vehicle v)
 		{
-			Schedules.Stop st = Plans.Cars[v.Car].Stops[v.Stop];
+			Schedules.Stop st = Day[v.Car].Stops[v.Stop];
 			Traffic.Destination here = Traffic.Destinations[v.TargetPlace];
 			int best = -1;
 			double bestD = double.MaxValue;

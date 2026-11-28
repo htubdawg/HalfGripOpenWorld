@@ -576,11 +576,22 @@ namespace HalfGripOpenWorld
 					};
 					live.HasBody = true;
 				}
+				if (Sky.Skipped > live.Skip + 1e-3)
+				{
+					// The weather's debug skip forward: the traffic follows it (not back: shifted back, the sky is behind the traffic until it catches up).
+					live.SkipAhead(Sky.Skipped - live.Skip);
+				}
 				double now = live.DayAt(tm.TimeSinceRaceStart);
 				bool show = Mod.ShowTraffic.Value && car != null;
 				// The physics cars' bodies read into their agents first: the step places them where their bodies are.
 				ReadBodies(now);
+				int day = live.DayIndex;
 				live.Advance(now);
+				if (live.DayIndex != day)
+				{
+					Mod.Info("Traffic: the day's end; day " + (live.DayIndex + 1) + " begins, a " + (live.Today.Weekend ? "weekend day" : "weekday") + ": " + live.M.Begun
+						+ " cars home began it at once, the rest as they get home; plans " + live.Today.Report());
+				}
 				Bodies(now, live.PlayerX, live.PlayerZ, show);
 				if (!show)
 				{
@@ -682,8 +693,8 @@ namespace HalfGripOpenWorld
 			drawMs = drawMs * 0.95f + 0.05f * (float)((System.Diagnostics.Stopwatch.GetTimestamp() - drew) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
 			if (Mod.ShowCoords.Value)
 			{
-				Schedules p = live.Plans;
-				Status = "traffic: " + TrafficLive.Clock(live.M.Now) + " on a " + (p.Weekend ? "weekend day" : "weekday") + ", " + live.DrivingNow + " driving (" + live.MicroNow + " near), "
+				Schedules p = live.Today;
+				Status = "traffic: " + TrafficLive.Clock(live.M.Now) + " on a " + (p.Weekend ? "weekend day" : "weekday") + (live.DayIndex > 0 ? " (day " + (live.DayIndex + 1) + ")" : "") + ", " + live.DrivingNow + " driving (" + live.MicroNow + " near), "
 					+ live.ParkedNow + " parked; drawn " + drawnMoving + " moving, " + drawnParked + " parked, " + lit + " lit; simulation " + live.StepMs.ToString("0.00")
 					+ " ms a second, choosing " + chooseMs.ToString("0.0") + " ms, drawing " + drawMs.ToString("0.00") + " ms a frame" + PhysicsStatus() + (followText != null ? "\n" + followText : "");
 			}
