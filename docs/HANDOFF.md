@@ -9,65 +9,71 @@ Last written 2026-11-28.
 ## Where things stand
 
 - **Branch: `traffic-rework-branch`** (the owner: stay on it). The traffic is being rebuilt from scratch: **read
-  `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
-- **Phases 0 to 4 are done** (the lane graph and conflict areas, each race's plans, the meso, the micro and the boundary; every fault
-  check passing on seeds 1 to 64, trips taking the same time watched or not).
-- **Phase 5 (in game, alone)**: the first part and the physics cars are built and tested in game by the owner (TESTING.md items 70,
-  71, 72, all in the archive: all fine, a pushed car driving back to its line confirmed). In short: `TrafficLive` builds the plans, meso
-  and micro on a worker at the race's start hour and steps them on the race clock; `TrafficCars` draws the nearest 240; `TrafficParking`
-  stands parked cars; `MicroBodies` makes the player's car a body the drivers see; `MicroPhysics`/`TrafficPhysics` make the nearest 24
-  micro cars the game's enemy car, steered along `Micro.WayAhead`, finding their way back when knocked off their line, leaving the day
-  (lying as a body in the road) when wrecked, on their side or stuck. Details in TRAFFIC_REWORK.md §6, phase 5.
-- **New this session: the day's end** (the owner won't test it in game, TESTING.md item 73: trafficsim's checks stand for it). A day is 40 minutes of the race (100 s an hour),
-  so a race started in the evening reached 03:00 within minutes and `Advance` stopped there: the through cars stood still on the highway.
-  Now:
-  - `Schedules.DaySeed(raceSeed, day)` (day 0 the race's own seed) and `Schedules.Shifted(car, offset)` (a day's stops moved on).
-  - `Meso.Day`: each car's plans as the meso drives them (a copy of `Plans.Cars`; the race's `Plans` are never changed). `Meso.NextDay`
-    at 03:00 gives each household car its next day: begun at once if it is home for the night, else when it gets home (`Park` begins
-    it), a gone car stays gone; the through cars circle on. Every seed has the same cars in the same order (each household's own), so
-    identities, home spaces and queues carry over (it throws if not). A car home late rests `MinStay` before setting off again.
-  - `TrafficLive` starts the next day's `Schedules.Build` on a worker 300 day seconds (5 minutes of the race) before the end and applies
-    it at 03:00 (`DayIndex`, `Today` for the overlay's weekday/weekend). `TrafficParking` now reads `Meso.Day`.
-  - The traffic follows the weather's debug skip forward (`TrafficLive.SkipAhead` from `Sky.Skipped`: run through at 20 steps a frame,
-    5 minutes in about a second; `Meso.RaceStart` moved by as much so the simulated lights stay the drawn ones). Not back. Untested,
-    and the owner doesn't want it fixed: the catch-up shows as a stuttering fast-forward, and the physics cars only move at the body's
-    real speed, so during a skip (or all the time with F2's 10x) the cars behind them should pile up behind them. If it ever matters:
-    let the physics cars go while catching up.
-  - Overlay: `traffic: hh:mm on a weekday (day 2), ...`; log: `Traffic: the day's end; day 2 begins, ...`.
-  - trafficsim: the first seed's game path also runs from 01:30 for 8 minutes over the day's end (`DayEndChecks`): the next day begun,
-    every car home for the night in it, cars setting off and arriving after 03:00, every through car still moving. (It waits for the
-    worker before 03:00: its clock runs far faster than the worker; the game has 5 minutes.)
-- What the stand-in can't tell (physics cars): the controller's exact response, the drawn-to-physics swap's look, the cost of 24 woken
-  enemy cars; the owner found them fine in game.
-- Only 1,904 households reach the main road graph. 110 places and the houses on the eight streets joined only by footpaths are left
-  out (PLAN.md lists it).
+  `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on, but **read it for what it
+  already solved**, see below).
+- **Phases 0 to 4 are done**; phase 5 (in game, alone): live traffic, parked cars, the player as a body, the nearest 24 moving cars as
+  the game's real car (`TrafficPhysics`), the day's end. All tested by the owner except the day's end (item 73, not to be tested).
+- **This session: driving out of spots and into them, instead of the 2.5 s slide. Pushed as work in progress (commit a2113cf);
+  trafficsim fails.** What is in:
+  - `Manoeuvre.cs` (new, pure): a car's way between its spot and the lane, one or two legs (forwards, reverse, backing off then
+    forwards), cubic curves for the **rear axle** (front-wheel steering: the nose swings out; the middle is 4.4 ahead of the axle),
+    no tighter than 14 units at the axle, clear of the cars parked round it (the cheapest clear candidate), timed from standing
+    (4 m/s forwards, 2 m/s reverse, a pause at each gear change). A way in is planned as a way out driven backwards in time (headings
+    kept, gears swapped), so the kinematics stay front-steered.
+  - `Micro`: `PullOutAlong` (where a car pulling out comes onto the lane), `PullOutClear` (its way clear of standing cars and of cars
+    that couldn't stop), `PullOutTime` (held standing, `Agent.HoldUntil`, `Why.Manoeuvre`, while its drawn copy drives out),
+    `ArriveAlong` (asked once on its last lane: the game gives it its spot then and it pulls up beside it, `Agent.Dest`), `Arriving`.
+  - `TrafficLive`: plans and poses the ways (`Beside` picks the place by the spot that gives the quickest way; spots given early are
+    held, `early[]`); a car waiting for a gap stays drawn in its spot (it used to be drawn rolling off up the road); a car pulled up
+    waits up to 20 s for its way in to clear; the ways and the rest of their paths are bodies the drivers see.
+  - `TrafficCars`: the slide is gone. `TrafficPhysics`: a car held or manoeuvring isn't taken as a physics car.
+  - trafficsim (`GameDay.cs`): no jump leaving or reaching a spot, no tighter than a car turns, under 30 s, not in a micro car nor a
+    parked one. `TRAFFICSIM_WAYS=1` lists every way, `=bad` the failing ones.
+- **What fails** (`TRAFFICSIM_GAME=only` on seeds 1 to 10; seed 1 passes except one way of 34 s):
+  1. Kerb spots on the far side, facing against the car's way: a U-turn across a street is narrower than two turning radii, so no
+     plan fits (fallback curves of 0.4 units). Fix: give an arriving car a kerb space on its own side (`TrafficParking.TakeKerb` tries the
+     house's side first; pass the side of the lane it arrives on: a car on the right kerb faces the road's way when side is -1), and a
+     three-point turn family in `Manoeuvre.Plan` for a car leaving the other way (the meso can't know spots, so its direction stays).
+  2. Lot bays and pads far from the lane (55 off, E clamped 150 away): 30 s ways across the lot. Lots have no aisles known here
+     (`TrafficParking.LotSpaces` has the lot's frame); decide whether to plan via the lot's mouth or keep such cars without a way.
+  3. A way into a moving micro car (seeds 4, 7, 8) and into parked neighbours at the kerb (seed 7: a 19-unit kerb pitch for a 14-unit
+     car is tight even for a real car).
+  4. **Physics strays on seeds 5, 7, 8** (`physics stray`): caused by this change (the baseline passes); not looked into. Likely the
+     manoeuvres' bodies or `Agent.Dest` against the stand-in physics bodies.
+- **The owner's direction (2026-11-28): collision with parked cars and cars pulling in or out comes from the old branch's contact
+  physics, not from making them physics cars.** On `traffic-test-branch`: `TrafficCars.Contact` (a drawn car the player is about to
+  touch, swept along the player's velocity, becomes a loose real car just before contact), `TrafficRest` (the swap shows nothing: no
+  drop onto the springs, no bounce), `TrafficPhysics.LooseBubble` (untouched: back to drawn once the player is 60 units away; touched:
+  stays where knocked, retired from its day once the player is 500 away), config `TrafficLoose` (at most 6). This branch already has
+  the woken enemy car, `LearnRest` and wrecks lying loose; the contact sweep and the loose bubble are what is missing. Read those
+  files before designing anything; don't propose making every nearby car a physics car (the owner doesn't want it).
+- Only 1,904 households reach the main road graph (PLAN.md lists it).
 
 ## Next
 
-1. Pulling in and out driven by the micro from the spot instead of slid (`TrafficCars.Place`'s 2.5 s blend is a stand-in; a nose-in lot
-   bay must be backed out of, a kerb spot pulled out of forwards; a physics car would then drive into its spot). The micro already has
-   pulling out onto a lane (`CanPullOut`, the 15 s let-out) and turning in; what's missing is the path between spot and lane.
-2. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
-   double-buffered; the bodies' readings and the player's body would be a step old).
-3. Parked cars as physics cars when the player is about to hit one (the old `TrafficLoose`), if the owner wants them pushable.
-4. Phase 6, rooms (TRAFFIC_REWORK.md §4 Rooms): the host's meso, link events, per-car ownership of micro and physics cars. Later days'
-   plans are already the same on every machine (`DaySeed`).
-5. Try seeds 65 to 96 of the full trafficsim now and then (each change so far showed a rare fault the earlier seeds hadn't).
-6. Things to decide when they show: right on red (PLAN.md: measure again in the rework).
-7. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
-   end kinks (lanes 30, 253, 259, 277).
+1. **Port the old contact physics** (above) to the new traffic: any drawn car (parked, pulling in or out, moving but not a physics
+   car) the player is about to touch becomes a loose real car; a touched one leaves its day (`Micro.LoseCar` for a micro car; a parked
+   one: its household goes without it) and lies as a body the drivers see (`OtherBodies`); an untouched one goes back.
+2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
+   Undecided whether to drop the drawn ways for cars far from the player (the owner didn't object to drawn ways; the old branch drew
+   them).
+3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5, CLAUDE.md's file table (`Manoeuvre.cs`; `TrafficLive`, `Micro`, `TrafficCars`
+   rows), and add a TESTING.md item for the owner (cars pulling out and in; hitting parked cars).
+4. Later, as before: run `TrafficLive.Advance` on a worker if the frame time shows it; phase 6 rooms; seeds 65 to 96 now and then;
+   right on red when it shows; the hole at (11145, -10111) and four end kinks.
 
 ## Working with the owner
 
 - The owner doesn't know the map's place or street names and hasn't memorised the map: never ask them to decide about a place by its
-  name or node number. Make the call yourself (they said "figure it out yourself"), and when you do need them, show a picture.
+  name or node number. Make the call yourself, and when you do need them, show a picture.
+- **Check the old branch first.** Much of what phase 5 needs was solved on `traffic-test-branch`; the owner was angry at being offered
+  designs from scratch for a solved problem. Keep answers short and do the work.
+- The cars steer with the front wheels (the owner asked); say "the path is the rear axle's line" plainly if it comes up.
 
 ## Checks
 
-- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles clean (one old warning).
-- `trafficsim`: seeds 1 to 32 (the default) pass, with the phase 5 checks on seed 1 (the day's end included); `TRAFFICSIM_GAME=only`
-  passes on seeds 1 to 10 with the day's end (every car home at 03:00 on all of them, so `LateHome` also hands the next day over at
-  18:00 with about 180 cars out: each begins it parked at home once back, none left on the old day; seeds 1 to 3).
-- `meshcheck`: not affected (it compiles none of the traffic's files).
+- `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles (two unused-field
+  warnings).
+- `trafficsim`: **fails** on the game path from seed 2 (see above). Before this change seeds 1 to 32 passed.
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
-- In game: phase 5 tested by the owner (items 70, 71, 72): all good, the push-off fix confirmed. Item 73 (the day's end) won't be tested (the owner).
+- In game: nothing of this session tested.
