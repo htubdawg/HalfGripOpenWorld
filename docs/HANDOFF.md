@@ -34,29 +34,42 @@ Last written 2026-11-28 (seventh session that day).
   within 400 units of the pretend player and 2 appearing.
 - **Why trafficsim passed:** `GameDay.cs` skipped any car whose pose turned `None`, so a drawn car disappearing was never checked
   (the jump check also let a jump over 120 units through). The owner asked whether the tests were being cheated: they had this hole.
-- **Nothing of this session is pushed or committed** (the owner stopped the work; it lived in the container only). What was written,
-  to redo:
+- **Parking counted against the cars** (seed 1, a weekday; seeds 2 and 3 the same within a few): drawn spaces at each kind of place
+  against the most cars its plans park there at once over the day (`Schedules.At` every 2 day seconds):
+
+  | | places | drawn lot bays | kerb spaces on their stretch | meso's count (`Destination.Spaces`) | most at once | places short | cars over |
+  |---|---|---|---|---|---|---|---|
+  | High street | 169 | 0 | 1,620 | 338 | 141 | 87 | 108 |
+  | Offices | 51 | 0 | 616 | 510 | 111 | 40 | 90 |
+  | Church | 16 | 0 | 134 | 160 | 11 | 8 | 9 |
+  | Shop, workshop, filling, market, retail | 37 | 244 | 934 | 352 | 54 | 0 | 0 |
+
+  Homes: 1,904 households, 3,593 cars, all home at night: 2,613 own spaces, 252 at the kerb, **728 with none** ("round the back").
+  So: demand at a place is small (a few cars), but high streets, offices and churches have no lot and about half stand on roads with no
+  kerb parking (main roads); the meso's counts are invented (it parks 338 at high streets where nothing is drawn). The kerb column counts
+  every pitch on the stretch, houses and blocked spots ignored, so the real shortfall is larger. The owner's point: the fix is parking
+  that exists (a car park at every high street, office and church sized to what it needs; 728 home spaces; the meso's count the bays
+  drawn), not cars rerouted round it. That changes the world's layout (a version for rooms). **Not started: the owner stopped it.**
+- **Nothing of this session but the handoff is pushed** (the owner stopped the work twice; the rest lives in the container and is lost
+  with it). What was written, to redo:
   - trafficsim `GameDay.cs`: a "game vanish" check: a car going from drawn to `None` or back within 400 units of the player
-    (`TRAFFICSIM_VANISH` to change it) fails, the wrap's tunnels apart, with the car's state (mode, micro or meso, spot away, the stop's
-    kind); every vanish anywhere on the map tallied by cause; the jump check counting jumps over 120 near the player too. Before any
-    fix: seeds 1 to 6, 8, 9 pass it, seed 7 fails (10 vanished, 2 appeared).
-  - The fix begun: `Meso.Room` and `Meso.KerbNear` hooks set by `TrafficLive`; in `Meso.Arrive` a car with no drawable space tries the
-    next place with room, else is sent to the nearest free kerb space (`TrafficParking.KerbNear`: its own stretch end to end, then the
-    stretches round it a junction at a time, within 1,500 units; `Vehicle.KerbAt`, `Park(..., kerbAt, kerb)`), carrying on from the
-    lane it stopped in (`Meso.SendOn`; re-entering from the target's road put it on another lane, even the other carriageway: a 35-unit
-    jump; the old full-lot redirect has the same flaw). Taken kerb spaces kept in cells (`KerbBlocked`): on a bend two keys stood in one
-    another. Result on seed 7: no vanish near the player, 7 sent on to a kerb, none parked without a space; still failing there: a car
-    jumping 4.5 a frame 1,200 from the player as the micro takes it over mid-lane after it was sent on (car 3327: meso on lane 255,
-    micro placed it at 293.7), physics overlap (175 frames), 8 bodies strayed, 1 car appearing from a "round the back" spot as it left.
-  - Moving the race's start "round the back" cars to the kerb (`Meso.ParkAtKerb`) filled the streets: ways out and in into parked and
-    micro cars, parked pairs overlapping, physics overlap, slow frames (worst 178 ms). Switched off.
+    (`TRAFFICSIM_VANISH` to change it) fails, the wrap's tunnels apart, with the car's state; every vanish anywhere tallied by cause.
+    Before any fix: seeds 1 to 6, 8, 9 pass it, seed 7 fails (10 vanished, 2 appeared).
+  - trafficsim `ParkingCount.cs`, `TRAFFICSIM_PARKING=1`: the table above.
+  - Worth keeping from the fix: a micro car sent on from its stop (a full lot) stays the micro's car where it stands with a new route
+    (`Meso.Resend`, from `Micro.Arrive`; `Meso.PathOn`: on along its lane, else routed from the lane's end). The old full-lot redirect
+    re-entered it from the target's road, on another lane or the other carriageway: a 35-unit jump in sight. And a car parked in no
+    drawn space held from setting off while a player is within 1,600 (`Meso.Unseen`), so it never comes out of nothing.
+  - Tried and dropped: sending cars with no drawn space to the nearest free kerb (`Meso.Redirect`, `TrafficParking.KerbNear`, reserved
+    and roomy spaces): vanishing near the player went, but the extra kerb parking on the busy streets by node 6 broke the ways in and
+    out (cars backing into the car behind; seed 7 never passed; each fix moved the failures). A hold-back for the cars behind a car
+    about to back into a space (it first held the parker itself and jammed the street) and a pause of the stray give-up timer while
+    queued (with the shove test counting queue time) went with it.
 
 ## Next
 
-0. **The vanishing cars** (above). The owner has not said to fix it yet: ask before starting. Options given to the owner: push only the
-   vanish check (fails on seed 7, as it should), finish the fix until seeds 1 to 10 pass, or leave it. A car must never be put out of
-   the drawing in sight: arrivals sent on to a drawn space; departures from an away spot need a drawn start (or the spot never away
-   near a player).
+0. **The vanishing cars** (above): ask the owner before starting anything. The owner's direction so far: the parking has to exist for
+   the cars (count it, build it), not be worked round.
 1. The owner tests item 74 in game (`docs/TESTING.md`). Unknown: whether the game's controller backs as asked at manoeuvring speeds,
    and the wheelbase used for steering. Watch the frame time when cars plan ways near the player.
 2. After that test (don't change `TrafficPhysics` under it): **the inputs as bundles**. `TrafficLive` takes every change from outside
