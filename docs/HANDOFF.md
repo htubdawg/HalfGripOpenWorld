@@ -63,9 +63,9 @@ Last written 2026-11-28.
 ## Checks
 
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles clean (one old warning).
-- `trafficsim`: seeds 1 to 32 (the default) pass, with the phase 5 checks on seed 1; `TRAFFICSIM_GAME=only` passes on seeds 1 to 8
-  with the rejoin (shoved cars back on their line in 13.5 to 16 s; on seed 7 the shoved car parks at its stop instead; seeds 1 to 24
-  passed before it).
+- `trafficsim`: seeds 1 to 32 (the default) pass, with the phase 5 checks on seed 1 (the day's end included); `TRAFFICSIM_GAME=only`
+  passes on seeds 1 to 10 with the day's end (every car home at 03:00 on all of them, so `LateHome` also hands the next day over at
+  18:00 with about 180 cars out: each begins it parked at home once back, none left on the old day; seeds 1 to 3).
 - `meshcheck`: not affected (it compiles none of the traffic's files).
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
-- In game: phase 5 tested by the owner (items 70, 71, 72): all good, the push-off fix confirmed.
+- In game: phase 5 tested by the owner (items 70, 71, 72): all good, the push-off fix confirmed. Item 73 (the day's end) is open.
