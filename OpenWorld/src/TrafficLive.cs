@@ -59,6 +59,27 @@ namespace HalfGripOpenWorld
 		private readonly TrafficParking.Spot[] spots;
 		private readonly int[] parkedStop, parkedPlace;
 
+		/// <summary>
+		/// Per car: its way out of its spot or into it while it drives it (<see cref="Manoeuvre"/>; null otherwise), since when (day seconds),
+		/// and whether it is the way in. A car pulling out is held at its place in the lane meanwhile (<see cref="Micro.PullOutTime"/>).
+		/// </summary>
+		private readonly Manoeuvre[] man;
+		private readonly double[] manSince, manY;
+		private readonly bool[] manIn;
+		/// <summary>The cars driving a way out or in now.</summary>
+		private readonly List<int> manoeuvring = new List<int>();
+		/// <summary>Per car that has just pulled up at its stop: where it stood (middle, nose) and when, to drive into its spot from once it is given one.</summary>
+		private readonly double[] upX, upZ, upHx, upHz, upY, upAt;
+		private readonly bool[] pulledUp;
+		/// <summary>Per car: its spot was given it before it arrived (<see cref="ArriveAlong"/>), so it is held while it is still driving.</summary>
+		private readonly bool[] early;
+
+		/// <summary>For the log and trafficsim: ways out and in driven, those no gentler than a car turns allowed, and the longest.</summary>
+		internal int WaysOut, WaysIn, TightWays;
+		internal double LongestWay;
+		/// <summary>For trafficsim: every way out or in driven (the car, its start, whether in, the way).</summary>
+		internal List<(int car, double at, bool into, Manoeuvre way, TrafficParking.Spot spot)> Ways = null;
+
 		/// <summary>For the overlay and the log: the build's time, the last second's stepping time, cars driving, micro and parked.</summary>
 		internal double BuildMs, StepMs;
 		internal int DrivingNow, MicroNow, ParkedNow;
@@ -88,9 +109,27 @@ namespace HalfGripOpenWorld
 					mi.Bodies.Add(PlayerBody);
 				}
 				mi.Bodies.AddRange(OtherBodies);
+				ManoeuvreBodies(mi);
 			};
 			Parking = new TrafficParking(m.Day);
+			Mi.PullOutAlong = PullOutAlong;
+			Mi.PullOutTime = PullOutTime;
+			Mi.Arriving = Arriving;
+			Mi.ArriveAlong = ArriveAlong;
+			Mi.PullOutClear = PullOutClear;
 			int n = plans.Cars.Count;
+			man = new Manoeuvre[n];
+			manSince = new double[n];
+			manY = new double[n];
+			manIn = new bool[n];
+			upX = new double[n];
+			upZ = new double[n];
+			upHx = new double[n];
+			upHz = new double[n];
+			upY = new double[n];
+			upAt = new double[n];
+			pulledUp = new bool[n];
+			early = new bool[n];
 			x0 = new double[n];
 			z0 = new double[n];
 			hx0 = new double[n];
@@ -230,13 +269,42 @@ namespace HalfGripOpenWorld
 				k1[i] = None;
 				if (v.Mode == Meso.Mode.Driving)
 				{
-					if (parkedStop[i] >= 0)
+					if (pulledUp[i])
+					{
+						pulledUp[i] = false;
+						wayIn.Remove(i);
+					}
+					if (man[i] != null && manIn[i])
+					{
+						// Setting off again before it was in its spot (it never should: a stop is longer): its way in dropped.
+						EndWay(i);
+					}
+					if (early[i] && (parkedStop[i] != v.Stop || parkedPlace[i] != v.TargetPlace))
+					{
+						// Its spot given it on the way was at a place it has been sent on from (full).
+						early[i] = false;
+						Parking.Leave(i);
+						parkedStop[i] = -1;
+					}
+					if (!early[i] && !v.Micro && parkedStop[i] >= 0 && v.Conn < 0 && v.Lane >= 0 && Mi.LaneMicro[v.Lane] && !spots[i].Away)
+					{
+						// Waiting in its spot for a gap to pull out into: still parked there (the meso's pose would have it rolling off up
+						// the road already).
+						driving++;
+						ParkedPose(i, spots[i]);
+						continue;
+					}
+					if (parkedStop[i] >= 0 && !early[i])
 					{
 						Parking.Leave(i);
 						parkedStop[i] = -1;
 					}
 					driving++;
 					micro += v.Micro ? 1 : 0;
+					if (man[i] != null && WayPose(i))
+					{
+						continue;
+					}
 					if (DrivingPose(i, out x1[i], out z1[i], out hx1[i], out hz1[i], out y1[i]))
 					{
 						k1[i] = Driving;
@@ -245,6 +313,16 @@ namespace HalfGripOpenWorld
 				}
 				if (v.Mode != Meso.Mode.Parked)
 				{
+					if (pulledUp[i])
+					{
+						pulledUp[i] = false;
+						wayIn.Remove(i);
+					}
+					early[i] = false;
+					if (man[i] != null)
+					{
+						EndWay(i);
+					}
 					if (parkedStop[i] >= 0)
 					{
 						Parking.Leave(i);
@@ -253,6 +331,7 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				parked++;
+				early[i] = false;
 				if (parkedStop[i] != v.Stop || parkedPlace[i] != v.Place)
 				{
 					spots[i] = Parking.Park(i, v.Stop, v.Place);
@@ -260,20 +339,464 @@ namespace HalfGripOpenWorld
 					parkedPlace[i] = v.Place;
 				}
 				TrafficParking.Spot s = spots[i];
+				if (pulledUp[i])
+				{
+					// Pulled up at its stop: it drives into its spot from there once its way in is clear (it waits, standing in the lane, for a
+					// car standing in its way to move on, at most WaitIn).
+					if (s.Away)
+					{
+						pulledUp[i] = false;
+						wayIn.Remove(i);
+					}
+					else
+					{
+						if (!wayIn.TryGetValue(i, out Manoeuvre way))
+						{
+							way = Manoeuvre.In(upX[i], upZ[i], upHx[i], upHz[i], s.X, s.Z, s.Hx, s.Hz, ParkedNear(s.X, s.Z, i));
+							wayIn[i] = way;
+						}
+						if (M.Now - upAt[i] >= WaitIn || SweptClear(way, i))
+						{
+							pulledUp[i] = false;
+							wayIn.Remove(i);
+							StartWay(i, way, M.Now, true, s);
+							manY[i] = upY[i];
+						}
+						else
+						{
+							x1[i] = upX[i];
+							z1[i] = upZ[i];
+							hx1[i] = upHx[i];
+							hz1[i] = upHz[i];
+							y1[i] = upY[i];
+							k1[i] = Driving;
+							continue;
+						}
+					}
+				}
 				if (s.Away)
 				{
 					continue;
 				}
-				x1[i] = s.X;
-				z1[i] = s.Z;
-				hx1[i] = s.Hx;
-				hz1[i] = s.Hz;
-				y1[i] = double.NaN;
-				k1[i] = Parked;
+				if (man[i] != null && manIn[i] && WayPose(i))
+				{
+					continue;
+				}
+				ParkedPose(i, s);
 			}
 			DrivingNow = driving;
 			MicroNow = micro;
 			ParkedNow = parked;
+		}
+
+		private void ParkedPose(int i, TrafficParking.Spot s)
+		{
+			x1[i] = s.X;
+			z1[i] = s.Z;
+			hx1[i] = s.Hx;
+			hz1[i] = s.Hz;
+			y1[i] = double.NaN;
+			k1[i] = Parked;
+		}
+
+		// ---- driving out of a spot and into one --------------------------------------------------------------------------------
+
+		/// <summary>
+		/// The place beside spot <paramref name="s"/> on lane <paramref name="lane"/> (its front's distance along the carriageway, looked for
+		/// round <paramref name="along"/>) a car drives out to (<paramref name="into"/> false) or into its spot from best, and that way: at the
+		/// kerb a little ahead of the space (out forwards; in, drawing up past it and reversing in), off the road a turn's room ahead of it or
+		/// behind (out forwards turning, or backing out swinging round; in turning, or backing in), whichever is quickest. NaN if the spot isn't
+		/// by this lane.
+		/// </summary>
+		private double Beside(int self, TrafficParking.Spot s, int lane, double along, bool into, out Manoeuvre way)
+		{
+			way = null;
+			if (s.Away)
+			{
+				return double.NaN;
+			}
+			int cw = Meso.CarriagewayOf(lane);
+			double lo = Meso.StartOf(lane), hi = Meso.Reach(lane), proj = double.NaN, bestD = double.MaxValue;
+			for (double a = Math.Max(lo, along - 200.0); a <= Math.Min(hi, along + 200.0); a += 2.0)
+			{
+				Lanes.Point(Lanes.All[lane], Meso.RoadS(cw, a - Lanes.Axle), out double x, out double z, out double _, out double _, out double _);
+				double d = (x - s.X) * (x - s.X) + (z - s.Z) * (z - s.Z);
+				if (d < bestD)
+				{
+					bestD = d;
+					proj = a;
+				}
+			}
+			if (double.IsNaN(proj) || bestD > Traffic.CarLength * Traffic.CarLength * 25.0)
+			{
+				return double.NaN;
+			}
+			// Off its stop line (the junction there is its driver's to decide) and onto the lane proper.
+			double first = Math.Min(lo + Traffic.CarLength, hi - 1.0), last = Math.Max(first, hi - Lanes.All[lane].Hold - 1.0);
+			double[] tries = s.AtKerb
+				? new[] { proj + Micro.PullRoom, proj + Micro.PullRoom * 1.3 }
+				: new[] { proj - Traffic.CarLength * 1.2, proj + Traffic.CarLength * 1.2, proj - Traffic.CarLength * 0.6, proj + Traffic.CarLength * 0.6, proj + Traffic.CarLength * 2.0 };
+			double best = double.NaN, bestCost = double.MaxValue;
+			List<TrafficParking.Spot> around = ParkedNear(s.X, s.Z, self);
+			foreach (double t in tries)
+			{
+				double a = Math.Max(first, Math.Min(last, t));
+				Lanes.Point(Lanes.All[lane], Meso.RoadS(cw, a - Lanes.Axle), out double ex, out double ez, out double _, out double ehx, out double ehz);
+				Manoeuvre m = into ? Manoeuvre.In(ex, ez, ehx, ehz, s.X, s.Z, s.Hx, s.Hz, around) : Manoeuvre.Out(s.X, s.Z, s.Hx, s.Hz, ex, ez, ehx, ehz, around);
+				double cost = m.Duration + (m.MinRadius < Manoeuvre.TurnRadius ? 60.0 : 0.0);
+				if (cost < bestCost)
+				{
+					bestCost = cost;
+					best = a;
+					way = m;
+				}
+			}
+			return best;
+		}
+
+		/// <summary>The longest a car that has pulled up at its stop waits for its way into its spot to clear (seconds).</summary>
+		private const double WaitIn = 20.0;
+
+		/// <summary>
+		/// Whether way <paramref name="m"/>, driven from now, keeps clear of the micro cars (but <paramref name="self"/>) and the cars driving
+		/// their ways: none standing where it goes, and none coming (going on as it is) to where it is when it is there that couldn't stop
+		/// comfortably for it first (the drivers see the way as bodies, <see cref="ManoeuvreBodies"/>).
+		/// </summary>
+		private bool SweptClear(Manoeuvre m, int self)
+		{
+			m.At(0.0, out double sx, out double sz, out double _, out double _, out double _, out double _);
+			double reach = m.Length + 200.0;
+			int samples = Math.Max(1, (int)Math.Ceiling(m.Duration / 0.5));
+			TrafficParking.Spot[] path = new TrafficParking.Spot[samples + 1];
+			for (int k = 0; k <= samples; k++)
+			{
+				m.At(m.Duration * k / samples, out double x, out double z, out double hx, out double hz, out double _, out double _);
+				path[k] = new TrafficParking.Spot { X = x, Z = z, Hx = hx, Hz = hz };
+			}
+			foreach (int j in Mi.Active)
+			{
+				if (j == self)
+				{
+					continue;
+				}
+				Micro.Agent a = Mi.Agents[j];
+				Mi.Pose(j, out double x, out double z, out double hx, out double hz);
+				if (Math.Abs(x - sx) > reach || Math.Abs(z - sz) > reach)
+				{
+					continue;
+				}
+				double v = a.HoldUntil > Mi.T ? 0.0 : a.V, stop = v * v / (2.0 * Driver.Brake);
+				for (int k = 0; k <= samples; k++)
+				{
+					double t = m.Duration * k / samples;
+					TrafficParking.Spot p = path[k];
+					TrafficParking.Spot q = new TrafficParking.Spot { X = x + hx * v * t, Z = z + hz * v * t, Hx = hx, Hz = hz };
+					if (!TrafficParking.Overlap(p, q, 0.5))
+					{
+						continue;
+					}
+					double ahead = (p.X - x) * hx + (p.Z - z) * hz;
+					if (v < Micro.Standing || stop > ahead - Traffic.CarLength)
+					{
+						return false;
+					}
+				}
+			}
+			foreach (int j in manoeuvring)
+			{
+				if (j == self)
+				{
+					continue;
+				}
+				man[j].At(M.Now - manSince[j], out double x, out double z, out double hx, out double hz, out double _, out double _);
+				TrafficParking.Spot q = new TrafficParking.Spot { X = x, Z = z, Hx = hx, Hz = hz };
+				foreach (TrafficParking.Spot p in path)
+				{
+					if (TrafficParking.Overlap(p, q, 0.5))
+					{
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		/// <summary>Whether car <paramref name="car"/>'s way out of its spot onto lane <paramref name="lane"/> at <paramref name="along"/> is clear now (<see cref="SweptClear"/>).</summary>
+		private bool PullOutClear(int car, int lane, double along)
+		{
+			if (parkedStop[car] < 0 || spots[car].Away || man[car] != null)
+			{
+				return true;
+			}
+			int cw = Meso.CarriagewayOf(lane);
+			Lanes.Point(Lanes.All[lane], Meso.RoadS(cw, along - Lanes.Axle), out double ex, out double ez, out double _, out double ehx, out double ehz);
+			Manoeuvre way;
+			if (planned.TryGetValue(car, out var p) && Math.Abs(p.x - ex) < 0.5 && Math.Abs(p.z - ez) < 0.5)
+			{
+				way = p.way;
+			}
+			else
+			{
+				TrafficParking.Spot s = spots[car];
+				way = Manoeuvre.Out(s.X, s.Z, s.Hx, s.Hz, ex, ez, ehx, ehz, ParkedNear(s.X, s.Z, car));
+				planned[car] = (way, ex, ez);
+			}
+			return SweptClear(way, car);
+		}
+
+		/// <summary>The cars parked (drawn in their spots) within 40 of (<paramref name="x"/>, <paramref name="z"/>) but <paramref name="self"/>: what a way out or in keeps clear of.</summary>
+		private List<TrafficParking.Spot> ParkedNear(double x, double z, int self)
+		{
+			List<TrafficParking.Spot> near = new List<TrafficParking.Spot>();
+			for (int j = 0; j < k1.Length; j++)
+			{
+				if (j != self && k1[j] == Parked && Math.Abs(x1[j] - x) < 40.0 && Math.Abs(z1[j] - z) < 40.0)
+				{
+					near.Add(new TrafficParking.Spot { X = x1[j], Z = z1[j], Hx = hx1[j], Hz = hz1[j] });
+				}
+			}
+			return near;
+		}
+
+		/// <summary>Per car pulling out: the way worked out for where it comes onto the lane (<see cref="PullOutAlong"/>), and that place.</summary>
+		private readonly Dictionary<int, (Manoeuvre way, double x, double z)> planned = new Dictionary<int, (Manoeuvre, double, double)>();
+		/// <summary>Per car waiting to pull out: the lane and the meso's place it was last asked about, and the answer (asked every step while it waits).</summary>
+		private readonly Dictionary<int, (int lane, double along, double at)> asked = new Dictionary<int, (int, double, double)>();
+		/// <summary>Per car pulled up at its stop: its way into its spot (worked out once, while it waits for it to clear).</summary>
+		private readonly Dictionary<int, Manoeuvre> wayIn = new Dictionary<int, Manoeuvre>();
+
+		/// <summary>Where car <paramref name="car"/> pulling out of its spot comes onto lane <paramref name="lane"/> (<see cref="Beside"/>); NaN: the meso's place.</summary>
+		private double PullOutAlong(int car, int lane, double along)
+		{
+			if (asked.TryGetValue(car, out var q) && q.lane == lane && q.along == along && planned.ContainsKey(car))
+			{
+				return q.at;
+			}
+			planned.Remove(car);
+			asked.Remove(car);
+			if (parkedStop[car] < 0 || man[car] != null)
+			{
+				return double.NaN;
+			}
+			double at = Beside(car, spots[car], lane, along, false, out Manoeuvre way);
+			if (!double.IsNaN(at))
+			{
+				int cw = Meso.CarriagewayOf(lane);
+				Lanes.Point(Lanes.All[lane], Meso.RoadS(cw, at - Lanes.Axle), out double ex, out double ez, out double _, out double _, out double _);
+				planned[car] = (way, ex, ez);
+				asked[car] = (lane, along, at);
+			}
+			return at;
+		}
+
+		/// <summary>
+		/// Car <paramref name="car"/> has just been placed in the lane pulling out: its way from its spot (or from where it is drawn, if it was
+		/// still driving into it) to there, and how long it is held while it drives it.
+		/// </summary>
+		private double PullOutTime(int car)
+		{
+			if (Mi.Agents[car] == null)
+			{
+				planned.Remove(car);
+				asked.Remove(car);
+				return 0.0;
+			}
+			double sx, sz, shx, shz;
+			TrafficParking.Spot s = spots[car];
+			Mi.Pose(car, out double ex, out double ez, out double ehx, out double ehz);
+			Manoeuvre m = null;
+			if (man[car] != null)
+			{
+				man[car].At(Mi.T - manSince[car], out sx, out sz, out shx, out shz, out double _, out double _);
+				EndWay(car);
+			}
+			else if (parkedStop[car] >= 0 && !s.Away)
+			{
+				sx = s.X;
+				sz = s.Z;
+				shx = s.Hx;
+				shz = s.Hz;
+				if (planned.TryGetValue(car, out var p) && Math.Abs(p.x - ex) < 0.5 && Math.Abs(p.z - ez) < 0.5)
+				{
+					m = p.way;
+				}
+			}
+			else
+			{
+				planned.Remove(car);
+				asked.Remove(car);
+				return 0.0;
+			}
+			planned.Remove(car);
+			asked.Remove(car);
+			m ??= Manoeuvre.Out(sx, sz, shx, shz, ex, ez, ehx, ehz, ParkedNear(sx, sz, car));
+			// Held a whole number of steps (it stands at the end meanwhile), so its body is gone from the step it pulls away in.
+			m.Duration = Math.Ceiling(m.Duration / Meso.Step - 1e-9) * Meso.Step;
+			StartWay(car, m, Mi.T, false, s);
+			manY[car] = AgentY(Mi.Agents[car]);
+			return m.Duration;
+		}
+
+		/// <summary>
+		/// Car <paramref name="car"/> on its last lane: it is given its spot now (held from here: the meso parks it there when it arrives) and
+		/// pulls up beside it where it drives in best (<see cref="Beside"/>); NaN: the meso's place.
+		/// </summary>
+		private double ArriveAlong(int car, int lane, double along)
+		{
+			Meso.Vehicle v = M.Cars[car];
+			Schedules.Car c = M.Day[car];
+			if (c.Through || c.Stops == null || v.Stop >= c.Stops.Length || c.Stops[v.Stop].Kind == Schedules.StopKind.Away)
+			{
+				return double.NaN;
+			}
+			if (parkedStop[car] != v.Stop || parkedPlace[car] != v.TargetPlace)
+			{
+				spots[car] = Parking.Park(car, v.Stop, v.TargetPlace);
+				parkedStop[car] = v.Stop;
+				parkedPlace[car] = v.TargetPlace;
+			}
+			early[car] = true;
+			return Beside(car, spots[car], lane, along, true, out Manoeuvre _);
+		}
+
+		/// <summary>Car <paramref name="car"/> pulls up at its stop: where it stands, to drive into its spot from once the meso parks it.</summary>
+		private void Arriving(int car)
+		{
+			Mi.Pose(car, out upX[car], out upZ[car], out upHx[car], out upHz[car]);
+			upY[car] = AgentY(Mi.Agents[car]);
+			upAt[car] = Mi.T;
+			pulledUp[car] = true;
+			wayIn.Remove(car);
+		}
+
+		private void StartWay(int car, Manoeuvre m, double at, bool into, TrafficParking.Spot spot)
+		{
+			if (man[car] == null)
+			{
+				manoeuvring.Add(car);
+			}
+			man[car] = m;
+			manSince[car] = at;
+			manIn[car] = into;
+			if (into)
+			{
+				WaysIn++;
+			}
+			else
+			{
+				WaysOut++;
+			}
+			TightWays += m.MinRadius < Manoeuvre.TurnRadius ? 1 : 0;
+			LongestWay = Math.Max(LongestWay, m.Duration);
+			Ways?.Add((car, at, into, m, spot));
+		}
+
+		private void EndWay(int car)
+		{
+			man[car] = null;
+			manoeuvring.Remove(car);
+		}
+
+		/// <summary>Car <paramref name="i"/>'s pose on its way out or in now (driving); false once it has driven it (the way dropped).</summary>
+		private bool WayPose(int i)
+		{
+			Manoeuvre m = man[i];
+			double t = M.Now - manSince[i];
+			if (t >= m.Duration)
+			{
+				EndWay(i);
+				return false;
+			}
+			m.At(t, out x1[i], out z1[i], out hx1[i], out hz1[i], out double _, out double _);
+			// The road's height where it comes on or pulled up: the car is stood on what is under its wheels, looked for from over that.
+			y1[i] = manY[i];
+			k1[i] = Driving;
+			return true;
+		}
+
+		/// <summary>Whether car <paramref name="i"/> is driving out of its spot or into it now (not to be made a physics car meanwhile).</summary>
+		internal bool Manoeuvring(int i)
+		{
+			return man[i] != null;
+		}
+
+		/// <summary>
+		/// The cars driving out of their spots or into them, as bodies the micro's drivers see while they are on the road (a car behind
+		/// waits for one pulling in or out across its lane). One pulling in stops being one as it comes into its spot (a car at the kerb is
+		/// as near a lane as a body blocks, and is parked by then).
+		/// </summary>
+		private void ManoeuvreBodies(Micro mi)
+		{
+			foreach (int i in manoeuvring)
+			{
+				Manoeuvre m = man[i];
+				double t = mi.T - manSince[i];
+				if (t >= m.Duration || t < 0.0)
+				{
+					continue;
+				}
+				m.At(m.Duration, out double ex, out double ez, out double _, out double _, out double _, out double _);
+				m.At(t, out double x, out double z, out double hx, out double hz, out double vx, out double vz);
+				if ((x - ex) * (x - ex) + (z - ez) * (z - ez) >= 2.5 * 2.5)
+				{
+					mi.Bodies.Add(new Micro.Body { X = x, Z = z, Hx = hx, Hz = hz, Vx = vx, Vz = vz, HalfLong = Traffic.CarLength * 0.5, HalfWide = TrafficParking.CarWide * 0.5 });
+				}
+				// Where it is still to go, standing: a car behind one that will back into a space waits clear of where it backs to, as drivers
+				// do for a car signalling to park. (Not its end: in its spot it is parked; in the lane, a car pulling out is there already.)
+				double left = WayLeft(m, t);
+				for (double d = 7.0; d < left - 2.5; d += 7.0)
+				{
+					double tt = TimeAt(m, t, d);
+					m.At(tt, out double fx, out double fz, out double fhx, out double fhz, out double _, out double _);
+					mi.Bodies.Add(new Micro.Body { X = fx, Z = fz, Hx = fhx, Hz = fhz, HalfLong = Traffic.CarLength * 0.5, HalfWide = TrafficParking.CarWide * 0.5 });
+				}
+			}
+			for (int i = 0; i < pulledUp.Length; i++)
+			{
+				if (pulledUp[i])
+				{
+					// Pulled up, waiting for its way into its spot to clear.
+					mi.Bodies.Add(new Micro.Body { X = upX[i], Z = upZ[i], Hx = upHx[i], Hz = upHz[i], HalfLong = Traffic.CarLength * 0.5, HalfWide = TrafficParking.CarWide * 0.5 });
+				}
+			}
+		}
+
+		/// <summary>How far way <paramref name="m"/> has still to go <paramref name="t"/> seconds in (sampled every half second: near enough for bodies).</summary>
+		private static double WayLeft(Manoeuvre m, double t)
+		{
+			double left = 0.0;
+			m.At(t, out double px, out double pz, out double _, out double _, out double _, out double _);
+			for (double u = t + 0.5; ; u += 0.5)
+			{
+				double uu = Math.Min(u, m.Duration);
+				m.At(uu, out double x, out double z, out double _, out double _, out double _, out double _);
+				left += Math.Sqrt((x - px) * (x - px) + (z - pz) * (z - pz));
+				px = x;
+				pz = z;
+				if (uu >= m.Duration)
+				{
+					return left;
+				}
+			}
+		}
+
+		/// <summary>The time way <paramref name="m"/> has gone <paramref name="d"/> further from <paramref name="t"/> seconds in (to within a quarter second).</summary>
+		private static double TimeAt(Manoeuvre m, double t, double d)
+		{
+			m.At(t, out double px, out double pz, out double _, out double _, out double _, out double _);
+			double gone = 0.0;
+			for (double u = t + 0.25; u < m.Duration; u += 0.25)
+			{
+				m.At(u, out double x, out double z, out double _, out double _, out double _, out double _);
+				gone += Math.Sqrt((x - px) * (x - px) + (z - pz) * (z - pz));
+				px = x;
+				pz = z;
+				if (gone >= d)
+				{
+					return u;
+				}
+			}
+			return m.Duration;
 		}
 
 		/// <summary>A driving car's middle, the way it faces and its road's height (scene); false where it isn't to be drawn (through a tunnel's jump).</summary>
@@ -289,7 +812,7 @@ namespace HalfGripOpenWorld
 					return false;
 				}
 				Mi.Pose(i, out x, out z, out hx, out hz);
-				y = a.Conn >= 0 ? ConnectorY(Lanes.Connectors[a.Conn], a.X) : LaneY(a.Lane, a.X);
+				y = AgentY(a);
 				return true;
 			}
 			if (!M.Where(i, out int lane, out int conn, out double along))
@@ -315,6 +838,12 @@ namespace HalfGripOpenWorld
 			Lanes.Point(Lanes.All[lane], Meso.RoadS(cw, along - Lanes.Axle), out x, out z, out double ry, out hx, out hz);
 			y = ry + Network.Lift;
 			return true;
+		}
+
+		/// <summary>The road's height (scene) under a micro car.</summary>
+		private static double AgentY(Micro.Agent a)
+		{
+			return a.Conn >= 0 ? ConnectorY(Lanes.Connectors[a.Conn], a.X) : LaneY(a.Lane, a.X);
 		}
 
 		/// <summary>The road's height (scene) under a car <paramref name="along"/> its lane's carriageway.</summary>

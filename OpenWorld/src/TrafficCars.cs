@@ -16,8 +16,8 @@ namespace HalfGripOpenWorld
 	/// headlight.</para>
 	///
 	/// <para>Drawn from a pool, the nearest cars only (moving ones count as nearer). World positions are kept as doubles and turned into the
-	/// scene's on every frame, so an origin shift needs nothing here. A car pulling out of its spot or into one is drawn sliding from the one
-	/// pose to the other over a couple of seconds (the meso parks a car at its stop's point on the road; its spot is beside it).</para>
+	/// scene's on every frame, so an origin shift needs nothing here. A car pulling out of its spot or into one drives its way between the two
+	/// (<see cref="Manoeuvre"/>: <see cref="TrafficLive"/> gives its pose along it as a driving one).</para>
 	/// </summary>
 	internal sealed partial class TrafficCars : MonoBehaviour
 	{
@@ -42,9 +42,6 @@ namespace HalfGripOpenWorld
 
 		/// <summary>How many moving cars at most have a real headlight at night (the renderer lights only so many lights an object).</summary>
 		private const int MostLit = 6;
-
-		/// <summary>How long a car takes to slide from its spot onto the road, or from the road into its spot (seconds).</summary>
-		private const float PullTime = 2.5f;
 
 		/// <summary>The paint: everyday car colours, with how often each is seen (white, black, greys and silver most).</summary>
 		private static readonly (Color colour, int weight)[] Paints =
@@ -106,9 +103,6 @@ namespace HalfGripOpenWorld
 			/// <summary>Where it was last drawn (world x, z, the way it faced) and what it was doing; NaN: not drawn yet.</summary>
 			public double LastX = double.NaN, LastZ, LastHx, LastHz;
 			public byte LastKind;
-			/// <summary>Sliding from a pose to the live one (pulling out of or into its spot): where from, and how long it has still to go.</summary>
-			public double FromX, FromZ, FromHx, FromHz;
-			public float Blend;
 			/// <summary>Parked: where it was stood (world x, z), so a parked car is placed once.</summary>
 			public double PlacedX = double.NaN, PlacedZ;
 		}
@@ -746,35 +740,10 @@ namespace HalfGripOpenWorld
 			{
 				v.LastKind = TrafficLive.None;
 				v.LastX = double.NaN;
-				v.Blend = 0f;
 				return false;
 			}
-			// Pulling out of its spot onto the road, or off the road into its spot: slid from the pose it was drawn at to the live one.
-			if (!double.IsNaN(v.LastX) && v.LastKind != kind && v.LastKind != TrafficLive.None)
-			{
-				v.FromX = v.LastX;
-				v.FromZ = v.LastZ;
-				v.FromHx = v.LastHx;
-				v.FromHz = v.LastHz;
-				v.Blend = PullTime;
-				v.PlacedX = double.NaN;
-			}
 			double dx = x, dz = z, dhx = hx, dhz = hz;
-			if (v.Blend > 0f)
-			{
-				v.Blend = Mathf.Max(0f, v.Blend - dt);
-				float f = 1f - v.Blend / PullTime;
-				f = f * f * (3f - 2f * f);
-				dx = v.FromX + (x - v.FromX) * f;
-				dz = v.FromZ + (z - v.FromZ) * f;
-				double ax = v.FromHx + (hx - v.FromHx) * f, az = v.FromHz + (hz - v.FromHz) * f, len = Math.Sqrt(ax * ax + az * az);
-				if (len > 1e-6)
-				{
-					dhx = ax / len;
-					dhz = az / len;
-				}
-			}
-			bool moving = kind == TrafficLive.Driving || v.Blend > 0f;
+			bool moving = kind == TrafficLive.Driving;
 			double ex = dx - cx, ez = dz - cz;
 			bool shadows = ex * ex + ez * ez < (double)ShadowAt * ShadowAt;
 			Shadows(v, shadows);
@@ -818,10 +787,7 @@ namespace HalfGripOpenWorld
 			v.LastZ = dz;
 			v.LastHx = dhx;
 			v.LastHz = dhz;
-			if (v.Blend <= 0f)
-			{
-				v.LastKind = kind;
-			}
+			v.LastKind = kind;
 			return true;
 		}
 
@@ -1053,7 +1019,6 @@ namespace HalfGripOpenWorld
 			v.Car = car;
 			v.LastX = double.NaN;
 			v.LastKind = TrafficLive.None;
-			v.Blend = 0f;
 			v.PlacedX = double.NaN;
 			if (v.Paint != paint)
 			{

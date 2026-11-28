@@ -18,6 +18,7 @@
     <Compile Include="PhysicsDay.cs" />
     <Compile Include="../../OpenWorld/src/TrafficLive.cs" />
     <Compile Include="../../OpenWorld/src/TrafficParking.cs" />
+    <Compile Include="../../OpenWorld/src/Manoeuvre.cs" />
     <Compile Include="../../OpenWorld/src/Plots.cs" />
     <Compile Include="../../OpenWorld/src/Traffic.cs" />
     <Compile Include="../../OpenWorld/src/Schedules.cs" />

@@ -124,7 +124,7 @@ namespace HalfGripOpenWorld
 					}
 					else
 					{
-						// Parked (its drawn copy slides into its spot from the body), or handed on.
+						// Parked (its drawn copy drives into its spot from where the body pulled up), or handed on.
 						HandBack(c, b, x, z);
 						Release(b);
 					}
@@ -183,11 +183,11 @@ namespace HalfGripOpenWorld
 			foreach (int c in live.Mi.Active)
 			{
 				Micro.Agent a = live.Mi.Agents[c];
-				if (a.Driven || (a.Conn >= 0 && Lanes.Connectors[a.Conn].Turn == Lanes.Jump))
+				if (a.Driven || (a.Conn >= 0 && Lanes.Connectors[a.Conn].Turn == Lanes.Jump) || a.HoldUntil > live.Mi.T || live.Manoeuvring(c))
 				{
 					continue;
 				}
-				if (!drawn.TryGetValue(c, out View v) || !v.Go.activeSelf || v.Blend > 0f || v.LastKind != TrafficLive.Driving || double.IsNaN(v.LastX))
+				if (!drawn.TryGetValue(c, out View v) || !v.Go.activeSelf || v.LastKind != TrafficLive.Driving || double.IsNaN(v.LastX))
 				{
 					continue;
 				}

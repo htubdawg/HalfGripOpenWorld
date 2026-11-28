@@ -67,6 +67,8 @@ namespace HalfGripOpenWorld
 			Change,
 			/// <summary>Slowing to turn into its stop.</summary>
 			Stop,
+			/// <summary>Held at its place in the lane while it drives out of its spot (<see cref="Agent.HoldUntil"/>).</summary>
+			Manoeuvre,
 			/// <summary>Slowing for a bend or a turn.</summary>
 			Bend,
 		}
@@ -100,6 +102,10 @@ namespace HalfGripOpenWorld
 			/// has got back to (<see cref="Micro.StrayScore"/>) and how long since it last got nearer, how long it has lain on its side.</summary>
 			public bool Astray;
 			public double Off, StrayBest, NoNearer, OnSide;
+			/// <summary>Pulling out: held standing where it comes onto the lane until then, while its drawn copy drives out of its spot (<see cref="PullOutTime"/>).</summary>
+			public double HoldUntil = double.MinValue;
+			/// <summary>On its last lane: where it pulls up (its front's distance along the carriageway; NaN not yet worked out: <see cref="DestOf"/>).</summary>
+			public double Dest = double.NaN;
 		}
 
 		/// <summary>What happens at the boundary, for trafficsim's checks.</summary>
@@ -154,6 +160,28 @@ namespace HalfGripOpenWorld
 		internal Action<Micro> Move;
 		/// <summary>Called after every micro step (trafficsim's checks).</summary>
 		internal Action<Micro> After;
+
+		/// <summary>
+		/// Where a parked car pulling out onto a lane comes onto it (the game: a little ahead of its spot at the kerb, so it drives out
+		/// forwards): car, lane, the meso's place on it (its front's distance along the carriageway); NaN keeps the meso's. None: the meso's.
+		/// </summary>
+		internal Func<int, int, double, double> PullOutAlong;
+		/// <summary>
+		/// How long a car just placed pulling out is held standing there while it drives out of its spot (the game's <see
+		/// cref="Manoeuvre"/>, from its spot to the agent's place); none, or 0: it pulls away at once.
+		/// </summary>
+		internal Func<int, double> PullOutTime;
+		/// <summary>Whether a car about to pull out onto a lane at a place (car, lane, its front's distance along) has its way out of its spot clear (the game's); none: clear.</summary>
+		internal Func<int, int, double, bool> PullOutClear;
+		/// <summary>How far ahead of its spot at the kerb a car pulling out comes onto the lane (<see cref="PullOutAlong"/>): room to drive out forwards, which the cars coming must leave it too.</summary>
+		internal const double PullRoom = Traffic.CarLength * 1.6;
+		/// <summary>
+		/// Where a car coming to its stop pulls up (the game: beside its spot, where it turns or backs into it best): car, lane, the meso's
+		/// place (its front's distance along the carriageway); NaN keeps the meso's. Asked once, as it comes onto its last lane.
+		/// </summary>
+		internal Func<int, int, double, double> ArriveAlong;
+		/// <summary>Called as a car reaches its stop, before its agent goes (the game: where it drives into its spot from).</summary>
+		internal Action<int> Arriving;
 		internal readonly List<Event> Events = new List<Event>();
 
 		// ---- what trafficsim reads (consistency) ------------------------------------------------------------------------------
@@ -1371,6 +1399,13 @@ namespace HalfGripOpenWorld
 					whyCar = car;
 				}
 			}
+			if (a.HoldUntil > T && !a.Driven)
+			{
+				// Still driving out of its spot (its drawn copy): standing where it comes onto the lane, which the cars coming see.
+				a.V = 0.0;
+				Set(a, 0.0, Why.Manoeuvre, -1);
+				return;
+			}
 			if (a.Conn >= 0)
 			{
 				Lanes.Connector cn = Lanes.Connectors[a.Conn];
@@ -1410,7 +1445,7 @@ namespace HalfGripOpenWorld
 			if (v.Ends)
 			{
 				// Slows to turn in: a standing obstacle a little past its stop.
-				double dist = v.DestAlong - a.X;
+				double dist = DestOf(i, a, v) - a.X;
 				Take(Driver.StopAt(a.V, l.Limit, dist + 2.0), Why.Stop, -1);
 			}
 			// Lane changes: where its way on needs another lane, and through cars passing on the trunk.
@@ -2212,7 +2247,7 @@ namespace HalfGripOpenWorld
 				{
 					if (v.Ends)
 					{
-						if (a.X >= v.DestAlong - 0.5)
+						if (a.X >= DestOf(i, a, v) - 0.5)
 						{
 							Arrive(i);
 						}
@@ -2396,9 +2431,30 @@ namespace HalfGripOpenWorld
 			}
 		}
 
+		/// <summary>Where car <paramref name="i"/>, on its last lane, pulls up: the meso's place, or <see cref="ArriveAlong"/>'s, no nearer than it can stop comfortably.</summary>
+		private double DestOf(int i, Agent a, Meso.Vehicle v)
+		{
+			if (double.IsNaN(a.Dest))
+			{
+				double d = v.DestAlong;
+				if (ArriveAlong != null)
+				{
+					double at = ArriveAlong(i, a.Lane, d);
+					if (!double.IsNaN(at))
+					{
+						d = Math.Max(at, a.X + Driver.Stopping(a.V, Driver.Brake) + 0.5);
+						d = Math.Min(d, Math.Max(a.X, Meso.Reach(a.Lane) - 1.0));
+					}
+				}
+				a.Dest = d;
+			}
+			return a.Dest;
+		}
+
 		private void Arrive(int i)
 		{
 			Agent a = Agents[i];
+			Arriving?.Invoke(i);
 			Log(Kind.Arrived, i);
 			Remove(i, a.Lane);
 			M.Arrive(M.Cars[i]);
@@ -2476,7 +2532,13 @@ namespace HalfGripOpenWorld
 						phys = Meso.LanesOf(cw)[0];
 						// Onto the lane proper, not into a junction's box (a house by a junction pulls out just short of it).
 						double hi = Meso.Reach(phys) - 1.0;
-						x = Math.Min(hi, Math.Max(v.From, Math.Min(hi, Meso.StartOf(phys) + Traffic.CarLength)));
+						double from = v.From;
+						if (PullOutAlong != null)
+						{
+							double at = PullOutAlong(i, phys, v.From);
+							from = double.IsNaN(at) ? from : at;
+						}
+						x = Math.Min(hi, Math.Max(from, Math.Min(hi, Meso.StartOf(phys) + Traffic.CarLength)));
 						speed = 0.0;
 						kind = Kind.PullOut;
 						if (!pullSince.TryGetValue(i, out double since))
@@ -2485,17 +2547,26 @@ namespace HalfGripOpenWorld
 						}
 						pullNext[i] = since;
 						bool waved = T - since > Courtesy;
-						if (!PullGap(phys, x, i, waved))
+						if (!PullGap(phys, x, i, waved) || (from != v.From && !PullGap(phys, Math.Max(Meso.StartOf(phys) + Traffic.CarLength, x - PullRoom), i, waved)))
 						{
 							if (waved)
 							{
-								waving.Add((phys, x));
+								waving.Add((phys, from != v.From ? Math.Max(Meso.StartOf(phys), x - PullRoom) : x));
 							}
 							continue;
 						}
 						if (OneTrackBusy(phys, i, out int _))
 						{
 							// Out along a drive with a car on it coming in: it waits by the house.
+							continue;
+						}
+						if (PullOutClear != null && !PullOutClear(i, phys, x))
+						{
+							// Its way out of its spot runs where a car stands, or one comes that couldn't stop for it.
+							if (waved)
+							{
+								waving.Add((phys, from != v.From ? Math.Max(Meso.StartOf(phys), x - PullRoom) : x));
+							}
 							continue;
 						}
 						int want = v.Ends ? phys : WantLane(i, phys);
@@ -2590,6 +2661,14 @@ namespace HalfGripOpenWorld
 					Insert(i);
 					Spawned++;
 					Log(kind, i);
+					if (kind == Kind.PullOut && PullOutTime != null)
+					{
+						double hold = PullOutTime(i);
+						if (hold > 0.0)
+						{
+							a.HoldUntil = T + hold;
+						}
+					}
 				}
 			}
 		}
