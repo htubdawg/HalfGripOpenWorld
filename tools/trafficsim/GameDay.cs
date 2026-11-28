@@ -12,6 +12,45 @@ using HalfGripOpenWorld;
 // can, taking over half a minute, or running into a micro car or a parked one. Measured: the build's time, and the simulation's cost a second of the race (the frame-time budget).
 internal static partial class Program
 {
+	/// <summary>How close to the player a car may never vanish or appear (about 120 m: well inside what is drawn, parked or moving).</summary>
+	private static readonly double Vanish = double.TryParse(Environment.GetEnvironmentVariable("TRAFFICSIM_VANISH"), out double vr) ? vr : 400.0;
+
+	private static string KindName(byte k)
+	{
+		return k == TrafficLive.Driving ? "driving" : k == TrafficLive.Parked ? "parked" : "none";
+	}
+
+	/// <summary>What the simulation has car <paramref name="i"/> doing now, for a car that vanished or appeared ("wrap" in the tunnels).</summary>
+	private static string VanishWhy(TrafficLive live, int i)
+	{
+		Meso.Vehicle v = live.M.Cars[i];
+		Micro.Agent a = live.Mi.Agents[i];
+		if ((a != null && a.Conn >= 0 && Lanes.Connectors[a.Conn].Turn == Lanes.Jump) || (v.Conn >= 0 && Lanes.Connectors[v.Conn].Turn == Lanes.Jump))
+		{
+			return "wrap";
+		}
+		return "mode " + v.Mode + (v.Micro ? " micro" : " meso") + (a != null ? " agent" : "") + (v.Conn >= 0 ? " on a connector" : v.Lane >= 0 ? " on a lane" : " nowhere")
+			+ (live.Manoeuvring(i) ? " manoeuvring" : "") + (v.Mode == Meso.Mode.Parked ? (live.SpotOf(i).Away ? " spot away" : " spot drawn") : "");
+	}
+
+	/// <summary>The stop a parked car is at, for a car that vanished: what kind, and where its spot is.</summary>
+	private static string StopWhy(TrafficLive live, int i)
+	{
+		Meso.Vehicle v = live.M.Cars[i];
+		if (v.Mode != Meso.Mode.Parked)
+		{
+			return "";
+		}
+		Schedules.Stop st = live.M.Day[i].Stops[v.Stop];
+		string place = v.Place >= 0 ? " " + Traffic.Destinations[v.Place].Kind + (Traffic.Destinations[v.Place].Lot >= 0 ? " with a lot" : "") : "";
+		return ", stop " + st.Kind + place;
+	}
+
+	private static string SpotText(TrafficParking.Spot s)
+	{
+		return "spot " + s.X.ToString("0.0") + ", " + s.Z.ToString("0.0") + " facing " + s.Hx.ToString("0.00") + ", " + s.Hz.ToString("0.00") + (s.AtKerb ? " kerb road " + s.Road : "");
+	}
+
 	private static void GameDay(int seed, double minutes, double from = -1.0)
 	{
 		double startHour = StartHourOf(seed);
@@ -25,6 +64,7 @@ internal static partial class Program
 		live.PlayerX = w.SX;
 		live.PlayerZ = w.SZ;
 		live.HasPlayer = true;
+		live.M.SentOn = new List<int>();
 		live.Ways = new List<(int, double, bool, Manoeuvre, TrafficParking.Spot)>();
 		string where = "seed " + seed + " in game from " + TrafficLive.Clock(start);
 		int pullJumps = 0, wayHits = 0, wayParkedHits = 0, waysSeen = 0;
@@ -43,11 +83,13 @@ internal static partial class Program
 		const double frame = 1.0 / 60.0;
 		int trace = int.TryParse(Environment.GetEnvironmentVariable("TRAFFICSIM_GAME_TRACE"), out int tr) ? tr : -1;
 		double race = 0.0, worstStep = 0.0, worstAt = 0.0, stepSum = 0.0;
-		int frames = 0, badPose = 0, jumps = 0, overlaps = 0, offPaving = 0, behind = 0;
+		int frames = 0, badPose = 0, jumps = 0, overlaps = 0, offPaving = 0, behind = 0, vanished = 0, appeared = 0;
+		Dictionary<string, int> anywhere = new Dictionary<string, int>();
+		Dictionary<string, int> vanishWhy = new Dictionary<string, int>(), appearWhy = new Dictionary<string, int>();
 		List<string> firsts = new List<string>();
 		void Note(string what)
 		{
-			if (firsts.Count < 8)
+			if (firsts.Count < 16)
 			{
 				firsts.Add(what);
 			}
@@ -97,6 +139,36 @@ internal static partial class Program
 			for (int i = 0; i < n; i++)
 			{
 				byte k = live.Pose(i, now, out double x, out double z, out double hx, out double hz, out double y);
+				if ((k == TrafficLive.None) != (lk[i] == TrafficLive.None))
+				{
+					// A car going out of the drawing or coming into it close to the player (in front of them, not at the edge of what is drawn):
+					// it vanished or popped up. Only a car in the wrap's tunnels may (out of sight there).
+					double ox = k == TrafficLive.None ? lx[i] : x, oz = k == TrafficLive.None ? lz[i] : z;
+					double pd = Math.Sqrt((ox - live.PlayerX) * (ox - live.PlayerX) + (oz - live.PlayerZ) * (oz - live.PlayerZ));
+					string why = VanishWhy(live, i);
+					if (k == TrafficLive.None && why != "wrap")
+					{
+						// Anywhere on the map: a player could be standing there.
+						string key = "was " + KindName(lk[i]) + ", " + why + StopWhy(live, i);
+						anywhere[key] = anywhere.TryGetValue(key, out int c) ? c + 1 : 1;
+					}
+					if (pd < Vanish && why != "wrap")
+					{
+						bool gone = k == TrafficLive.None;
+						if (gone)
+						{
+							vanished++;
+						}
+						else
+						{
+							appeared++;
+						}
+						Dictionary<string, int> tally = gone ? vanishWhy : appearWhy;
+						string key = (gone ? "was " + KindName(lk[i]) : "now " + KindName(k)) + ", " + why;
+						tally[key] = tally.TryGetValue(key, out int c) ? c + 1 : 1;
+						Note("car " + i + (gone ? " vanished" : " appeared") + " at " + ox.ToString("0") + ", " + oz.ToString("0") + " (" + pd.ToString("0") + " from the player) at " + TrafficLive.Clock(now) + ": " + key);
+					}
+				}
 				if (k == TrafficLive.None)
 				{
 					lk[i] = k;
@@ -128,7 +200,7 @@ internal static partial class Program
 					double dx = x - lx[i], dz = z - lz[i], d = Math.Sqrt(dx * dx + dz * dz);
 					double pd = Math.Sqrt((x - live.PlayerX) * (x - live.PlayerX) + (z - live.PlayerZ) * (z - live.PlayerZ));
 					// The fastest road (the trunk, 65 mph) and a little: a car seen moving faster than that between two frames jumped.
-					if (d > 40.0 * frame * 3.0 && d < 120.0 && pd < Micro.Sight)
+					if (d > 40.0 * frame * 3.0 && (d < 120.0 || pd < Vanish) && pd < Micro.Sight && VanishWhy(live, i) != "wrap")
 					{
 						jumps++;
 						Note("car " + i + " jumped " + d.ToString("0.0") + " in a frame at " + x.ToString("0") + ", " + z.ToString("0") + " (" + pd.ToString("0") + " from the player) at " + TrafficLive.Clock(now));
@@ -169,7 +241,7 @@ internal static partial class Program
 								if (TrafficParking.Overlap(s, o, -0.2))
 								{
 									overlaps++;
-									Note("cars " + car + " and " + i + " parked in one another at " + x.ToString("0") + ", " + z.ToString("0") + " at " + TrafficLive.Clock(now));
+									Note("cars " + car + " and " + i + " parked in one another at " + x.ToString("0") + ", " + z.ToString("0") + " at " + TrafficLive.Clock(now) + " (" + SpotText(o) + " " + VanishWhy(live, car) + StopWhy(live, car) + "; " + SpotText(s) + " " + VanishWhy(live, i) + StopWhy(live, i) + ")");
 								}
 							}
 						}
@@ -196,7 +268,7 @@ internal static partial class Program
 		double perSecond = stepSum / (minutes * 60.0);
 		Console.WriteLine("  game, " + where + ": built in " + buildMs.ToString("0") + " ms; " + (minutes).ToString("0") + " minutes of race at 60 frames a second: simulation "
 			+ perSecond.ToString("0.00") + " ms a second of the race, worst frame " + worstStep.ToString("0.0") + " ms (" + worstAt.ToString("0.0") + " s in); at the end " + live.DrivingNow + " driving (" + live.MicroNow + " near), "
-			+ live.ParkedNow + " parked; parking " + live.Parking.OwnSpaces + " own spaces at home, " + live.Parking.KerbHomes + " at the kerb, " + live.Parking.RoundTheBack + " round the back");
+			+ live.ParkedNow + " parked; sent on to a kerb for want of room " + live.M.ToKerb + ", parked with none " + live.M.NoRoom + "; parking " + live.Parking.OwnSpaces + " own spaces at home, " + live.Parking.KerbHomes + " at the kerb, " + live.Parking.RoundTheBack + " round the back");
 		int tight = 0, slow = 0, ways = live.Ways.Count;
 		double worstRadius = double.MaxValue, longest = 0.0, lengthSum = 0.0, timeSum = 0.0;
 		int backed = 0;
@@ -237,6 +309,7 @@ internal static partial class Program
 		Manoeuvre.Costs.Worst = 0.0;
 		Console.WriteLine("    ways out of spots " + live.WaysOut + ", into them " + live.WaysIn + " (" + backed + " backing), " + waysSeen + " seen driving them near the player; "
 			+ (ways > 0 ? "on average " + (lengthSum / ways / 3.3).ToString("0.0") + " m in " + (timeSum / ways).ToString("0.0") + " s, the longest " + longest.ToString("0.0") + " s, the tightest turn " + (worstRadius / 3.3).ToString("0.0") + " m" : "none"));
+		Console.WriteLine("    sent on to a kerb: " + string.Join(", ", live.M.SentOn));
 		foreach (string f in firsts)
 		{
 			Console.WriteLine("    " + f);
@@ -249,6 +322,20 @@ internal static partial class Program
 		Check(wayParkedHits == 0, "game ways", where + ": " + wayParkedHits + " times a car driving out of its spot or into it was in a parked car");
 		Check(badPose == 0, "game poses", where + ": " + badPose + " poses not a number");
 		Check(jumps == 0, "game jumps", where + ": " + jumps + " drawn cars jumped between frames in sight");
+		foreach (var kv in anywhere.OrderByDescending(kv => kv.Value))
+		{
+			Console.WriteLine("    anywhere, vanished " + kv.Value + " times: " + kv.Key);
+		}
+		foreach (var kv in vanishWhy.OrderByDescending(kv => kv.Value))
+		{
+			Console.WriteLine("    vanished " + kv.Value + " times: " + kv.Key);
+		}
+		foreach (var kv in appearWhy.OrderByDescending(kv => kv.Value))
+		{
+			Console.WriteLine("    appeared " + kv.Value + " times: " + kv.Key);
+		}
+		Check(vanished == 0, "game vanish", where + ": " + vanished + " times a drawn car vanished within " + Vanish.ToString("0") + " units of the player");
+		Check(appeared == 0, "game vanish", where + ": " + appeared + " times a car appeared from nothing within " + Vanish.ToString("0") + " units of the player");
 		Check(overlaps == 0, "game parking", where + ": " + overlaps + " pairs of parked cars in one another");
 		Check(offPaving == 0, "game parking", where + ": " + offPaving + " parked cars on another road, in a house or the water");
 		Check(behind == 0, "game clock", where + ": the simulation fell behind the clock in " + behind + " frames");
@@ -325,7 +412,8 @@ internal static partial class Program
 					hits++;
 				}
 				hitCars.Add(car * 2 + 1);
-				note("car " + car + " driving " + (live.Manoeuvring(car) ? "its way" : "") + " in " + (k == TrafficLive.Parked ? "parked" : "driving") + " car " + j + " at " + x.ToString("0") + ", " + z.ToString("0") + " at " + TrafficLive.Clock(now));
+				note("car " + car + " driving " + (live.Manoeuvring(car) ? "its way" : "") + " in " + (k == TrafficLive.Parked ? "parked" : "driving") + " car " + j + " at " + x.ToString("0") + ", " + z.ToString("0") + " at " + TrafficLive.Clock(now)
+					+ (k == TrafficLive.Parked ? " (its " + SpotText(live.SpotOf(j)) + ", " + VanishWhy(live, j) + StopWhy(live, j) + " kerbAt " + live.M.Cars[j].KerbAt + "; mine " + SpotText(live.SpotOf(car)) + " kerbAt " + live.M.Cars[car].KerbAt + ")" : ""));
 			}
 		}
 	}
@@ -672,6 +760,11 @@ internal static partial class Program
 				setOff = live.M.Cars[again].Mode != Meso.Mode.Parked;
 			}
 			Check(setOff, "game contact", where + ": a knocked parked car let go never set off on its day (car " + again + ")");
+			if (!setOff)
+			{
+				Meso.Vehicle av = live.M.Cars[again];
+				Console.WriteLine("    car " + again + ": mode " + av.Mode + " leave " + av.LeaveAt.ToString("0.0") + " now " + live.M.Now.ToString("0.0") + " departures " + live.M.Departures + " driving " + live.DrivingNow + " micro " + live.MicroNow + " frozen " + live.Frozen(again) + " at " + av.ParkedAt.Edge + " " + av.ParkedAt.S.ToString("0"));
+			}
 		}
 		ByBodyDay(live, ref race, where, parked, way);
 		// Knocked out of the day: a parked car, one on its way out or in, a micro car driving (and its household's day goes on).

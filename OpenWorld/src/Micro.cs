@@ -2454,10 +2454,16 @@ namespace HalfGripOpenWorld
 		private void Arrive(int i)
 		{
 			Agent a = Agents[i];
+			if (M.Resend(M.Cars[i], a.X))
+			{
+				// No room at its stop and a player could see it: it drives on from where it stands, out of sight.
+				a.Dest = double.NaN;
+				return;
+			}
 			Arriving?.Invoke(i);
 			Log(Kind.Arrived, i);
 			Remove(i, a.Lane);
-			M.Arrive(M.Cars[i]);
+			M.Arrive(M.Cars[i], a.X);
 		}
 
 		/// <summary>The headway between two cars over a stop line at a light, the second having stood: the saturation flow micro drives at.</summary>

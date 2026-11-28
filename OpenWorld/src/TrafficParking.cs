@@ -133,10 +133,15 @@ namespace HalfGripOpenWorld
 		/// way the car comes (<paramref name="wayX"/>, <paramref name="wayZ"/>; 0, 0 if not known), a space on its own side of the road first,
 		/// facing the way it comes: one across the road would have it turn round in the street to get into it.
 		/// </summary>
-		internal Spot Park(int car, int stop, int place, double wayX = 0.0, double wayZ = 0.0)
+		internal Spot Park(int car, int stop, int place, double wayX = 0.0, double wayZ = 0.0, bool kerbAt = false, Traffic.Anchor kerb = default)
 		{
 			Leave(car);
 			Schedules.Car c = cars[car];
+			if (kerbAt)
+			{
+				// Sent on to a kerb space for want of room at its stop (Meso.KerbAt): the space found there, or the nearest free one to it.
+				return Kerb(car, kerb, wayX, wayZ, true);
+			}
 			Schedules.Stop st = c.Stops[Math.Max(0, Math.Min(stop, c.Stops.Length - 1))];
 			if (place < 0 && st.Kind == Schedules.StopKind.Home)
 			{
@@ -152,13 +157,13 @@ namespace HalfGripOpenWorld
 					if (other.Hx * wayX + other.Hz * wayZ > 0.0)
 					{
 						// Its space at the kerb moved to the side of the road it comes along.
-						kerbTaken.Remove(homeKey[car]);
+						DropKerb(homeKey[car]);
 						homeKey[car] = key;
 						home[car] = other;
 					}
 					else
 					{
-						kerbTaken.Remove(key);
+						DropKerb(key);
 					}
 				}
 				return home[car];
@@ -217,6 +222,109 @@ namespace HalfGripOpenWorld
 			z = tz * sign;
 		}
 
+		/// <summary>
+		/// Whether car <paramref name="car"/> arriving at its stop <paramref name="stop"/> (place <paramref name="place"/>) would get a space the
+		/// game draws it in (not <see cref="Spot.Away"/>): tried and given back. Its stop off the map has room (it is out of sight there).
+		/// </summary>
+		internal bool Room(int car, int stop, int place, bool kerbAt, Traffic.Anchor kerb, double wayX = 0.0, double wayZ = 0.0)
+		{
+			Schedules.Car c = cars[car];
+			Schedules.Stop st = c.Stops[Math.Max(0, Math.Min(stop, c.Stops.Length - 1))];
+			if (!kerbAt && (st.Kind == Schedules.StopKind.Away || (place >= 0 && Traffic.Destinations[place].Kind == Traffic.DestinationKind.Edge)))
+			{
+				return true;
+			}
+			if (!kerbAt && place < 0 && st.Kind == Schedules.StopKind.Home)
+			{
+				return !home[car].Away;
+			}
+			Hold before = held[car];
+			Spot was = spot[car];
+			if (before.Kind != 0)
+			{
+				// It holds a space already (given it on its way in): that one answers.
+				return !was.Away;
+			}
+			Spot s = Park(car, stop, place, wayX, wayZ, kerbAt, kerb);
+			Leave(car);
+			spot[car] = was;
+			return !s.Away;
+		}
+
+		/// <summary>Whether car <paramref name="car"/>'s stop <paramref name="stop"/> (place <paramref name="place"/>) is off the map, where it isn't drawn and needn't be.</summary>
+		internal bool OffMap(int car, int stop, int place)
+		{
+			Schedules.Car c = cars[car];
+			Schedules.Stop st = c.Stops[Math.Max(0, Math.Min(stop, c.Stops.Length - 1))];
+			return st.Kind == Schedules.StopKind.Away || (place >= 0 && Traffic.Destinations[place].Kind == Traffic.DestinationKind.Edge);
+		}
+
+		/// <summary>How far (straight line, units) from where a car finds no room it looks for a free kerb space: about 450 m, a few streets.</summary>
+		private const double KerbReach = 1500.0;
+
+		/// <summary>
+		/// The nearest free kerb space to anchor <paramref name="near"/>, as an anchor on its stretch: along the whole of its own stretch first,
+		/// then the stretches round it a junction at a time (in the order the junctions list them, so every machine finds the same), within
+		/// <see cref="KerbReach"/>. Nothing is taken: the car is sent there and takes it when it parks.
+		/// </summary>
+		/// <summary>How many stretches the kerb search looks along at most.</summary>
+		private const int KerbSearch = 80;
+
+		internal bool KerbNear(Traffic.Anchor near, double wayX, double wayZ, out Traffic.Anchor at, int car = -1)
+		{
+			at = near;
+			if (near.Edge < 0 || near.Edge >= Traffic.Edges.Count)
+			{
+				return false;
+			}
+			List<int> queue = new List<int> { near.Edge };
+			HashSet<int> seen = new HashSet<int> { near.Edge };
+			for (int qi = 0; qi < queue.Count && qi < KerbSearch; qi++)
+			{
+				int e = queue[qi];
+				Traffic.Edge te = Traffic.Edges[e];
+				Traffic.Anchor from = near;
+				if (e != near.Edge)
+				{
+					from = new Traffic.Anchor { Edge = e, S = (te.Sa + te.Sb) * 0.5, Side = near.Side };
+				}
+				int whole = (int)(Math.Abs(te.Sb - te.Sa) / KerbSpacing) + 2;
+				// On its own stretch, the side it comes along (it doesn't cross the road to a space); further on, either (it comes along a
+				// stretch either way: on getting there, one across the road sends it on again from there).
+				bool own = e == near.Edge && (wayX != 0.0 || wayZ != 0.0);
+				if (FindKerb(from, own ? wayX : 0.0, own ? wayZ : 0.0, whole, car >= 0, out Spot found, out long fk, out double sAt, out int side, own, true))
+				{
+					if (car >= 0)
+					{
+						// Held for it from now: two cars sent on at once would otherwise be sent to neighbouring spaces, each roomy on its own,
+						// and back into one another.
+						Leave(car);
+						held[car] = new Hold { Kind = 2, Key = fk };
+						spot[car] = found;
+					}
+					Traffic.At(Network.Roads[te.Road], sAt, out double x, out double z, out double _);
+					at = new Traffic.Anchor { Edge = e, S = sAt, Side = side, X = x, Z = z };
+					return true;
+				}
+				foreach (int node in new[] { te.A, te.B })
+				{
+					Traffic.Node nd = Traffic.Nodes[node];
+					if ((nd.X - near.X) * (nd.X - near.X) + (nd.Z - near.Z) * (nd.Z - near.Z) > KerbReach * KerbReach)
+					{
+						continue;
+					}
+					foreach (int o in Traffic.Links[node])
+					{
+						if (seen.Add(o))
+						{
+							queue.Add(o);
+						}
+					}
+				}
+			}
+			return false;
+		}
+
 		/// <summary>Car <paramref name="car"/> leaves the space it took away from home (its own space at home is always kept).</summary>
 		internal void Leave(int car)
 		{
@@ -227,14 +335,14 @@ namespace HalfGripOpenWorld
 			}
 			else if (h.Kind == 2)
 			{
-				kerbTaken.Remove(h.Key);
+				DropKerb(h.Key);
 			}
 			held[car] = default;
 		}
 
-		private Spot Kerb(int car, Traffic.Anchor at, double wayX, double wayZ)
+		private Spot Kerb(int car, Traffic.Anchor at, double wayX, double wayZ, bool oneSide = false)
 		{
-			if (TakeKerb(at, out Spot s, out long key, wayX, wayZ))
+			if (FindKerb(at, wayX, wayZ, KerbTries, true, out Spot s, out long key, out double _, out int _, oneSide && (wayX != 0.0 || wayZ != 0.0)))
 			{
 				held[car] = new Hold { Kind = 2, Key = key };
 				spot[car] = s;
@@ -254,16 +362,29 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private bool TakeKerb(Traffic.Anchor a, out Spot s, out long key, double wayX = 0.0, double wayZ = 0.0)
 		{
+			return FindKerb(a, wayX, wayZ, KerbTries, true, out s, out key, out double _, out int _);
+		}
+
+		/// <summary>
+		/// <see cref="TakeKerb"/>'s search: <paramref name="tries"/> spaces either way along the stretch, taken if <paramref name="take"/>; where
+		/// the space is along the road (<paramref name="sOut"/>) and its side.
+		/// </summary>
+		private bool FindKerb(Traffic.Anchor a, double wayX, double wayZ, int tries, bool take, out Spot s, out long key, out double sOut, out int sideOut, bool oneSide = false, bool roomy = false)
+		{
 			s = new Spot { Away = true };
 			key = 0;
+			sOut = 0.0;
+			sideOut = 1;
 			if (a.Edge < 0 || a.Edge >= Traffic.Edges.Count)
 			{
 				return false;
 			}
 			Traffic.Edge e = Traffic.Edges[a.Edge];
 			Network.Road road = Network.Roads[e.Road];
-			if (road.Kind != RoadKind.Secondary && road.Kind != RoadKind.Street)
+			if (road.Kind != RoadKind.Street && (road.Kind != RoadKind.Secondary || roomy))
 			{
+				// A car sent to a kerb space looks for one in the town's streets, not along a secondary road: backing into a space there,
+				// the cars behind it come on (and the stretch is busy enough already with those parked at their stop).
 				return false;
 			}
 			KerbLimits(e, out double lo, out double hi);
@@ -278,9 +399,9 @@ namespace HalfGripOpenWorld
 				Traffic.Heading(road, a.S, out double tx, out double tz);
 				first = tx * wayX + tz * wayZ >= 0.0 ? -1 : 1;
 			}
-			foreach (int side in new[] { first, -first })
+			foreach (int side in oneSide ? new[] { first } : new[] { first, -first })
 			{
-				for (int k = 0; k < 2 * KerbTries + 1; k++)
+				for (int k = 0; k < 2 * tries + 1; k++)
 				{
 					double sAt = a.S + Spread(k) * KerbSpacing;
 					if (sAt < lo || sAt > hi)
@@ -302,13 +423,24 @@ namespace HalfGripOpenWorld
 					Spot here = OnKerb(road, sAt, side);
 					here.AtKerb = true;
 					here.Road = e.Road;
-					if (Blocked(here) || !Clear(here, e.Road))
+					if (!fits.TryGetValue(kk, out bool fit))
+					{
+						// What doesn't change in a race (the homes' own spaces, the houses, other roads, the water), worked out once a space.
+						fit = !Blocked(here) && Clear(here, e.Road);
+						fits[kk] = fit;
+					}
+					if (!fit || KerbBlocked(here, roomy ? Roomy : 0.5))
 					{
 						continue;
 					}
-					kerbTaken.Add(kk);
+					if (take)
+					{
+						TakeKerbKey(kk, here);
+					}
 					s = here;
 					key = kk;
+					sOut = sAt;
+					sideOut = side;
 					return true;
 				}
 			}
@@ -357,6 +489,65 @@ namespace HalfGripOpenWorld
 		private static long Cell(double x, double z)
 		{
 			return ((long)Math.Floor(x / CellSize) << 32) ^ (uint)(int)Math.Floor(z / CellSize);
+		}
+
+		/// <summary>Per kerb space (its key) whether it is clear of what doesn't change in a race: a cache, the same worked out again.</summary>
+		[NonSerialized] private Dictionary<long, bool> fits = new Dictionary<long, bool>();
+
+		/// <summary>The kerb spaces taken, by key, and their keys in cells of <see cref="CellSize"/>: on a bend, or where two stretches meet, two spaces with different keys can stand in one another.</summary>
+		private readonly Dictionary<long, Spot> kerbSpots = new Dictionary<long, Spot>();
+		private readonly Dictionary<long, List<long>> kerbCells = new Dictionary<long, List<long>>();
+
+		private void TakeKerbKey(long kk, Spot here)
+		{
+			kerbTaken.Add(kk);
+			kerbSpots[kk] = here;
+			long cell = Cell(here.X, here.Z);
+			if (!kerbCells.TryGetValue(cell, out List<long> list))
+			{
+				list = new List<long>();
+				kerbCells[cell] = list;
+			}
+			list.Add(kk);
+		}
+
+		private void DropKerb(long kk)
+		{
+			kerbTaken.Remove(kk);
+			if (kerbSpots.TryGetValue(kk, out Spot was))
+			{
+				kerbSpots.Remove(kk);
+				if (kerbCells.TryGetValue(Cell(was.X, was.Z), out List<long> list))
+				{
+					list.Remove(kk);
+				}
+			}
+		}
+
+		/// <summary>Whether a car at the kerb at <paramref name="s"/> would stand in a kerb space already taken.</summary>
+		/// <summary>The room a car sent to a kerb space wants clear round it (units, each way): to drive into it without touching a neighbour.</summary>
+		private const double Roomy = 6.0;
+
+		private bool KerbBlocked(Spot s, double margin = 0.5)
+		{
+			int gx = (int)Math.Floor(s.X / CellSize), gz = (int)Math.Floor(s.Z / CellSize);
+			for (int ox = -1; ox <= 1; ox++)
+			{
+				for (int oz = -1; oz <= 1; oz++)
+				{
+					if (kerbCells.TryGetValue(((long)(gx + ox) << 32) ^ (uint)(gz + oz), out List<long> list))
+					{
+						foreach (long k in list)
+						{
+							if (Overlap(s, kerbSpots[k], margin))
+							{
+								return true;
+							}
+						}
+					}
+				}
+			}
+			return false;
 		}
 
 		/// <summary>Whether a car at <paramref name="s"/> would overlap a home's own space.</summary>

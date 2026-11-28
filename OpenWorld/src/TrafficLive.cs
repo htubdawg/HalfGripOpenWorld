@@ -130,6 +130,9 @@ namespace HalfGripOpenWorld
 			Mi.Arriving = Arriving;
 			Mi.ArriveAlong = ArriveAlong;
 			Mi.PullOutClear = PullOutClear;
+			M.Room = Room;
+			M.Unseen = Unseen;
+			M.KerbNear = KerbNear;
 			int n = plans.Cars.Count;
 			man = new Manoeuvre[n];
 			manSince = new double[n];
@@ -370,7 +373,12 @@ namespace HalfGripOpenWorld
 				early[i] = false;
 				if (parkedStop[i] != v.Stop || parkedPlace[i] != v.Place)
 				{
-					spots[i] = Parking.Park(i, v.Stop, v.Place);
+					spots[i] = Parking.Park(i, v.Stop, v.Place, 0.0, 0.0, v.KerbAt, v.ParkedAt);
+					if (KerbAtStart && spots[i].Away && !v.KerbAt && !Parking.OffMap(i, v.Stop, v.Place) && M.ParkAtKerb(v))
+					{
+						// No space it can be drawn in (the race's start: a home's car round the back, a full place): at the nearest free kerb.
+						spots[i] = Parking.Park(i, v.Stop, v.Place, 0.0, 0.0, true, v.ParkedAt);
+					}
 					parkedStop[i] = v.Stop;
 					parkedPlace[i] = v.Place;
 				}
@@ -784,12 +792,87 @@ namespace HalfGripOpenWorld
 			{
 				// At the kerb on its own side of the road: the way it comes along this lane.
 				Lanes.Point(Lanes.All[lane], Meso.RoadS(Meso.CarriagewayOf(lane), along - Lanes.Axle), out double _, out double _, out double _, out double wx, out double wz);
-				spots[car] = Parking.Park(car, v.Stop, v.TargetPlace, wx, wz);
+				spots[car] = Parking.Park(car, v.Stop, v.TargetPlace, wx, wz, v.KerbAt, v.Target);
 				parkedStop[car] = v.Stop;
 				parkedPlace[car] = v.TargetPlace;
 			}
 			early[car] = true;
 			return Beside(car, spots[car], lane, along, true, out Manoeuvre _);
+		}
+
+		/// <summary>
+		/// The meso's <see cref="Meso.Room"/>: whether car <paramref name="v"/> arriving at its target gets a space it is drawn in. If not, the
+		/// space it was given on its way in (none) is dropped: the meso sends it on, and it is given one where it goes.
+		/// </summary>
+		/// <summary>Whether cars parked at the race's start with no space drawn are moved to a kerb (off for now: see the handoff).</summary>
+		internal static bool KerbAtStart = Environment.GetEnvironmentVariable("TRAFFICSIM_KERBSTART") == "1";
+
+		/// <summary>
+		/// The meso's <see cref="Meso.Unseen"/>: whether parked car <paramref name="v"/> may set off without coming out of nothing in a
+		/// player's sight. A car drawn in its spot drives out of it; one in no drawn space (round the back, a spot never given) waits while a
+		/// player is within <see cref="SeenFrom"/> of where it pulls out.
+		/// </summary>
+		private bool Unseen(Meso.Vehicle v)
+		{
+			int i = v.Car;
+			if (Parking.OffMap(i, v.Stop, v.Place) || (parkedStop[i] >= 0 && !spots[i].Away))
+			{
+				return true;
+			}
+			for (int p = 0; p < Mi.PX.Count; p++)
+			{
+				double dx = v.ParkedAt.X - Mi.PX[p], dz = v.ParkedAt.Z - Mi.PZ[p];
+				if (dx * dx + dz * dz < SeenFrom * SeenFrom)
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/// <summary>How far from a player a car may come onto the road out of no drawn space: past the drawn moving cars' reach (about 450 m) and a little.</summary>
+		internal const double SeenFrom = 1600.0;
+
+		/// <summary>The meso's <see cref="Meso.KerbNear"/>: the nearest free kerb space to <paramref name="near"/>, on its own stretch on the side car <paramref name="v"/> comes along.</summary>
+		private bool KerbNear(Meso.Vehicle v, Traffic.Anchor near, out Traffic.Anchor at)
+		{
+			WayAtStop(v, out double wx, out double wz);
+			return Parking.KerbNear(near, wx, wz, out at, v.Car);
+		}
+
+		/// <summary>The way car <paramref name="v"/> drives at its stop on its lane (0, 0 if it is on none).</summary>
+		private void WayAtStop(Meso.Vehicle v, out double wx, out double wz)
+		{
+			wx = wz = 0.0;
+			if (v.Mode != Meso.Mode.Driving || v.Lane < 0 || v.Conn >= 0 && M.Now < v.Entered)
+			{
+				return;
+			}
+			int lane = v.Lane;
+			double along = v.Ends ? v.DestAlong : Meso.Reach(lane);
+			Lanes.Point(Lanes.All[lane], Meso.RoadS(Meso.CarriagewayOf(lane), along - Lanes.Axle), out double _, out double _, out double _, out wx, out wz);
+		}
+
+		private bool Room(Meso.Vehicle v)
+		{
+			int car = v.Car;
+			Schedules.Car c = M.Day[car];
+			if (c.Through || c.Stops == null || v.Stop >= c.Stops.Length)
+			{
+				return true;
+			}
+			WayAtStop(v, out double wx, out double wz);
+			if (Parking.Room(car, v.Stop, v.TargetPlace, v.KerbAt, v.Target, wx, wz))
+			{
+				return true;
+			}
+			if (parkedStop[car] >= 0)
+			{
+				Parking.Leave(car);
+			}
+			parkedStop[car] = -1;
+			early[car] = false;
+			return false;
 		}
 
 		/// <summary>Car <paramref name="car"/> pulls up at its stop: where it stands, to drive into its spot from once the meso parks it.</summary>

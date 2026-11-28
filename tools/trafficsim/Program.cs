@@ -60,6 +60,14 @@ internal static partial class Program
 			Geometry();
 			return 0;
 		}
+		if (Environment.GetEnvironmentVariable("TRAFFICSIM_PARKING") == "1")
+		{
+			for (int seed = first; seed < first + seeds; seed++)
+			{
+				ParkingCount(seed);
+			}
+			return 0;
+		}
 		if (Environment.GetEnvironmentVariable("TRAFFICSIM_STATE") == "only")
 		{
 			for (int seed = first; seed < first + seeds; seed++)

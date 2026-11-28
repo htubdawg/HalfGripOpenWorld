@@ -102,7 +102,27 @@ namespace HalfGripOpenWorld
 			/// <summary>Driven by the micro level (<see cref="Near"/>) near a player rather than by its queue: it is still in the queue of the
 			/// lane it is on (or, on a connector, the lane after it), so storage and conservation count it, but the meso leaves it alone.</summary>
 			public bool Micro;
+			/// <summary>
+			/// Parking at the kerb at <see cref="Target"/> (driving) or <see cref="ParkedAt"/> (parked) instead of at its stop: its stop had no
+			/// space the game could draw it in (<see cref="Room"/>), so it was sent on to the nearest free kerb space (<see cref="KerbNear"/>).
+			/// </summary>
+			public bool KerbAt;
+			/// <summary>How many times this trip it has been sent on to a kerb space (one across the road sends it on again, a few times).</summary>
+			public int KerbTries;
 		}
+
+		/// <summary>
+		/// Set by the game's traffic (<see cref="TrafficLive"/>): whether car <paramref name="v"/> arriving now at its target has a space it can
+		/// be drawn in (null: every stop has room, as the meso alone counts it). A car with none must not just stop being drawn in the road.
+		/// </summary>
+		internal Func<Vehicle, bool> Room;
+		/// <summary>Set with <see cref="Room"/>: the nearest free kerb space to an anchor (its road distance and side), false if none in reach.</summary>
+		internal KerbFinder KerbNear;
+		internal delegate bool KerbFinder(Vehicle v, Traffic.Anchor near, out Traffic.Anchor at);
+		/// <summary>For trafficsim: cars sent on to a kerb space for want of room at their stop, and those parked with none at all (not drawn).</summary>
+		internal int ToKerb, NoRoom;
+		/// <summary>For trafficsim, when set: the cars sent on to a kerb.</summary>
+		[NonSerialized] internal List<int> SentOn;
 
 		/// <summary>A lane's queue: its cars in the order they reach its end.</summary>
 		internal sealed class Queue
@@ -547,6 +567,14 @@ namespace HalfGripOpenWorld
 						departures.Push(v.LeaveAt, i);
 						continue;
 					}
+					if (Unseen != null && v.Mode == Mode.Parked && !Unseen(v))
+					{
+						// Parked where it isn't drawn (round the back) and its road in sight: it would come out of nothing in front of a player.
+						// It waits, late, until no one is there to see it.
+						v.LeaveAt = Now + 1.0;
+						departures.Push(v.LeaveAt, i);
+						continue;
+					}
 					Depart(v);
 				}
 			}
@@ -612,6 +640,8 @@ namespace HalfGripOpenWorld
 			v.Mode = Mode.Driving;
 			v.TripStart = v.TriedOut;
 			v.TriedOut = -1.0;
+			v.KerbAt = false;
+			v.KerbTries = 0;
 			v.TripFree = FreeTime(v, v.ParkedAt.S);
 			Departures++;
 			StartsByHour[(int)Schedules.HourOf(Now) % 24]++;
@@ -1350,6 +1380,8 @@ namespace HalfGripOpenWorld
 		/// <summary>A car reaches its stop (or the lot it was going to): parks if there is room, else goes on to the next place with some.</summary>
 		/// <summary>Per car, held in its space and not to set off yet (the game's contact physics, <see cref="TrafficLive.Freeze"/>); null: none.</summary>
 		internal bool[] Held;
+		/// <summary>Set by the game's traffic: whether car <paramref>v</paramref> may set off now without being seen to come out of nothing (null: always).</summary>
+		internal Func<Vehicle, bool> Unseen;
 
 		/// <summary>For the overlay: cars gone from the day (knocked off the road or wrecked).</summary>
 		internal int Gone;
@@ -1389,29 +1421,46 @@ namespace HalfGripOpenWorld
 			Lose(v);
 		}
 
-		internal void Arrive(Vehicle v)
+		/// <summary>
+		/// Car <paramref name="v"/> at its stop on its lane (taken out of the lane's queue), <paramref name="along"/> its carriageway (NaN: at
+		/// <see cref="Vehicle.DestAlong"/>): parked, or sent on from there.
+		/// </summary>
+		internal void Arrive(Vehicle v, double along = double.NaN)
 		{
-			if (v.TargetPlace >= 0)
+			if (Room == null)
 			{
-				Traffic.Destination d = Traffic.Destinations[v.TargetPlace];
-				if (d.Spaces > 0 && Parked[v.TargetPlace] >= d.Spaces)
+				// The meso alone (trafficsim): a full lot sends a car on to the next place with room, from that place's road.
+				if (v.TargetPlace >= 0)
 				{
-					int next = NextPlace(v);
-					if (next >= 0)
+					Traffic.Destination d = Traffic.Destinations[v.TargetPlace];
+					if (d.Spaces > 0 && Parked[v.TargetPlace] >= d.Spaces)
 					{
-						Redirects++;
-						(v.Full ??= new List<int>()).Add(v.TargetPlace);
-						Traffic.Anchor here = v.Target;
-						v.Target = Traffic.Destinations[next].At;
-						v.TargetPlace = next;
-						if (Route(v, here.Edge, here.S, v.Target, -1))
+						int next = NextPlace(v);
+						if (next >= 0)
 						{
-							int cw = v.Path.Count > 0 ? cwOf[Lanes.Connectors[v.Path[0]].From] : FirstCw;
-							Enter(v, ExitLane(v, cw), -1, Along(cw, here.S), Now);
-							return;
+							Redirects++;
+							(v.Full ??= new List<int>()).Add(v.TargetPlace);
+							Traffic.Anchor here = v.Target;
+							v.Target = Traffic.Destinations[next].At;
+							v.TargetPlace = next;
+							if (Route(v, here.Edge, here.S, v.Target, -1))
+							{
+								int cw = v.Path.Count > 0 ? cwOf[Lanes.Connectors[v.Path[0]].From] : FirstCw;
+								Enter(v, ExitLane(v, cw), -1, Along(cw, here.S), Now);
+								return;
+							}
 						}
 					}
 				}
+			}
+			else if (Redirect(v))
+			{
+				if (v.Lane >= 0 && PathOn(v, double.IsNaN(along) ? v.DestAlong : along))
+				{
+					Enter(v, v.Lane, -1, double.IsNaN(along) ? v.DestAlong : along, Now);
+					return;
+				}
+				NoRoom++;
 			}
 			Arrivals++;
 			double lost = Now - v.TripStart - v.TripFree;
@@ -1419,6 +1468,118 @@ namespace HalfGripOpenWorld
 			Trips?.Add((v.Car, v.Stop, Now - v.TripStart, Now, v.Full != null));
 			WorstDelay = Math.Max(WorstDelay, lost);
 			Park(v, v.Stop, v.Target, v.TargetPlace, Now, false);
+		}
+
+		/// <summary>
+		/// Whether car <paramref name="v"/> at its target finds no room and is sent on (the game's traffic, <see cref="Room"/>): a lot full by
+		/// the meso's count or no space the game can draw it in. A place's car tries the next place with room, else (or a home's car) it is
+		/// sent to the nearest free kerb space, as a driver circles for one. Its new <see cref="Vehicle.Target"/> set; false: it parks here.
+		/// </summary>
+		/// <summary>How many times a trip a car is sent on to a kerb space before it parks where it is.</summary>
+		private const int KerbTriesMost = 3;
+
+		private bool Redirect(Vehicle v)
+		{
+			bool full = v.TargetPlace >= 0 && Traffic.Destinations[v.TargetPlace].Spaces > 0 && Parked[v.TargetPlace] >= Traffic.Destinations[v.TargetPlace].Spaces;
+			if (!full && Room(v))
+			{
+				return false;
+			}
+			// A lot full by count: the next place with room, as the meso alone does. No space drawn there: the nearest free kerb space (a
+			// few streets at most), else the next place.
+			Traffic.Anchor here = v.Target;
+			bool kerbFirst = !full && (!v.KerbAt || v.KerbTries < KerbTriesMost);
+			if (kerbFirst && KerbNear != null && KerbNear(v, here, out Traffic.Anchor kerb))
+			{
+				ToKerb++;
+				v.KerbTries++;
+				v.KerbAt = true;
+				v.Target = kerb;
+				v.TargetPlace = -1;
+				SentOn?.Add(v.Car);
+				return true;
+			}
+			int next = v.TargetPlace >= 0 && !v.KerbAt ? NextPlace(v) : -1;
+			if (next >= 0)
+			{
+				Redirects++;
+				(v.Full ??= new List<int>()).Add(v.TargetPlace);
+				v.Target = Traffic.Destinations[next].At;
+				v.TargetPlace = next;
+				return true;
+			}
+			if (!kerbFirst && !v.KerbAt && KerbNear != null && KerbNear(v, here, out kerb))
+			{
+				ToKerb++;
+				v.KerbTries++;
+				v.KerbAt = true;
+				v.Target = kerb;
+				v.TargetPlace = -1;
+				SentOn?.Add(v.Car);
+				return true;
+			}
+			NoRoom++;
+			return false;
+		}
+
+		/// <summary>
+		/// Car <paramref name="v"/>, stopped <paramref name="along"/> its lane, given its way on to its new <see cref="Vehicle.Target"/> from
+		/// where it is: on along the same lane if the target is ahead on it, else routed from the lane's end. (Not from the target's road anew,
+		/// which would put it on another lane, even the other carriageway, in a step: a car seen jumping.) False if there is no way.
+		/// </summary>
+		private bool PathOn(Vehicle v, double along)
+		{
+			int lane = v.Lane, cw = cwOf[lane];
+			v.Path.Clear();
+			v.Next = 0;
+			if (v.Target.Edge == cw >> 1 && Along(cw, v.Target.S) > along + 1.0 && Along(cw, v.Target.S) <= reach[lane])
+			{
+				return true;
+			}
+			return Route(v, -1, 0.0, v.Target, lane);
+		}
+
+		/// <summary>
+		/// For the micro: car <paramref name="v"/>, pulled up <paramref name="along"/> its lane at its stop, sent on if it finds no room there
+		/// (<see cref="Redirect"/>). It stays the micro's car where it stands, its way and its stop on its lane set as <see cref="Enter"/>
+		/// would; handed to the meso it would be drawn where the meso has it and placed back by the micro: a jump. False: it parks.
+		/// </summary>
+		internal bool Resend(Vehicle v, double along)
+		{
+			if (Room == null || v.Lane < 0 || !Redirect(v))
+			{
+				return false;
+			}
+			if (!PathOn(v, along))
+			{
+				NoRoom++;
+				return false;
+			}
+			int cw = cwOf[v.Lane];
+			v.Ends = !v.Through && v.Next >= v.Path.Count;
+			if (v.Ends)
+			{
+				v.DestAlong = Math.Max(along, Math.Min(reach[v.Lane], Along(cw, v.Target.S)));
+			}
+			return true;
+		}
+
+		/// <summary>
+		/// Parked car <paramref name="v"/> (at the race's start, out of sight) with no space the game can draw it in moved to the nearest free
+		/// kerb space: otherwise it would set off out of nothing in front of a player. False if there is none in reach.
+		/// </summary>
+		internal bool ParkAtKerb(Vehicle v)
+		{
+			if (v.Mode != Mode.Parked || v.KerbAt || KerbNear == null || !KerbNear(v, v.ParkedAt, out Traffic.Anchor kerb))
+			{
+				NoRoom++;
+				return false;
+			}
+			Leave(v);
+			v.ParkedAt = kerb;
+			v.KerbAt = true;
+			ToKerb++;
+			return true;
 		}
 
 		/// <summary>The nearest place (straight line) drawing the stop's purpose with room, not one already found full; -1: none, park where it is.</summary>
