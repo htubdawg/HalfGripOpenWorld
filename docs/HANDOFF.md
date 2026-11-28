@@ -18,7 +18,7 @@ Last written 2026-11-28.
   stands parked cars; `MicroBodies` makes the player's car a body the drivers see; `MicroPhysics`/`TrafficPhysics` make the nearest 24
   micro cars the game's enemy car, steered along `Micro.WayAhead`, finding their way back when knocked off their line, leaving the day
   (lying as a body in the road) when wrecked, on their side or stuck. Details in TRAFFIC_REWORK.md §6, phase 5.
-- **New this session: the day's end** (not yet tested in game: TESTING.md item 73). A day is 40 minutes of the race (100 s an hour),
+- **New this session: the day's end** (the owner won't test it in game, TESTING.md item 73: trafficsim's checks stand for it). A day is 40 minutes of the race (100 s an hour),
   so a race started in the evening reached 03:00 within minutes and `Advance` stopped there: the through cars stood still on the highway.
   Now:
   - `Schedules.DaySeed(raceSeed, day)` (day 0 the race's own seed) and `Schedules.Shifted(car, offset)` (a day's stops moved on).
@@ -29,7 +29,10 @@ Last written 2026-11-28.
   - `TrafficLive` starts the next day's `Schedules.Build` on a worker 300 day seconds (5 minutes of the race) before the end and applies
     it at 03:00 (`DayIndex`, `Today` for the overlay's weekday/weekend). `TrafficParking` now reads `Meso.Day`.
   - The traffic follows the weather's debug skip forward (`TrafficLive.SkipAhead` from `Sky.Skipped`: run through at 20 steps a frame,
-    5 minutes in about a second; `Meso.RaceStart` moved by as much so the simulated lights stay the drawn ones). Not back.
+    5 minutes in about a second; `Meso.RaceStart` moved by as much so the simulated lights stay the drawn ones). Not back. Untested,
+    and the owner doesn't want it fixed: the catch-up shows as a stuttering fast-forward, and the physics cars only move at the body's
+    real speed, so during a skip (or all the time with F2's 10x) the cars behind them should pile up behind them. If it ever matters:
+    let the physics cars go while catching up.
   - Overlay: `traffic: hh:mm on a weekday (day 2), ...`; log: `Traffic: the day's end; day 2 begins, ...`.
   - trafficsim: the first seed's game path also runs from 01:30 for 8 minutes over the day's end (`DayEndChecks`): the next day begun,
     every car home for the night in it, cars setting off and arriving after 03:00, every through car still moving. (It waits for the
@@ -41,18 +44,17 @@ Last written 2026-11-28.
 
 ## Next
 
-1. The owner tests item 73 (the day's end, with the skip). If the skip's catch-up shows (20 steps a frame), lower `MostSteps` for it.
-2. Pulling in and out driven by the micro from the spot instead of slid (`TrafficCars.Place`'s 2.5 s blend is a stand-in; a nose-in lot
+1. Pulling in and out driven by the micro from the spot instead of slid (`TrafficCars.Place`'s 2.5 s blend is a stand-in; a nose-in lot
    bay must be backed out of, a kerb spot pulled out of forwards; a physics car would then drive into its spot). The micro already has
    pulling out onto a lane (`CanPullOut`, the 15 s let-out) and turning in; what's missing is the path between spot and lane.
-3. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
+2. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
    double-buffered; the bodies' readings and the player's body would be a step old).
-4. Parked cars as physics cars when the player is about to hit one (the old `TrafficLoose`), if the owner wants them pushable.
-5. Phase 6, rooms (TRAFFIC_REWORK.md §4 Rooms): the host's meso, link events, per-car ownership of micro and physics cars. Later days'
+3. Parked cars as physics cars when the player is about to hit one (the old `TrafficLoose`), if the owner wants them pushable.
+4. Phase 6, rooms (TRAFFIC_REWORK.md §4 Rooms): the host's meso, link events, per-car ownership of micro and physics cars. Later days'
    plans are already the same on every machine (`DaySeed`).
-6. Try seeds 65 to 96 of the full trafficsim now and then (each change so far showed a rare fault the earlier seeds hadn't).
-7. Things to decide when they show: right on red (PLAN.md: measure again in the rework).
-8. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
+5. Try seeds 65 to 96 of the full trafficsim now and then (each change so far showed a rare fault the earlier seeds hadn't).
+6. Things to decide when they show: right on red (PLAN.md: measure again in the rework).
+7. Optional world polish found earlier: the worst remaining hole at (11145, -10111) (node 1241, a crossing of farm lanes); four mild
    end kinks (lanes 30, 253, 259, 277).
 
 ## Working with the owner
@@ -68,4 +70,4 @@ Last written 2026-11-28.
   18:00 with about 180 cars out: each begins it parked at home once back, none left on the old day; seeds 1 to 3).
 - `meshcheck`: not affected (it compiles none of the traffic's files).
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
-- In game: phase 5 tested by the owner (items 70, 71, 72): all good, the push-off fix confirmed. Item 73 (the day's end) is open.
+- In game: phase 5 tested by the owner (items 70, 71, 72): all good, the push-off fix confirmed. Item 73 (the day's end) won't be tested (the owner).

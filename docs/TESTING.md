@@ -149,7 +149,7 @@ owner has reported on it.
      trunk's lights a green left arrow (about 10 s) between them; Kingsbridge's bay a flashing yellow arrow on the main road's green.
      Neighbouring lights are not in step. In a room both players see each light the same (within a second or so).
    - The highway as before: grass median, left-turn bays, K-rail, the wrap; Kingsbridge's widened road and its bay.
-73. The traffic's day's end (`traffic-rework-branch`, not released; alone only). A day is 40 minutes of the race (100 seconds an hour),
+73. **Not to be tested (the owner, 2026-11-28: not needed; trafficsim's day's-end checks stand for it).** The traffic's day's end (`traffic-rework-branch`, not released; alone only). A day is 40 minutes of the race (100 seconds an hour),
    so a race started in the evening reached 03:00 within minutes and the traffic stopped there: the cars on the highway stood still.
    Now the traffic goes on into the next day. Turn on `WeatherSkip` (Debug) as well as `ShowCoords`; the traffic now follows the Weather
    skip key forward (F5 unless rebound: 5 minutes on, about two hours of the clock; Shift+F5 moves only the sky back, the traffic stays
