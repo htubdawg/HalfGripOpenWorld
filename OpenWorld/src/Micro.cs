@@ -2490,7 +2490,9 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Where cars have waited long to pull out (a drive at the head of a queue that hardly empties): the cars coming up behind stop
-		/// short of it if they can do so comfortably, as drivers wave one out, and it goes once the car ahead has moved off.
+		/// short of it if they can do so comfortably, as drivers wave one out, and it goes once the car ahead has moved off. They stop
+		/// <see cref="PullRoom"/> and a car's length short of where it comes onto the lane, out of a drive as from the kerb: its way swings over
+		/// the lane beside its spot and behind it, and one standing there would hold it for ever (and it them).
 		/// </summary>
 		private readonly List<(int lane, double x)> waving = new List<(int, double)>();
 
@@ -2551,7 +2553,7 @@ namespace HalfGripOpenWorld
 						{
 							if (waved)
 							{
-								waving.Add((phys, from != v.From ? Math.Max(Meso.StartOf(phys), x - PullRoom) : x));
+								waving.Add((phys, Math.Max(Meso.StartOf(phys), x - PullRoom - Traffic.CarLength)));
 							}
 							continue;
 						}
@@ -2562,10 +2564,11 @@ namespace HalfGripOpenWorld
 						}
 						if (PullOutClear != null && !PullOutClear(i, phys, x))
 						{
-							// Its way out of its spot runs where a car stands, or one comes that couldn't stop for it.
-							if (waved)
+							// Its way out of its spot runs where a car stands, or one comes that couldn't stop for it. Waved out a while, and
+							// still not clear (a long way out, through the cars standing to let it out): no longer, so they don't stand for ever.
+							if (waved && T - since < Courtesy * 3.0)
 							{
-								waving.Add((phys, from != v.From ? Math.Max(Meso.StartOf(phys), x - PullRoom) : x));
+								waving.Add((phys, Math.Max(Meso.StartOf(phys), x - PullRoom - Traffic.CarLength)));
 							}
 							continue;
 						}

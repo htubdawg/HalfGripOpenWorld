@@ -316,7 +316,22 @@ network.
    household's own every day, so identities, home spaces and queues carry over. The traffic follows the weather's debug skip forward
    (`TrafficLive.SkipAhead`: 5 minutes run through in about a second; the lights' clock moved back as far so they match the drawn ones).
    trafficsim runs the game's path over the day's end on the first seed.
-   Still to do: pulling in and out driven rather than slid, the frame cost measured in the game.
+   Pulling in and out driven (2026-11-28, not yet run in the game): a car leaving its spot or arriving at it drives a way between the
+   spot and its place in the lane (`Manoeuvre`), the micro holding it at that place meanwhile and its drivers seeing all the way still to
+   go as standing bodies. The ways are Reeds–Shepp paths (`ReedsShepp`: the shortest ways for a car turning no tighter than a radius,
+   forwards and in reverse, three-point turns among them) for the rear axle at four radii, the quickest as driven that keeps clear of the
+   parked cars (every spot held, not only those drawn), the houses and the water; hemmed in at the kerb, out into the lane beside the
+   spot first (or drawing up there and backing in), backed up straight a little first, or turned in the road in as many moves as it
+   takes; a way out may join the lane up to `PullRoom` back at the kerb (the room the cars coming leave it), none from a drive. A long
+   or full-lock way in reverse is reckoned slower when choosing (bodies can't hold it, nor do drivers). An arriving car is given a kerb
+   space on its own side of the road (a home's kerb space moves there too), and at the race's start a car at home faces the way its next
+   drive leaves; with no room to turn by the space it pulls ahead to turn. A way starts only when no micro car coming along its way
+   (round the bends) couldn't stop short of it; a car still driving in pulls out once in. Cars waving a car out stop `PullRoom` and a car
+   short of its place, and stop waving after 45 s if its way stays blocked (a standstill otherwise). A body knocked off its line, held by
+   its driver in a queue, no longer backs off as if it had nosed into something (`RejoinAim`'s `meaning`). The nearest 60 moving cars
+   within 300, those driving a way among them, are physics cars that drive it (`Manoeuvre.Follow`). Planning costs 0.3 ms on average,
+   at most 800 words built (about 18 ms); trafficsim reports it.
+   Still to do: the frame cost measured in the game.
 6. **Rooms.** Host meso, link events, ownership, stand-ins, loose cars claimed the same way (the old branch's `TrafficRoom` and `TrafficShared` carried over, §4 Rooms); `trafficsim` room checks.
 7. **Density and polish.** Full survey traffic, more through traffic on the highway (goal: ten times), lamps at night.
 

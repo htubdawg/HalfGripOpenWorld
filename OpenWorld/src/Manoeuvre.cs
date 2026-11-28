@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace HalfGripOpenWorld
 {
@@ -43,6 +44,9 @@ namespace HalfGripOpenWorld
 		/// <summary>How long it takes, from standing to standing.</summary>
 		internal double Duration;
 
+		/// <summary>No way clear of the parked cars, the houses and the water was found: this is the quickest regardless (trafficsim counts those; <see cref="TrafficLive"/> looks for another place on the lane first).</summary>
+		internal bool Hemmed;
+
 		/// <summary>The tightest radius on any leg.</summary>
 		internal double MinRadius = double.MaxValue;
 
@@ -52,11 +56,12 @@ namespace HalfGripOpenWorld
 		/// <summary>
 		/// Pulling out: from the spot (middle (<paramref name="sx"/>, <paramref name="sz"/>), nose facing (<paramref name="shx"/>, <paramref
 		/// name="shz"/>)) to standing in the lane at (<paramref name="ex"/>, <paramref name="ez"/>) facing (<paramref name="ehx"/>, <paramref
-		/// name="ehz"/>), clear of the cars parked round it (<paramref name="parked"/>; may be null).
+		/// name="ehz"/>), clear of the cars parked round it (<paramref name="parked"/>; may be null), joining the lane no further back than
+		/// <paramref name="laneBack"/> behind where it is to stand (the stretch the cars coming leave it).
 		/// </summary>
-		internal static Manoeuvre Out(double sx, double sz, double shx, double shz, double ex, double ez, double ehx, double ehz, List<TrafficParking.Spot> parked = null)
+		internal static Manoeuvre Out(double sx, double sz, double shx, double shz, double ex, double ez, double ehx, double ehz, List<TrafficParking.Spot> parked = null, double laneBack = 0.0)
 		{
-			return Plan(sx, sz, shx, shz, ex, ez, ehx, ehz, parked, false);
+			return Plan(sx, sz, shx, shz, ex, ez, ehx, ehz, parked, false, laneBack);
 		}
 
 		/// <summary>
@@ -67,150 +72,593 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal static Manoeuvre In(double ex, double ez, double ehx, double ehz, double sx, double sz, double shx, double shz, List<TrafficParking.Spot> parked = null)
 		{
-			return Plan(sx, sz, shx, shz, ex, ez, ehx, ehz, parked, true);
+			return Plan(sx, sz, shx, shz, ex, ez, ehx, ehz, parked, true, 0.0);
 		}
 
 		/// <summary>How far behind its middle a car's rear axle is, which it turns about (its nose swings out, its tail follows in).</summary>
 		internal const double RearAxle = 4.4;
 
+		/// <summary>The turning radii tried, as multiples of <see cref="TurnRadius"/>: full lock where it must, gentler (and quicker) where there is room.</summary>
+		private static readonly double[] Radii = { 2.2, 1.6, 1.25, 1.0 };
+
+		/// <summary>Samples along a leg: one every this many units of the rear axle's path, and no fewer than <see cref="Samples"/>.</summary>
+		private const double SampleStep = 2.0;
+
+		/// <summary>How far back along the lane, in car lengths, a way out may join it and drive straight on to where it stands (a Reeds–Shepp way ends on its last arc, beside whatever is parked there), as far as the caller allows (the lane it runs along must be kept clear of the cars coming).</summary>
+		private static readonly double[] LaneBack = { 0.0, 0.7, 1.4, 2.1 };
+
+		/// <summary>How far ahead of the spot, in car lengths, a car hemmed in pulls out into its lane before turning there.</summary>
+		private static readonly double[] Aheads = { 0.6, 1.0, 1.5, 2.2, 3.0, 4.5 };
+
+		/// <summary>The least a car pulled out beside the spot is off it sideways: clear of a car parked in line ahead (a car's width and a gap, as a car passing one at the kerb).</summary>
+		private const double Abreast = TrafficParking.CarWide + 1.2;
+
+		/// <summary>The most moves a turn in the road takes (a five-point turn and one to spare).</summary>
+		private const int MostMoves = 6;
+
+		/// <summary>A rear axle pose: where, and the way the nose faces (unit).</summary>
+		private struct Pose
+		{
+			public double X, Z, Hx, Hz;
+
+			public Pose(double x, double z, double hx, double hz)
+			{
+				X = x;
+				Z = z;
+				Hx = hx;
+				Hz = hz;
+			}
+
+			/// <summary>Moved <paramref name="ahead"/> along the way it faces and <paramref name="left"/> to its left.</summary>
+			public Pose Moved(double ahead, double left)
+			{
+				return new Pose(X + Hx * ahead - Hz * left, Z + Hz * ahead + Hx * left, Hx, Hz);
+			}
+		}
+
+		/// <summary>A Reeds–Shepp word from a pose at a radius, timed as driven (without sampling it: most are never drawn).</summary>
+		private struct Word
+		{
+			public ReedsShepp.Seg[] W;
+			public double R, Duration;
+			public Pose From;
+		}
+
 		/// <summary>
-		/// The way between the spot (s) and the lane (e), out of the spot or (<paramref name="into"/>) into it: of every way of one leg or two
-		/// (straight off, backing off first, forwards and back), the quickest no tighter than a car turns that keeps clear of the parked cars,
-		/// else the least bad (trafficsim counts those). Worked out for the car's rear axle (the nose swinging out as a real car's does).
-		/// Into the spot, the ways are worked out from the spot with forwards and reverse swapped, then turned round in time.
+		/// The way between the spot (s) and the lane (e), out of the spot or (<paramref name="into"/>) into it, worked out for the car's rear
+		/// axle (the nose swinging out as a real car's does): the quickest as a driver drives it that keeps clear of the parked cars, the houses
+		/// and the water, of the Reeds–Shepp ways (<see cref="ReedsShepp"/>: arcs no tighter than a car turns and straights, forwards and in
+		/// reverse, three-point turns among them) at a few radii, straight from the spot; hemmed in, through the lane beside it (out into it and
+		/// on, or drawing up in it and backing in); then each of those from the spot backed straight up a little first; then turning in the
+		/// road in as many moves as it takes (<see cref="Shuffled"/>). Else the quickest (trafficsim counts those).
 		/// </summary>
-		private static Manoeuvre Plan(double sx, double sz, double shx, double shz, double ex, double ez, double ehx, double ehz, List<TrafficParking.Spot> parked, bool into)
+		private static Manoeuvre Plan(double sx, double sz, double shx, double shz, double ex, double ez, double ehx, double ehz, List<TrafficParking.Spot> parked, bool into, double laneBack)
+		{
+			long started = System.Diagnostics.Stopwatch.GetTimestamp();
+			int collections = GC.CollectionCount(2);
+			budget = Budget;
+			Manoeuvre m = Planned(sx, sz, shx, shz, ex, ez, ehx, ehz, parked, into, laneBack);
+			double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			lock (Costs)
+			{
+				Costs.Plans++;
+				Costs.Ms += ms;
+				if (GC.CollectionCount(2) == collections)
+				{
+					// The worst of those no full collection paused (its pause is the runtime's, not the planning's).
+					Costs.Worst = Math.Max(Costs.Worst, ms);
+				}
+			}
+			return m;
+		}
+
+		/// <summary>What planning ways has cost (for trafficsim): how many, their total and the worst, in milliseconds.</summary>
+		internal sealed class Cost
+		{
+			public int Plans;
+			public double Ms, Worst;
+		}
+
+		internal static readonly Cost Costs = new Cost();
+
+		/// <summary>How many words one plan may build and test before it gives up looking (about 10 ms): hemmed in where no way is clear, it would try thousands.</summary>
+		private const int Budget = 800;
+
+		/// <summary>The words this plan may still build (each thread plans its own).</summary>
+		[ThreadStatic]
+		private static int budget;
+
+		private static Manoeuvre Planned(double sx, double sz, double shx, double shz, double ex, double ez, double ehx, double ehz, List<TrafficParking.Spot> parked, bool into, double laneBack)
 		{
 			Unit(ref shx, ref shz);
 			Unit(ref ehx, ref ehz);
-			double ax = sx - shx * RearAxle, az = sz - shz * RearAxle, bx = ex - ehx * RearAxle, bz = ez - ehz * RearAxle;
-			List<(Leg a, Leg b, double cost)> ways = new List<(Leg, Leg, double)>();
-			// Reverse is slow: a metre back costs twice one forwards, and stopping to change gear a little more.
-			double Cost(Leg l)
+			Pose p = new Pose(sx - shx * RearAxle, sz - shz * RearAxle, shx, shz), l = new Pose(ex - ehx * RearAxle, ez - ehz * RearAxle, ehx, ehz);
+			// Into the spot by a turn in the road: that way out driven backwards in time.
+			Manoeuvre m = Shifted(p, l, parked, into, q => (into ? InFrom(q, l, parked) : OutFrom(q, l, parked, laneBack)) ?? (into ? Reversed(Shuffled(q, l, parked, 0.0)) : Shuffled(q, l, parked, laneBack)));
+			if (m != null)
 			{
-				return l == null ? 0.0 : l.Length * (l.Back != into ? 2.0 : 1.0);
+				return m;
 			}
-			void Add(Leg a, Leg b, bool two)
+			// None clear: the quickest (trafficsim counts it). There is always a Reeds–Shepp way.
+			List<Word> ways = into ? Words(l, p) : Words(p, l);
+			m = ways.Count > 0 ? Build(ways[0]) : Build(new Word { W = new[] { new ReedsShepp.Seg { Kind = 'S', Length = Math.Max(1e-3, Dist(p.X, p.Z, l.X, l.Z)) } }, R = 1.0, From = p });
+			m.Hemmed = true;
+			return m;
+		}
+
+		/// <summary>
+		/// <paramref name="plan"/> from the spot (p), else from the spot backed straight up a little (1.5, then 3), the straight back added
+		/// (out first; into it, last, drawing forwards into the spot). Null if none is clear.
+		/// </summary>
+		private static Manoeuvre Shifted(Pose p, Pose l, List<TrafficParking.Spot> parked, bool into, Func<Pose, Manoeuvre> plan)
+		{
+			foreach (double shift in new[] { 0.0, 1.5, 3.0 })
 			{
-				if (a == null || a.MinRadius < TurnRadius || (two && (b == null || b.MinRadius < TurnRadius)))
+				Pose q = p.Moved(-shift, 0.0);
+				// Backed up first: the way from where it backs to (into the spot: the way to there, then drawing forwards into it).
+				Manoeuvre edge = shift > 0.0 ? (into ? Straight(q, shift) : Straight(p, -shift)) : null;
+				if (edge != null && !edge.ClearOf(parked))
 				{
-					return;
+					continue;
 				}
-				ways.Add((a, b, Cost(a) + Cost(b) + (b != null ? 10.0 : 0.0)));
-			}
-			// One leg, forwards or in reverse.
-			foreach (int sign in new[] { 1, -1 })
-			{
-				Add(Gentlest(ax, az, shx, shz, bx, bz, ehx, ehz, sign), null, false);
-			}
-			// Two legs, the gear changed between: off the spot to a turning place, then on to the lane.
-			double ahead = (bx - ax) * shx + (bz - az) * shz;
-			List<double> firsts = new List<double> { 0.15, 0.3, 0.6, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0 };
-			for (int k = 0; k < firsts.Count; k++)
-			{
-				firsts[k] *= Traffic.CarLength;
-			}
-			firsts.Add(Math.Abs(ahead) + Traffic.CarLength);
-			firsts.Add(Math.Abs(ahead) + Traffic.CarLength * 1.6);
-			foreach (int sign in new[] { -1, 1 })
-			{
-				foreach (double d in firsts)
+				Manoeuvre m = plan(q);
+				if (m == null)
 				{
-					for (int a = -4; a <= 4; a++)
-					{
-						double phi = a * Math.PI / 6.0;
-						double c = DetMath.Cos(phi), si = DetMath.Sin(phi);
-						double mhx = shx * c - shz * si, mhz = shx * si + shz * c;
-						// The chord of a turning leg runs along the mean of the headings at its ends.
-						double chx = shx + mhx, chz = shz + mhz;
-						if (!Unit(ref chx, ref chz))
-						{
-							continue;
-						}
-						double mx = ax + chx * d * sign, mz = az + chz * d * sign;
-						Leg first = Gentlest(ax, az, shx, shz, mx, mz, mhx, mhz, sign);
-						if (first != null && first.MinRadius >= TurnRadius)
-						{
-							Add(first, Gentlest(mx, mz, mhx, mhz, bx, bz, ehx, ehz, -sign), true);
-						}
-					}
+					continue;
 				}
-				// Off the spot onto the line it leaves along, then straight on along it (out of a drive whose house it faced).
-				foreach (double k in new[] { 0.5, 1.0, 1.5, 2.0, 3.0 })
+				return edge == null ? m : into ? Join(m, edge) : Join(edge, m);
+			}
+			return null;
+		}
+
+		/// <summary>Out of the spot (rear axle pose q) onto the lane at l: straight there, else out into the lane beside the spot and on (as a driver does where a turn from the space would swing into the cars parked round it). Null if none is clear.</summary>
+		private static Manoeuvre OutFrom(Pose q, Pose l, List<TrafficParking.Spot> parked, double laneBack)
+		{
+			Manoeuvre best = ToLane(q, l, parked, double.MaxValue, laneBack);
+			if (best != null)
+			{
+				return best;
+			}
+			foreach (Pose v in Beside(q, l))
+			{
+				Manoeuvre f = FirstClear(Words(q, v), parked, double.MaxValue), t = f == null ? null : ToLane(v, l, parked, (best?.Duration ?? double.MaxValue) - f.Duration, laneBack);
+				if (t != null && (best == null || f.Duration + t.Duration < best.Duration))
 				{
-					double mx = bx + ehx * Traffic.CarLength * k * sign, mz = bz + ehz * Traffic.CarLength * k * sign;
-					Leg first = Gentlest(ax, az, shx, shz, mx, mz, ehx, ehz, sign);
-					if (first != null && first.MinRadius >= TurnRadius)
-					{
-						Add(first, Gentlest(mx, mz, ehx, ehz, bx, bz, ehx, ehz, -sign), true);
-					}
+					best = Join(f, t);
 				}
 			}
-			ways.Sort((p, q) => p.cost.CompareTo(q.cost));
-			(Leg a, Leg b, double cost) pick = (null, null, 0.0);
-			foreach (var w in ways)
+			return best;
+		}
+
+		/// <summary>From the lane at l into the spot (rear axle pose q): straight in, else drawing up in the lane beside it first and backing in. Null if none is clear.</summary>
+		private static Manoeuvre InFrom(Pose q, Pose l, List<TrafficParking.Spot> parked)
+		{
+			Manoeuvre best = FirstClear(Words(l, q), parked, double.MaxValue);
+			if (best != null)
 			{
-				if (Clear(w.a, parked) && (w.b == null || Clear(w.b, parked)))
+				return best;
+			}
+			foreach (Pose v in Beside(q, l))
+			{
+				Manoeuvre f = FirstClear(Words(l, v), parked, best?.Duration ?? double.MaxValue), t = f == null ? null : FirstClear(Words(v, q), parked, (best?.Duration ?? double.MaxValue) - f.Duration);
+				if (t != null && (best == null || f.Duration + t.Duration < best.Duration))
 				{
-					pick = w;
+					best = Join(f, t);
+				}
+			}
+			return best;
+		}
+
+		/// <summary>Poses in the lane beside the spot (rear axle pose q), facing as it does, a little ahead of it: towards the lane at l, a third and a half of the way across.</summary>
+		private static IEnumerable<Pose> Beside(Pose q, Pose l)
+		{
+			double across = -(l.X - q.X) * q.Hz + (l.Z - q.Z) * q.Hx, side = across >= 0.0 ? 1.0 : -1.0;
+			foreach (double ahead in Aheads)
+			{
+				foreach (double share in new[] { 0.3, 0.55 })
+				{
+					yield return q.Moved(ahead * Traffic.CarLength, side * Math.Max(Abreast, Math.Abs(across) * share));
+				}
+			}
+		}
+
+		/// <summary>From pose a onto the lane at l, joining it at l or else a little back along it and driving straight on (<see cref="LaneBack"/>, no further than <paramref name="laneBack"/>): the quickest clear way of the nearest join that has one, quicker than <paramref name="under"/>; null if none.</summary>
+		private static Manoeuvre ToLane(Pose a, Pose l, List<TrafficParking.Spot> parked, double under, double laneBack)
+		{
+			Manoeuvre best = null;
+			foreach (double back in LaneBack)
+			{
+				double d = back * Traffic.CarLength;
+				if (d > laneBack)
+				{
 					break;
 				}
+				Pose j = l.Moved(-d, 0.0);
+				if (d > 0.0 && (j.X - a.X) * l.Hx + (j.Z - a.Z) * l.Hz < 0.0)
+				{
+					// Joining the lane behind where it is: back along the lane, never.
+					continue;
+				}
+				Manoeuvre on = d > 0.0 ? Straight(j, d) : null;
+				if (on != null && !on.ClearOf(parked))
+				{
+					continue;
+				}
+				double limit = Math.Min(under, best?.Duration ?? double.MaxValue) - (on?.Duration ?? 0.0) + (on != null ? 2.0 : 0.0);
+				Manoeuvre m = FirstClear(Words(a, j), parked, limit);
+				if (m == null)
+				{
+					continue;
+				}
+				m = on != null ? Join(m, on) : m;
+				if (m.Duration < under)
+				{
+					// The nearest join that is clear: running along the lane behind where it comes onto it, it holds up the cars queued there.
+					return m;
+				}
 			}
-			if (pick.a == null && ways.Count > 0)
+			return best;
+		}
+
+		/// <summary>
+		/// Out of the spot (rear axle pose q) to the lane (l) where the lane goes back the way the car faces and there is no room to swing
+		/// round: out into its lane a little ahead (as <see cref="OutFrom"/>), then turning on full lock, forwards then back then forwards,
+		/// each move driven until the car would touch a parked car, a house or the water (or has turned a quarter), until a way onto the lane is
+		/// clear (<see cref="ToLane"/>). The quickest such; null if none.
+		/// </summary>
+		private static Manoeuvre Shuffled(Pose q, Pose l, List<TrafficParking.Spot> parked, double laneBack)
+		{
+			double across = -(l.X - q.X) * q.Hz + (l.Z - q.Z) * q.Hx, side = across >= 0.0 ? 1.0 : -1.0;
+			Manoeuvre best = null;
+			// Further along its lane too, to turn just short of where it joins the other (a street too narrow to turn in is turned in at its end).
+			double far = ((l.X - q.X) * q.Hx + (l.Z - q.Z) * q.Hz) / Traffic.CarLength - 1.0;
+			foreach (double ahead in far > Aheads[Aheads.Length - 1] + 1.0 ? Aheads.Concat(new[] { far - 2.0, far }) : Aheads)
 			{
-				// None clear of the parked cars: the quickest (trafficsim counts it).
-				pick = ways[0];
+				Pose v = q.Moved(ahead * Traffic.CarLength, side * Math.Max(Abreast, Math.Abs(across) * 0.3));
+				Manoeuvre way = FirstClear(Words(q, v), parked, best?.Duration ?? double.MaxValue);
+				if (way == null)
+				{
+					continue;
+				}
+				double x = v.X, z = v.Z, th = Math.Atan2(v.Hz, v.Hx);
+				for (int move = 0; move < MostMoves && (best == null || way.Duration < best.Duration); move++)
+				{
+					Manoeuvre end = ToLane(new Pose(x, z, Math.Cos(th), Math.Sin(th)), l, parked, (best?.Duration ?? double.MaxValue) - way.Duration, laneBack);
+					if (end != null)
+					{
+						best = Join(way, end);
+						break;
+					}
+					// Turning towards the lane's way: forwards on full lock that way, back on the other lock (the nose swinging on round).
+					bool fwd = move % 2 == 0;
+					char kind = fwd == (side > 0.0) ? 'L' : 'R';
+					double sign = fwd ? 1.0 : -1.0, r = TurnRadius, step = 0.5 / r, turned = 0.0;
+					double cx = x, cz = z, cth = th;
+					// No further round than the lane's way.
+					double left = (side > 0.0 ? Math.Atan2(l.Hz, l.Hx) - th : th - Math.Atan2(l.Hz, l.Hx)) % (2.0 * Math.PI);
+					left = left < 0.0 ? left + 2.0 * Math.PI : left;
+					while (turned < Math.Min(0.5 * Math.PI, left) && turned * r < 40.0)
+					{
+						double nx = cx, nz = cz, nth = cth;
+						ReedsShepp.Step(kind, sign * step, ref nx, ref nz, ref nth);
+						if (!PoseClear(r * (nx - cx) + cx, r * (nz - cz) + cz, Math.Cos(nth), Math.Sin(nth), parked, 0.2))
+						{
+							break;
+						}
+						(cx, cz, cth) = (r * (nx - cx) + cx, r * (nz - cz) + cz, nth);
+						turned += step;
+					}
+					if (turned * r < 1.0)
+					{
+						break;
+					}
+					way = Join(way, Build(new Word { W = new[] { new ReedsShepp.Seg { Kind = kind, Length = sign * turned } }, R = r, From = new Pose(x, z, Math.Cos(th), Math.Sin(th)) }));
+					(x, z, th) = (cx, cz, cth);
+				}
 			}
-			if (pick.a == null)
+			return best;
+		}
+
+		/// <summary>Whether a car with its rear axle at (<paramref name="rx"/>, <paramref name="rz"/>) facing (hx, hz) is clear of the parked cars (by <paramref name="margin"/>), the houses and the water.</summary>
+		private static bool PoseClear(double rx, double rz, double hx, double hz, List<TrafficParking.Spot> parked, double margin)
+		{
+			TrafficParking.Spot me = new TrafficParking.Spot { X = rx + hx * RearAxle, Z = rz + hz * RearAxle, Hx = hx, Hz = hz };
+			if (parked != null)
 			{
-				// Nothing gentle enough: straight across, whatever it takes (trafficsim counts it).
-				Leg l = Gentlest(ax, az, shx, shz, bx, bz, ehx, ehz, 1) ?? Gentlest(ax, az, shx, shz, bx, bz, ehx, ehz, -1) ?? Curve(ax, az, shx, shz, bx, bz, ehx, ehz, Dist(ax, az, bx, bz) * 0.5, false);
-				pick = (l, null, 0.0);
+				foreach (TrafficParking.Spot o in parked)
+				{
+					if (Math.Abs(o.X - me.X) < 20.0 && Math.Abs(o.Z - me.Z) < 20.0 && TrafficParking.Overlap(me, o, margin))
+					{
+						return false;
+					}
+				}
+			}
+			return !TrafficParking.InHouse(me, -0.5 + margin) && !Rivers.Water(me.X, me.Z, out double _);
+		}
+
+		/// <summary>Whether every leg keeps clear of the cars parked at <paramref name="parked"/>, the houses and the water.</summary>
+		internal bool ClearOf(List<TrafficParking.Spot> parked)
+		{
+			return Legs.TrueForAll(l => Clear(l, parked));
+		}
+
+		/// <summary>How many of the quickest words between two poses are tried for one clear of the parked cars (the slower ones are the same shapes the long way round, and each tried costs).</summary>
+		private const int Tried = 8;
+
+		/// <summary>The quickest of the first <see cref="Tried"/> of <paramref name="ways"/> (sorted quickest first) clear of the parked cars, quicker than <paramref name="under"/> seconds; null if none.</summary>
+		private static Manoeuvre FirstClear(List<Word> ways, List<TrafficParking.Spot> parked, double under)
+		{
+			for (int k = 0; k < Math.Min(Tried, ways.Count); k++)
+			{
+				Word w = ways[k];
+				if (w.Duration >= under || budget-- <= 0)
+				{
+					return null;
+				}
+				Manoeuvre m = Build(w);
+				if (m != null && m.ClearOf(parked))
+				{
+					return m;
+				}
+			}
+			return null;
+		}
+
+		/// <summary>A straight leg from rear axle pose a, <paramref name="d"/> forwards (negative: in reverse).</summary>
+		private static Manoeuvre Straight(Pose a, double d)
+		{
+			return Build(new Word { W = new[] { new ReedsShepp.Seg { Kind = 'S', Length = d } }, R = 1.0, From = a });
+		}
+
+		/// <summary>A way driven backwards in time: the same ground the other way, its legs in the other order, forwards and reverse swapped.</summary>
+		private static Manoeuvre Reversed(Manoeuvre w)
+		{
+			if (w == null)
+			{
+				return null;
 			}
 			Manoeuvre m = new Manoeuvre();
-			m.Legs.Add(pick.a);
-			if (pick.b != null)
+			for (int k = w.Legs.Count - 1; k >= 0; k--)
 			{
-				m.Legs.Add(pick.b);
-			}
-			if (into)
-			{
-				m.Legs.Reverse();
-				for (int k = 0; k < m.Legs.Count; k++)
+				Leg l = w.Legs[k];
+				int n = l.X.Length;
+				Leg r = new Leg { X = new double[n], Z = new double[n], Hx = new double[n], Hz = new double[n], D = new double[n], Back = !l.Back, Length = l.Length, MinRadius = l.MinRadius };
+				for (int j = 0; j < n; j++)
 				{
-					m.Legs[k] = Backwards(m.Legs[k]);
+					r.X[j] = l.X[n - 1 - j];
+					r.Z[j] = l.Z[n - 1 - j];
+					r.Hx[j] = l.Hx[n - 1 - j];
+					r.Hz[j] = l.Hz[n - 1 - j];
+					r.D[j] = l.Length - l.D[n - 1 - j];
+				}
+				m.Legs.Add(r);
+			}
+			m.Time();
+			return m;
+		}
+
+		/// <summary>Two ways one after the other: the second's first leg run on from the first's last where both go the same way (no stop between), timed afresh.</summary>
+		private static Manoeuvre Join(Manoeuvre f, Manoeuvre t)
+		{
+			Manoeuvre m = new Manoeuvre();
+			m.Legs.AddRange(f.Legs);
+			for (int k = 0; k < t.Legs.Count; k++)
+			{
+				Leg l = t.Legs[k], last = m.Legs[m.Legs.Count - 1];
+				if (k == 0 && l.Back == last.Back)
+				{
+					int a = last.X.Length, b = l.X.Length - 1;
+					Leg j = new Leg { X = new double[a + b], Z = new double[a + b], Hx = new double[a + b], Hz = new double[a + b], D = new double[a + b], Back = l.Back, Length = last.Length + l.Length, MinRadius = Math.Min(last.MinRadius, l.MinRadius) };
+					for (int q = 0; q < a + b; q++)
+					{
+						bool mine = q < a;
+						Leg src = mine ? last : l;
+						int i = mine ? q : q - a + 1;
+						j.X[q] = src.X[i];
+						j.Z[q] = src.Z[i];
+						j.Hx[q] = src.Hx[i];
+						j.Hz[q] = src.Hz[i];
+						j.D[q] = mine ? src.D[i] : last.Length + src.D[i];
+					}
+					m.Legs[m.Legs.Count - 1] = j;
+				}
+				else
+				{
+					m.Legs.Add(l);
 				}
 			}
 			m.Time();
 			return m;
 		}
 
-		/// <summary>A leg driven backwards in time: the same ground, the other way, forwards and reverse swapped.</summary>
-		private static Leg Backwards(Leg l)
+		/// <summary>The Reeds–Shepp words (<see cref="ReedsShepp"/>) for the rear axle from pose a to pose b at each of <see cref="Radii"/>, timed, quickest first.</summary>
+		private static List<Word> Words(Pose a, Pose b)
 		{
-			int n = l.X.Length;
-			Leg r = new Leg { X = new double[n], Z = new double[n], Hx = new double[n], Hz = new double[n], D = new double[n], Back = !l.Back, Length = l.Length, MinRadius = l.MinRadius };
-			for (int j = 0; j < n; j++)
+			// The end in the start's frame: x ahead, y to the left (left of (hx, hz) is (-hz, hx)).
+			double dx = b.X - a.X, dz = b.Z - a.Z;
+			double fx = dx * a.Hx + dz * a.Hz, fy = -dx * a.Hz + dz * a.Hx;
+			double phi = Math.Atan2(-b.Hx * a.Hz + b.Hz * a.Hx, b.Hx * a.Hx + b.Hz * a.Hz);
+			List<Word> ways = new List<Word>();
+			foreach (double k in Radii)
 			{
-				r.X[j] = l.X[n - 1 - j];
-				r.Z[j] = l.Z[n - 1 - j];
-				r.Hx[j] = l.Hx[n - 1 - j];
-				r.Hz[j] = l.Hz[n - 1 - j];
-				r.D[j] = l.Length - l.D[n - 1 - j];
+				double r = TurnRadius * k;
+				foreach (ReedsShepp.Seg[] w in ReedsShepp.All(fx / r, fy / r, phi))
+				{
+					double t = WordTime(w, r);
+					if (t > 0.0)
+					{
+						ways.Add(new Word { W = w, R = r, Duration = t, From = a });
+					}
+				}
 			}
-			return r;
+			ways.Sort((p, q) => p.Duration.CompareTo(q.Duration));
+			return ways;
 		}
 
-		/// <summary>Whether leg <paramref name="l"/> keeps clear of every parked car (a hand's breadth between).</summary>
+		/// <summary>How long word <paramref name="w"/> at radius <paramref name="r"/> takes as <see cref="Time"/> times it (its runs one way as legs), a long way in reverse reckoned slower (<see cref="LongBack"/>), to choose by; 0 if it is nothing but a point.</summary>
+		private static double WordTime(ReedsShepp.Seg[] w, double r)
+		{
+			double total = 0.0;
+			int legs = 0, k = 0;
+			while (k < w.Length)
+			{
+				if (Math.Abs(w[k].Length) * r < 1e-3)
+				{
+					k++;
+					continue;
+				}
+				bool back = w[k].Length < 0.0, arc = false;
+				double length = 0.0;
+				while (k < w.Length && (Math.Abs(w[k].Length) * r < 1e-3 || (w[k].Length < 0.0) == back))
+				{
+					length += Math.Abs(w[k].Length) * r;
+					arc |= w[k].Kind != 'S' && Math.Abs(w[k].Length) * r >= 1e-3;
+					k++;
+				}
+				total += LegTime(length, back, arc ? r : double.MaxValue, out double _) + (legs > 0 ? GearPause : 0.0);
+				if (back && length > LongBack)
+				{
+					// A driver backs a little way and then goes forwards: a long way in reverse is reckoned slower than it is driven.
+					total += (length - LongBack) / Reverse * 2.0;
+				}
+				if (back && arc && r < TurnRadius * 1.2 && length > Traffic.CarLength)
+				{
+					// And on full lock only a short way (a long tight curve in reverse is hard to hold).
+					total += (length - Traffic.CarLength) / Reverse;
+				}
+				legs++;
+			}
+			return total;
+		}
+
+		/// <summary>How far in reverse a way goes before it is reckoned slower than it is (<see cref="WordTime"/>): a car's length and a half.</summary>
+		private const double LongBack = Traffic.CarLength * 1.5;
+
+		/// <summary>A Reeds–Shepp word built: sampled and timed.</summary>
+		private static Manoeuvre Build(Word w)
+		{
+			return FromWord(w.W, w.R, w.From.X, w.From.Z, w.From.Hx, w.From.Hz);
+		}
+
+		/// <summary>
+		/// A Reeds–Shepp word (lengths in radii of <paramref name="r"/>) driven by the rear axle from (<paramref name="ax"/>, <paramref
+		/// name="az"/>) facing (<paramref name="hx"/>, <paramref name="hz"/>): its runs one way, forwards or in reverse, as legs (the gear changed
+		/// between), timed. Null if it is nothing but a point.
+		/// </summary>
+		private static Manoeuvre FromWord(ReedsShepp.Seg[] w, double r, double ax, double az, double hx, double hz)
+		{
+			Manoeuvre m = new Manoeuvre();
+			double th = Math.Atan2(hz, hx), x = ax, z = az;
+			int k = 0;
+			while (k < w.Length)
+			{
+				if (Math.Abs(w[k].Length) * r < 1e-3)
+				{
+					k++;
+					continue;
+				}
+				// A run of segments driven the same way.
+				bool back = w[k].Length < 0.0;
+				int end = k;
+				double length = 0.0;
+				while (end < w.Length && (Math.Abs(w[end].Length) * r < 1e-3 || (w[end].Length < 0.0) == back))
+				{
+					length += Math.Abs(w[end].Length) * r;
+					end++;
+				}
+				int n = Math.Max(Samples, (int)Math.Ceiling(length / SampleStep));
+				Leg l = new Leg { X = new double[n + 1], Z = new double[n + 1], Hx = new double[n + 1], Hz = new double[n + 1], D = new double[n + 1], Back = back, Length = length, MinRadius = double.MaxValue };
+				// Each segment's share of the samples by its length; the pose carried along in radii from the run's start.
+				double lx = 0.0, ly = 0.0, lth = th, done = 0.0;
+				int seg = k;
+				double segDone = 0.0;
+				for (int j = 0; j <= n; j++)
+				{
+					double want = length * j / n;
+					while (seg < end && done + (Math.Abs(w[seg].Length) * r - segDone) < want - 1e-12)
+					{
+						double rest = Math.Abs(w[seg].Length) * r - segDone;
+						ReedsShepp.Step(w[seg].Kind, (back ? -rest : rest) / r, ref lx, ref ly, ref lth);
+						done += rest;
+						segDone = 0.0;
+						seg++;
+					}
+					if (seg < end)
+					{
+						double step = want - done;
+						ReedsShepp.Step(w[seg].Kind, (back ? -step : step) / r, ref lx, ref ly, ref lth);
+						done += step;
+						segDone += step;
+						if (w[seg].Kind != 'S')
+						{
+							l.MinRadius = r;
+						}
+					}
+					double rx = x + lx * r, rz = z + ly * r;
+					double nhx = Math.Cos(lth), nhz = Math.Sin(lth);
+					l.Hx[j] = nhx;
+					l.Hz[j] = nhz;
+					l.X[j] = rx + nhx * RearAxle;
+					l.Z[j] = rz + nhz * RearAxle;
+					l.D[j] = want;
+					x = j == n ? rx : x;
+					z = j == n ? rz : z;
+				}
+				// The run's start was carried in radii from (x, z) as it was; move on from its end.
+				th = lth;
+				m.Legs.Add(l);
+				k = end;
+			}
+			if (m.Legs.Count == 0)
+			{
+				return null;
+			}
+			m.Time();
+			return m;
+		}
+
+		/// <summary>Whether leg <paramref name="l"/> keeps clear of every parked car (a hand's breadth between), the houses and the water: every fourth sample first (most ways that touch something are found out at once), then the rest.</summary>
 		private static bool Clear(Leg l, List<TrafficParking.Spot> parked)
 		{
-			if (parked == null || parked.Count == 0)
+			// Only the parked cars the leg passes near.
+			List<TrafficParking.Spot> near = null;
+			if (parked != null && parked.Count > 0)
 			{
-				return true;
+				double x0 = double.MaxValue, x1 = double.MinValue, z0 = double.MaxValue, z1 = double.MinValue;
+				for (int j = 0; j < l.X.Length; j++)
+				{
+					x0 = Math.Min(x0, l.X[j]);
+					x1 = Math.Max(x1, l.X[j]);
+					z0 = Math.Min(z0, l.Z[j]);
+					z1 = Math.Max(z1, l.Z[j]);
+				}
+				foreach (TrafficParking.Spot o in parked)
+				{
+					if (o.X > x0 - 16.0 && o.X < x1 + 16.0 && o.Z > z0 - 16.0 && o.Z < z1 + 16.0)
+					{
+						(near ??= new List<TrafficParking.Spot>()).Add(o);
+					}
+				}
 			}
-			for (int j = 0; j < l.X.Length; j++)
+			for (int pass = 0; pass < 2; pass++)
 			{
-				TrafficParking.Spot me = new TrafficParking.Spot { X = l.X[j], Z = l.Z[j], Hx = l.Hx[j], Hz = l.Hz[j] };
+				for (int j = pass == 0 ? 0 : 2; j < l.X.Length; j += 4)
+				{
+					if (!SampleClear(l, j, near) || (pass == 1 && (!SampleClear(l, j - 1, near) || (j + 1 < l.X.Length && !SampleClear(l, j + 1, near)))))
+					{
+						return false;
+					}
+				}
+			}
+			return SampleClear(l, l.X.Length - 1, near);
+		}
+
+		/// <summary>Whether sample <paramref name="j"/> of leg <paramref name="l"/> is clear (<see cref="Clear"/>; the houses and the water at even samples only, a car at the kerb standing right up to a terrace's front).</summary>
+		private static bool SampleClear(Leg l, int j, List<TrafficParking.Spot> parked)
+		{
+			TrafficParking.Spot me = new TrafficParking.Spot { X = l.X[j], Z = l.Z[j], Hx = l.Hx[j], Hz = l.Hz[j] };
+			if (parked != null)
+			{
 				foreach (TrafficParking.Spot o in parked)
 				{
 					if (Math.Abs(o.X - me.X) < 20.0 && Math.Abs(o.Z - me.Z) < 20.0 && TrafficParking.Overlap(me, o, 0.1))
@@ -219,91 +667,10 @@ namespace HalfGripOpenWorld
 					}
 				}
 			}
-			return true;
+			return j % 2 != 0 || (!TrafficParking.InHouse(me, -0.5) && !Rivers.Water(me.X, me.Z, out double _));
 		}
 
-		/// <summary>
-		/// The rear axle driven from one pose to another, forwards (<paramref name="sign"/> 1) or in reverse (-1): the gentlest of a few
-		/// curves, or null if the end isn't that way.
-		/// </summary>
-		private static Leg Gentlest(double sx, double sz, double shx, double shz, double ex, double ez, double ehx, double ehz, int sign)
-		{
-			double dx = ex - sx, dz = ez - sz, d = Math.Sqrt(dx * dx + dz * dz);
-			if (d < 1e-6)
-			{
-				return null;
-			}
-			if ((dx * shx + dz * shz) * sign <= 0.0 || (dx * ehx + dz * ehz) * sign <= 0.0)
-			{
-				return null;
-			}
-			Leg best = null;
-			foreach (double k in new[] { 0.4, 0.6, 0.8, 1.0, 1.3 })
-			{
-				Leg l = Curve(sx, sz, shx * sign, shz * sign, ex, ez, ehx * sign, ehz * sign, d * k, sign < 0);
-				if (best == null || l.MinRadius > best.MinRadius + 1e-9)
-				{
-					best = l;
-				}
-			}
-			return best;
-		}
-
-		/// <summary>
-		/// The cubic the rear axle follows from (sx, sz) going (tx0, tz0) to (ex, ez) going (tx1, tz1) (unit), its ends' pull <paramref
-		/// name="pull"/>: the car's middle along it (ahead of the axle) and its nose's way (against the curve in reverse).
-		/// </summary>
-		private static Leg Curve(double sx, double sz, double tx0, double tz0, double ex, double ez, double tx1, double tz1, double pull, bool back)
-		{
-			double ax = sx, az = sz;
-			double bx = sx + tx0 * pull / 3.0, bz = sz + tz0 * pull / 3.0;
-			double cx = ex - tx1 * pull / 3.0, cz = ez - tz1 * pull / 3.0;
-			double dx = ex, dz = ez;
-			Leg l = new Leg { X = new double[Samples + 1], Z = new double[Samples + 1], Hx = new double[Samples + 1], Hz = new double[Samples + 1], D = new double[Samples + 1], Back = back, MinRadius = double.MaxValue };
-			double px = 0.0, pz = 0.0;
-			for (int j = 0; j <= Samples; j++)
-			{
-				double t = (double)j / Samples, u = 1.0 - t;
-				double rx = u * u * u * ax + 3.0 * u * u * t * bx + 3.0 * u * t * t * cx + t * t * t * dx;
-				double rz = u * u * u * az + 3.0 * u * u * t * bz + 3.0 * u * t * t * cz + t * t * t * dz;
-				double vx = 3.0 * (u * u * (bx - ax) + 2.0 * u * t * (cx - bx) + t * t * (dx - cx));
-				double vz = 3.0 * (u * u * (bz - az) + 2.0 * u * t * (cz - bz) + t * t * (dz - cz));
-				double wx = 6.0 * (u * (cx - 2.0 * bx + ax) + t * (dx - 2.0 * cx + bx));
-				double wz = 6.0 * (u * (cz - 2.0 * bz + az) + t * (dz - 2.0 * cz + bz));
-				double sp = Math.Sqrt(vx * vx + vz * vz);
-				double hx, hz;
-				if (sp > 1e-9)
-				{
-					double curv = Math.Abs(vx * wz - vz * wx) / (sp * sp * sp);
-					if (curv > 1e-12)
-					{
-						l.MinRadius = Math.Min(l.MinRadius, 1.0 / curv);
-					}
-					hx = back ? -vx / sp : vx / sp;
-					hz = back ? -vz / sp : vz / sp;
-				}
-				else
-				{
-					hx = back ? -tx0 : tx0;
-					hz = back ? -tz0 : tz0;
-				}
-				l.Hx[j] = hx;
-				l.Hz[j] = hz;
-				l.X[j] = rx + hx * RearAxle;
-				l.Z[j] = rz + hz * RearAxle;
-				// Its distance driven: the rear axle's.
-				if (j > 0)
-				{
-					l.D[j] = l.D[j - 1] + Dist(px, pz, rx, rz);
-				}
-				px = rx;
-				pz = rz;
-			}
-			l.Length = l.D[Samples];
-			return l;
-		}
-
-		/// <summary>Each leg's time: from standing up to its top speed (no faster than a gentle bend allows) and back to standing, a pause between legs.</summary>
+		/// <summary>Each leg's time (<see cref="LegTime"/>), a pause between legs.</summary>
 		private void Time()
 		{
 			Duration = 0.0;
@@ -316,22 +683,27 @@ namespace HalfGripOpenWorld
 				{
 					Duration += GearPause;
 				}
-				// Round a tight bend no more than 1.5 m/s² across it.
-				double top = Math.Min(l.Back ? Reverse : Forwards, Math.Sqrt(1.5 * 3.3 * Math.Max(1.0, l.MinRadius)));
-				double dUp = top * top / (2.0 * Pull), dDown = top * top / (2.0 * Stop);
-				if (dUp + dDown > l.Length)
-				{
-					top = Math.Sqrt(2.0 * l.Length * Pull * Stop / (Pull + Stop));
-					dUp = top * top / (2.0 * Pull);
-					dDown = top * top / (2.0 * Stop);
-				}
-				l.Top = top;
+				l.Time = LegTime(l.Length, l.Back, l.MinRadius, out l.Top);
 				l.Start = Duration;
-				l.Time = top > 1e-9 ? top / Pull + top / Stop + (l.Length - dUp - dDown) / top : 0.0;
 				Duration += l.Time;
 				Length += l.Length;
 				MinRadius = Math.Min(MinRadius, l.MinRadius);
 			}
+		}
+
+		/// <summary>A leg's time: from standing up to its top speed (<paramref name="top"/>: no faster than its tightest bend allows) and back to standing.</summary>
+		private static double LegTime(double length, bool back, double minRadius, out double top)
+		{
+			// Round a tight bend no more than 1.5 m/s² across it.
+			top = Math.Min(back ? Reverse : Forwards, Math.Sqrt(1.5 * 3.3 * Math.Max(1.0, minRadius)));
+			double dUp = top * top / (2.0 * Pull), dDown = top * top / (2.0 * Stop);
+			if (dUp + dDown > length)
+			{
+				top = Math.Sqrt(2.0 * length * Pull * Stop / (Pull + Stop));
+				dUp = top * top / (2.0 * Pull);
+				dDown = top * top / (2.0 * Stop);
+			}
+			return top > 1e-9 ? top / Pull + top / Stop + (length - dUp - dDown) / top : 0.0;
 		}
 
 		/// <summary>

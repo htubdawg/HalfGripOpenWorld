@@ -46,6 +46,9 @@ namespace HalfGripOpenWorld
 		/// <summary>Per car: its own space at home (off the road or at the kerb; <see cref="Spot.Away"/> round the back).</summary>
 		private readonly Spot[] home;
 
+		/// <summary>Per car with its space at home at the kerb: that space's key (<see cref="kerbTaken"/>), so it can move across the road.</summary>
+		private readonly long[] homeKey;
+
 		/// <summary>Per car: the spot it is parked in away from home now (when <see cref="held"/> says it holds one), and what it holds.</summary>
 		private readonly Spot[] spot;
 		private readonly Hold[] held;
@@ -83,6 +86,7 @@ namespace HalfGripOpenWorld
 			EnsureHouses();
 			int n = cars.Length;
 			home = new Spot[n];
+			homeKey = new long[n];
 			spot = new Spot[n];
 			held = new Hold[n];
 			bool[] own = new bool[n];
@@ -110,9 +114,10 @@ namespace HalfGripOpenWorld
 				{
 					continue;
 				}
-				if (car.Index == 0 && TakeKerb(Traffic.Households[car.Household].Home, out Spot s, out long _))
+				if (car.Index == 0 && TakeKerb(Traffic.Households[car.Household].Home, out Spot s, out long key))
 				{
 					home[c] = s;
+					homeKey[c] = key;
 					KerbHomes++;
 				}
 				else
@@ -124,15 +129,38 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Where car <paramref name="car"/> parked by the meso at its stop <paramref name="stop"/> (at place <paramref name="place"/>, -1 for a
-		/// home or the kerb) stands: its own space at home, else a space taken now (and held until <see cref="Leave"/>).
+		/// home or the kerb) stands: its own space at home, else a space taken now (and held until <see cref="Leave"/>). At the kerb, given the
+		/// way the car comes (<paramref name="wayX"/>, <paramref name="wayZ"/>; 0, 0 if not known), a space on its own side of the road first,
+		/// facing the way it comes: one across the road would have it turn round in the street to get into it.
 		/// </summary>
-		internal Spot Park(int car, int stop, int place)
+		internal Spot Park(int car, int stop, int place, double wayX = 0.0, double wayZ = 0.0)
 		{
 			Leave(car);
 			Schedules.Car c = cars[car];
 			Schedules.Stop st = c.Stops[Math.Max(0, Math.Min(stop, c.Stops.Length - 1))];
 			if (place < 0 && st.Kind == Schedules.StopKind.Home)
 			{
+				if (wayX == 0.0 && wayZ == 0.0)
+				{
+					// Not arriving where it is drawn (the race's start, or parked out of sight): facing the way its next drive leaves.
+					LeavingWay(c, stop, out wayX, out wayZ);
+				}
+				Spot h = home[car];
+				if (h.AtKerb && !h.Away && (wayX != 0.0 || wayZ != 0.0) && h.Hx * wayX + h.Hz * wayZ < 0.0
+					&& TakeKerb(Traffic.Households[c.Household].Home, out Spot other, out long key, wayX, wayZ))
+				{
+					if (other.Hx * wayX + other.Hz * wayZ > 0.0)
+					{
+						// Its space at the kerb moved to the side of the road it comes along.
+						kerbTaken.Remove(homeKey[car]);
+						homeKey[car] = key;
+						home[car] = other;
+					}
+					else
+					{
+						kerbTaken.Remove(key);
+					}
+				}
 				return home[car];
 			}
 			if (st.Kind == Schedules.StopKind.Away)
@@ -161,11 +189,32 @@ namespace HalfGripOpenWorld
 						}
 					}
 				}
-				return Kerb(car, d.At);
+				return Kerb(car, d.At, wayX, wayZ);
 			}
 			// A visit (or a lot that sent it on to the kerb): along the kerb by the door.
 			Traffic.Anchor at = st.Kind == Schedules.StopKind.Visit && st.Host >= 0 ? Traffic.Households[st.Host].Home : st.At;
-			return Kerb(car, at);
+			return Kerb(car, at, wayX, wayZ);
+		}
+
+		/// <summary>The way car <paramref name="c"/> sets off from its stop <paramref name="stop"/> along the stretch it is on (its next leg's first edge); 0, 0 if not known.</summary>
+		private static void LeavingWay(Schedules.Car c, int stop, out double x, out double z)
+		{
+			x = z = 0.0;
+			if (c.Legs == null || stop < 0 || stop >= c.Legs.Length || c.Legs[stop]?.Route == null || c.Legs[stop].Route.Length == 0)
+			{
+				return;
+			}
+			int first = c.Legs[stop].Route[0];
+			Traffic.Edge e = Traffic.Edges[first >> 1];
+			Traffic.Anchor a = c.Stops[stop].At;
+			if (a.Edge != first >> 1)
+			{
+				return;
+			}
+			Traffic.Heading(Network.Roads[e.Road], a.S, out double tx, out double tz);
+			double sign = (e.Sb >= e.Sa ? 1.0 : -1.0) * ((first & 1) == 0 ? 1.0 : -1.0);
+			x = tx * sign;
+			z = tz * sign;
 		}
 
 		/// <summary>Car <paramref name="car"/> leaves the space it took away from home (its own space at home is always kept).</summary>
@@ -183,9 +232,9 @@ namespace HalfGripOpenWorld
 			held[car] = default;
 		}
 
-		private Spot Kerb(int car, Traffic.Anchor at)
+		private Spot Kerb(int car, Traffic.Anchor at, double wayX, double wayZ)
 		{
-			if (TakeKerb(at, out Spot s, out long key))
+			if (TakeKerb(at, out Spot s, out long key, wayX, wayZ))
 			{
 				held[car] = new Hold { Kind = 2, Key = key };
 				spot[car] = s;
@@ -200,9 +249,10 @@ namespace HalfGripOpenWorld
 		/// A free kerb space near anchor <paramref name="a"/>: in front of it first, then a car's length either way in turn, on its side of the
 		/// road and then the other, clear of the junctions at the stretch's ends, the homes' own spaces, the houses, other roads and the water.
 		/// Only the town streets and the secondary roads have parking at the kerb: a main road keeps its traffic moving, a narrow lane has no
-		/// room for a car to pass one parked.
+		/// room for a car to pass one parked. Given the way a car comes (<paramref name="wayX"/>, <paramref name="wayZ"/>), the side it comes
+		/// along first (its spaces face that way) rather than the anchor's.
 		/// </summary>
-		private bool TakeKerb(Traffic.Anchor a, out Spot s, out long key)
+		private bool TakeKerb(Traffic.Anchor a, out Spot s, out long key, double wayX = 0.0, double wayZ = 0.0)
 		{
 			s = new Spot { Away = true };
 			key = 0;
@@ -222,6 +272,12 @@ namespace HalfGripOpenWorld
 				return false;
 			}
 			int first = a.Side >= 0 ? 1 : -1;
+			if (wayX != 0.0 || wayZ != 0.0)
+			{
+				// A side's spaces face against the road's way on its left (OnKerb).
+				Traffic.Heading(road, a.S, out double tx, out double tz);
+				first = tx * wayX + tz * wayZ >= 0.0 ? -1 : 1;
+			}
 			foreach (int side in new[] { first, -first })
 			{
 				for (int k = 0; k < 2 * KerbTries + 1; k++)

@@ -230,10 +230,12 @@ namespace HalfGripOpenWorld
 		/// up, the wheels the other way, when that point is behind it (a car pushed round), or when it has stood a while meaning to move (nosed
 		/// into something); it stops backing once the point is fairly ahead, after a few seconds, or when backing gets it nowhere. Going forward
 		/// with the point well off to one side (<see cref="RejoinLock"/>) it turns on full lock, not the wide arc pure pursuit would take.
-		/// Its middle (<paramref name="x"/>, <paramref name="z"/>), the way it faces (unit), its speed forward (back, less than nothing).
+		/// Its middle (<paramref name="x"/>, <paramref name="z"/>), the way it faces (unit), its speed forward (back, less than nothing);
+		/// <paramref name="meaning"/>: its driver means it to move (its acceleration above nothing). Held by its driver (a queue ahead, a red
+		/// light) it isn't up against anything, and backing off then only takes it further from its line.
 		/// </summary>
 		internal static bool RejoinAim(ref Rejoin s, double x, double z, double hx, double hz, double v, double off, int n, double[] xs, double[] zs,
-			double dt, out double tx, out double tz)
+			double dt, bool meaning, out double tx, out double tz)
 		{
 			tx = x + hx;
 			tz = z + hz;
@@ -270,7 +272,7 @@ namespace HalfGripOpenWorld
 				s.Stuck = 0.0;
 				return true;
 			}
-			s.Stuck = Math.Abs(v) < 0.5 ? s.Stuck + dt : 0.0;
+			s.Stuck = Math.Abs(v) < 0.5 && meaning ? s.Stuck + dt : 0.0;
 			if (s.Stuck > 2.5)
 			{
 				// Meaning to go forward but standing: up against something. Back off it.

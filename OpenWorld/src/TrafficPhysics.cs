@@ -1506,7 +1506,7 @@ namespace HalfGripOpenWorld
 			float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
 			double hx = f.x / fl, hz = f.z / fl;
 			float v = Cc.forwardSpeed;
-			bool back = Micro.RejoinAim(ref rejoin, x, z, hx, hz, v, Off, Ways, WayX, WayZ, dt, out double tx, out double tz);
+			bool back = Micro.RejoinAim(ref rejoin, x, z, hx, hz, v, Off, Ways, WayX, WayZ, dt, Want > 0.05f, out double tx, out double tz);
 			double dx = tx - x, dz = tz - z;
 			double cross = hz * dx - hx * dz, dot = hx * dx + hz * dz;
 			double alpha = Math.Atan2(cross, dot);

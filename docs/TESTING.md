@@ -180,6 +180,9 @@ owner has reported on it.
      change gear, with no jump when they start or when they join the lane, and no drop or bounce when one parks and turns back into a
      drawn car. Stop in front of one pulling out: it waits behind you, then carries on. Shove one pulling out: it finds its way back to
      its lane and drives on (log: `knocked off its way out of its spot`). Shove one pulling in: drive out of sight and back, and it has parked.
+   - The ways themselves: a car whose trip goes back the way it faces turns round in the street (a three-point turn, more moves where
+     cars are parked both sides) rather than swinging through parked cars; cars arriving park on their own side of the road. Say if a car
+     backs a long way, crosses a parked car or a house, or a queue stands still to let a car out that never comes.
    - `TrafficPhysics` is now 60 by default (every moving car near you a physics car): say if the frame rate drops in busy traffic.
    - Wreck a parked car with the guns: it burns and explodes as the moving ones do, and is gone from its day.
    Send `LogOutput.log` (it has a `Traffic: car ... a contact car` line for each) and say if any car jumps, drops or bounces when it turns

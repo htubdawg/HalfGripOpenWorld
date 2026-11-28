@@ -231,6 +231,10 @@ internal static partial class Program
 				}
 			}
 		}
+		Console.WriteLine("    ways planned " + Manoeuvre.Costs.Plans + ", " + (Manoeuvre.Costs.Ms / Math.Max(1, Manoeuvre.Costs.Plans)).ToString("0.00") + " ms each, the worst " + Manoeuvre.Costs.Worst.ToString("0.0") + " ms");
+		Manoeuvre.Costs.Plans = 0;
+		Manoeuvre.Costs.Ms = 0.0;
+		Manoeuvre.Costs.Worst = 0.0;
 		Console.WriteLine("    ways out of spots " + live.WaysOut + ", into them " + live.WaysIn + " (" + backed + " backing), " + waysSeen + " seen driving them near the player; "
 			+ (ways > 0 ? "on average " + (lengthSum / ways / 3.3).ToString("0.0") + " m in " + (timeSum / ways).ToString("0.0") + " s, the longest " + longest.ToString("0.0") + " s, the tightest turn " + (worstRadius / 3.3).ToString("0.0") + " m" : "none"));
 		foreach (string f in firsts)
@@ -532,7 +536,8 @@ internal static partial class Program
 		Console.WriteLine("  game, " + where + " (lane " + lane + ", " + count[lane] + " cars through in the minute before): " + hits + " car-frames in it, longest queue behind it " + longest
 			+ " standing, two minutes after it went " + standingAfter + " still standing on that road" + (firstHit != null ? "; first: " + firstHit : ""));
 		Check(hits == 0, "game block", where + ": cars drove into the player's car (" + firstHit + ")");
-		Check(longest >= 2, "game block", where + ": no queue formed behind it (" + longest + " standing)");
+		// A queue of two at least where the lane is in use; at night, with no car through in the minute before, the one that came standing will do.
+		Check(longest >= (count[lane] > 0 ? 2 : 1), "game block", where + ": no queue formed behind it (" + longest + " standing)");
 		Check(standingAfter <= 2, "game block", where + ": " + standingAfter + " still standing two minutes after it went");
 	}
 

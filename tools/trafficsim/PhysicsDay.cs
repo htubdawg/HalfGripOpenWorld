@@ -521,7 +521,7 @@ internal static partial class Program
 	/// </summary>
 	private static void RejoinDrive(StandIn b, double want, double off, int n, double[] xs, double[] zs, double dt)
 	{
-		bool back = Micro.RejoinAim(ref b.Rejoin, b.X, b.Z, b.Hx, b.Hz, b.V, off, n, xs, zs, dt, out double tx, out double tz);
+		bool back = Micro.RejoinAim(ref b.Rejoin, b.X, b.Z, b.Hx, b.Hz, b.V, off, n, xs, zs, dt, want > 0.0, out double tx, out double tz);
 		double dx = tx - b.X, dz = tz - b.Z, tl = Math.Max(1e-6, Math.Sqrt(dx * dx + dz * dz));
 		double sin = (b.Hx * dz - b.Hz * dx) / tl, cos = (b.Hx * dx + b.Hz * dz) / tl;
 		double alpha = Math.Atan2(sin, cos);
