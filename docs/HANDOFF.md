@@ -61,7 +61,12 @@ Last written 2026-11-28 (second session that day).
    brings it back to its line, and only on its side, stuck or wrecked does it leave the day. Add a trafficsim check
    (a held car's departure comes: it drives off within a minute from where its stand-in body lies).
    The owner: raise the physics cars' limit (`World.TrafficPhysics`, 24 within 300 units) so every moving car near the player is one
-   (no realistic case has more nearby); then the only moving cars that turn loose are those pulling out of a space or into one.
+   (no realistic case has more nearby).
+   **Cars pulling out of a space or into one are physics cars too** (the owner): now `TakeNearest` skips them (`live.Manoeuvring`,
+   `HoldUntil`) because the body only steers along `Micro.WayAhead`; give it the way's path instead (`Manoeuvre.At`, the rear axle's
+   line, forwards and reverse legs, front-wheel steered; pedals from the way's timing) while it drives it, then `WayAhead` as now. Then
+   nothing moving near the player is ever a drawn car, and loose cars are only parked ones (drop the loose-car handling of cars
+   pulling in or out, and the moving loose car on its brakes, `Brake`, once nothing needs it).
 2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
 3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5 (ways out and in, contact physics) and add the ways to TESTING.md item 74 for the
    owner.
