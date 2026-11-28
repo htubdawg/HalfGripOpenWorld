@@ -149,33 +149,17 @@ owner has reported on it.
      trunk's lights a green left arrow (about 10 s) between them; Kingsbridge's bay a flashing yellow arrow on the main road's green.
      Neighbouring lights are not in step. In a room both players see each light the same (within a second or so).
    - The highway as before: grass median, left-turn bays, K-rail, the wrap; Kingsbridge's widened road and its bay.
-70. Phase 5 of the traffic rework, first part (`traffic-rework-branch`, not released; alone only, not in a room yet).
-   - A second or two after the start the log says `Traffic: <n> cars on a weekday (or weekend day) from the race's seed ..., from hh:mm;
-     plans ...; built in ... ms ...; parking: ... cars with their own space at home, ... at the kerb, ... round the back`. No hitch at the
-     start (it is built on a worker).
-   - Cars drive the roads near you: into and out of the towns, through the lights, on the highway's two lanes each way. Say if a car
-     drives through another, stands in a junction, jumps, pops in or out within sight, or drives off the road.
-   - Parked cars on drive pads, at the kerb on town streets and in the shops' and the retail park's bays. A car leaving slides from its
-     spot onto the road over a couple of seconds, one arriving slides into its spot (a stand-in for pulling in and out: say how it looks).
-   - Stop your car in a lane: the cars behind stop behind you and queue; at a junction they don't drive into the box if you block the
-     way out. Drive off: the queue moves on. Come back a minute later: say if what you see fits (the queue gone or still clearing).
-   - Hitting a parked traffic car, or one further than about 90 m, is like hitting a wall for now.
-   - `ShowCoords` on: the overlay's `traffic:` line (the hour, cars driving and parked, drawn, the simulation's and the drawing's ms). Say
-     the frame rate in Kingsbridge's centre at the evening rush and on the highway against before. F11 picks the nearest moving car:
-     follow it for a while and say if its day (the stops in brackets is where it is going) matches what it does. With `TrafficMap` on as
-     well, the map at the top right shows every car in the world; say if the dots move and queues show red at the lights.
-71. Phase 5 of the traffic rework, physics cars (`traffic-rework-branch`; `World.TrafficPhysics`, 24 by default).
-   - The moving cars within about 90 m are the enemy car's body driven by the traffic (no guns, its own paint): say if the swap from
-     the drawn car shows (a jump, a drop onto the springs, a bounce, tyre marks across the road), and the same when you drive off and
-     one is drawn again past about 120 m.
-   - Follow one: it should drive like the drawn ones (keep its lane, take the corners, stop at the line on red, give way, queue). Say if
-     one weaves, cuts a corner onto the verge, runs a red light, stops short or rolls into the car ahead.
-   - Push one off the road (and one turned across it, facing away): after a second it should drive back onto its line slowly (about
-     9 km/h), turning on full lock or backing round if it faces away, backing off a wall or tree it is against, and carry on its way;
-     the log says `knocked off its line, finding its way back` and `back on its line`. Push one back onto the road by hand too. Say if
-     one sits still, circles, backs the wrong way or drives off across the country.
-   - Ram one onto its side, shoot one: on its side for 4 s (or stuck off the road 30 s getting nowhere) it is gone from its day and
-     stands where it ended up on its brakes until you are out of sight of it; shot to nothing it burns and explodes as an enemy does,
-     with no heal, ammo or combo. A car left standing in a lane is in the way as your car is: the cars behind stop and queue behind it
-     (on the highway they pass it). Say if a drawn car drives into one.
-   - `ShowCoords`: the `traffic:` line ends with `physics n/24 (made, finding their way back, loose, gone from their day)`. Say the frame rate with 24 against 0.
+72. Physics cars find their way back (`traffic-rework-branch`, not released; alone only). After 71: a car pushed off the road left its day
+   after 2.5 s and never tried to get back. Now it keeps its day and drives back to its line.
+   - Push a moving physics car (within about 90 m) off the road: after a second it drives back onto its line slowly (about 9 km/h),
+     coming onto it at a slant, and carries on its way at normal speed. The log says `Traffic: car <n> knocked off its line, finding its
+     way back` and then `back on its line`.
+   - Push one off and turned to face away from the road: it backs round first (wheels turned the other way), then drives back. Push one
+     against a wall or tree: it backs off it and tries again. Push one back onto the road by hand: it carries on from there.
+   - While it is coming back the cars behind it on its lane wait for it. Say if that looks wrong (cars stopped for a car well off in a
+     field).
+   - Ram one onto its side: after 4 s it is gone from its day (log: `left its day (on its side)`) and stays where it is until you are out
+     of sight. One that gets no nearer the road for 30 s (in a ditch) leaves too (`stuck off its line`). Shot to nothing it burns and
+     explodes as before (`wrecked`).
+   - Say if one sits still, circles, backs the wrong way, drives off across the country, or drives back into the road in front of a car.
+   - `ShowCoords`: the `traffic:` line's physics part says `n finding their way back`.

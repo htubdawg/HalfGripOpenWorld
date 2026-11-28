@@ -12,7 +12,9 @@ Last written 2026-11-28.
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
 - **Phases 0 to 4 are done** (the lane graph and conflict areas, each race's plans, the meso, the micro and the boundary; every fault
   check passing on seeds 1 to 64, trips taking the same time watched or not).
-- **Phase 5 (in game, alone): the first part and the physics cars are built, neither run in the game yet** (TESTING.md items 70 and 71):
+- **Phase 5 (in game, alone): the first part and the physics cars are built and the owner has run them once** (TESTING.md items 70
+  and 71, now in the archive): all fine but one report, a car pushed off the road never tried to get back on its route. Fixed (below),
+  retest is TESTING.md item 72:
   - `TrafficLive.cs`: the race's plans, meso and micro built on a worker at the race's start hour, the first step run round the spawn,
     then stepped on the race clock on the main thread (`tm.TimeSinceRaceStart`, the lights' clock). Every car drawn between its last two
     steps' poses, a step (0.25 s) behind the clock. Stops at the day's end (03:00).
@@ -56,10 +58,11 @@ Last written 2026-11-28.
 
 ## Next
 
-1. **The owner ran items 70 and 71 once** (all fine but the one report: a car pushed off the road never tried to get back, now fixed,
-   not yet seen in game). Next in game: push a car off the road and watch it come back (the game's controller backing up with negative
-   `engineAccel` is untested), the rest of 70 and 71. Fix what they report first. If the physics cars drive badly, the knobs are in `TrafficBody.Steer` (look-ahead, gain) and `Pedals` (the rolling
-   allowance); the log line `Traffic: physics car bodies: mass, engine, brakes, wheelbase` says what the controller has.
+1. **The owner runs TESTING.md item 72**: cars pushed off the road find their way back (the game's controller backing up with negative
+   `engineAccel` is untested; trafficsim's stand-in can't tell). Fix what they report first. If the physics cars drive badly, the knobs
+   are in `TrafficBody.Steer` (look-ahead, gain), `Pedals` (the rolling allowance) and `Rejoin` (its speed, lock, backing); the figures
+   that decide when a car is astray, back, or gives up are at the top of `MicroPhysics.cs`. The log line `Traffic: physics car bodies:
+   mass, engine, brakes, wheelbase` says what the controller has.
 2. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
    double-buffered; the bodies' readings and the player's body would be a step old).
 3. Pulling in and out driven by the micro from the spot (the old `TrafficParking.Pull`/`Corner` are the drawing's model; a physics car
@@ -79,7 +82,9 @@ Last written 2026-11-28.
 ## Checks
 
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles clean (one old warning).
-- `trafficsim`: seeds 1 to 32 (the default) pass, with the phase 5 checks on seed 1; `TRAFFICSIM_GAME=only` passes on seeds 1 to 24.
+- `trafficsim`: seeds 1 to 32 (the default) pass, with the phase 5 checks on seed 1; `TRAFFICSIM_GAME=only` passes on seeds 1 to 8
+  with the rejoin (shoved cars back on their line in 13.5 to 16 s; on seed 7 the shoved car parks at its stop instead; seeds 1 to 24
+  passed before it).
 - `meshcheck`: not affected (it compiles none of the traffic's files).
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
-- Not run in game yet.
+- In game: the owner's first run of phase 5 (items 70, 71) was fine but for the push-off, fixed after; item 72 is open.

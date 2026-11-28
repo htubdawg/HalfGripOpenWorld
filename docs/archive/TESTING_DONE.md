@@ -504,3 +504,29 @@ In-game tests moved out of `docs/TESTING.md` once reported on or superseded (202
      note the fps and the `Frame timings` log lines with the most physics cars you see, against 0.33.0 in the same place.
    - A car pulling out of a drive in front of a stopped queue now goes (the queue lets it out); one pulling into a space goes even if a
      stopped car is right behind it.
+70. **Reported (2026-11-28): all fine.** Phase 5 of the traffic rework, first part (`traffic-rework-branch`, not released; alone only, not in a room yet).
+   - A second or two after the start the log says `Traffic: <n> cars on a weekday (or weekend day) from the race's seed ..., from hh:mm;
+     plans ...; built in ... ms ...; parking: ... cars with their own space at home, ... at the kerb, ... round the back`. No hitch at the
+     start (it is built on a worker).
+   - Cars drive the roads near you: into and out of the towns, through the lights, on the highway's two lanes each way. Say if a car
+     drives through another, stands in a junction, jumps, pops in or out within sight, or drives off the road.
+   - Parked cars on drive pads, at the kerb on town streets and in the shops' and the retail park's bays. A car leaving slides from its
+     spot onto the road over a couple of seconds, one arriving slides into its spot (a stand-in for pulling in and out: say how it looks).
+   - Stop your car in a lane: the cars behind stop behind you and queue; at a junction they don't drive into the box if you block the
+     way out. Drive off: the queue moves on. Come back a minute later: say if what you see fits (the queue gone or still clearing).
+   - Hitting a parked traffic car, or one further than about 90 m, is like hitting a wall for now.
+   - `ShowCoords` on: the overlay's `traffic:` line (the hour, cars driving and parked, drawn, the simulation's and the drawing's ms). Say
+     the frame rate in Kingsbridge's centre at the evening rush and on the highway against before. F11 picks the nearest moving car:
+     follow it for a while and say if its day (the stops in brackets is where it is going) matches what it does. With `TrafficMap` on as
+     well, the map at the top right shows every car in the world; say if the dots move and queues show red at the lights.
+71. **Reported (2026-11-28): all fine but one: a car pushed off the road made no attempt to get back on its route, even pushed back onto the road by hand (it had left its day). Fixed: a car knocked off its line now drives back to it, retested in 72.** Phase 5 of the traffic rework, physics cars (`traffic-rework-branch`; `World.TrafficPhysics`, 24 by default).
+   - The moving cars within about 90 m are the enemy car's body driven by the traffic (no guns, its own paint): say if the swap from
+     the drawn car shows (a jump, a drop onto the springs, a bounce, tyre marks across the road), and the same when you drive off and
+     one is drawn again past about 120 m.
+   - Follow one: it should drive like the drawn ones (keep its lane, take the corners, stop at the line on red, give way, queue). Say if
+     one weaves, cuts a corner onto the verge, runs a red light, stops short or rolls into the car ahead.
+   - Ram one, push one off the road, shoot one: pushed off its line (or on its side) for a few seconds it is gone from its day and
+     stands where it ended up on its brakes until you are out of sight of it; shot to nothing it burns and explodes as an enemy does,
+     with no heal, ammo or combo. A car left standing in a lane is in the way as your car is: the cars behind stop and queue behind it
+     (on the highway they pass it). Say if a drawn car drives into one.
+   - `ShowCoords`: the `traffic:` line ends with `physics n/24 (made, loose, gone from their day)`. Say the frame rate with 24 against 0.
