@@ -60,6 +60,8 @@ Last written 2026-11-28 (second session that day).
    and make it an ordinary physics car (`Contact`, `Brake` off, its engine on); it is already a driven body, so `Micro`'s astray logic
    brings it back to its line, and only on its side, stuck or wrecked does it leave the day. Add a trafficsim check
    (a held car's departure comes: it drives off within a minute from where its stand-in body lies).
+   The owner: raise the physics cars' limit (`World.TrafficPhysics`, 24 within 300 units) so every moving car near the player is one
+   (no realistic case has more nearby); then the only moving cars that turn loose are those pulling out of a space or into one.
 2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
 3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5 (ways out and in, contact physics) and add the ways to TESTING.md item 74 for the
    owner.
