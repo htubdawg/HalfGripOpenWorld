@@ -54,9 +54,10 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// Car <paramref name="i"/> is driven by a body from now on (its first reading given with it): its place and speed read from the body.
-		/// False if it isn't a micro car.
+		/// <paramref name="fromAside"/>: the body lies off its line (a knocked parked car setting off from where it ended up), so it is astray
+		/// at its first reading off the line, not a second later. False if it isn't a micro car.
 		/// </summary>
-		internal bool TakeBody(int i, Reading r)
+		internal bool TakeBody(int i, Reading r, bool fromAside = false)
 		{
 			Agent a = Agents[i];
 			if (a == null)
@@ -73,6 +74,10 @@ namespace HalfGripOpenWorld
 				a.Astray = false;
 				a.OnSide = 0.0;
 				BodiesNow++;
+			}
+			if (fromAside)
+			{
+				a.StrayedFor = StrayFor;
 			}
 			return true;
 		}

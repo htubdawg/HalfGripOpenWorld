@@ -166,11 +166,16 @@ owner has reported on it.
    - Drive slowly past a row of cars parked at the kerb, close but not touching: nothing happens to them (no jolt, no drop, no bounce).
    - Nudge a parked car gently, then hit another hard: the nudged one moves a little, the hard-hit one is shoved and spins. Neither is a
      wall any more. Park next to one without touching it, then drive 20 m away: it is drawn again as before, in its place.
-   - Drive well away from the ones you hit (out of sight), then come back: they are back in their spaces, and later in the day they drive
-     off as the others do (the owner: a hit parked car carries on its day later). A car knocked into the road is driven round or queued
-     behind while you are near it.
-   - Hit a car while it pulls out of its space or into it: it brakes and is shoved like a parked one; drive away, come back, and it has
-     carried on (a moving car you hit that wasn't a physics car brakes to a stop; if knocked it is gone from its day, as the physics cars).
+   - Hit a parked car and stay near it (within about 90 m): when its trip is due it drives off from where it ended up, finding its way
+     back onto its lane at a crawl (backing round if it must), and goes on its way (the owner: a knocked car does its trips while you
+     watch). The log has `Traffic: contact car ... sets off from where it was knocked to`. One you rolled onto its side is gone from its
+     day instead. A car knocked into the road is driven round or queued behind while it lies there.
+   - Hit one and drive well away (out of sight), then come back: it is back in its space, and later in the day drives off as the others do.
+   - Hit a car while it pulls out of its space: it is shoved like a parked one, then drives off from there at once, finding its way back
+     to its lane. Hit one pulling into its space: drive away, come back, and it has parked. A moving car you hit that wasn't a physics car
+     brakes to a stop; knocked, it drives on as a physics car (back to its lane if pushed off it), gone from its day only if wrecked, on
+     its side or stuck.
+   - `TrafficPhysics` is now 60 by default (every moving car near you a physics car): say if the frame rate drops in busy traffic.
    - Wreck a parked car with the guns: it burns and explodes as the moving ones do, and is gone from its day.
    Send `LogOutput.log` (it has a `Traffic: car ... a contact car` line for each) and say if any car jumps, drops or bounces when it turns
    real, or if a car you never touched is shoved.

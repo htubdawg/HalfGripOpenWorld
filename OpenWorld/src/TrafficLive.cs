@@ -80,6 +80,11 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private readonly bool[] frozen;
 		private readonly List<int> frozenCars = new List<int>();
+		/// <summary>
+		/// Per car: knocked as a standing contact car and let go to drive off by its body (<see cref="LetGoByBody"/>): it comes onto the lane
+		/// with no drawn way out and no hold (the game takes its body as a physics car, astray, finding its way back to its line from where it lies).
+		/// </summary>
+		private readonly bool[] byBody;
 
 		/// <summary>For the log and trafficsim: ways out and in driven, those no gentler than a car turns allowed, and the longest.</summary>
 		internal int WaysOut, WaysIn, TightWays;
@@ -138,6 +143,7 @@ namespace HalfGripOpenWorld
 			pulledUp = new bool[n];
 			early = new bool[n];
 			frozen = new bool[n];
+			byBody = new bool[n];
 			m.Held = frozen;
 			x0 = new double[n];
 			z0 = new double[n];
@@ -534,7 +540,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Whether car <paramref name="car"/>'s way out of its spot onto lane <paramref name="lane"/> at <paramref name="along"/> is clear now (<see cref="SweptClear"/>).</summary>
 		private bool PullOutClear(int car, int lane, double along)
 		{
-			if (parkedStop[car] < 0 || spots[car].Away || man[car] != null)
+			if (parkedStop[car] < 0 || spots[car].Away || man[car] != null || byBody[car])
 			{
 				return true;
 			}
@@ -584,7 +590,7 @@ namespace HalfGripOpenWorld
 			}
 			planned.Remove(car);
 			asked.Remove(car);
-			if (parkedStop[car] < 0 || man[car] != null)
+			if (parkedStop[car] < 0 || man[car] != null || byBody[car])
 			{
 				return double.NaN;
 			}
@@ -605,7 +611,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		private double PullOutTime(int car)
 		{
-			if (Mi.Agents[car] == null)
+			if (Mi.Agents[car] == null || byBody[car])
 			{
 				planned.Remove(car);
 				asked.Remove(car);
@@ -788,6 +794,64 @@ namespace HalfGripOpenWorld
 			return frozen[i];
 		}
 
+		/// <summary>
+		/// Whether held car <paramref name="i"/> would be driving off now if it weren't held: parked with its departure come (the meso puts a
+		/// held car's off a second at a time, <see cref="Meso.Held"/>), or on its way out of its spot (in the lane already, held there).
+		/// </summary>
+		internal bool DueOut(int i)
+		{
+			if (!frozen[i])
+			{
+				return false;
+			}
+			Meso.Vehicle v = M.Cars[i];
+			if (v.Mode == Meso.Mode.Parked && !pulledUp[i] && man[i] == null)
+			{
+				return v.LeaveAt <= M.Now + 1.0 + 1e-9;
+			}
+			return man[i] != null && !manIn[i] && Mi.Agents[i] != null;
+		}
+
+		/// <summary>
+		/// Held car <paramref name="i"/> (<see cref="DueOut"/>) let go to drive off by its body (the owner: a knocked car does its trips while
+		/// the player watches): a car on its way out drops its drawn way and its hold in the lane; a parked one sets off with the meso as any
+		/// other, onto the lane where the meso has it, with no way out drawn and no hold (<see cref="ByBody"/>). The game takes its body there.
+		/// </summary>
+		internal void LetGoByBody(int i)
+		{
+			byBody[i] = true;
+			if (man[i] != null && !manIn[i])
+			{
+				EndWay(i);
+				Micro.Agent a = Mi.Agents[i];
+				if (a != null)
+				{
+					a.HoldUntil = double.MinValue;
+				}
+			}
+			planned.Remove(i);
+			asked.Remove(i);
+			Freeze(i, false);
+		}
+
+		/// <summary>Whether car <paramref name="i"/> was let go to drive off by its body (<see cref="LetGoByBody"/>) and its body isn't taken yet.</summary>
+		internal bool ByBody(int i)
+		{
+			return byBody[i];
+		}
+
+		/// <summary>Car <paramref name="i"/>'s body taken (or given up): it drives as every other car from here.</summary>
+		internal void TookBody(int i)
+		{
+			byBody[i] = false;
+		}
+
+		/// <summary>Whether car <paramref name="i"/> is still in its spot waiting to pull out (drawn parked, its car driving in the meso).</summary>
+		internal bool WaitingInSpot(int i)
+		{
+			return M.Cars[i].Mode == Meso.Mode.Parked || (M.Cars[i].Mode == Meso.Mode.Driving && k1[i] == Parked);
+		}
+
 		/// <summary>Before a step: the frozen cars' clocks held back a step (their ways, their wait to drive in, a hold in the lane for a way out).</summary>
 		private void HoldFrozen()
 		{
@@ -816,6 +880,7 @@ namespace HalfGripOpenWorld
 		internal void LoseCar(int i)
 		{
 			Freeze(i, false);
+			byBody[i] = false;
 			if (Mi.Agents[i] != null)
 			{
 				Mi.LoseCar(i);

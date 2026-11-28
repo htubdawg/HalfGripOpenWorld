@@ -668,6 +668,7 @@ internal static partial class Program
 			}
 			Check(setOff, "game contact", where + ": a knocked parked car let go never set off on its day (car " + again + ")");
 		}
+		ByBodyDay(live, ref race, where, parked, way);
 		// Knocked out of the day: a parked car, one on its way out or in, a micro car driving (and its household's day goes on).
 		int lostParked = -1, lostWay = -1, lostDriving = -1;
 		until = race + 180.0;
@@ -733,5 +734,111 @@ internal static partial class Program
 		Check(drawnAgain == 0, "game contact", where + ": a car knocked out of its day came back (" + drawnAgain + " frames)");
 		Check(bad == 0, "game contact", where + ": the queues don't hold every car driving after cars were knocked out (" + bad + " frames)");
 		Check(live.M.Departures > departures, "game contact", where + ": the day stopped after cars were knocked out");
+	}
+
+	/// <summary>
+	/// A parked car knocked near the player (the owner: it does its trips while the player watches): held from now (its stand-in body lying
+	/// 4 off its space, turned 30°, as a knock leaves it) over its next departure, it must then be let go to drive off by its body
+	/// (<see cref="TrafficLive.DueOut"/>, <see cref="TrafficLive.LetGoByBody"/>), come onto the lane with no drawn way, have its body taken
+	/// astray (<see cref="Micro.TakeBody"/>) and find its way back to its line from where it lies within a minute, still in its day.
+	/// </summary>
+	private static void ByBodyDay(TrafficLive live, ref double race, string where, int skip1, int skip2)
+	{
+		Traffic.Node k6 = Traffic.Nodes[6];
+		int car = -1;
+		for (int i = 0; i < live.Count && car < 0; i++)
+		{
+			if (i == skip1 || i == skip2 || live.M.Cars[i].Mode != Meso.Mode.Parked || live.Manoeuvring(i) || !live.CanStand(i) || live.Where(i, out double x, out double z) != TrafficLive.Parked)
+			{
+				continue;
+			}
+			if ((x - k6.X) * (x - k6.X) + (z - k6.Z) * (z - k6.Z) < 300.0 * 300.0 && live.M.Cars[i].LeaveAt < live.M.Now + 1800.0 && live.M.Cars[i].LeaveAt > live.M.Now + 5.0)
+			{
+				car = i;
+			}
+		}
+		if (car < 0)
+		{
+			Console.WriteLine("  game, " + where + ": no parked car near the player leaving within half an hour to knock and drive off by its body");
+			return;
+		}
+		TrafficParking.Spot s = live.SpotOf(car);
+		double c30 = Math.Cos(Math.PI / 6.0), s30 = Math.Sin(Math.PI / 6.0);
+		StandIn b = new StandIn { Car = car, X = s.X - s.Hz * 4.0, Z = s.Z + s.Hx * 4.0, Hx = s.Hx * c30 - s.Hz * s30, Hz = s.Hx * s30 + s.Hz * c30 };
+		double lyingX = b.X, lyingZ = b.Z;
+		live.Freeze(car, true, live.DayAt(race));
+		double leave = live.M.Cars[car].LeaveAt;
+		// Held over its departure, a step at a time, until it is due.
+		while (!live.DueOut(car) && live.M.Now < leave + 60.0)
+		{
+			race += 0.25;
+			live.Advance(live.DayAt(race));
+		}
+		if (!Check(live.DueOut(car), "game bybody", where + ": a knocked parked car held was never due out (car " + car + ")"))
+		{
+			live.Freeze(car, false);
+			return;
+		}
+		live.LetGoByBody(car);
+		const double frame = 1.0 / 60.0;
+		double[] xs = new double[16], zs = new double[16];
+		double from = race, took = -1.0, back = -1.0;
+		bool drawnWay = false;
+		while (race < from + 120.0 && back < 0.0)
+		{
+			race += frame;
+			double now = live.DayAt(race);
+			if (took >= 0.0)
+			{
+				live.Mi.Read(car, ReadingOf(b, now));
+			}
+			live.Advance(now);
+			drawnWay |= live.Manoeuvring(car);
+			Micro.Agent a = live.Mi.Agents[car];
+			if (live.M.Cars[car].Mode == Meso.Mode.Gone)
+			{
+				break;
+			}
+			if (took < 0.0)
+			{
+				if (a != null && !a.Driven && live.M.Cars[car].Mode == Meso.Mode.Driving && live.ByBody(car))
+				{
+					if (live.Mi.TakeBody(car, ReadingOf(b, now), true))
+					{
+						live.TookBody(car);
+						took = race;
+					}
+				}
+				continue;
+			}
+			if (a == null || !a.Driven)
+			{
+				break;
+			}
+			int n = live.Mi.WayAhead(car, 4.0, xs, zs, out bool _);
+			if (live.Mi.IsAstray(car, out double off))
+			{
+				RejoinDrive(b, a.A, off, n, xs, zs, frame);
+			}
+			else
+			{
+				b.Rejoin = default;
+				Drive(b, a.A, n, xs, zs, frame);
+				if (race - took > 1.5)
+				{
+					back = race;
+				}
+			}
+		}
+		double gone = Math.Sqrt((b.X - lyingX) * (b.X - lyingX) + (b.Z - lyingZ) * (b.Z - lyingZ));
+		Console.WriteLine("  game, " + where + ": knocked parked car " + car + " let go by its body " + (race - from).ToString("0") + " s after it was due, body taken "
+			+ (took < 0.0 ? "never" : (took - from).ToString("0.0") + " s on") + ", back on its line " + (back < 0.0 ? "never" : (back - took).ToString("0.0") + " s after") + ", " + gone.ToString("0") + " from where it lay");
+		Check(!drawnWay, "game bybody", where + ": a knocked car let go by its body drove a drawn way out (car " + car + ")");
+		Check(took >= 0.0 && took - from < 60.0, "game bybody", where + ": a knocked car let go by its body was never on the lane to take its body within a minute (car " + car + ")");
+		Check(back >= 0.0 && back - from < 60.0, "game bybody", where + ": a knocked car's body never found its way back to its line within a minute (car " + car + ", " + live.M.Cars[car].Mode + ")");
+		if (live.Mi.Agents[car] != null && live.Mi.Agents[car].Driven)
+		{
+			live.Mi.GiveBody(car, b.X, b.Z);
+		}
 	}
 }

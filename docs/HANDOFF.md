@@ -4,7 +4,7 @@ The one handoff: **overwrite it** at the end of each session with where things s
 session notes; git keeps them (`git log -p docs/HANDOFF.md`). Standing decisions go in `docs/PLAN.md`, open in-game tests in
 `docs/TESTING.md`, finished research in `docs/research/`.
 
-Last written 2026-11-28 (second session that day).
+Last written 2026-11-28 (third session that day).
 
 ## Where things stand
 
@@ -13,28 +13,28 @@ Last written 2026-11-28 (second session that day).
   already solved**).
 - **Phases 0 to 4 are done**; phase 5 (in game, alone): live traffic, parked cars, the player as a body, the nearest 24 moving cars as
   the game's real car (`TrafficPhysics`), the day's end. All tested by the owner except the day's end (item 73, not to be tested).
-- **This session: the old branch's contact physics ported** (TESTING.md item 74, not tested in game). In `TrafficPhysics.cs`
-  (`Contact`, `MakeContact`, `StandingBubble`, `Sweeps`): each frame after the drawing, any drawn car the player's car, swept along its
-  velocity 0.3 s plus 2 units (margin 0.2), is about to touch becomes the woken enemy car on its brakes (config `World.TrafficLoose`, 6,
-  apart from `TrafficPhysics`; a pool of 12 more for knocked cars). Two kinds:
+- **The contact physics** (TESTING.md item 74, not tested in game). In `TrafficPhysics.cs` (`Contact`, `MakeContact`,
+  `StandingBubble`, `TakeByBody`, `Sweeps`): each frame after the drawing, any drawn car the player's car, swept along its velocity
+  0.3 s plus 2 units (margin 0.2), is about to touch becomes the woken enemy car on its brakes (config `World.TrafficLoose`, 6, apart
+  from `TrafficPhysics`; a pool of 12 more for knocked cars). Two kinds:
   - **Standing** (parked, pulling in or out, pulled up, held in the lane for a way out: `TrafficLive.CanStand`): its car is held still
-    (`TrafficLive.Freeze`: its way's clock, its wait to drive in and its hold in the lane stand still, its departure waits,
-    `Meso.Held`; wound back on freezing to where it is drawn, a step behind). Untouched, the player 60 away: released, drawn again in
-    place. **Knocked** (moved 0.5 or turned 3° after settling, hit by anything with a rigidbody, or damaged): **the owner, 2026-11-28:
-    a hit parked car still carries on its day later.** It lies where it ended up (a body the drivers see once 1.5 off its spot) until
-    the player is past sight (`LooseGone`), then is released and its car goes on from where it was held, late. **Wrong, to be
-    changed (the owner, 2026-11-28): a knocked car must not sit out its trips while watched** (see Next 1). Wrecked: gone from its
-    day (`TrafficLive.LoseCar`, `Meso.LoseOutside`), burns and explodes as the others.
-  - **Moving** (a micro car driving but not a physics car just then): a body on its brakes the micro reads (`TakeBody`, `Brake`).
-    Untouched, the player 60 away: given back. Knocked: gone from its day (`Mi.LoseCar`). **Wrong, to be changed (the owner): it
-    must rejoin as a physics car does** (see Next 1).
-  - Not ported: `TrafficRest` (the worked-out rest on the springs, so the swap shows no drop or bounce). This branch puts the body at
-    the learned rest height (`RestPlace`) or 0.15 up until learned; if the owner sees a parked car drop and bounce as it turns real,
+    (`TrafficLive.Freeze`, `Meso.Held`). Untouched, the player 60 away: released, drawn again in place. **Knocked (this session, the
+    owner: it does its trips while watched)**: when its departure comes (`TrafficLive.DueOut`: parked and due, or at once if it was on
+    its way out), still upright, slow, and the player within 300, it is let go (`LetGoByBody`: the meso departs it, it comes onto the
+    lane with no drawn way and no hold) and once the micro has it on the lane its body is taken (`TakeByBody`, `Micro.TakeBody(..,
+    fromAside: true)`: astray at its first reading off its line), so it finds its way back with `RejoinAim` and drives on as a physics
+    car. On its side when due: out of its day. Further off than 300: as before, held until the player is past sight, then its car goes
+    on from its space. Knocked pulling **in**: unchanged (held until out of sight, then parks). Wrecked: out of its day.
+  - **Moving** (a micro car driving but not a physics car just then): a body on its brakes the micro reads. Untouched, the player 60
+    away: given back. **Knocked (this session): drives on as an ordinary physics car** (`TrafficBody.Drive`: brakes off, engine on);
+    `Micro`'s astray logic brings it back to its line; only on its side, stuck or wrecked does it leave the day.
+  - **`World.TrafficPhysics` default raised 24 → 60** (max 120), the owner: every moving car near the player a physics car.
+  - Not ported: `TrafficRest` (the worked-out rest on the springs). If the owner sees a parked car drop and bounce as it turns real,
     port `TrafficRest.cs` and `Settle` from the old branch.
-  - trafficsim `ContactDay` (game path, every seed given): a parked car and one on its way held a minute don't move, let go don't
-    jump; a held parked car doesn't set off and sets off once let go; a parked car, one on its way and a moving one knocked out of
-    their day never come back and the queues still hold every car driving. Freezing jumps up to 0.5 out of sight (the drawn pose is a
-    blend between steps, the way's curve is not; 0.75 seen on seeds 2 and 4); the checks allow 1.0 at the freeze, 0.6 after.
+  - trafficsim `ContactDay` (game path): cars held a minute don't move, let go don't jump; a held parked car sets off once let go;
+    **`ByBodyDay` (new)**: a parked car near node 6 held over its departure (stand-in body 4 off its space, turned 30°) is due, let go
+    by its body, taken from aside within a minute and back on its line within a minute (seed 1: taken 1 s after due, back 9 s later);
+    cars knocked out of their day stay gone with the queues whole.
 - **Driving out of spots and into them (last session, still failing, see Next 1)**: `Manoeuvre.cs`, `Micro.PullOutAlong`/`PullOutClear`/
   `PullOutTime`/`ArriveAlong`/`Arriving`, `TrafficLive.Beside`. Failures on `TRAFFICSIM_GAME=only` seeds 1 to 10 (seed 1: one way of
   34 s):
@@ -50,23 +50,14 @@ Last written 2026-11-28 (second session that day).
 
 ## Next
 
-1. **A knocked parked car does its trips while the player watches** (the owner: "obviously"). Now it is held until the player is past
-   sight. Change: when its departure comes (and it is still drivable: upright, not stuck), lift the freeze and make it a physics car
-   driving from where it lies: the micro places it in the lane pulling out (`PullOutTime`), and instead of the drawn way, its body is
-   taken (`Mi.TakeBody`, as `TakeNearest` does) astray from its line, so it finds its way back with `Micro.RejoinAim` (at a crawl,
-   backing round if it must) and drives on. On its side or stuck off its line it leaves the day as the physics cars do. The same for a
-   car knocked while pulling in or out (an arriving one parks where it can, or is put back in its space only out of sight). **A moving
-   contact car knocked must rejoin too** (the owner: it should already have been so; now it wrongly leaves its day): drop the brakes
-   and make it an ordinary physics car (`Contact`, `Brake` off, its engine on); it is already a driven body, so `Micro`'s astray logic
-   brings it back to its line, and only on its side, stuck or wrecked does it leave the day. Add a trafficsim check
-   (a held car's departure comes: it drives off within a minute from where its stand-in body lies).
-   The owner: raise the physics cars' limit (`World.TrafficPhysics`, 24 within 300 units) so every moving car near the player is one
-   (no realistic case has more nearby).
-   **Cars pulling out of a space or into one are physics cars too** (the owner): now `TakeNearest` skips them (`live.Manoeuvring`,
-   `HoldUntil`) because the body only steers along `Micro.WayAhead`; give it the way's path instead (`Manoeuvre.At`, the rear axle's
-   line, forwards and reverse legs, front-wheel steered; pedals from the way's timing) while it drives it, then `WayAhead` as now. Then
-   nothing moving near the player is ever a drawn car, and loose cars are only parked ones (drop the loose-car handling of cars
-   pulling in or out, and the moving loose car on its brakes, `Brake`, once nothing needs it).
+1. **Cars pulling out of a space or into one are physics cars too** (the owner; the rest of the old Next 1 is done). Now
+   `TakeNearest` skips them (`live.Manoeuvring`, `HoldUntil`) because the body only steers along `Micro.WayAhead`. Plan: a body in
+   `bodies` that is not yet `TakeBody`'d (the agent is held in the lane meanwhile, `HoldUntil`; the micro mustn't read a body at the
+   kerb, it would go astray) drives the way's path on the way's clock (`Manoeuvre.At` at `M.Now - manSince`, the rear axle's line;
+   pure pursuit forwards, and backwards on a reverse leg with the pursuit point behind; pedals from the along-path error to where the
+   way has it), then at the way's end `TakeBody` and `WayAhead` as now. A way in ends with the body released to the drawn parked car.
+   A stand-in in trafficsim for it. Then nothing moving near the player is ever a drawn car, and loose cars are only parked ones (drop
+   the loose-car handling of cars pulling in or out, and the moving contact car on its brakes, `Brake`, once nothing needs it).
 2. Fix the manoeuvre failures 1 to 4 above until `TRAFFICSIM_GAME=only` passes seeds 1 to 10, then the full trafficsim on 1 to 32.
 3. Then update `docs/TRAFFIC_REWORK.md` §6 phase 5 (ways out and in, contact physics) and add the ways to TESTING.md item 74 for the
    owner.
@@ -86,6 +77,7 @@ Last written 2026-11-28 (second session that day).
 
 - `tools/check.sh` (HalfGripRefs' game, the stub HalfGripTools built from `tools/halfgriptools-stub`): compiles (one unused-field
   warning).
-- `trafficsim` `TRAFFICSIM_GAME=only` seeds 1 to 10: the contact checks pass; `game ways`, `physics stray` and seed 9's `game block` fail (see above). Before the ways, seeds 1 to 32 passed.
+- `trafficsim` `TRAFFICSIM_GAME=only` seeds 1 to 10: the contact checks and `ByBodyDay` pass (seeds 3 and 9 have no parked car near node 6
+  leaving within half an hour, so `ByBodyDay` is skipped there); `game ways`, `physics stray` (5, 7, 8) and seed 9's `game block` fail (see above). Before the ways, seeds 1 to 32 passed.
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
 - In game: nothing of this session tested.

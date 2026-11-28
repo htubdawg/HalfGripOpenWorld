@@ -205,14 +205,13 @@ namespace HalfGripOpenWorld
 					continue;
 				}
 				double dx = x - cx, dz = z - cz;
-				if (b.Contact && (b.Touched || !b.Alive))
+				if (b.Contact && b.Touched)
 				{
-					// A contact car knocked: out of its day (the next frame finds it gone and leaves it lying where it is).
+					// A moving contact car knocked (the owner: it rejoins as a physics car does): off its brakes, its engine on, an ordinary
+					// physics car from here. Knocked off its line it finds its way back; only on its side, stuck or wrecked does it leave its day.
 					looseKnocked++;
-					Mod.Info("Traffic: contact car " + c + " knocked out of its day at " + x.ToString("0") + ", " + z.ToString("0"));
-					b.Contact = false;
-					live.LoseCar(c);
-					continue;
+					Mod.Info("Traffic: contact car " + c + " knocked at " + x.ToString("0") + ", " + z.ToString("0") + ": driving on as a physics car");
+					b.Drive();
 				}
 				int n = live.Mi.WayAhead(c, 4.0, b.WayX, b.WayZ, out bool jump);
 				bool away = b.Contact ? dx * dx + dz * dz > LooseLeave * LooseLeave || MostLoose == 0 : dx * dx + dz * dz > (double)PhysicsFar * PhysicsFar;
@@ -243,7 +242,7 @@ namespace HalfGripOpenWorld
 			{
 				bodies.Remove(c);
 			}
-			StandingBubble(cx, cz, show);
+			StandingBubble(now, cx, cz, show);
 			for (int i = loose.Count - 1; i >= 0; i--)
 			{
 				TrafficBody b = loose[i];
@@ -461,12 +460,15 @@ namespace HalfGripOpenWorld
 
 		/// <summary>
 		/// The standing contact cars. Wrecked: out of their day, left lying where they are as loose cars. Knocked (the owner, 2026-11-28: a
-		/// parked car that is hit still carries on its day later): it lies where it ended up, its car still held, until the player is out of
-		/// sight of it (<see cref="LooseGone"/>), then is back in its space (or on its way out or in) as it was and its day goes on from there,
-		/// late if it missed its time. Untouched, with the player <see cref="LooseLeave"/> away (or the traffic hidden, or contact cars
-		/// switched off): back to being drawn, its car going on from just where it stood (<see cref="TrafficLive.Freeze"/>).
+		/// parked car that is hit still carries on its day, and does its trips while the player watches): it lies where it ended up, its car
+		/// held, until its departure comes (or, on its way out of its spot, at once), then with the player within <see cref="PhysicsNear"/>
+		/// it drives off as a physics car from where it lies (<see cref="TakeByBody"/>), astray from its line and finding its way back to it;
+		/// on its side then, out of its day. Further off it waits until the player is out of sight of it (<see cref="LooseGone"/>), then is
+		/// back in its space as it was and its day goes on from there, late. Untouched, with the player <see cref="LooseLeave"/> away (or the
+		/// traffic hidden, or contact cars switched off): back to being drawn, its car going on from just where it stood
+		/// (<see cref="TrafficLive.Freeze"/>). A car knocked while driving into its spot stays as before: held until out of sight, then parked.
 		/// </summary>
-		private void StandingBubble(double cx, double cz, bool show)
+		private void StandingBubble(double now, double cx, double cz, bool show)
 		{
 			if (standing.Count == 0)
 			{
@@ -500,10 +502,31 @@ namespace HalfGripOpenWorld
 					{
 						b.Counted = true;
 						looseKnocked++;
-						Mod.Info("Traffic: contact car " + c + " knocked at " + x.ToString("0") + ", " + z.ToString("0") + ": it lies there until you are out of sight, then carries on its day");
+						Mod.Info("Traffic: contact car " + c + " knocked at " + x.ToString("0") + ", " + z.ToString("0") + ": it drives off from there when its day says");
 					}
 					if (show && d2 < (double)LooseGone * LooseGone)
 					{
+						if (live.ByBody(c))
+						{
+							TakeByBody(now, c, b, x, z);
+						}
+						else if (d2 < (double)PhysicsNear * PhysicsNear && live.DueOut(c) && b.Rb.linearVelocity.sqrMagnitude < 1f)
+						{
+							if (b.transform.up.y <= 0.5f)
+							{
+								// On its side: it can't drive off, so its day goes on without it.
+								standingDone.Add(c);
+								live.LoseCar(c);
+								b.Contact = false;
+								loose.Add(b);
+								lostToDay++;
+								Mod.Info("Traffic: contact car " + c + " on its side when it was to set off, out of its day");
+								continue;
+							}
+							live.LetGoByBody(c);
+							Mod.Info("Traffic: contact car " + c + " sets off from where it was knocked to");
+							TakeByBody(now, c, b, x, z);
+						}
 						continue;
 					}
 				}
@@ -513,6 +536,7 @@ namespace HalfGripOpenWorld
 				}
 				standingDone.Add(c);
 				looseBack++;
+				live.TookBody(c);
 				live.Freeze(c, false);
 				Release(b);
 				Mod.Info("Traffic: contact car " + c + (b.Touched ? " back in its place out of sight, its day going on" : " back as it was (untouched)"));
@@ -520,6 +544,43 @@ namespace HalfGripOpenWorld
 			foreach (int c in standingDone)
 			{
 				standing.Remove(c);
+			}
+		}
+
+		/// <summary>
+		/// Knocked standing car <paramref name="c"/>, let go to drive off by its body (<see cref="TrafficLive.LetGoByBody"/>): once the micro has
+		/// it on the lane, its body is taken as a physics car's (<see cref="Micro.TakeBody"/>, astray from its line at once), so it finds its way
+		/// back to the lane from where it lies and drives on. Still in its space waiting for a gap, it waits. Gone off in the meso instead (it
+		/// shouldn't, near the player), its car leaves the day and the body lies where it is: never two of one car.
+		/// </summary>
+		private void TakeByBody(double now, int c, TrafficBody b, double x, double z)
+		{
+			Micro.Agent a = live.Mi.Agents[c];
+			Meso.Vehicle v = live.M.Cars[c];
+			if (a != null && !a.Driven && v.Mode == Meso.Mode.Driving)
+			{
+				if (!live.Mi.TakeBody(c, b.Reading(now - Meso.Step), true))
+				{
+					return;
+				}
+				live.TookBody(c);
+				b.Drive();
+				b.Ways = live.Mi.WayAhead(c, 4.0, b.WayX, b.WayZ, out bool _);
+				b.Want = (float)a.A;
+				standingDone.Add(c);
+				bodies[c] = b;
+				madePhysical++;
+				Mod.Info("Traffic: knocked car " + c + " driving off as a physics car from " + x.ToString("0") + ", " + z.ToString("0"));
+				return;
+			}
+			if (v.Mode == Meso.Mode.Gone || (a == null && !live.WaitingInSpot(c)))
+			{
+				live.LoseCar(c);
+				b.Contact = false;
+				loose.Add(b);
+				lostToDay++;
+				standingDone.Add(c);
+				Mod.Info("Traffic: knocked car " + c + " set off out of reach of its body, out of its day");
 			}
 		}
 
@@ -1016,15 +1077,35 @@ namespace HalfGripOpenWorld
 			Cc.brakeAccel = 0f;
 			Cc.steeringAngleDeg = 0f;
 			Lamps(true);
-			if (Ec.audioSource != null && Ec.engineSounds != null && Ec.engineSounds.Length > 0)
+			Engine();
+		}
+
+		/// <summary>Its engine's sound on (one of the enemy car's, chosen by the car).</summary>
+		private void Engine()
+		{
+			if (Car >= 0 && Ec.audioSource != null && Ec.engineSounds != null && Ec.engineSounds.Length > 0)
 			{
-				AudioClip clip = Ec.engineSounds[(car & 0x7fffffff) % Ec.engineSounds.Length];
+				AudioClip clip = Ec.engineSounds[(Car & 0x7fffffff) % Ec.engineSounds.Length];
 				if (Ec.audioSource.clip != clip || !Ec.audioSource.isPlaying)
 				{
 					Ec.audioSource.clip = clip;
 					Ec.audioSource.Play();
 				}
 			}
+		}
+
+		/// <summary>
+		/// A contact car knocked made an ordinary physics car (the owner: a knocked car rejoins and does its trips): off its brakes, a driver
+		/// again, its engine on and lamps lit; no longer felt for touches.
+		/// </summary>
+		internal void Drive()
+		{
+			Loose = false;
+			Contact = Touched = Brake = FromStand = Counted = false;
+			Astray = false;
+			rejoin = default;
+			Lamps(true);
+			Engine();
 		}
 
 		/// <summary>
