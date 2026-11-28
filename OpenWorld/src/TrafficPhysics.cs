@@ -35,6 +35,14 @@ namespace HalfGripOpenWorld
 		private const int WarmBodies = 3;
 
 		private readonly Dictionary<int, TrafficBody> bodies = new Dictionary<int, TrafficBody>();
+		/// <summary>
+		/// The physics cars driving their way out of a spot or into one (<see cref="Manoeuvre"/>, on its clock, <see cref="TrafficBody.OnWay"/>),
+		/// or pulled up at their stop waiting to drive in: not yet (or no longer) bodies the micro reads, since a body at the kerb would be
+		/// astray from its line. A way out ends with the body taken by the micro (<see cref="Micro.TakeBody"/>), a way in with it let go to
+		/// the drawn parked car.
+		/// </summary>
+		private readonly Dictionary<int, TrafficBody> waying = new Dictionary<int, TrafficBody>();
+		private readonly List<int> wayDone = new List<int>();
 		private readonly Stack<TrafficBody> bodySpare = new Stack<TrafficBody>();
 		private readonly List<TrafficBody> loose = new List<TrafficBody>();
 		private readonly List<int> letGo = new List<int>();
@@ -83,7 +91,7 @@ namespace HalfGripOpenWorld
 				{
 					n += b != null && !b.Contact ? 1 : 0;
 				}
-				return n;
+				return n + waying.Count;
 			}
 		}
 
@@ -108,7 +116,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Whether car <paramref name="car"/> is a physics car now (its drawn copy hidden).</summary>
 		private bool IsPhysical(int car)
 		{
-			return bodies.ContainsKey(car) || standing.ContainsKey(car);
+			return bodies.ContainsKey(car) || standing.ContainsKey(car) || waying.ContainsKey(car);
 		}
 
 		/// <summary>
@@ -196,9 +204,15 @@ namespace HalfGripOpenWorld
 						lostToDay++;
 						Mod.Info("Traffic: car " + c + " left its day (" + (!b.Alive ? "wrecked" : b.transform.up.y <= 0.5f ? "on its side" : "stuck off its line") + ") at " + x.ToString("0") + ", " + z.ToString("0"));
 					}
+					else if (v.Mode == Meso.Mode.Parked && (live.PulledUp(c) || live.Manoeuvring(c)) && b.Alive)
+					{
+						// Pulled up at its stop: the body waits there and drives into its spot (Ways).
+						b.StartWay(x, z);
+						waying[c] = b;
+					}
 					else
 					{
-						// Parked (its drawn copy drives into its spot from where the body pulled up), or handed on.
+						// Parked out of sight of the road (away), or handed on: its drawn copy takes over.
 						HandBack(c, b, x, z);
 						Release(b);
 					}
@@ -242,6 +256,7 @@ namespace HalfGripOpenWorld
 			{
 				bodies.Remove(c);
 			}
+			Ways(now, cx, cz, show);
 			StandingBubble(now, cx, cz, show);
 			for (int i = loose.Count - 1; i >= 0; i--)
 			{
@@ -286,6 +301,19 @@ namespace HalfGripOpenWorld
 					candidates.Add(((float)Math.Sqrt(d2), c));
 				}
 			}
+			// The cars driving their way out of a spot or into one, as they are drawn (not those held still by the contact physics).
+			foreach (int c in live.WaysNow)
+			{
+				if (IsPhysical(c) || live.Frozen(c) || !drawn.TryGetValue(c, out View v) || !v.Go.activeSelf || v.LastKind != TrafficLive.Driving || double.IsNaN(v.LastX))
+				{
+					continue;
+				}
+				double dx = v.LastX - cx, dz = v.LastZ - cz, d2 = dx * dx + dz * dz;
+				if (d2 < (double)PhysicsNear * PhysicsNear)
+				{
+					candidates.Add(((float)Math.Sqrt(d2), c));
+				}
+			}
 			candidates.Sort((p, q) => p.d != q.d ? p.d.CompareTo(q.d) : p.car.CompareTo(q.car));
 			foreach ((float _, int c) in candidates)
 			{
@@ -296,6 +324,11 @@ namespace HalfGripOpenWorld
 				View v = drawn[c];
 				if (Crowded(c, v))
 				{
+					continue;
+				}
+				if (live.Manoeuvring(c))
+				{
+					TakeOnWay(now, c, v);
 					continue;
 				}
 				Micro.Agent a = live.Mi.Agents[c];
@@ -326,6 +359,176 @@ namespace HalfGripOpenWorld
 				bodies[c] = b;
 				madePhysical++;
 			}
+		}
+
+		/// <summary>Car <paramref name="c"/>, drawn driving its way out of its spot or into it, made a physics car driving it from where it is drawn.</summary>
+		private void TakeOnWay(double now, int c, View v)
+		{
+			Manoeuvre m = live.WayOf(c, now - Meso.Step, out double t, out bool into);
+			if (m == null)
+			{
+				return;
+			}
+			m.At(t, out double _, out double _, out double _, out double _, out double vx, out double vz);
+			TrafficBody b = bodySpare.Pop();
+			Wears(c, out int look, out int paint);
+			if (b.Skin != null)
+			{
+				b.Skin.ApplySkin(SkinFor(look, paint));
+			}
+			b.LookIndex = look;
+			b.Place(RestPlace(v.Root.position, look, 0.15f), v.Root.rotation);
+			b.Begin(this, c, new Vector3((float)vx, 0f, (float)vz));
+			b.StartWay(v.LastX, v.LastZ);
+			b.Way = m;
+			b.WayT = t;
+			b.WayIn = into;
+			b.WayLeg = m.ClockLeg(t);
+			v.Go.SetActive(false);
+			if (v.Light != null)
+			{
+				v.Light.enabled = false;
+			}
+			waying[c] = b;
+			madePhysical++;
+		}
+
+		/// <summary>How long a body driving its way may be held up behind the way's clock (seconds) before it counts as knocked off it.</summary>
+		private const double WayStuck = 30.0;
+
+		/// <summary>
+		/// The physics cars driving their way out of a spot or into one, after the step: each given its way's clock (at the time the cars are
+		/// drawn), the clock held back while the body is behind it (<see cref="TrafficLive.WindBack"/>: held up by the player, slower than
+		/// the plan); a way out driven, the micro takes the body on the lane (<see cref="Micro.TakeBody"/>) and it drives on as any physics car;
+		/// a way in driven, the body is let go to the drawn parked car. One pulled up at its stop stands on its brakes until its way in begins.
+		/// Knocked off its way (or turned over, or held up too long), it is a knocked contact car (<see cref="Knocked"/>); wrecked, out of its
+		/// day; the player gone off, its drawn copy takes over where the way's clock has it (the body is near that).
+		/// </summary>
+		private void Ways(double now, double cx, double cz, bool show)
+		{
+			if (waying.Count == 0)
+			{
+				return;
+			}
+			wayDone.Clear();
+			float dt = Time.deltaTime;
+			foreach (KeyValuePair<int, TrafficBody> kv in waying)
+			{
+				int c = kv.Key;
+				TrafficBody b = kv.Value;
+				if (b == null)
+				{
+					wayDone.Add(c);
+					continue;
+				}
+				Origin.World(b.Rb.position, out double x, out double z);
+				if (!b.Alive)
+				{
+					wayDone.Add(c);
+					live.LoseCar(c);
+					b.EndWay();
+					b.Loosen();
+					loose.Add(b);
+					lostToDay++;
+					Mod.Info("Traffic: car " + c + " wrecked on its way " + (b.WayIn ? "into" : "out of") + " its spot, out of its day at " + x.ToString("0") + ", " + z.ToString("0"));
+					continue;
+				}
+				double dx = x - cx, dz = z - cz;
+				if (!show || dx * dx + dz * dz > (double)PhysicsFar * PhysicsFar)
+				{
+					wayDone.Add(c);
+					HandBack(c, b, x, z);
+					Release(b);
+					continue;
+				}
+				Manoeuvre m = live.WayOf(c, now - Meso.Step, out double t, out bool into);
+				if (m == null)
+				{
+					b.Way = null;
+					if (live.PulledUp(c))
+					{
+						// Waiting at its stop for its way in to clear.
+						if (b.transform.up.y <= 0.5f || (x - b.WayFromX) * (x - b.WayFromX) + (z - b.WayFromZ) * (z - b.WayFromZ) > 4.0 * 4.0)
+						{
+							wayDone.Add(c);
+							Knocked(now, c, b, x, z, true);
+						}
+						continue;
+					}
+					wayDone.Add(c);
+					Micro.Agent a = live.Mi.Agents[c];
+					if (!b.WayIn && a != null && !a.Driven && live.M.Cars[c].Mode == Meso.Mode.Driving && live.Mi.TakeBody(c, b.Reading(now - Meso.Step)))
+					{
+						// Out on the lane: an ordinary physics car from here.
+						b.EndWay();
+						b.Ways = live.Mi.WayAhead(c, 4.0, b.WayX, b.WayZ, out bool _);
+						b.Want = (float)a.A;
+						bodies[c] = b;
+						continue;
+					}
+					// In its spot (the drawn parked car stands there), or handed to the meso.
+					HandBack(c, b, x, z);
+					Release(b);
+					continue;
+				}
+				if (b.Way != m)
+				{
+					// A new way (the way in begun after waiting pulled up): from its first leg.
+					b.Way = m;
+					b.WayLeg = m.ClockLeg(t);
+					b.WayHeld = 0f;
+				}
+				b.WayIn = into;
+				b.WayT = t;
+				if (b.Age > 0.5f && (b.transform.up.y <= 0.5f || Manoeuvre.OffWay(b.WayOff, b.WayFacing) || b.WayHeld > WayStuck))
+				{
+					wayDone.Add(c);
+					Knocked(now, c, b, x, z, into);
+					continue;
+				}
+				if (b.WayBehind > 1.5)
+				{
+					// Behind the clock: the clock waits for it (and the micro's hold and the body the drivers see with it).
+					live.WindBack(c, dt);
+					b.WayT -= dt;
+					b.WayHeld += dt;
+				}
+				else if (b.WayBehind < 0.5)
+				{
+					b.WayHeld = 0f;
+				}
+			}
+			foreach (int c in wayDone)
+			{
+				waying.Remove(c);
+			}
+		}
+
+		/// <summary>
+		/// A physics car on its way out of its spot or into one (or pulled up to drive in, <paramref name="into"/>) knocked off it: a knocked
+		/// standing contact car from here, as one made from its drawn copy would be. On its way out it is let go to drive off by its body
+		/// (<see cref="TrafficLive.LetGoByBody"/>; <see cref="TakeByBody"/> takes it, astray, finding its way back to its line); on its way in
+		/// its car is held until the player is out of sight, then parks.
+		/// </summary>
+		private void Knocked(double now, int c, TrafficBody b, double x, double z, bool into)
+		{
+			b.EndWay();
+			b.Loose = true;
+			b.Contact = true;
+			b.Touched = true;
+			b.FromStand = true;
+			// Where it was made is nowhere near: lying in the road, it is in the drivers' way at once.
+			b.MadeX = b.MadeZ = 1e9;
+			if (into)
+			{
+				live.Freeze(c, true, now);
+			}
+			else
+			{
+				live.LetGoByBody(c);
+			}
+			standing[c] = b;
+			Mod.Info("Traffic: car " + c + " knocked off its way " + (into ? "into" : "out of") + " its spot at " + x.ToString("0") + ", " + z.ToString("0"));
 		}
 
 		/// <summary>Whether car <paramref name="c"/>'s drawn pose is in (or right against) another car drawn or a body: a body put there would burst out of it.</summary>
@@ -368,6 +571,13 @@ namespace HalfGripOpenWorld
 				}
 			}
 			foreach (TrafficBody b in loose)
+			{
+				if (b != null)
+				{
+					yield return b;
+				}
+			}
+			foreach (TrafficBody b in waying.Values)
 			{
 				if (b != null)
 				{
@@ -421,6 +631,18 @@ namespace HalfGripOpenWorld
 				Release(b);
 			}
 			bodies.Clear();
+			foreach (KeyValuePair<int, TrafficBody> kv in waying)
+			{
+				TrafficBody b = kv.Value;
+				if (b == null)
+				{
+					continue;
+				}
+				Origin.World(b.Rb.position, out double x, out double z);
+				HandBack(kv.Key, b, x, z);
+				Release(b);
+			}
+			waying.Clear();
 			foreach (KeyValuePair<int, TrafficBody> kv in standing)
 			{
 				live?.Freeze(kv.Key, false);
@@ -767,7 +989,7 @@ namespace HalfGripOpenWorld
 				warming = null;
 				return;
 			}
-			if ((MostPhysics == 0 && MostLoose == 0) || bodySpare.Count >= WarmBodies || bodies.Count + standing.Count + bodySpare.Count >= MostPhysics + MostLoose + MostKnocked + WarmBodies
+			if ((MostPhysics == 0 && MostLoose == 0) || bodySpare.Count >= WarmBodies || bodies.Count + standing.Count + waying.Count + bodySpare.Count >= MostPhysics + MostLoose + MostKnocked + WarmBodies
 				|| tm.enemyCarPrefab == null || madeFrame == Time.frameCount)
 			{
 				return;
@@ -1008,6 +1230,43 @@ namespace HalfGripOpenWorld
 		private float steer;
 		private bool woken, smoking;
 
+		/// <summary>
+		/// Driving its way out of its spot or into it (<see cref="Way"/> on its clock, <see cref="WayT"/> seconds in, set each frame), or with no
+		/// way pulled up at its stop waiting to drive in: steered and pedalled by <see cref="Manoeuvre.Follow"/>, the micro not reading it.
+		/// Where it was when it began (or pulled up), the leg it is on, and how it is doing: how far behind the clock, off the way, its nose
+		/// turned from it (the cosine), how long it has been held up behind the clock.
+		/// </summary>
+		internal bool OnWay, WayIn;
+		internal Manoeuvre Way;
+		internal double WayT, WayFromX, WayFromZ;
+		internal int WayLeg;
+		internal double WayBehind, WayOff, WayFacing = 1.0;
+		internal float WayHeld;
+
+		/// <summary>Begins driving a way out of its spot or into it (or waiting pulled up for one), from world (<paramref name="x"/>, <paramref name="z"/>).</summary>
+		internal void StartWay(double x, double z)
+		{
+			OnWay = true;
+			WayIn = true;
+			Way = null;
+			WayT = 0.0;
+			WayLeg = 0;
+			WayBehind = WayOff = 0.0;
+			WayFacing = 1.0;
+			WayHeld = 0f;
+			WayFromX = x;
+			WayFromZ = z;
+			Loose = Brake = Astray = false;
+			rejoin = default;
+		}
+
+		/// <summary>No longer driving a way.</summary>
+		internal void EndWay()
+		{
+			OnWay = false;
+			Way = null;
+		}
+
 		/// <summary>Its reading for the micro: middle, way faced, velocity, upright; standing for day second <paramref name="at"/>.</summary>
 		internal Micro.Reading Reading(double at)
 		{
@@ -1055,6 +1314,8 @@ namespace HalfGripOpenWorld
 			Car = car;
 			Loose = false;
 			Contact = Touched = Brake = FromStand = settled = Counted = false;
+			OnWay = false;
+			Way = null;
 			contactAge = 0f;
 			Astray = false;
 			rejoin = default;
@@ -1100,6 +1361,7 @@ namespace HalfGripOpenWorld
 		/// </summary>
 		internal void Drive()
 		{
+			EndWay();
 			Loose = false;
 			Contact = Touched = Brake = FromStand = Counted = false;
 			Astray = false;
@@ -1144,6 +1406,7 @@ namespace HalfGripOpenWorld
 		/// <summary>Stops driving (back to the pool).</summary>
 		internal void End()
 		{
+			EndWay();
 			Car = -1;
 			Loose = false;
 			Contact = Touched = Brake = FromStand = false;
@@ -1178,6 +1441,11 @@ namespace HalfGripOpenWorld
 				Cc.engineAccel = 0f;
 				Cc.brakeAccel = Alive ? Cc.carStats.brakeDeccel : 0f;
 				Cc.steeringAngleDeg = 0f;
+				return;
+			}
+			if (OnWay)
+			{
+				WayDrive(dt);
 				return;
 			}
 			if (Astray)
@@ -1300,6 +1568,83 @@ namespace HalfGripOpenWorld
 			{
 				Cc.engineAccel = 0f;
 				Cc.brakeAccel = Mathf.Min(stats.brakeDeccel, -fwd);
+			}
+		}
+
+		/// <summary>
+		/// Its way out of its spot or into it driven a physics step (<see cref="Manoeuvre.Follow"/>): pure pursuit along the leg for its rear
+		/// axle, forwards or in reverse, the front wheels' angle for the turn it asks; engine and brake for the speed it asks (backwards in
+		/// reverse), the hill and the rolling taken in; stopped where it changes gear. No way (pulled up, waiting): on its brakes.
+		/// </summary>
+		private void WayDrive(float dt)
+		{
+			CarStats stats = Cc.carStats;
+			if (Way == null)
+			{
+				steer = Mathf.Lerp(steer, 0f, Mathf.Clamp01(dt * 8f));
+				Cc.steeringAngleDeg = steer;
+				Cc.engineAccel = 0f;
+				Cc.brakeAccel = stats.brakeDeccel;
+				return;
+			}
+			Origin.World(Rb.position, out double x, out double z);
+			Vector3 f = transform.forward;
+			float fl = Mathf.Max(1e-4f, Mathf.Sqrt(f.x * f.x + f.z * f.z));
+			float v = Cc.forwardSpeed;
+			Way.Follow(ref WayLeg, WayT, x, z, f.x / fl, f.z / fl, v, out double curv, out double speed, out WayBehind, out WayOff, out WayFacing);
+			WayT += dt;
+			double wheelbase = Math.Max(2.0, stats != null ? stats.wheelbase : 5.25);
+			// The game steers right with a positive angle; Follow's turn is anticlockwise from above.
+			float want = Mathf.Clamp((float)(-Math.Atan(wheelbase * curv) * 180.0 / Math.PI), -40f, 40f);
+			steer = Mathf.Lerp(steer, want, Mathf.Clamp01(dt * 8f));
+			Cc.steeringAngleDeg = steer;
+			float hill = -Vector3.Dot(Physics.gravity, transform.forward);
+			float target = (float)speed;
+			if (Mathf.Abs(target) < 0.05f && Mathf.Abs(v) < 0.6f)
+			{
+				Cc.engineAccel = 0f;
+				Cc.brakeAccel = stats.brakeDeccel;
+				return;
+			}
+			if (target >= 0f)
+			{
+				if (v < -0.3f)
+				{
+					// Still rolling back: stop first.
+					Cc.engineAccel = 0f;
+					Cc.brakeAccel = stats.brakeDeccel;
+					return;
+				}
+				float fwd = 1.5f * (target - v) + hill + (v > 0.3f ? 1f : 0f);
+				if (fwd > 0f)
+				{
+					Cc.engineAccel = Mathf.Min(fwd, (float)Driver.Accel * 2f);
+					Cc.brakeAccel = 0f;
+				}
+				else
+				{
+					Cc.engineAccel = 0f;
+					Cc.brakeAccel = Mathf.Min(stats.brakeDeccel, -fwd);
+				}
+				return;
+			}
+			if (v > 0.3f)
+			{
+				Cc.engineAccel = 0f;
+				Cc.brakeAccel = stats.brakeDeccel;
+				return;
+			}
+			// In reverse: the engine backwards, as Rejoin backs up.
+			float need = 1.5f * (target - v) + hill - (v < -0.3f ? 1f : 0f);
+			if (need < 0f)
+			{
+				Cc.engineAccel = Mathf.Max(need, -(float)Driver.Accel * 2f);
+				Cc.brakeAccel = 0f;
+			}
+			else
+			{
+				Cc.engineAccel = 0f;
+				Cc.brakeAccel = Mathf.Min(stats.brakeDeccel, need);
 			}
 		}
 

@@ -653,7 +653,7 @@ namespace HalfGripOpenWorld
 					}
 					continue;
 				}
-				if (bodies.TryGetValue(c, out TrafficBody body) && body != null)
+				if ((bodies.TryGetValue(c, out TrafficBody body) || waying.TryGetValue(c, out body)) && body != null)
 				{
 					// A physics car: its body is drawn, its copy hidden (and its box with it) until the body is let go.
 					if (v.Go.activeSelf)

@@ -412,6 +412,151 @@ namespace HalfGripOpenWorld
 			return Math.Max(0.0, l.Length - 0.5 * Stop * r * r);
 		}
 
+		// ---- a body driving the way (a physics car pulling out or in) ---------------------------------------------------------
+
+		/// <summary>How far ahead of the rear axle along its leg a body driving the way aims (units).</summary>
+		internal const double FollowLook = 7.0;
+
+		/// <summary>
+		/// What a body (its middle (<paramref name="x"/>, <paramref name="z"/>), facing unit (<paramref name="hx"/>, <paramref name="hz"/>),
+		/// <paramref name="v"/> its speed forwards, negative in reverse) driving this way on its clock (<paramref name="t"/> seconds in) does:
+		/// the leg it is on (<paramref name="leg"/>, kept between calls: it goes on to the next only once it has stopped at this one's end,
+		/// as a driver changes gear), pure pursuit for a point <see cref="FollowLook"/> along the leg from its rear axle (the path is the rear
+		/// axle's line), and the speed for where the clock has the car (its speed there and the gap to it closed, stopping at the leg's end).
+		/// <paramref name="curv"/>: how fast its nose turns a unit driven forwards (anticlockwise seen from above, x east and z north, positive;
+		/// the front wheels' angle is atan(wheelbase × curv)), the same in either gear. <paramref name="speed"/>: forwards (negative in reverse).
+		/// <paramref name="behind"/>: how far the body is behind where the clock has it along the way (the game holds the clock back while it
+		/// is more than a little: the micro's hold and the body the drivers see go with it). <paramref name="off"/>: how far it is off the leg's
+		/// line, <paramref name="facing"/> the cosine between its nose and the way's there (knocked off the way, it stops following it).
+		/// </summary>
+		internal void Follow(ref int leg, double t, double x, double z, double hx, double hz, double v, out double curv, out double speed, out double behind, out double off, out double facing)
+		{
+			leg = Math.Max(0, Math.Min(Legs.Count - 1, leg));
+			Leg l = Legs[leg];
+			double rx = x - hx * RearAxle, rz = z - hz * RearAxle;
+			double s = Project(l, rx, rz, out off, out int seg);
+			// On to the next leg: stopped at this one's end and the clock past it.
+			int clockLeg = ClockLeg(t);
+			if (leg < Legs.Count - 1 && clockLeg > leg && l.Length - s < 1.5 && Math.Abs(v) < 1.0)
+			{
+				leg++;
+				l = Legs[leg];
+				s = Project(l, rx, rz, out off, out seg);
+			}
+			double wx = l.Hx[seg], wz = l.Hz[seg];
+			facing = hx * wx + hz * wz;
+			// Where the clock has it on this leg, and how fast.
+			double sc, vc;
+			if (clockLeg > leg || t >= Duration)
+			{
+				sc = l.Length;
+				vc = 0.0;
+			}
+			else if (clockLeg < leg || t < l.Start)
+			{
+				sc = 0.0;
+				vc = 0.0;
+			}
+			else
+			{
+				sc = Along(l, Math.Min(l.Time, t - l.Start), out vc);
+			}
+			behind = sc - s;
+			for (int k = leg + 1; k <= Math.Min(clockLeg, Legs.Count - 1); k++)
+			{
+				behind += k == clockLeg && t < Legs[k].Start + Legs[k].Time ? Along(Legs[k], Math.Max(0.0, t - Legs[k].Start), out double _) : Legs[k].Length;
+			}
+			double left = Math.Max(0.0, l.Length - s);
+			double mag = Math.Max(0.0, Math.Min(l.Top * 1.3 + 0.5, vc + 1.2 * (sc - s)));
+			mag = Math.Min(mag, Math.Sqrt(2.0 * Stop * Math.Max(0.0, left - 0.3)));
+			speed = l.Back ? -mag : mag;
+			// The point aimed at: along the leg's rear axle line, past its end straight on along its last way.
+			double want = s + FollowLook, px, pz;
+			if (want >= l.Length)
+			{
+				int n = l.X.Length - 1;
+				double tx = l.Back ? -l.Hx[n] : l.Hx[n], tz = l.Back ? -l.Hz[n] : l.Hz[n];
+				px = l.X[n] - l.Hx[n] * RearAxle + tx * (want - l.Length);
+				pz = l.Z[n] - l.Hz[n] * RearAxle + tz * (want - l.Length);
+			}
+			else
+			{
+				RearAt(l, want, out px, out pz);
+			}
+			// The way it moves: its nose forwards, its tail in reverse; the turn of that for the point, as the nose's turn a unit forwards.
+			double dx = l.Back ? -hx : hx, dz = l.Back ? -hz : hz;
+			double ax = px - rx, az = pz - rz, ad = Math.Sqrt(ax * ax + az * az);
+			if (ad < 1e-6)
+			{
+				curv = 0.0;
+				return;
+			}
+			double sin = (dx * az - dz * ax) / ad;
+			double k2 = 2.0 * sin / Math.Max(ad, 3.0);
+			curv = l.Back ? -k2 : k2;
+		}
+
+		/// <summary>
+		/// Whether a body driving the way, <paramref name="off"/> off its line and facing <paramref name="facing"/> (the cosine) from it
+		/// (<see cref="Follow"/>), has been knocked off it: well off the line; or turned from it and a little off it (on the line but turned,
+		/// it is only behind the way on a sharp bend); or turned right round.
+		/// </summary>
+		internal static bool OffWay(double off, double facing)
+		{
+			return off > 4.0 || (facing < 0.7 && off > 1.5) || facing < -0.5;
+		}
+
+		/// <summary>The leg the way's clock is on <paramref name="t"/> seconds in (a gear change counts as the leg after it): where a body taken on the way starts following it.</summary>
+		internal int ClockLeg(double t)
+		{
+			for (int k = Legs.Count - 1; k > 0; k--)
+			{
+				if (t >= Legs[k - 1].Start + Legs[k - 1].Time)
+				{
+					return k;
+				}
+			}
+			return 0;
+		}
+
+		/// <summary>The rear axle's distance along leg <paramref name="l"/> nearest (<paramref name="rx"/>, <paramref name="rz"/>), how far off it is, and the sample it is in.</summary>
+		private static double Project(Leg l, double rx, double rz, out double off, out int seg)
+		{
+			double best = double.MaxValue, at = 0.0;
+			seg = 0;
+			for (int j = 0; j + 1 < l.X.Length; j++)
+			{
+				double ax = l.X[j] - l.Hx[j] * RearAxle, az = l.Z[j] - l.Hz[j] * RearAxle;
+				double bx = l.X[j + 1] - l.Hx[j + 1] * RearAxle, bz = l.Z[j + 1] - l.Hz[j + 1] * RearAxle;
+				double ex = bx - ax, ez = bz - az, e2 = ex * ex + ez * ez;
+				double f = e2 > 1e-12 ? Math.Max(0.0, Math.Min(1.0, ((rx - ax) * ex + (rz - az) * ez) / e2)) : 0.0;
+				double qx = ax + ex * f - rx, qz = az + ez * f - rz, d2 = qx * qx + qz * qz;
+				if (d2 < best)
+				{
+					best = d2;
+					at = l.D[j] + (l.D[j + 1] - l.D[j]) * f;
+					seg = f < 0.5 ? j : j + 1;
+				}
+			}
+			off = Math.Sqrt(best);
+			return at;
+		}
+
+		/// <summary>The rear axle's place <paramref name="d"/> along leg <paramref name="l"/>.</summary>
+		private static void RearAt(Leg l, double d, out double x, out double z)
+		{
+			int j = 0;
+			while (j + 2 < l.D.Length && l.D[j + 1] < d)
+			{
+				j++;
+			}
+			double span = l.D[j + 1] - l.D[j], f = span > 1e-12 ? Math.Max(0.0, Math.Min(1.0, (d - l.D[j]) / span)) : 0.0;
+			double ax = l.X[j] - l.Hx[j] * RearAxle, az = l.Z[j] - l.Hz[j] * RearAxle;
+			double bx = l.X[j + 1] - l.Hx[j + 1] * RearAxle, bz = l.Z[j + 1] - l.Hz[j + 1] * RearAxle;
+			x = ax + (bx - ax) * f;
+			z = az + (bz - az) * f;
+		}
+
 		private static double Dist(double ax, double az, double bx, double bz)
 		{
 			double dx = bx - ax, dz = bz - az;

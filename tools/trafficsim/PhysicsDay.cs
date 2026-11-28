@@ -20,6 +20,35 @@ internal static partial class Program
 		public Micro.Rejoin Rejoin;
 	}
 
+	/// <summary>
+	/// A stand-in body driving its way out of its spot or into it (as TrafficPhysics' Ways does): its rear axle steered by
+	/// Manoeuvre.Follow, no tighter than a car turns, its speed following what Follow asks a fifth of a second late; with no way, pulled
+	/// up and standing.
+	/// </summary>
+	private sealed class WayStandIn
+	{
+		public int Car, Leg;
+		public double X, Z, Hx, Hz, V, Held, Since;
+		public bool Into = true;
+		public Manoeuvre Way;
+	}
+
+	/// <summary>A frame of a way stand-in on its way's clock <paramref name="t"/>: how far behind the clock it is, off the way, and turned from it.</summary>
+	private static void WayDrive(WayStandIn b, double t, double dt, out double behind, out double off, out double facing)
+	{
+		b.Way.Follow(ref b.Leg, t, b.X, b.Z, b.Hx, b.Hz, b.V, out double curv, out double speed, out behind, out off, out facing);
+		double acc = Math.Max(-Manoeuvre.Stop * 1.5, Math.Min(Manoeuvre.Pull * 1.5, (speed - b.V) / Math.Max(dt, Lag)));
+		b.V += acc * dt;
+		curv = Math.Max(-1.0 / 12.0, Math.Min(1.0 / 12.0, curv));
+		double rx = b.X - b.Hx * Manoeuvre.RearAxle, rz = b.Z - b.Hz * Manoeuvre.RearAxle;
+		double turn = b.V * curv * dt, c = Math.Cos(turn), s = Math.Sin(turn);
+		(b.Hx, b.Hz) = (b.Hx * c - b.Hz * s, b.Hx * s + b.Hz * c);
+		rx += b.Hx * b.V * dt;
+		rz += b.Hz * b.V * dt;
+		b.X = rx + b.Hx * Manoeuvre.RearAxle;
+		b.Z = rz + b.Hz * Manoeuvre.RearAxle;
+	}
+
 	private static void PhysicsDay(int seed, double minutes)
 	{
 		double start = Schedules.StartOf(StartHourOf(seed));
@@ -29,8 +58,15 @@ internal static partial class Program
 		Micro mi = live.Mi;
 		string where = "seed " + seed + " physics cars in game from " + TrafficLive.Clock(start);
 		const double frame = 1.0 / 60.0, near = 300.0, far = 400.0;
+		// Ways out of spots and into them are few near one player in 10 minutes: the stand-ins take them anywhere the micro is round it
+		// (the game takes them within 300, as every physics car), for something to test.
+		const double wayNear = 1500.0, wayFar = 1700.0;
 		const int most = 24;
 		Dictionary<int, StandIn> bodies = new Dictionary<int, StandIn>();
+		Dictionary<int, WayStandIn> ways = new Dictionary<int, WayStandIn>();
+		List<int> wayDrop = new List<int>();
+		int wayOuts = 0, wayIns = 0, wayTaken = 0, wayKnocked = 0, wayStuck = 0, wayHits = 0;
+		double wayHeldMost = 0.0, wayOffMost = 0.0;
 		double[] xs = new double[16], zs = new double[16];
 		double race = 0.0, nextTake = 0.0, nextCheck = 0.0, moved = 0.0;
 		int taken = 0, overlaps = 0, standing = 0, unconserved = 0;
@@ -84,6 +120,11 @@ internal static partial class Program
 				if (a == null || !a.Driven)
 				{
 					drop.Add(b.Car);
+					if (b.Upright && live.M.Cars[b.Car].Mode == Meso.Mode.Parked && (live.PulledUp(b.Car) || live.Manoeuvring(b.Car)))
+					{
+						// Pulled up at its stop: it drives into its spot (the way stand-ins).
+						ways[b.Car] = new WayStandIn { Car = b.Car, X = b.X, Z = b.Z, Hx = b.Hx, Hz = b.Hz, Since = race };
+					}
 					continue;
 				}
 				if ((pd > far && b.Car != shoved && b.Car != rolled) || jump)
@@ -111,6 +152,78 @@ internal static partial class Program
 			{
 				bodies.Remove(c);
 			}
+			// The way stand-ins: each driven a frame on its way's clock (held back while it is behind), taken by the micro at the end of a
+			// way out, let go at the end of a way in.
+			wayDrop.Clear();
+			foreach (WayStandIn b in ways.Values)
+			{
+				Manoeuvre m = live.WayOf(b.Car, now - Meso.Step, out double t, out bool into);
+				double pd = Math.Sqrt((b.X - w.SX) * (b.X - w.SX) + (b.Z - w.SZ) * (b.Z - w.SZ));
+				if (pd > wayFar)
+				{
+					wayDrop.Add(b.Car);
+					continue;
+				}
+				if (m == null)
+				{
+					b.Way = null;
+					b.V = 0.0;
+					if (live.PulledUp(b.Car))
+					{
+						continue;
+					}
+					wayDrop.Add(b.Car);
+					Micro.Agent a = mi.Agents[b.Car];
+					StandIn sb = new StandIn { Car = b.Car, X = b.X, Z = b.Z, Hx = b.Hx, Hz = b.Hz, V = 0.0 };
+					if (!b.Into && a != null && !a.Driven && live.M.Cars[b.Car].Mode == Meso.Mode.Driving && mi.TakeBody(b.Car, ReadingOf(sb, now)))
+					{
+						bodies[b.Car] = sb;
+						wayOuts++;
+					}
+					else
+					{
+						wayIns += b.Into ? 1 : 0;
+					}
+					continue;
+				}
+				if (b.Way != m)
+				{
+					b.Way = m;
+					b.Leg = m.ClockLeg(t);
+					b.Held = 0.0;
+				}
+				b.Into = into;
+				WayDrive(b, t, frame, out double behind, out double off, out double facing);
+				moved += Math.Abs(b.V) * frame;
+				wayOffMost = Math.Max(wayOffMost, off);
+				if (race - b.Since > 0.5 && Manoeuvre.OffWay(off, facing))
+				{
+					wayKnocked++;
+					Note("way body " + b.Car + (into ? " in" : " out") + " off its way (" + off.ToString("0.0") + " off, facing " + facing.ToString("0.00") + ") at " + b.X.ToString("0") + ", " + b.Z.ToString("0") + " at " + race.ToString("0.0") + " s");
+					wayDrop.Add(b.Car);
+					continue;
+				}
+				if (behind > 1.5)
+				{
+					live.WindBack(b.Car, frame);
+					b.Held += frame;
+					wayHeldMost = Math.Max(wayHeldMost, b.Held);
+					if (b.Held > 30.0)
+					{
+						wayStuck++;
+						Note("way body " + b.Car + " held up 30 s behind its way's clock at " + b.X.ToString("0") + ", " + b.Z.ToString("0"));
+						wayDrop.Add(b.Car);
+					}
+				}
+				else if (behind < 0.5)
+				{
+					b.Held = 0.0;
+				}
+			}
+			foreach (int c in wayDrop)
+			{
+				ways.Remove(c);
+			}
 			if (race >= nextTake && race < end)
 			{
 				nextTake = race + 0.2;
@@ -118,7 +231,7 @@ internal static partial class Program
 				foreach (int c in mi.Active)
 				{
 					Micro.Agent a = mi.Agents[c];
-					if (a.Driven || (a.Conn >= 0 && Lanes.Connectors[a.Conn].Turn == Lanes.Jump))
+					if (a.Driven || (a.Conn >= 0 && Lanes.Connectors[a.Conn].Turn == Lanes.Jump) || a.HoldUntil > mi.T || live.Manoeuvring(c))
 					{
 						continue;
 					}
@@ -132,12 +245,32 @@ internal static partial class Program
 						cands.Add((d, c));
 					}
 				}
+				foreach (int c in live.WaysNow)
+				{
+					if (ways.ContainsKey(c) || bodies.ContainsKey(c) || live.Pose(c, now, out double x, out double z, out double _, out double _, out double _) != TrafficLive.Driving)
+					{
+						continue;
+					}
+					double d = Math.Sqrt((x - w.SX) * (x - w.SX) + (z - w.SZ) * (z - w.SZ));
+					if (d < wayNear)
+					{
+						cands.Add((d * near / wayNear, c));
+					}
+				}
 				cands.Sort();
 				foreach ((double _, int c) in cands)
 				{
-					if (bodies.Count >= most)
+					if (bodies.Count + ways.Count >= most)
 					{
 						break;
+					}
+					if (live.Manoeuvring(c))
+					{
+						live.Pose(c, now, out double wx, out double wz, out double whx, out double whz, out double _);
+						live.WayOf(c, now - Meso.Step, out double wt, out bool win).At(wt, out double _, out double _, out double _, out double _, out double wvx, out double wvz);
+						ways[c] = new WayStandIn { Car = c, X = wx, Z = wz, Hx = whx, Hz = whz, V = wvx * whx + wvz * whz, Into = win, Since = race };
+						wayTaken++;
+						continue;
 					}
 					live.Pose(c, now, out double x, out double z, out double hx, out double hz, out double _);
 					StandIn b = new StandIn { Car = c, X = x, Z = z, Hx = hx, Hz = hz, V = mi.Agents[c].V, A = mi.Agents[c].A };
@@ -317,6 +450,35 @@ internal static partial class Program
 					stoodFree.Remove(b.Car);
 				}
 			}
+			foreach (WayStandIn b in ways.Values)
+			{
+				if (b.Way == null)
+				{
+					continue;
+				}
+				TrafficParking.Spot me = new TrafficParking.Spot { X = b.X, Z = b.Z, Hx = b.Hx, Hz = b.Hz };
+				foreach (int c in mi.Active)
+				{
+					if (c == b.Car || ways.ContainsKey(c) || mi.IsAstray(c, out double _))
+					{
+						continue;
+					}
+					double ox, oz, ohx, ohz;
+					if (bodies.TryGetValue(c, out StandIn o))
+					{
+						(ox, oz, ohx, ohz) = (o.X, o.Z, o.Hx, o.Hz);
+					}
+					else if (live.Pose(c, now, out ox, out oz, out ohx, out ohz, out double _) != TrafficLive.Driving)
+					{
+						continue;
+					}
+					if ((ox - b.X) * (ox - b.X) + (oz - b.Z) * (oz - b.Z) < 40.0 * 40.0 && TrafficParking.Overlap(me, new TrafficParking.Spot { X = ox, Z = oz, Hx = ohx, Hz = ohz }, -0.3))
+					{
+						wayHits++;
+						Note("way body " + b.Car + (b.Into ? " in" : " out") + " in car " + c + " at " + b.X.ToString("0") + ", " + b.Z.ToString("0") + " at " + race.ToString("0.0") + " s");
+					}
+				}
+			}
 			if (race >= nextCheck)
 			{
 				nextCheck += 10.0;
@@ -334,11 +496,15 @@ internal static partial class Program
 			+ straysBefore + " strayed off their line driving, " + lostBefore + " left the day driving; the shoved one (car " + shoved + ") "
 			+ (shoved < 0 ? "none" : shovedBack >= 0.0 ? shovedHow + " " + (shovedBack - shovedAt).ToString("0.0") + " s after" : live.M.Cars[shoved].Mode == Meso.Mode.Gone ? "gone from its day" : shovedAstray ? "still off its line" : "never astray")
 			+ "; the rolled one (car " + rolled + ") " + (rolled < 0 ? "none" : rolledGone ? "gone from its day" : "still in its day") + "; gone from the day " + live.M.Gone + ", rejoined " + mi.Rejoins);
+		Console.WriteLine("    ways driven by bodies: " + wayTaken + " taken on their way, " + wayOuts + " out and taken on the lane, " + wayIns + " into their spot, held up at most " + wayHeldMost.ToString("0.0") + " s behind the clock, at most " + wayOffMost.ToString("0.0") + " off its way; "
+			+ wayKnocked + " off their way, " + wayStuck + " stuck, " + wayHits + " frames in a car");
 		Console.WriteLine("    the wreck: " + (wreck != null ? "car " + wreck.Car + " at " + wreck.X.ToString("0") + ", " + wreck.Z.ToString("0") + ", " + wreckHits + " car-frames in it, at most " + wreckQueue + " standing near it" : "none (no body moving)"));
 		foreach (string f in firsts)
 		{
 			Console.WriteLine("    " + f);
 		}
+		Check(wayKnocked == 0 && wayStuck == 0, "physics ways", where + ": " + wayKnocked + " bodies driving their way out of a spot or into one went off it, " + wayStuck + " were stuck");
+		Check(wayHits == 0, "physics ways", where + ": " + wayHits + " frames a body driving its way out of a spot or into one was in a car");
 		Check(wreckHits == 0, "physics wreck", where + ": cars drove into a wreck in their lane (" + wreckHits + " car-frames)");
 		Check(taken > 0 && moved > 300.0, "physics drive", where + ": the bodies hardly drove (" + taken + " taken, " + moved.ToString("0") + " units)");
 		Check(overlaps == 0, "physics overlap", where + ": " + overlaps + " frames a body was in another car");

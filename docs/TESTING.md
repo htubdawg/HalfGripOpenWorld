@@ -175,6 +175,11 @@ owner has reported on it.
      to its lane. Hit one pulling into its space: drive away, come back, and it has parked. A moving car you hit that wasn't a physics car
      brakes to a stop; knocked, it drives on as a physics car (back to its lane if pushed off it), gone from its day only if wrecked, on
      its side or stuck.
+   - Cars pulling out of a space or into one near you (within about 90 m) are real cars now, driving the way out or in themselves:
+     watch a few at the kerb and in car parks. They should pull out and back in smoothly, forwards and in reverse, stopping where they
+     change gear, with no jump when they start or when they join the lane, and no drop or bounce when one parks and turns back into a
+     drawn car. Stop in front of one pulling out: it waits behind you, then carries on. Shove one pulling out: it finds its way back to
+     its lane and drives on (log: `knocked off its way out of its spot`). Shove one pulling in: drive out of sight and back, and it has parked.
    - `TrafficPhysics` is now 60 by default (every moving car near you a physics car): say if the frame rate drops in busy traffic.
    - Wreck a parked car with the guns: it burns and explodes as the moving ones do, and is gone from its day.
    Send `LogOutput.log` (it has a `Traffic: car ... a contact car` line for each) and say if any car jumps, drops or bounces when it turns

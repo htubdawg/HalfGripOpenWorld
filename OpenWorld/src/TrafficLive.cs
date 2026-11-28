@@ -900,10 +900,49 @@ namespace HalfGripOpenWorld
 			k0[i] = k1[i] = None;
 		}
 
-		/// <summary>Whether car <paramref name="i"/> is driving out of its spot or into it now (not to be made a physics car meanwhile).</summary>
+		/// <summary>Whether car <paramref name="i"/> is driving out of its spot or into it now.</summary>
 		internal bool Manoeuvring(int i)
 		{
 			return man[i] != null;
+		}
+
+		/// <summary>The cars driving a way out of their spot or into it now (the game makes the nearest physics cars driving it).</summary>
+		internal IReadOnlyList<int> WaysNow => manoeuvring;
+
+		/// <summary>
+		/// Car <paramref name="i"/>'s way out or in (null: none), how far into it its clock is at day second <paramref name="at"/> (the game
+		/// gives the time its cars are drawn at, a step behind its clock), and whether it is the way in.
+		/// </summary>
+		internal Manoeuvre WayOf(int i, double at, out double t, out bool into)
+		{
+			Manoeuvre m = man[i];
+			t = m != null ? at - manSince[i] : 0.0;
+			into = m != null && manIn[i];
+			return m;
+		}
+
+		/// <summary>
+		/// Car <paramref name="i"/>'s way's clock held back <paramref name="seconds"/> (a physics car driving it is behind where the clock has it:
+		/// held up, or slower than the plan), and with it the micro's hold in the lane for a way out and the body the drivers see.
+		/// </summary>
+		internal void WindBack(int i, double seconds)
+		{
+			if (man[i] == null || seconds <= 0.0)
+			{
+				return;
+			}
+			manSince[i] += seconds;
+			Micro.Agent a = Mi.Agents[i];
+			if (!manIn[i] && a != null && !a.Driven && a.HoldUntil > Mi.T)
+			{
+				a.HoldUntil += seconds;
+			}
+		}
+
+		/// <summary>Whether car <paramref name="i"/> has pulled up at its stop and waits there to drive into its spot.</summary>
+		internal bool PulledUp(int i)
+		{
+			return pulledUp[i];
 		}
 
 		/// <summary>
