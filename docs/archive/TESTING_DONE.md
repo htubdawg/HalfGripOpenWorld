@@ -530,3 +530,17 @@ In-game tests moved out of `docs/TESTING.md` once reported on or superseded (202
      with no heal, ammo or combo. A car left standing in a lane is in the way as your car is: the cars behind stop and queue behind it
      (on the highway they pass it). Say if a drawn car drives into one.
    - `ShowCoords`: the `traffic:` line ends with `physics n/24 (made, loose, gone from their day)`. Say the frame rate with 24 against 0.
+72. **Reported (2026-11-28): good, confirmed by the owner in game.** Physics cars find their way back (`traffic-rework-branch`, not released; alone only). After 71: a car pushed off the road left its day
+   after 2.5 s and never tried to get back. Now it keeps its day and drives back to its line.
+   - Push a moving physics car (within about 90 m) off the road: after a second it drives back onto its line slowly (about 9 km/h),
+     coming onto it at a slant, and carries on its way at normal speed. The log says `Traffic: car <n> knocked off its line, finding its
+     way back` and then `back on its line`.
+   - Push one off and turned to face away from the road: it backs round first (wheels turned the other way), then drives back. Push one
+     against a wall or tree: it backs off it and tries again. Push one back onto the road by hand: it carries on from there.
+   - While it is coming back the cars behind it on its lane wait for it. Say if that looks wrong (cars stopped for a car well off in a
+     field).
+   - Ram one onto its side: after 4 s it is gone from its day (log: `left its day (on its side)`) and stays where it is until you are out
+     of sight. One that gets no nearer the road for 30 s (in a ditch) leaves too (`stuck off its line`). Shot to nothing it burns and
+     explodes as before (`wrecked`).
+   - Say if one sits still, circles, backs the wrong way, drives off across the country, or drives back into the road in front of a car.
+   - `ShowCoords`: the `traffic:` line's physics part says `n finding their way back`.

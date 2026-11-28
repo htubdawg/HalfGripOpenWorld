@@ -12,9 +12,9 @@ Last written 2026-11-28.
   `docs/TRAFFIC_REWORK.md` first**. The old traffic is on `traffic-test-branch` (kept, not to be worked on).
 - **Phases 0 to 4 are done** (the lane graph and conflict areas, each race's plans, the meso, the micro and the boundary; every fault
   check passing on seeds 1 to 64, trips taking the same time watched or not).
-- **Phase 5 (in game, alone): the first part and the physics cars are built and the owner has run them once** (TESTING.md items 70
-  and 71, now in the archive): all fine but one report, a car pushed off the road never tried to get back on its route. Fixed (below),
-  retest is TESTING.md item 72:
+- **Phase 5 (in game, alone): the first part and the physics cars are built and tested in game by the owner** (TESTING.md items 70,
+  71 and 72, all in the archive): all fine. The one report, a car pushed off the road never trying to get back on its route, is fixed
+  (below) and the owner confirmed the fix in game (72):
   - `TrafficLive.cs`: the race's plans, meso and micro built on a worker at the race's start hour, the first step run round the spawn,
     then stepped on the race clock on the main thread (`tm.TimeSinceRaceStart`, the lights' clock). Every car drawn between its last two
     steps' poses, a step (0.25 s) behind the clock. Stops at the day's end (03:00).
@@ -33,6 +33,7 @@ Last written 2026-11-28.
     at 8 units a second towards a point its distance off further along its way, full lock when that point is well off to one side, backing
     round with the wheels the other way when it is behind, backing off something it has nosed into; the driver's braking still holds it).
     The owner's first test: a car pushed off the road made no attempt to get back, even pushed back on (it had left its day after 2.5 s).
+    Confirmed fixed in game (72), reversing through the game's controller (negative `engineAccel`) included.
     A body on its side 4 s, astray 30 s getting no nearer (3 units, a turn the wrong way counted as distance), or wrecked
     (`TrafficDamagePatch`: no kill) leaves the day (`Micro.LoseCar`, `Meso.Mode.Gone`) and lies as a loose car on its brakes, given to the
     micro as a body in the road (`TrafficLive.OtherBodies`), until the player is past sight (1,500). A loose car pushed back onto the road
@@ -58,11 +59,10 @@ Last written 2026-11-28.
 
 ## Next
 
-1. **The owner runs TESTING.md item 72**: cars pushed off the road find their way back (the game's controller backing up with negative
-   `engineAccel` is untested; trafficsim's stand-in can't tell). Fix what they report first. If the physics cars drive badly, the knobs
-   are in `TrafficBody.Steer` (look-ahead, gain), `Pedals` (the rolling allowance) and `Rejoin` (its speed, lock, backing); the figures
-   that decide when a car is astray, back, or gives up are at the top of `MicroPhysics.cs`. The log line `Traffic: physics car bodies:
-   mass, engine, brakes, wheelbase` says what the controller has.
+1. Phase 5 is tested alone and passes. Before phase 6, ask the owner what they want next from the list below (nothing in game is
+   open). If the physics cars ever drive badly, the knobs are in `TrafficBody.Steer` (look-ahead, gain), `Pedals` (the rolling
+   allowance) and `Rejoin` (its speed, lock, backing); the figures that decide when a car is astray, back, or gives up are at the top
+   of `MicroPhysics.cs`. The log line `Traffic: physics car bodies: mass, engine, brakes, wheelbase` says what the controller has.
 2. If the main thread's simulation shows in the frame time, run `TrafficLive.Advance` on a worker a step ahead (poses are already
    double-buffered; the bodies' readings and the player's body would be a step old).
 3. Pulling in and out driven by the micro from the spot (the old `TrafficParking.Pull`/`Corner` are the drawing's model; a physics car
@@ -87,4 +87,4 @@ Last written 2026-11-28.
   passed before it).
 - `meshcheck`: not affected (it compiles none of the traffic's files).
 - Tools look for `../halfgriprefs/game`; with the repo cloned as `HalfGripRefs`, a symlink `halfgriprefs -> HalfGripRefs` does it.
-- In game: the owner's first run of phase 5 (items 70, 71) was fine but for the push-off, fixed after; item 72 is open.
+- In game: phase 5 tested by the owner (items 70, 71, 72): all good, the push-off fix confirmed.
